@@ -1377,7 +1377,8 @@
     "token": "apply.careers.microsoft.com",
     "site": "microsoft.com",
     "industry": "tech",
-    "source": "curated"
+    "source": "curated",
+    "failingSince": "2026-08-11T10:13:30.229Z"
   },
   {
     "name": "2k",
@@ -8295,7 +8296,8 @@
     "host": "wd5",
     "site": "EXT",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-11T10:13:30.229Z"
   },
   {
     "name": "generalmotors",
@@ -8304,7 +8306,8 @@
     "host": "wd5",
     "site": "Careers_GM",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-11T10:13:30.229Z"
   },
   {
     "name": "guardianpharmacy",
@@ -8331,7 +8334,8 @@
     "host": "wd5",
     "site": "GMED_Careers",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-11T10:13:30.229Z"
   },
   {
     "name": "greif",
@@ -8340,7 +8344,8 @@
     "host": "wd5",
     "site": "Greif",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-11T10:13:30.229Z"
   },
   {
     "name": "hexcel",
@@ -8614,7 +8619,8 @@
     "host": "wd5",
     "site": "KyndrylEarlyCareers",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-11T10:13:30.229Z"
   },
   {
     "name": "lifestance",
@@ -8623,7 +8629,8 @@
     "host": "wd5",
     "site": "Careers",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-11T10:13:30.229Z"
   },
   {
     "name": "loyola",
@@ -8641,7 +8648,8 @@
     "host": "wd5",
     "site": "LightWonderExternalCareers",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-11T10:13:30.229Z"
   },
   {
     "name": "manh",
@@ -8650,7 +8658,8 @@
     "host": "wd5",
     "site": "External",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-11T10:13:30.229Z"
   },
   {
     "name": "logitech",
@@ -8659,7 +8668,8 @@
     "host": "wd5",
     "site": "Logitech",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-11T10:13:30.229Z"
   },
   {
     "name": "magellanhealth",
@@ -8668,7 +8678,8 @@
     "host": "wd5",
     "site": "magellan_health_careers",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-11T10:13:30.229Z"
   },
   {
     "name": "lowes",
@@ -8687,7 +8698,8 @@
     "host": "wd5",
     "site": "EXT",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-11T10:13:30.229Z"
   },
   {
     "name": "ruelala",
@@ -9256,7 +9268,8 @@
     "host": "wd5",
     "site": "Qualifacts_External_Careers",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-11T10:13:30.229Z"
   },
   {
     "name": "qualys",
@@ -9285,7 +9298,8 @@
     "host": "wd5",
     "site": "rocket_careers",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-11T10:13:30.229Z"
   },
   {
     "name": "republic",
