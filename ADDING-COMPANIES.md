@@ -255,6 +255,46 @@ Serves HTML with no JSON or RSS feed. DocuSign's APJ portal is
 `apjcareers-docusign.icims.com`, so India roles exist — reading them needs an
 HTML parser, which is a real adapter rather than a quick add.
 
+## 4b. SuccessFactors — HTML, not JSON, deliberately deferred
+
+**SAP** and **Volvo** both run SuccessFactors' Career Site Builder. Unlike every
+other adapter in this project, its search results are **server-rendered HTML**
+with no backing JSON endpoint (`jobs.sap.com/search/?locationsearch=India`
+returns a plain paginated table, not an API response). Every existing fetcher
+here parses JSON; adding this would mean a genuinely different code path
+(an HTML scraper) for two companies, and SAP's visible India postings skew
+senior (Principal Enterprise Architect, 10+ yr Project Consultant roles). Not
+worth the architectural detour yet — revisit if more SuccessFactors companies
+turn up (common at German/European industrials: Siemens, Continental, ZF).
+
+## 4c. Giants that placement reports keep naming, still unreachable
+
+Cross-referencing 2025-26 placement reports from IIT Bombay, Delhi, Madras,
+Kanpur, Kharagpur, NIT Trichy, BITS Pilani, IIIT Hyderabad/Bangalore/Delhi, DTU
+and VIT Vellore turned up ~70 distinct recruiters. Most were already covered.
+The ones that weren't, and why `detect` found nothing on their careers domain:
+
+**BlackRock, Deutsche Bank, PwC, American Express, Samsung, Qualcomm, McKinsey,
+Bain, Alvarez & Marsal, EXL, Morgan Stanley, HSBC, Wells Fargo, Axis Bank, ICICI
+Bank, HDFC Bank, KPMG, DE Shaw, Tower Research, Graviton, Optiver, IBM, VMware,
+Texas Instruments, Analog Devices, Microchip, AMD, Arista, Infineon, Intuit,
+Bloomberg, Sony, Asian Paints, Mahindra, L&T, Tata Steel, BHEL, Bosch, Bajaj
+Auto, Maruti Suzuki, Jaguar Land Rover, ExxonMobil, Lupin, ITC, Eternal (Zomato),
+Myntra** — every one of these resolved to "no ATS link found." At this scale,
+that's not a detection failure; it's the honest floor of what unauthenticated
+public JSON endpoints can reach. These are exactly the class of employer that
+builds (or buys) a bespoke careers portal rather than adopting an off-the-shelf
+ATS. **Arm** confirmed running iCIMS (see §4); no others revealed a platform at
+all, meaning they're either fully custom or entirely client-rendered.
+
+Two did resolve: **Bank of America** (Workday, `ghr` tenant) and **Rakuten**
+(Workday, `rakuten` tenant) are now polled — both currently show 0 India/remote
+roles, same "will alert the hour it posts" status as Vanguard and DAZN below.
+
+**TCS, Infosys, Wipro, Cognizant, HCL, Hexaware, LTIMindtree, Genpact** all
+appeared repeatedly across every campus's recruiter list — correctly excluded
+by `SERVICE_COMPANIES` regardless of platform, per your standing instruction.
+
 ## 5. Newly announced GCCs — two solved, three genuinely empty
 
 The first sweep for these used `curl` on static HTML and found nothing. Re-probing

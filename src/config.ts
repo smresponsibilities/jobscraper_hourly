@@ -94,7 +94,7 @@ export const REGION_LOCKED =
 
 /** Mass-hiring IT services firms — excluded by request. */
 export const SERVICE_COMPANIES =
-  /\b(tcs|tata consultancy|infosys|wipro|cognizant|accenture|capgemini|hcl|hcltech|tech mahindra|ltimindtree|mphasis|hexaware|birlasoft|coforge|persistent systems|zensar|mindtree|dxc|atos|virtusa|ust global|quess|randstad|adecco)\b/i;
+  /\b(tcs|tata consultancy|infosys|wipro|cognizant|accenture|capgemini|hcl|hcltech|tech mahindra|ltimindtree|mphasis|hexaware|birlasoft|coforge|persistent systems|zensar|mindtree|dxc|atos|virtusa|ust global|quess|randstad|adecco|genpact|firstsource|wns global|conduent|concentrix|teleperformance)\b/i;
 
 /** A role only alerts if its title matches one of these families. */
 export const ROLE_FAMILIES: Record<string, RegExp> = {
