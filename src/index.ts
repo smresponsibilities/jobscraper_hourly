@@ -172,28 +172,27 @@ async function main(): Promise<void> {
 
   // "New" means new to this tracker, not newly posted — a company that was
   // just added, or a board recovering after days of errors, makes its entire
-  // current listing look "new" even if much of it is months old. There is no
-  // early-mover edge left on a role that's been open for 111 days, so the
-  // email is gated on real posting freshness. Nothing is lost: every match
-  // still enters the catalogue above regardless of age.
-  // Test-email mode is a diagnostic, not a preview of production behaviour —
-  // it deliberately shows everything currently matching, unfiltered, so
-  // freshness gating is skipped there.
-  const freshForEmail = testEmail ? deduped : deduped.filter((job) => isFreshEnough(job.postedAt));
-  const staleCount = deduped.length - freshForEmail.length;
-  if (staleCount > 0) {
-    console.log(`${staleCount} matches are 21+ days old — added to the catalogue, not emailed`);
+  // current listing look "new" even if much of it is months old, and there is
+  // no early-mover edge left on a role that's been open 111 days. But the
+  // catalogue above is the ONLY other place a match lives, and nothing reads
+  // it unless the web UI is deployed — so demoting a stale match out of the
+  // urgent section is fine, dropping it from the email entirely is not. It
+  // still ships, in its own low-key "backlog" section (see email.ts).
+  const freshForEmail = deduped.filter((job) => isFreshEnough(job.postedAt));
+  const staleForEmail = deduped.filter((job) => !isFreshEnough(job.postedAt));
+  if (staleForEmail.length > 0) {
+    console.log(`${staleForEmail.length} matches are 21+ days old — shown as backlog, not urgent`);
   }
 
-  if (freshForEmail.length > 0 && !dryRun && !coldStart) {
-    await writeFile('out/email.html', renderEmail(freshForEmail), 'utf8');
+  if (deduped.length > 0 && !dryRun && !coldStart) {
+    await writeFile('out/email.html', renderEmail(freshForEmail, staleForEmail), 'utf8');
   }
 
   const output = process.env.GITHUB_OUTPUT;
   if (output) {
     await appendFile(
       output,
-      `new_count=${freshForEmail.length}\nsubject=${subject(freshForEmail)}\nhour=${new Date().getUTCHours()}\n`,
+      `new_count=${deduped.length}\nsubject=${subject(freshForEmail, staleForEmail)}\nhour=${new Date().getUTCHours()}\n`,
     );
   }
 }
