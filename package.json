@@ -11,6 +11,7 @@
     "preview": "tsx src/preview.ts",
     "probe": "tsx src/probe.ts",
     "detect": "tsx src/detect.ts",
+    "import": "tsx src/import-urls.ts",
     "debug": "tsx src/debug.ts"
   },
   "devDependencies": {

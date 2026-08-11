@@ -84,16 +84,32 @@ jobs:
           subject: '[jobs] ${{ steps.hunt.outputs.subject }}'
           html_body: file://out/email.html
 
-      # data/jobs.json is what the web UI reads, so it commits every run — it's a
-      # few hundred rows and compresses to a couple of KB. state/seen.json holds
-      # ~15,000 IDs and only snapshots daily, since a full copy of it in git
-      # history 24 times a day is what would actually bloat the repo.
-      - name: Publish catalog
+      # companies.json is hand-curated, so its history is worth keeping on main.
+      - name: Commit board list
         if: '!inputs.test_email'
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: 'data: ${{ steps.hunt.outputs.new_count }} new [skip ci]'
-          file_pattern: >-
-            ${{ steps.hunt.outputs.hour == '5'
-                && 'data/jobs.json companies.json state/seen.json'
-                || 'data/jobs.json companies.json' }}
+          commit_message: 'companies: board list update [skip ci]'
+          file_pattern: companies.json
+
+      # The catalogue is DERIVED data — regenerable from the boards at any time,
+      # so its history has no value. Keeping it on main would add a fresh copy to
+      # git 24 times a day, forever. Instead it lives on an orphan `data` branch
+      # that is force-pushed as a single commit, so it never accumulates history.
+      #
+      # state/seen.json isn't published at all: at ~150,000 live postings it is
+      # ~9.5 MB. It lives in the Actions cache, and if that is ever evicted the
+      # run seeds itself from this catalogue and stays silent for one cycle.
+      - name: Publish catalog to data branch
+        if: '!inputs.test_email'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          publish=$(mktemp -d)
+          cp data/jobs.json "$publish/jobs.json"
+          cd "$publish"
+          git init -q
+          git checkout -qb data
+          git add jobs.json
+          git -c user.name='github-actions[bot]'               -c user.email='github-actions[bot]@users.noreply.github.com'               commit -qm "catalog: ${{ steps.hunt.outputs.new_count }} new"
+          git push -qf "https://x-access-token:$GITHUB_TOKEN@github.com/$GITHUB_REPOSITORY.git" data

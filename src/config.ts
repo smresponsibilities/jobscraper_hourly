@@ -21,8 +21,11 @@ export const SEEN_RETENTION_DAYS = 45;
 /** Render this many roles as full cards; the rest become compact one-liners. */
 export const EMAIL_DETAIL_LIMIT = 25;
 
-/** Concurrent board fetches. Politeness, not a technical limit. */
-export const CONCURRENCY = 6;
+/**
+ * Concurrent board fetches. Politeness, not a technical limit — but with 500+
+ * boards the run was approaching ten minutes at 6, so this is the balance.
+ */
+export const CONCURRENCY = 9;
 
 export const INDIA = new RegExp(
   [

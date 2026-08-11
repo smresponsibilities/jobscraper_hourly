@@ -4,12 +4,12 @@
 
 | | |
 |---|---|
-| **Job boards polled** | **381** |
-| **Companies with live matching roles** | **143** |
+| **Job boards polled** | **1,381** |
+| **Companies with live matching roles** | **400+** |
 | Boards with nothing matching right now | 183 |
-| Live postings read each run | ~51,000 |
-| Roles that survive filtering | **1,220** |
-| Time for a full run | ~7 minutes |
+| Live postings read each run | ~153,000 |
+| Roles that survive filtering | **~2,350** |
+| Time for a full run | ~11 minutes |
 | Cost | ₹0 |
 
 Boards by platform: Greenhouse 187 · Workday 57 · Ashby 20 · SmartRecruiters 13 ·
@@ -26,9 +26,9 @@ business associates and brand managers, not entry-level engineering.
 
 ```mermaid
 flowchart TD
-    A["GitHub Actions<br/>hourly at :17"] --> B["Read companies.json<br/>381 boards"]
+    A["GitHub Actions<br/>hourly at :17"] --> B["Read companies.json<br/>1,381 boards"]
     B --> C["Poll every board<br/>6 at a time"]
-    C --> D["~51,000 live postings"]
+    C --> D["~153,000 live postings"]
 
     D --> E{"Seen this ID<br/>before?"}
     E -->|yes| F["Skip"]
@@ -140,20 +140,33 @@ nothing extra because the board is already being polled.
 
 ```mermaid
 flowchart LR
-    A["state/seen.json<br/>~51,000 IDs"] -->|"hourly"| B["Actions cache"]
-    A -->|"once a day"| C["git commit"]
-    D["data/jobs.json<br/>~1,140 roles"] -->|"every run"| C
-    C --> E["Public repo"]
-    E --> F["Web UI reads<br/>raw.githubusercontent.com"]
+    A["state/seen.json<br/>~153,000 IDs · 9 MB"] -->|"hourly"| B["Actions cache<br/>never committed"]
+    C["data/jobs.json<br/>~2,350 roles · 950 KB"] -->|"force-push,<br/>single commit"| D["orphan 'data' branch"]
+    E["companies.json"] -->|"when changed"| F["main"]
+    D --> G["Web UI reads<br/>raw.githubusercontent.com"]
+    B -.->|"if evicted:<br/>seed from catalogue,<br/>stay silent one run"| C
 ```
 
-Git stores a **full copy** of a file per commit, not a delta. Committing 50,000
-IDs 24 times a day would add gigabytes a year, so the seen state lives in the
-Actions cache and snapshots to git once daily. The much smaller catalogue commits
-every run, because the UI reads it.
+Git stores a **full copy** of a file per commit, not a delta, so at this scale
+naive persistence is ruinous — the catalogue alone would add tens of gigabytes a
+year. Three rules keep it flat:
 
-The daily commit also keeps the repository active — GitHub disables scheduled
-workflows on public repos after 60 days without one.
+1. **The seen state is never committed.** ~153,000 IDs is ~9 MB. It lives in the
+   Actions cache. If that is ever evicted the run seeds itself from the committed
+   catalogue and suppresses email for one cycle, rather than re-alerting every
+   open role at once.
+2. **The catalogue carries no descriptions.** `CatalogEntry` deliberately does
+   *not* extend `Job`, because `Job.text` holds up to 6 KB of job description per
+   row — that alone was 4.3 MB of the file. Nothing downstream reads it: the
+   years are already extracted into `minYears`.
+3. **The catalogue lives on an orphan branch.** It is derived data, regenerable
+   from the boards at any time, so its history is worthless. The workflow
+   force-pushes it to a `data` branch as a single commit every run, so that
+   branch never accumulates history. Only `companies.json` — which is curated —
+   keeps real history on `main`.
+
+Those commits also keep the repository active, which stops GitHub disabling the
+schedule after 60 days.
 
 ## Growing on its own
 

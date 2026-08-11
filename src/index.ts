@@ -7,7 +7,7 @@ import { preScreen, shouldAlert } from './filter.js';
 import { renderEmail, subject } from './email.js';
 import { updateCatalog } from './catalog.js';
 import { CONCURRENCY, DROP_AFTER_FAILING_DAYS } from './config.js';
-import { loadCompanies, loadSeen, recordFailure, recordSuccess, saveCompanies, saveSeen } from './state.js';
+import { loadCompanies, loadSeen, readJson, recordFailure, recordSuccess, saveCompanies, saveSeen } from './state.js';
 
 const nowIso = new Date().toISOString();
 const dryRun = process.env.DRY_RUN === '1';
@@ -51,6 +51,22 @@ async function enrich(company: Company, job: RawJob): Promise<RawJob> {
 async function main(): Promise<void> {
   const companies = await loadCompanies();
   const seen = await loadSeen();
+
+  /**
+   * The seen state lives in the Actions cache, not in git — at ~150,000 live
+   * postings it is ~9.5 MB, and committing that daily would add gigabytes a
+   * year. If a cache is ever evicted we start empty, which would otherwise
+   * email every currently-open role at once. The committed catalogue is the
+   * backup: seed from it and stay silent for one run.
+   */
+  const coldStart = Object.keys(seen).length === 0;
+  if (coldStart) {
+    const catalog = await readJson<{ id: string }[]>('data/jobs.json', []);
+    for (const entry of catalog) seen[entry.id] = nowIso;
+    if (catalog.length > 0) {
+      console.log(`cold start: seeded ${catalog.length} ids from the catalogue, suppressing email`);
+    }
+  }
 
   console.log(`polling ${companies.length} boards`);
   const results = await mapLimit(companies, CONCURRENCY, pollBoard);
@@ -153,7 +169,7 @@ async function main(): Promise<void> {
     );
   }
 
-  if (deduped.length > 0 && !dryRun) {
+  if (deduped.length > 0 && !dryRun && !coldStart) {
     await writeFile('out/email.html', renderEmail(deduped), 'utf8');
   }
 

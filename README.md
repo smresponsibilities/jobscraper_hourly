@@ -3,8 +3,8 @@
 Hourly email alerts for fresher / entry-level roles in India and genuinely-remote,
 pulled straight from company ATS boards. No database, no paid services, no proxies.
 
-Verified working against 381 boards: **55,998 live postings → 1,220 open matches
-across 143 companies**, in about seven minutes.
+Verified working against 1,381 boards: **153,596 live postings → ~2,350 open matches
+across 400+ companies**, in about eleven minutes.
 
 The board list grows on its own: a weekly Common Crawl sweep walks the CDX index
 one block per run, keeping any board that currently has an India or remote role.
@@ -13,7 +13,7 @@ one block per run, keeping any board that currently has an India or remote role.
 
 ```
 GitHub Actions (hourly)
-  └─ poll 381 ATS boards ─► diff against seen state ──► classify ──► filter
+  └─ poll 1381 ATS boards ─► diff against seen state ──► classify ──► filter
                                                                       │
                                                                       │
                                           new matches? ──► email via Gmail SMTP

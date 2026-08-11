@@ -7,11 +7,45 @@ const CATALOG_PATH = 'data/jobs.json';
 /** Drop closed roles this long after they disappear from the board. */
 const CLOSED_RETENTION_DAYS = 30;
 
-export interface CatalogEntry extends Job {
+/**
+ * Deliberately NOT `extends Job` — `Job` carries `text`, the full job
+ * description. At ~2,500 open roles that inflated this file to 4.3 MB, and it is
+ * committed every hour, so git would gain tens of gigabytes a year storing a
+ * fresh copy each time. Nothing downstream reads the description: the years are
+ * already extracted into `minYears`, and the email and UI show neither.
+ */
+export interface CatalogEntry {
+  id: string;
+  title: string;
+  company: string;
+  industry: Job['industry'];
+  location: string;
+  url: string;
+  postedAt?: string;
+  salary?: string;
+  minYears: number | null;
+  maxYears: number | null;
+  isIntern: boolean;
   firstSeen: string;
   lastSeen: string;
   /** Set once the posting stops appearing on a board we polled successfully. */
   closedAt?: string;
+}
+
+function slim(job: Job): Omit<CatalogEntry, 'firstSeen' | 'lastSeen'> {
+  return {
+    id: job.id,
+    title: job.title,
+    company: job.company,
+    industry: job.industry,
+    location: job.location,
+    url: job.url,
+    postedAt: job.postedAt,
+    salary: job.salary,
+    minYears: job.minYears,
+    maxYears: job.maxYears,
+    isIntern: job.isIntern,
+  };
 }
 
 export interface CatalogUpdate {
@@ -66,7 +100,7 @@ export async function updateCatalog(update: CatalogUpdate): Promise<{
   for (const job of update.fresh) {
     const previous = byId.get(job.id);
     byId.set(job.id, {
-      ...job,
+      ...slim(job),
       firstSeen: previous?.firstSeen ?? update.now,
       lastSeen: update.now,
     });

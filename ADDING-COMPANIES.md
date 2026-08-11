@@ -156,6 +156,21 @@ npm run discover
 
 Common Crawl sweep. Runs weekly on its own; you shouldn't need to trigger it.
 
+```bash
+npm run import -- listings.md
+```
+
+Harvests boards from **any file containing job URLs** — a curated listings repo, a
+bookmarks export, a pasted set of links. Community job-listing repos are the best
+seam here: their tables link straight to Greenhouse, Workday and Ashby boards, so
+one file yields hundreds of companies at once. Importing
+[DereC4/internships-and-newgrad](https://github.com/DereC4/internships-and-newgrad)
+added 74 boards in a single pass, including Johnson Controls (219 India roles),
+Cadence (156) and Eurofins (75).
+
+Every board is still validated before being kept, so a dead or irrelevant link
+costs nothing.
+
 ---
 
 # What's still missing

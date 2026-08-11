@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { DATA_BASE, REPO_URL, type Job } from '@/lib/types';
+import { DATA_URL, REPO_URL, type Job } from '@/lib/types';
 import { AddCompany } from './add-company';
 
 const INDUSTRIES = ['tech', 'fintech', 'quant', 'banking', 'consulting'] as const;
@@ -37,9 +37,9 @@ export default function Page() {
   const [company, setCompany] = useState('');
 
   useEffect(() => {
-    fetch(`${DATA_BASE}/data/jobs.json`, { cache: 'no-store' })
+    fetch(DATA_URL, { cache: 'no-store' })
       .then((res) => {
-        if (!res.ok) throw new Error(`data/jobs.json returned ${res.status}`);
+        if (!res.ok) throw new Error(`catalogue returned ${res.status}`);
         return res.json();
       })
       .then(setJobs)
