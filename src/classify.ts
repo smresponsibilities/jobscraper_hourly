@@ -30,7 +30,9 @@ const LEVEL_SUFFIX = '[\\s-]+(ii|iii|iv|2|3|4)\\b';
  * fresher role.
  */
 const UNIVERSAL_SENIOR =
-  'senior|sr\\.?|staff|principal|director|head of|architect|distinguished|chief|vice president|vp|executive director|managing director|md';
+  // Bare "head" rather than "head of" — "Head - Advanced Analytics" slipped
+  // through until this was widened.
+  'senior|sr\\.?|staff|principal|director|head|architect|distinguished|chief|vice president|vp|executive director|managing director|md';
 
 const TECH: SeniorityRules = {
   junior:
@@ -86,7 +88,12 @@ const HARD_EXCLUDE = new RegExp(
 
 const YEARS_RANGE = /(\d{1,2})\s*(?:\+|to|-|–|—)\s*(\d{1,2})?\s*\+?\s*(?:years?|yrs?)/gi;
 const YEARS_MIN = /(?:minimum(?: of)?|at least|min\.?)\s*(\d{1,2})\s*(?:years?|yrs?)/gi;
-const YEARS_PLUS = /(\d{1,2})\s*\+\s*(?:years?|yrs?)/gi;
+/**
+ * Any bare "N years", which the range and "N+" patterns both miss. Needed for
+ * text like "2 years required, 7+ years preferred" — without it only the 7 was
+ * seen and the role was filtered out as senior.
+ */
+const YEARS_ANY = /(\d{1,2})\s*\+?\s*(?:years?|yrs?)/gi;
 
 /**
  * Postings routinely state several ranges — "0-2 years required, 5+ preferred".
@@ -102,7 +109,7 @@ export function extractYears(text: string): { min: number | null; max: number | 
     if (Number.isFinite(lo) && lo <= 40) mins.push(lo);
     if (hi !== null && Number.isFinite(hi) && hi <= 40) maxes.push(hi);
   }
-  for (const re of [YEARS_MIN, YEARS_PLUS]) {
+  for (const re of [YEARS_MIN, YEARS_ANY]) {
     for (const m of text.matchAll(re)) {
       const lo = Number(m[1]);
       if (Number.isFinite(lo) && lo <= 40) mins.push(lo);

@@ -27,8 +27,13 @@ export const EMAIL_DETAIL_LIMIT = 25;
  */
 export const CONCURRENCY = 9;
 
+/**
+ * Word-bounded, and that matters more than it looks: without `\b`, "india"
+ * matches **Indiana** and **Indianapolis** (62 US roles were leaking through),
+ * and "goa" matches "Goal". Substring matching on place names is a trap.
+ */
 export const INDIA = new RegExp(
-  [
+  `\\b(${[
     'india',
     'bengaluru',
     'bangalore',
@@ -57,7 +62,7 @@ export const INDIA = new RegExp(
     'mysore',
     'visakhapatnam',
     'goa',
-  ].join('|'),
+  ].join('|')})\\b`,
   'i',
 );
 
