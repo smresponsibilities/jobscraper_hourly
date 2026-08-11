@@ -3,6 +3,11 @@
 Hourly email alerts for fresher / entry-level roles in India and genuinely-remote,
 pulled straight from company ATS boards. No database, no paid services, no proxies.
 
+**Picking this project up in a new session? Read [HANDOFF.md](HANDOFF.md) first** —
+it has the decisions and gotchas that aren't obvious from the code alone (the
+git-merge workflow you need every time, a regex bug class that's shipped three
+times, why the email has a "backlog" section, what's deliberately unfinished).
+
 Verified working against 1,381 boards: **153,596 live postings → ~2,350 open matches
 across 400+ companies**, in about eleven minutes.
 
