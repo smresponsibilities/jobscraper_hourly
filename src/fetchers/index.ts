@@ -12,6 +12,7 @@ import * as eightfold from './eightfold.js';
 import * as darwinbox from './darwinbox.js';
 import * as turbohire from './turbohire.js';
 import * as rendered from './rendered.js';
+import * as successfactors from './successfactors.js';
 
 export interface Fetcher {
   list(company: Company): Promise<RawJob[]>;
@@ -33,4 +34,5 @@ export const FETCHERS: Record<Ats, Fetcher> = {
   darwinbox,
   turbohire,
   rendered,
+  successfactors,
 };

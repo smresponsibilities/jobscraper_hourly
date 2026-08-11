@@ -26,8 +26,15 @@ const SUPPORTED: { ats: Ats; pattern: RegExp }[] = [
   { ats: 'smartrecruiters', pattern: /(?:jobs|careers)\.smartrecruiters\.com\/([a-z0-9_-]+)/i },
 ];
 
-/** Platforms we can detect but not yet read — reported so they stay visible. */
-const UNSUPPORTED = /darwinbox\.[a-z]+|turbohire\.co|keka\.com|successfactors\.[a-z]+|icims\.com|phenompeople\.com/i;
+/**
+ * Platforms this file can't resolve to a ready-to-add `Company` automatically
+ * — either because there's genuinely no adapter yet, or because the adapter
+ * exists but needs fields (tenant + companyId hash, org GUID, host pod, ...)
+ * that aren't recoverable from a single regex group on the careers-page HTML.
+ * Reported either way so a real board doesn't silently vanish from the scan.
+ */
+const NO_ADAPTER = /keka\.com|icims\.com/i;
+const NEEDS_MANUAL_EXTRACTION = /darwinbox\.[a-z]+|turbohire\.co|successfactors\.[a-z]+|phenompeople\.com/i;
 
 const WORKDAY = /https?:\/\/([a-z0-9-]+)\.(wd\d+)\.myworkdayjobs\.com\/(?:([a-z]{2}-[A-Za-z]{2})\/)?([A-Za-z0-9_-]+)/i;
 
@@ -77,7 +84,10 @@ async function detect(domain: string, industry: Industry): Promise<Detection> {
       }
     }
 
-    const blocked = UNSUPPORTED.exec(html);
+    const manual = NEEDS_MANUAL_EXTRACTION.exec(html);
+    if (manual) return { domain, unsupported: `${manual[0]} (adapter exists — extract the board URL by hand, see ADDING-COMPANIES.md)` };
+
+    const blocked = NO_ADAPTER.exec(html);
     if (blocked) return { domain, unsupported: blocked[0] };
   }
   return { domain };

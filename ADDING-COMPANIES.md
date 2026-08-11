@@ -36,6 +36,8 @@ the URL — identifying it is my job.
 | **Eightfold** | **`apply.careers.acme.com`** + the `domain=` value in its network calls | host + domain |
 | **Darwinbox** | **`acme`**`.darwinbox.in/ms/candidatev2/`**`a62d7a6e288992`**`/careers` | tenant + companyId. Older tenants use `/ms/candidate/careers` with no hash — then the tenant alone is enough |
 | **TurboHire** | **`acme`**`.turbohire.co/careerpage/`**`4d757ba0-3d57-448a-b82c-238ed87ac90f`** | subdomain + org GUID |
+| **SuccessFactors (modern)** | just the hostname: **`jobs.acme.com`** | the hostname *is* the tenant, same as Phenom |
+| **SuccessFactors (legacy)** | **`career2.successfactors.eu`**`/career?company=`**`acmecorp`** | legacy career host + company code — send both |
 
 Workday and Oracle are the ones people truncate. `acme.wd5.myworkdayjobs.com`
 alone is not enough — without the site path (`Acme_Careers`) there's nothing to
@@ -92,6 +94,32 @@ Oracle needs the pod and site number:
   "host": "fa.us2",
   "siteNumber": "CX_45001",
   "industry": "tech",
+  "source": "curated"
+}
+```
+
+SuccessFactors modern (Career Site Builder) takes the hostname as the token,
+same as Phenom:
+
+```json
+{
+  "name": "SAP",
+  "ats": "successfactors",
+  "token": "jobs.sap.com",
+  "industry": "tech",
+  "source": "curated"
+}
+```
+
+SuccessFactors legacy needs the career host as well:
+
+```json
+{
+  "name": "HSBC",
+  "ats": "successfactors",
+  "token": "hsbcholdin",
+  "host": "career2.successfactors.eu",
+  "industry": "banking",
   "source": "curated"
 }
 ```
@@ -255,17 +283,44 @@ Serves HTML with no JSON or RSS feed. DocuSign's APJ portal is
 `apjcareers-docusign.icims.com`, so India roles exist — reading them needs an
 HTML parser, which is a real adapter rather than a quick add.
 
-## 4b. SuccessFactors — HTML, not JSON, deliberately deferred
+## 4b. SuccessFactors — SOLVED
 
-**SAP** and **Volvo** both run SuccessFactors' Career Site Builder. Unlike every
-other adapter in this project, its search results are **server-rendered HTML**
-with no backing JSON endpoint (`jobs.sap.com/search/?locationsearch=India`
-returns a plain paginated table, not an API response). Every existing fetcher
-here parses JSON; adding this would mean a genuinely different code path
-(an HTML scraper) for two companies, and SAP's visible India postings skew
-senior (Principal Enterprise Architect, 10+ yr Project Consultant roles). Not
-worth the architectural detour yet — revisit if more SuccessFactors companies
-turn up (common at German/European industrials: Siemens, Continental, ZF).
+**SAP · Volvo Cars · ZF · Mahindra · HSBC** are all polling now.
+
+The search *results page* really is server-rendered HTML with no backing JSON
+endpoint, same as originally found — but both SuccessFactors variants also
+publish a credential-free XML feed that the results page itself pulls from,
+which sidesteps the HTML-scraper detour entirely:
+
+- **Career Site Builder** (the modern frontend — SAP, Volvo, ZF, Mahindra):
+  `GET {careers-host}/sitemal.xml` — yes, `sitemal.xml`, not a typo. A
+  Google-Merchant-namespaced RSS 2.0 feed (`<item><g:id>`, `<g:location>`,
+  `<g:employer>`). `token` is the full careers hostname (e.g. `jobs.sap.com`).
+- **Legacy Recruiting Management** (career{N}.successfactors.{eu,com,cn} —
+  HSBC): `GET {host}/career?company={code}&career_ns=job_listing_summary&resultType=XML`.
+  No location field at all — only `JobTitle`, `Job-Description`, `ReqId`,
+  `Posted-Date`. Location is recovered by testing the title+description text
+  against the same India-city regex the rest of the project uses; a job is
+  only kept once that match actually fires, which trades recall for zero false
+  positives. `token` is the company code, `host` is the legacy career subdomain.
+
+Both feeds are slow — 30s to ~170s for one company, roughly proportional to
+its total job count worldwide — so the adapter uses its own 180s timeout
+instead of the 30s default in `getJson`. `KPMG.de` and `careers.pwc.com`
+resolve to the same XML format but returned zero India postings on the
+regional tenant tested; worth re-probing with a properly-targeted APAC/India
+tenant if either comes up again.
+
+**Trap worth recording for Mahindra specifically**: it's an automotive
+conglomerate, so its board is full of `Engineer - <vehicle part>` reqs
+(Engines, Chassis, Transaxle, Powertrain, Body Systems) that bare-match the
+`swe` family's `\bengineer\b` — same leak class as Thermo Fisher/GE Vernova,
+fixed the same way (`classify.ts`'s `HARD_EXCLUDE`, not by narrowing the
+family regex).
+
+`detect.ts` can now recognize a SuccessFactors-powered careers page (it
+already could) and says so explicitly, but still can't auto-derive the
+token/host pair — extract those by hand per the technique above.
 
 ## 4c. Giants that placement reports keep naming, still unreachable
 
@@ -274,22 +329,37 @@ Kanpur, Kharagpur, NIT Trichy, BITS Pilani, IIIT Hyderabad/Bangalore/Delhi, DTU
 and VIT Vellore turned up ~70 distinct recruiters. Most were already covered.
 The ones that weren't, and why `detect` found nothing on their careers domain:
 
-**BlackRock, Deutsche Bank, PwC, American Express, Samsung, Qualcomm, McKinsey,
-Bain, Alvarez & Marsal, EXL, Morgan Stanley, HSBC, Wells Fargo, Axis Bank, ICICI
-Bank, HDFC Bank, KPMG, DE Shaw, Tower Research, Graviton, Optiver, IBM, VMware,
-Texas Instruments, Analog Devices, Microchip, AMD, Arista, Infineon, Intuit,
-Bloomberg, Sony, Asian Paints, Mahindra, L&T, Tata Steel, BHEL, Bosch, Bajaj
-Auto, Maruti Suzuki, Jaguar Land Rover, ExxonMobil, Lupin, ITC, Eternal (Zomato),
-Myntra** — every one of these resolved to "no ATS link found." At this scale,
-that's not a detection failure; it's the honest floor of what unauthenticated
-public JSON endpoints can reach. These are exactly the class of employer that
-builds (or buys) a bespoke careers portal rather than adopting an off-the-shelf
-ATS. **Arm** confirmed running iCIMS (see §4); no others revealed a platform at
-all, meaning they're either fully custom or entirely client-rendered.
+**Deutsche Bank, PwC, American Express, McKinsey, Bain, Alvarez & Marsal, EXL,
+Axis Bank, ICICI Bank, HDFC Bank, KPMG, DE Shaw, VMware, Analog Devices,
+Microchip, AMD, Arista, Infineon, Sony, Asian Paints, L&T, Tata Steel, BHEL,
+Bosch, Bajaj Auto, Maruti Suzuki, Jaguar Land Rover, ExxonMobil, Lupin, ITC,
+Eternal (Zomato), Myntra** — every one of these resolved to "no ATS link
+found." At this scale, that's not a detection failure; it's the honest floor
+of what unauthenticated public JSON endpoints can reach. These are exactly the
+class of employer that builds (or buys) a bespoke careers portal rather than
+adopting an off-the-shelf ATS. **Arm** confirmed running iCIMS (see §4); no
+others revealed a platform at all, meaning they're either fully custom or
+entirely client-rendered. (**IBM** belongs in this bucket too — a later pass
+found three Oracle Cloud HCM tenants that *looked* plausible from the "ibm"
+prefix alone, `ibmdjb`/`ibmxjb`/`ibmljb`; all three turned out to be unrelated
+small orgs — a Guatemalan retail chain, an Iowa college and a Syracuse school
+district — that happen to sit on tenants with those names. Verify every
+resolved tenant against its actual job titles before trusting it, not just
+against the HTTP status code.)
 
-Two did resolve: **Bank of America** (Workday, `ghr` tenant) and **Rakuten**
-(Workday, `rakuten` tenant) are now polled — both currently show 0 India/remote
-roles, same "will alert the hour it posts" status as Vanguard and DAZN below.
+Several since resolved: **Bank of America** and **Rakuten** (Workday) were
+already polled at 0 India/remote roles. Since added, all now live: **BlackRock**
+(Workday), **Samsung** (Workday), **Qualcomm** (Eightfold — 300+ India roles,
+by far the largest single addition from this pass), **Morgan Stanley**
+(Eightfold), **Wells Fargo** (Workday), **Texas Instruments** (Oracle),
+**Bloomberg** (Workday, 0 India roles currently but a real 58-job board),
+**HSBC** and **Mahindra** (SuccessFactors, see §4b), **Intuit** (SmartRecruiters,
+token `intuit2`), and — via `npm run probe` rather than `detect` — the quant
+firms **Graviton Research Capital**, **Squarepoint Capital**, **NK Securities
+Research** and **Da Vinci Derivatives** (all Greenhouse). **Optiver** also
+resolved on Greenhouse (`optiverprivate`) but currently posts zero India
+roles and wasn't added — Optiver has no visible India office, unlike the four
+quant firms above.
 
 **TCS, Infosys, Wipro, Cognizant, HCL, Hexaware, LTIMindtree, Genpact** all
 appeared repeatedly across every campus's recruiter list — correctly excluded

@@ -11,7 +11,8 @@ export type Ats =
   | 'smartrecruiters'
   | 'workday'
   | 'oracle'
-  | 'amazon';
+  | 'amazon'
+  | 'successfactors';
 
 /**
  * Industry drives which seniority vocabulary applies. This is not cosmetic:
@@ -28,7 +29,12 @@ export interface Company {
   industry: Industry;
   /** Workday only: the site path, e.g. "External_Career_Site". */
   site?: string;
-  /** Workday only: the wdN host, e.g. "wd5". */
+  /**
+   * Workday: the wdN host, e.g. "wd5". SuccessFactors legacy only: the
+   * career{N}.successfactors.{eu,com,cn} host — its presence is what tells
+   * the fetcher to use the legacy XML endpoint instead of Career Site
+   * Builder's sitemal.xml (where `token` is the full hostname instead).
+   */
   host?: string;
   /** Oracle only: the CX_xxxx site number. */
   siteNumber?: string;

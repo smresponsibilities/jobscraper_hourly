@@ -10235,5 +10235,137 @@
     "site": "RakutenRewards",
     "industry": "tech",
     "source": "curated"
+  },
+  {
+    "name": "Graviton Research Capital",
+    "ats": "greenhouse",
+    "token": "gravitonresearchcapital",
+    "industry": "quant",
+    "source": "curated"
+  },
+  {
+    "name": "Da Vinci Derivatives",
+    "ats": "greenhouse",
+    "token": "davinciderivatives",
+    "industry": "quant",
+    "source": "curated"
+  },
+  {
+    "name": "Squarepoint Capital",
+    "ats": "greenhouse",
+    "token": "squarepointcapital",
+    "industry": "quant",
+    "source": "curated"
+  },
+  {
+    "name": "NK Securities Research",
+    "ats": "greenhouse",
+    "token": "nksecuritiesresearch",
+    "industry": "quant",
+    "source": "curated"
+  },
+  {
+    "name": "Bloomberg",
+    "ats": "workday",
+    "token": "bloomberg",
+    "host": "wd1",
+    "site": "Bloombergindustrygroup_External_Career_Site",
+    "industry": "fintech",
+    "source": "curated"
+  },
+  {
+    "name": "BlackRock",
+    "ats": "workday",
+    "token": "blackrock",
+    "host": "wd1",
+    "site": "blackrock_professional",
+    "industry": "banking",
+    "source": "curated"
+  },
+  {
+    "name": "Wells Fargo",
+    "ats": "workday",
+    "token": "wf",
+    "host": "wd1",
+    "site": "wellsfargojobs",
+    "industry": "banking",
+    "source": "curated"
+  },
+  {
+    "name": "Samsung",
+    "ats": "workday",
+    "token": "sec",
+    "host": "wd3",
+    "site": "samsung_jobs",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Texas Instruments",
+    "ats": "oracle",
+    "token": "edbz",
+    "host": "fa.us2",
+    "siteNumber": "CX_1",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Morgan Stanley",
+    "ats": "eightfold",
+    "token": "morganstanley.eightfold.ai",
+    "site": "morganstanley.com",
+    "industry": "banking",
+    "source": "curated"
+  },
+  {
+    "name": "Qualcomm",
+    "ats": "eightfold",
+    "token": "qualcomm.eightfold.ai",
+    "site": "qualcomm.com",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "SAP",
+    "ats": "successfactors",
+    "token": "jobs.sap.com",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Volvo Cars",
+    "ats": "successfactors",
+    "token": "jobs.volvocars.com",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "ZF",
+    "ats": "successfactors",
+    "token": "jobs.zf.com",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Mahindra",
+    "ats": "successfactors",
+    "token": "jobs.mahindracareers.com",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "HSBC",
+    "ats": "successfactors",
+    "token": "hsbcholdin",
+    "host": "career2.successfactors.eu",
+    "industry": "banking",
+    "source": "curated"
+  },
+  {
+    "name": "BigBasket",
+    "ats": "darwinbox",
+    "token": "bigbasket",
+    "industry": "tech",
+    "source": "curated"
   }
 ]

@@ -14,7 +14,7 @@ explicitly excluded — that was a direct, deliberate request, not a default.
 
 ## Current state (as of this doc's last edit)
 
-- **1,383 boards**, ~150-160K live postings per run, ~2,300-2,500 open matches
+- **1,400 boards**, ~150-160K live postings per run, ~2,300-2,500 open matches
   in the catalogue. Full run takes ~6-12 minutes depending on corpus growth.
 - **`main`** branch has the code. **`data`** branch (orphan, force-pushed,
   always 1 commit) has the catalogue the web UI reads.
@@ -110,10 +110,23 @@ without intervention nearly every time.
 - **Google, Meta, Uber, Walmart**: fully client-rendered, no reachable API even
   headless, for Uber/Walmart. (Google/Meta were solved via headless rendering —
   check ADDING-COMPANIES.md §1 for current status before assuming still blocked.)
-- **SuccessFactors** (SAP, Volvo): server-rendered HTML, not JSON — every other
-  adapter in this codebase parses JSON. Deliberately deferred; revisit only if
-  more SuccessFactors companies turn up (common at German/European industrials).
-- **iCIMS** (DocuSign): HTML only, no feed.
+- **SuccessFactors** — SOLVED (`src/fetchers/successfactors.ts`). The search
+  *results page* is server-rendered HTML, but both SF variants publish a
+  credential-free XML feed alongside it: Career Site Builder tenants (SAP,
+  Volvo, ZF, Mahindra) serve `{host}/sitemal.xml`, a Google-Merchant RSS feed
+  with a real `g:location` field; legacy Recruiting Management tenants (HSBC)
+  serve `{host}/career?company={code}&career_ns=job_listing_summary&resultType=XML`
+  but carry no location field at all, so location is recovered by regex-matching
+  India city names against the title+description text — a job only gets a
+  location when that actually hits, which is deliberately conservative (no
+  location field → excluded, not guessed). Both feeds are unusually slow
+  (30-170s per company, roughly proportional to total job count), hence the
+  adapter's own 180s timeout instead of the shared 30s default. `detect.ts`
+  can spot a SuccessFactors-powered careers page but still can't auto-derive
+  the token/host — that part stays manual, see ADDING-COMPANIES.md.
+- **iCIMS** (DocuSign, D.E. Shaw): still open. HTML with no JSON, though detail
+  pages do carry a `schema.org/JobPosting` JSON-LD block — same shape of fix as
+  SuccessFactors would take (a genuinely new code path), just not built yet.
 - **~60 large enterprises named in top-college placement reports** (BlackRock,
   Deutsche Bank, PwC, McKinsey, Bain, Morgan Stanley, HSBC, Samsung, Qualcomm,
   IBM, VMware, Texas Instruments, Mahindra, L&T, Bosch, ...) — no detectable ATS
