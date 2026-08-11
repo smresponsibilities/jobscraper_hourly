@@ -2348,8 +2348,7 @@
     "ats": "rendered",
     "token": "dazn",
     "industry": "tech",
-    "source": "curated",
-    "failingSince": "2026-08-11T16:13:33.476Z"
+    "source": "curated"
   },
   {
     "name": "eqvilentjobs",
@@ -3244,8 +3243,7 @@
     "host": "wd1",
     "site": "bah_jobs",
     "industry": "tech",
-    "source": "curated",
-    "failingSince": "2026-08-11T16:13:33.476Z"
+    "source": "curated"
   },
   {
     "name": "Kastle",
@@ -6280,7 +6278,8 @@
     "host": "wd3",
     "site": "Lonza_Careers",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-11T17:13:36.135Z"
   },
   {
     "name": "myhr",
@@ -6298,7 +6297,8 @@
     "host": "wd3",
     "site": "Michelin",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-11T17:13:36.135Z"
   },
   {
     "name": "novartis",
@@ -6307,7 +6307,8 @@
     "host": "wd3",
     "site": "Novartis_Careers",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-11T17:13:36.135Z"
   },
   {
     "name": "iconcareers",
@@ -6743,7 +6744,8 @@
     "host": "wd3",
     "site": "Nutreco_External",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-11T17:13:36.135Z"
   },
   {
     "name": "jensenhughes",
@@ -8334,8 +8336,7 @@
     "host": "wd5",
     "site": "GMED_Careers",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-11T16:13:33.476Z"
+    "source": "discovered"
   },
   {
     "name": "greif",
@@ -10366,6 +10367,7 @@
     "ats": "darwinbox",
     "token": "bigbasket",
     "industry": "tech",
-    "source": "curated"
+    "source": "curated",
+    "failingSince": "2026-08-11T17:13:36.135Z"
   }
 ]
