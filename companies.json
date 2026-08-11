@@ -3934,7 +3934,8 @@
     "ats": "greenhouse",
     "token": "voyagertechnologiesinc",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-11T19:21:00.480Z"
   },
   {
     "name": "watchmakergenomics",
@@ -4775,7 +4776,8 @@
     "host": "wd1",
     "site": "TrimbleCareers",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-11T19:21:00.480Z"
   },
   {
     "name": "trinityhealth",
@@ -8295,8 +8297,7 @@
     "host": "wd5",
     "site": "EXT",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-11T18:08:10.357Z"
+    "source": "discovered"
   },
   {
     "name": "generalmotors",
@@ -8343,8 +8344,7 @@
     "host": "wd5",
     "site": "Greif",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-11T18:08:10.357Z"
+    "source": "discovered"
   },
   {
     "name": "hexcel",
@@ -8627,8 +8627,7 @@
     "host": "wd5",
     "site": "Careers",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-11T18:08:10.357Z"
+    "source": "discovered"
   },
   {
     "name": "loyola",
@@ -8646,8 +8645,7 @@
     "host": "wd5",
     "site": "LightWonderExternalCareers",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-11T18:08:10.357Z"
+    "source": "discovered"
   },
   {
     "name": "manh",
@@ -8695,8 +8693,7 @@
     "host": "wd5",
     "site": "EXT",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-11T16:13:33.476Z"
+    "source": "discovered"
   },
   {
     "name": "ruelala",
@@ -10036,8 +10033,7 @@
     "host": "wd5",
     "site": "Zoom",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-11T16:13:33.476Z"
+    "source": "discovered"
   },
   {
     "name": "modmed",
