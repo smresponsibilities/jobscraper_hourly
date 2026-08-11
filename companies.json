@@ -6278,8 +6278,7 @@
     "host": "wd3",
     "site": "Lonza_Careers",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-11T17:13:36.135Z"
+    "source": "discovered"
   },
   {
     "name": "myhr",
@@ -6297,8 +6296,7 @@
     "host": "wd3",
     "site": "Michelin",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-11T17:13:36.135Z"
+    "source": "discovered"
   },
   {
     "name": "novartis",
@@ -6307,8 +6305,7 @@
     "host": "wd3",
     "site": "Novartis_Careers",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-11T17:13:36.135Z"
+    "source": "discovered"
   },
   {
     "name": "iconcareers",
@@ -6744,8 +6741,7 @@
     "host": "wd3",
     "site": "Nutreco_External",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-11T17:13:36.135Z"
+    "source": "discovered"
   },
   {
     "name": "jensenhughes",
@@ -8299,7 +8295,8 @@
     "host": "wd5",
     "site": "EXT",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-11T18:08:10.357Z"
   },
   {
     "name": "generalmotors",
@@ -8336,7 +8333,8 @@
     "host": "wd5",
     "site": "GMED_Careers",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-11T18:08:10.357Z"
   },
   {
     "name": "greif",
@@ -8345,7 +8343,8 @@
     "host": "wd5",
     "site": "Greif",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-11T18:08:10.357Z"
   },
   {
     "name": "hexcel",
@@ -8628,7 +8627,8 @@
     "host": "wd5",
     "site": "Careers",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-11T18:08:10.357Z"
   },
   {
     "name": "loyola",
@@ -8646,7 +8646,8 @@
     "host": "wd5",
     "site": "LightWonderExternalCareers",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-11T18:08:10.357Z"
   },
   {
     "name": "manh",
