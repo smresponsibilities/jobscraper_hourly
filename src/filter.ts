@@ -1,6 +1,7 @@
 import type { Company, Industry, RawJob } from './types.js';
 import type { Classification } from './classify.js';
 import {
+  EMAIL_FRESHNESS_DAYS,
   INCLUDE_INTERNSHIPS,
   INDIA,
   MAX_YEARS,
@@ -77,6 +78,18 @@ export function preScreen(job: RawJob, company: Company): boolean {
  */
 export function normalizeForDedup(s: string): string {
   return s.toLowerCase().trim().replace(/[‐-―]/g, '-').replace(/\s+/g, ' ');
+}
+
+/**
+ * Whether a role is worth an urgent email, as opposed to just entering the
+ * catalogue. A role with no parseable posting date is always "fresh" — we
+ * cannot penalize a board for not exposing one at all.
+ */
+export function isFreshEnough(postedAt: string | undefined, days = EMAIL_FRESHNESS_DAYS): boolean {
+  if (!postedAt) return true;
+  const posted = new Date(postedAt).getTime();
+  if (Number.isNaN(posted)) return true;
+  return (Date.now() - posted) / 86_400_000 <= days;
 }
 
 export function shouldAlert(job: RawJob, company: Company, c: Classification): Verdict {

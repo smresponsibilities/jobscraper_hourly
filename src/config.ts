@@ -22,6 +22,23 @@ export const SEEN_RETENTION_DAYS = 45;
 export const EMAIL_DETAIL_LIMIT = 25;
 
 /**
+ * "New" in the pipeline means "never seen by this tracker before" — a role's
+ * requisition ID, not its posting date. Those diverge constantly: adding a
+ * company, or a board recovering after days of errors, makes its entire
+ * current listing look brand-new even if half of it was posted months ago.
+ * 573 of 1,101 dated roles in the catalog on 2026-08-11 were 30+ days old.
+ *
+ * The whole point of an hourly alert is being early — a role open 111 days
+ * has no early-mover advantage left. So the email only surfaces roles posted
+ * within this window; older "new to us" discoveries still land in the
+ * catalogue (nothing is dropped), they just don't masquerade as urgent.
+ * Roles with no parseable posting date are always included — many ATSes
+ * (Workday chief among them) never expose one at all, so absence of a date
+ * cannot be treated as evidence of staleness.
+ */
+export const EMAIL_FRESHNESS_DAYS = 21;
+
+/**
  * Concurrent board fetches. Politeness, not a technical limit — but with 500+
  * boards the run was approaching ten minutes at 6, so this is the balance.
  */

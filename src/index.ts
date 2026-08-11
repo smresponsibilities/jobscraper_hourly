@@ -3,7 +3,7 @@ import type { Company, Job, RawJob } from './types.js';
 import { FETCHERS } from './fetchers/index.js';
 import { mapLimit } from './fetchers/util.js';
 import { classify } from './classify.js';
-import { normalizeForDedup, preScreen, shouldAlert } from './filter.js';
+import { isFreshEnough, normalizeForDedup, preScreen, shouldAlert } from './filter.js';
 import { renderEmail, subject } from './email.js';
 import { updateCatalog } from './catalog.js';
 import { CONCURRENCY, DROP_AFTER_FAILING_DAYS } from './config.js';
@@ -170,15 +170,30 @@ async function main(): Promise<void> {
     );
   }
 
-  if (deduped.length > 0 && !dryRun && !coldStart) {
-    await writeFile('out/email.html', renderEmail(deduped), 'utf8');
+  // "New" means new to this tracker, not newly posted — a company that was
+  // just added, or a board recovering after days of errors, makes its entire
+  // current listing look "new" even if much of it is months old. There is no
+  // early-mover edge left on a role that's been open for 111 days, so the
+  // email is gated on real posting freshness. Nothing is lost: every match
+  // still enters the catalogue above regardless of age.
+  // Test-email mode is a diagnostic, not a preview of production behaviour —
+  // it deliberately shows everything currently matching, unfiltered, so
+  // freshness gating is skipped there.
+  const freshForEmail = testEmail ? deduped : deduped.filter((job) => isFreshEnough(job.postedAt));
+  const staleCount = deduped.length - freshForEmail.length;
+  if (staleCount > 0) {
+    console.log(`${staleCount} matches are 21+ days old — added to the catalogue, not emailed`);
+  }
+
+  if (freshForEmail.length > 0 && !dryRun && !coldStart) {
+    await writeFile('out/email.html', renderEmail(freshForEmail), 'utf8');
   }
 
   const output = process.env.GITHUB_OUTPUT;
   if (output) {
     await appendFile(
       output,
-      `new_count=${deduped.length}\nsubject=${subject(deduped)}\nhour=${new Date().getUTCHours()}\n`,
+      `new_count=${freshForEmail.length}\nsubject=${subject(freshForEmail)}\nhour=${new Date().getUTCHours()}\n`,
     );
   }
 }

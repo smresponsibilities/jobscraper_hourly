@@ -91,8 +91,26 @@ it blocks cross-origin reads.
 ## Tuning
 
 Everything adjustable lives in [`src/config.ts`](src/config.ts): `MAX_YEARS`,
-`INCLUDE_INTERNSHIPS`, city list, remote handling, role families, and the
-IT-services exclusion list.
+`INCLUDE_INTERNSHIPS`, city list, remote handling, role families, the
+IT-services exclusion list, and `EMAIL_FRESHNESS_DAYS`.
+
+### "New" means new to the tracker, not newly posted
+
+A role's requisition ID being unseen and its posting date being recent are
+different claims. Add a company, or have a board recover after days of
+errors, and its entire current listing looks "new" even if much of it is
+months old — 573 of 1,101 dated roles in the catalog were 30+ days old on one
+sample day, including a role alerted as "new" that had been open 111 days.
+
+There's no early-mover edge left on a role like that, so **the email only
+surfaces postings within `EMAIL_FRESHNESS_DAYS` (21)** of their real posting
+date. Nothing is dropped — every match still enters `data/jobs.json`
+regardless of age, so the catalogue/UI stays complete; only the alert email is
+gated. Roles with no parseable posting date (most Workday boards never expose
+one) are always treated as fresh, since absence of a date isn't evidence of
+staleness. The manual test-email run (`workflow_dispatch` with the checkbox
+ticked) skips this gate entirely — it's a diagnostic meant to show everything
+currently matching, not a preview of normal alerts.
 
 Seniority rules are per-industry in [`src/classify.ts`](src/classify.ts), because
 title vocabulary is not portable across sectors:

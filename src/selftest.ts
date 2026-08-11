@@ -1,5 +1,5 @@
 import { classify } from './classify.js';
-import { locationMatches, normalizeForDedup, roleFamily } from './filter.js';
+import { isFreshEnough, locationMatches, normalizeForDedup, roleFamily } from './filter.js';
 import type { Industry, RawJob } from './types.js';
 
 /**
@@ -139,6 +139,18 @@ check(
   normalizeForDedup('Software Engineering Associate Advisor – HIH - Evernorth'),
 );
 check('genuinely different titles stay different', normalizeForDedup('Backend Engineer') === normalizeForDedup('Frontend Engineer'), false);
+
+console.log('email freshness gate');
+// "New to the tracker" and "recently posted" are different claims — a company
+// added today can have listings months old. 573 of 1,101 dated roles in the
+// live catalog on 2026-08-11 were 30+ days old, e.g. "Vonage — 111d ago"
+// alerted as if it were breaking news.
+const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString();
+check('posted today is fresh', isFreshEnough(daysAgo(0)), true);
+check('posted 20 days ago is fresh', isFreshEnough(daysAgo(20)), true);
+check('posted 111 days ago is not fresh', isFreshEnough(daysAgo(111)), false);
+check('no posting date at all defaults to fresh', isFreshEnough(undefined), true);
+check('unparseable date (Workday relative strings) defaults to fresh', isFreshEnough('Posted Today'), true);
 
 console.log(failures === 0 ? '\nall checks pass' : `\n${failures} failing check(s)`);
 process.exit(failures === 0 ? 0 : 1);
