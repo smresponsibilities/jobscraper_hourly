@@ -35,7 +35,9 @@ const LEVEL_SUFFIX = '[\\s-]+(ii|iii|iv|v|vi|2|3|4|5|6|7|8|9)\\b';
 const UNIVERSAL_SENIOR =
   // Bare "head" rather than "head of" — "Head - Advanced Analytics" slipped
   // through until this was widened.
-  'senior|sr\\.?|staff|principal|director|head|architect|distinguished|chief|vice president|vp|executive director|managing director|md|mgmt';
+  // "Supv" is a common enterprise-Workday abbreviation for Supervisor — a
+  // management title, not entry-level — and slipped through as plain "aah".
+  'senior|sr\\.?|staff|principal|director|head|architect|distinguished|chief|vice president|vp|executive director|managing director|md|mgmt|supv\\.?|supervisor';
 
 const TECH: SeniorityRules = {
   junior:

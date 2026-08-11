@@ -69,6 +69,16 @@ export function preScreen(job: RawJob, company: Company): boolean {
   return roleFamily(job.title, company.industry) !== null;
 }
 
+/**
+ * Collapses whitespace and every dash-like Unicode character to a plain
+ * hyphen before two titles are compared for dedup. Cigna posted the same
+ * requisition twice — once with a plain hyphen, once with an en-dash in
+ * "HIH – Evernorth" — and an exact-string key treated them as different roles.
+ */
+export function normalizeForDedup(s: string): string {
+  return s.toLowerCase().trim().replace(/[‐-―]/g, '-').replace(/\s+/g, ' ');
+}
+
 export function shouldAlert(job: RawJob, company: Company, c: Classification): Verdict {
   if (isServiceCompany(company.name)) return { keep: false, reason: 'service company' };
   if (c.excluded) return { keep: false, reason: 'excluded role type' };

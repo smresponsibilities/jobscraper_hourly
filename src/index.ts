@@ -3,7 +3,7 @@ import type { Company, Job, RawJob } from './types.js';
 import { FETCHERS } from './fetchers/index.js';
 import { mapLimit } from './fetchers/util.js';
 import { classify } from './classify.js';
-import { preScreen, shouldAlert } from './filter.js';
+import { normalizeForDedup, preScreen, shouldAlert } from './filter.js';
 import { renderEmail, subject } from './email.js';
 import { updateCatalog } from './catalog.js';
 import { CONCURRENCY, DROP_AFTER_FAILING_DAYS } from './config.js';
@@ -135,9 +135,10 @@ async function main(): Promise<void> {
   // same job three times under different IDs. They're one application to you, so
   // collapse them. Every original ID still went into `seen`, so the copies are
   // suppressed permanently rather than re-alerting next hour.
+  //
   const byRole = new Map<string, Job>();
   for (const job of matches) {
-    const key = `${job.company}|${job.title.toLowerCase().trim()}|${job.location.toLowerCase().trim()}`;
+    const key = `${job.company}|${normalizeForDedup(job.title)}|${normalizeForDedup(job.location)}`;
     const previous = byRole.get(key);
     if (!previous || (job.minYears ?? 99) < (previous.minYears ?? 99)) byRole.set(key, job);
   }

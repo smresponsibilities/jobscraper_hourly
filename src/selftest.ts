@@ -1,5 +1,5 @@
 import { classify } from './classify.js';
-import { locationMatches, roleFamily } from './filter.js';
+import { locationMatches, normalizeForDedup, roleFamily } from './filter.js';
 import type { Industry, RawJob } from './types.js';
 
 /**
@@ -57,6 +57,9 @@ const senior: [string, Industry][] = [
   ['Engineering Manager, Looker', 'tech'],
   ['Software Development Mgmt 5', 'tech'],
   ['Data Platform Lead - L6', 'tech'],
+  // "Supv" (Supervisor) at a Workday-discovered company tagged plain "tech" —
+  // a management title with no other senior signal to catch it.
+  ['Supv Claim Analytics', 'tech'],
 ];
 for (const [title, industry] of senior) {
   check(`senior: ${title}`, classify(job(title), industry).isJunior, false);
@@ -125,6 +128,17 @@ console.log('role families');
 check('finance family off at tech firms', roleFamily('Associate, Operations', 'tech'), null);
 check('finance family on at banks', roleFamily('Asset Servicing Analyst', 'banking'), 'finance');
 check('swe family', roleFamily('Backend Engineer', 'tech'), 'swe');
+
+console.log('dedup normalization');
+// Cigna posted the same requisition twice — one title used a plain hyphen,
+// the other an en-dash in "HIH – Evernorth" — so an exact-string dedup key
+// treated them as two different roles.
+check(
+  'hyphen and en-dash collapse to the same key',
+  normalizeForDedup('Software Engineering Associate Advisor - HIH – Evernorth'),
+  normalizeForDedup('Software Engineering Associate Advisor – HIH - Evernorth'),
+);
+check('genuinely different titles stay different', normalizeForDedup('Backend Engineer') === normalizeForDedup('Frontend Engineer'), false);
 
 console.log(failures === 0 ? '\nall checks pass' : `\n${failures} failing check(s)`);
 process.exit(failures === 0 ? 0 : 1);
