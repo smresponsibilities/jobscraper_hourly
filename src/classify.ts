@@ -21,7 +21,10 @@ interface SeniorityRules {
  * "Engineer- 2" are all the same role, and an anchored single-character class
  * silently misses the spaced-hyphen forms.
  */
-const LEVEL_SUFFIX = '[\\s-]+(ii|iii|iv|2|3|4)\\b';
+// Large employers run levels past 4 — "Mgmt 5", "L6", "Level 7" are all senior,
+// not just II-IV. "Software Test Engineer I" and "Refrigeration Engineer I"
+// deliberately don't match here: level *I* / *1* is the entry rung, not senior.
+const LEVEL_SUFFIX = '[\\s-]+(ii|iii|iv|v|vi|2|3|4|5|6|7|8|9)\\b';
 
 /**
  * Terms that mean "not entry level" regardless of sector. Keeping these in one
@@ -32,7 +35,7 @@ const LEVEL_SUFFIX = '[\\s-]+(ii|iii|iv|2|3|4)\\b';
 const UNIVERSAL_SENIOR =
   // Bare "head" rather than "head of" — "Head - Advanced Analytics" slipped
   // through until this was widened.
-  'senior|sr\\.?|staff|principal|director|head|architect|distinguished|chief|vice president|vp|executive director|managing director|md';
+  'senior|sr\\.?|staff|principal|director|head|architect|distinguished|chief|vice president|vp|executive director|managing director|md|mgmt';
 
 const TECH: SeniorityRules = {
   junior:
@@ -82,6 +85,16 @@ const HARD_EXCLUDE = new RegExp(
     // Sales" matched the data family on the word "Data". \bsales\b is safe:
     // "Salesforce Developer" has no word boundary after "sales".
     'sales|marketing|business development|account manager|partner manager|pre[- ]?sales',
+    // The `swe` family's bare \bengineer\b and `data` family's bare \bscientist\b
+    // were written for pure-tech boards. Industrial/pharma GCCs (Thermo Fisher,
+    // GE Vernova, Baker Hughes) post hundreds of mechanical, electrical, HVAC
+    // and wet-lab roles that also say "Engineer" or "Scientist" — none of them
+    // software. Same fix as the sales carve-out above: keep the family regex
+    // broad, exclude the specific non-software domains here.
+    'mechanical engineer|refrigeration|fire protection|\\bhvac\\b|plant layout|cable tray|piping engineer',
+    'field service engineer|reliability (?:&|and) maintenance|\\brme\\b|process engineer',
+    'application(?:s)? scientist|field applications? scientist|protein biology|\\bbiopharma\\b',
+    'data entry',
   ].join('|'),
   'i',
 );

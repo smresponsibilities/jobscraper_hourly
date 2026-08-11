@@ -55,6 +55,8 @@ const senior: [string, Industry][] = [
   ['Principal Software Engineer', 'tech'],
   ['Senior Software Engineer', 'tech'],
   ['Engineering Manager, Looker', 'tech'],
+  ['Software Development Mgmt 5', 'tech'],
+  ['Data Platform Lead - L6', 'tech'],
 ];
 for (const [title, industry] of senior) {
   check(`senior: ${title}`, classify(job(title), industry).isJunior, false);
@@ -66,6 +68,10 @@ const junior: [string, Industry][] = [
   ['Associate Application Engineer', 'tech'],
   ['Analyst - Asset Servicing', 'banking'],
   ['Business Analyst', 'consulting'],
+  // Level *I* / *1* is the entry rung — must NOT be caught by the II-IV/2-9
+  // senior suffix, or every genuinely junior "Engineer I" title gets rejected.
+  ['Software Test Engineer I', 'tech'],
+  ['Refrigeration Engineer I', 'tech'],
 ];
 for (const [title, industry] of junior) {
   check(`junior: ${title}`, classify(job(title), industry).isJunior, true);
@@ -78,8 +84,41 @@ check('lowest wins', classify(job('Engineer', '2 years required, 7+ years prefer
 check('unstated', classify(job('Engineer', 'no numbers here'), 'tech').minYears, null);
 
 console.log('excluded role types');
-for (const title of ['Part Time Associate Banker', 'Cloud Data Platform Sales', 'Data Center Technician', 'IT Support Associate']) {
+const excluded = [
+  'Part Time Associate Banker',
+  'Cloud Data Platform Sales',
+  'Data Center Technician',
+  'IT Support Associate',
+  // Industrial/pharma GCC titles that slipped through because the `swe` family
+  // bare-matches \bengineer\b and `data` bare-matches \bscientist\b — real leaks
+  // from Baker Hughes, GE Vernova, Amazon and Thermo Fisher on 2026-08-11.
+  'Services Professional - Field Service Engineer',
+  'Reliability & Maintenance Engineer',
+  'RME Engineer',
+  'Engineer - Electrical Plant Layout & Cable Trays',
+  'Engineer - Plant Layout & Piping',
+  'Junior Fire Protection Engineer I',
+  'Refrigeration Engineer I',
+  'Process Engineer - Mechanical',
+  'Application Scientist Pharma and Biopharma',
+  'Field Applications Scientist',
+  'Scientist I - Protein Biology',
+  'Data Entry Specialist',
+];
+for (const title of excluded) {
   check(`excluded: ${title}`, classify(job(title), 'tech').excluded, true);
+}
+
+// Legitimate tech roles from the same GCC boards must survive the new
+// exclusions — this is what stops the exclude list from being too broad.
+const notExcluded = [
+  'Site Reliability Engineer',
+  'QA Automation Engineer',
+  'Data Scientist, Applied ML',
+  'Application Engineer, Platform',
+];
+for (const title of notExcluded) {
+  check(`not excluded: ${title}`, classify(job(title), 'tech').excluded, false);
 }
 
 console.log('role families');
