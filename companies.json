@@ -10367,5 +10367,90 @@
     "token": "bigbasket",
     "industry": "tech",
     "source": "curated"
+  },
+  {
+    "name": "KPMG India",
+    "ats": "oracle",
+    "token": "ejgk",
+    "host": "fa.em2",
+    "siteNumber": "CX_1",
+    "industry": "consulting",
+    "source": "curated"
+  },
+  {
+    "name": "PwC",
+    "ats": "workday",
+    "token": "pwc",
+    "host": "wd3",
+    "site": "global_experienced_careers",
+    "industry": "consulting",
+    "source": "curated"
+  },
+  {
+    "name": "Microchip",
+    "ats": "workday",
+    "token": "microchiphr",
+    "host": "wd5",
+    "site": "external",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Arista Networks",
+    "ats": "smartrecruiters",
+    "token": "aristanetworks",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Continental",
+    "ats": "smartrecruiters",
+    "token": "continental",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Infineon",
+    "ats": "eightfold",
+    "token": "infineon.eightfold.ai",
+    "site": "infineon.com",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "AMD",
+    "ats": "successfactors",
+    "token": "AMD",
+    "host": "performancemanager4.successfactors.com",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "ExxonMobil",
+    "ats": "successfactors",
+    "token": "jobs.exxonmobil.com",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "BASF",
+    "ats": "successfactors",
+    "token": "basf.jobs",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Lupin",
+    "ats": "successfactors",
+    "token": "careers.lupin.com",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Bajaj Auto",
+    "ats": "successfactors",
+    "token": "careers.bajajauto.com",
+    "industry": "tech",
+    "source": "curated"
   }
 ]

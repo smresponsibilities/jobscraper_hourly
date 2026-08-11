@@ -14,7 +14,7 @@ explicitly excluded — that was a direct, deliberate request, not a default.
 
 ## Current state (as of this doc's last edit)
 
-- **1,400 boards**, ~150-160K live postings per run, ~2,300-2,500 open matches
+- **1,411 boards**, ~150-160K live postings per run, ~2,300-2,500 open matches
   in the catalogue. Full run takes ~6-12 minutes depending on corpus growth.
 - **`main`** branch has the code. **`data`** branch (orphan, force-pushed,
   always 1 commit) has the catalogue the web UI reads.

@@ -361,6 +361,94 @@ resolved on Greenhouse (`optiverprivate`) but currently posts zero India
 roles and wasn't added — Optiver has no visible India office, unlike the four
 quant firms above.
 
+## 4d. Platform parity check against github.com/kalil0321/ats-scrapers
+
+That project publishes `ats-companies/*.csv` — crawled tenant lists per
+platform, name+slug+URL, no India/relevance filtering applied. Diffing their
+platform set against ours, then grepping their CSVs for names on *our* still-
+unreachable list, is a much higher-signal move than re-deriving tenants from
+scratch: **a company already resolved to a working URL by someone else's
+crawler is a free answer**, it just needs a) the technique translated into
+this project's `Company` shape and b) its actual returned job titles checked
+before being trusted — see the IBM note above for why step (b) is not optional
+even when the tenant slug looks right.
+
+**Platforms both projects cover**: Greenhouse, Lever, Ashby, SmartRecruiters,
+Workday, Oracle, Eightfold, Darwinbox, Phenom, SuccessFactors, plus
+company-specific rendered-DOM scrapers (their `google.py`/`meta.py`/`uber.py`
+≈ our `rendered.ts`). TurboHire is ours alone — not in their platform list.
+
+**Real gap that paid off immediately**: their CSVs contain plenty of
+already-covered companies alongside genuine misses, but grepping them for
+names from §4c's "still unreachable" list surfaced tenants that a plain
+careers-page crawl (`detect.ts`) never would, because these companies don't
+link the board from an obvious `/careers` path. All confirmed against live
+job titles, not just HTTP 200, and now polling: **KPMG India** (Oracle,
+`ejgk`/`fa.em2`/`CX_1` — 496 India roles, easily the best single find of this
+whole pass), **PwC** (Workday, `pwc`/`wd3`/`global_experienced_careers` — 328
+India roles; note `global_campus_careers` on the same tenant returns 300 jobs
+but zero India, so it's not interchangeable), **AMD** (SuccessFactors legacy,
+`performancemanager4.successfactors.com`, company code `AMD`), **ExxonMobil**
+and **BASF** (SuccessFactors modern, `jobs.exxonmobil.com` /
+`basf.jobs` — 198 and 111 India roles respectively), **Infineon** (Eightfold),
+**Microchip** (Workday), **Arista Networks** and **Continental**
+(SmartRecruiters), **Lupin** and **Bajaj Auto** (SuccessFactors modern, on
+vanity domains `careers.lupin.com` / `careers.bajajauto.com` — the modern
+format's "hostname is the tenant" rule still holds even on a custom domain).
+
+Bajaj Auto needed the same automotive-leak fix as Mahindra before shipping —
+27 of its 406 India-relevant hits initially passed the `swe` family filter
+purely on the automotive parts vocabulary (`vehicle testing`, `lighting
+systems`, `plastic parts`, `casting & forging`, `steering systems`); added to
+`HARD_EXCLUDE` the same way, bringing it down to 19 genuine software/embedded
+hits (Full Stack Developer, Firmware Developer, Embedded Software Integration
+Engineer, Android Developer — a real connected-vehicle engineering org, not
+noise).
+
+**Tried and dead**: **Walmart** (Workday `walmart`/`wd5`/`walmartexternal`
+returns an HTML error page, not JSON — consistent with the bot-detection
+finding in §1, this isn't a new way in). **Deutsche Bank**'s SmartRecruiters
+token (`deutschebank`) 200s with `totalFound: 0` — dead, not just quiet; their
+CSV also lists a `dbgroup` tenant on **Avature**, a platform neither project's
+adapter set here covers. **HSBC** also has an Eightfold tenant
+(`hsbc.eightfold.ai`) beyond the SuccessFactors one already polled, but it
+403s outright — not worth chasing since HSBC's existing board already yields
+165 India roles.
+
+**Platforms they cover that we genuinely don't, assessed for ROI, not just
+existence**:
+- **iCIMS** — already a known, real gap (DocuSign, D.E. Shaw). Worth building.
+- **Avature** — one real lead surfaced (`dbgroup` for Deutsche Bank,
+  `jobs.siemens-healthineers.com`), not worth a new adapter for two companies.
+- **Taleo, UKG, Dayforce, ADP, Paycom, Paylocity, JobVite** — grepped their
+  CSVs against every name on our unreachable-giants list and every major
+  German/European industrial we track elsewhere; came back essentially empty.
+  These four are dominated by small US franchises and local nonprofits (Boys &
+  Girls Clubs chapters, single car dealerships) in the crowdsourced data — not
+  the employer tier this project targets. Not worth building.
+- **Cornerstone, Workable, Rippling** — a handful of real names surfaced
+  (Henkel, Nestlé Waters North America) but nothing from the target list; same
+  call as above.
+- **Keka** — the one platform worth a second look on principle (it's an
+  Indian-built HR suite, so it's structurally more likely to carry Indian
+  employers than a US-centric ATS) — but their `keka.csv` (186 companies) was
+  checked by name against every Indian unicorn/startup this project has
+  chased (Meesho, Groww, Zerodha, Razorpay, Swiggy, CRED, Zepto, Udaan,
+  Unacademy, ...) and none appeared; the listed companies are small, mostly
+  unrecognizable SMEs. Genuinely low-ROI right now, not "we didn't check."
+- **Single-company rendered scrapers** (Apple, Tesla, TikTok, ByteDance,
+  YCombinator, Mercor) — same technique as our `rendered.ts`, just for
+  different companies; would need the same per-site `render-probe.ts`
+  treatment as Google/Meta/Uber got. Not attempted this pass.
+- **Everything else in their platform list** (Arbetsformedlingen, Bundesagentur,
+  EURES, Jobs.cz, Jobs.ch, InfoJobs.es, JobBankCA, HRMOS, HERP, Moka, Beisen,
+  Gupy, GetOnBrd, Programathor, TheHub, WelcomeToTheJungle, Manfred, Wanted,
+  USAJobs, Seek, RemoteOK, WeWorkRemotely, Wellfound) is either a
+  country-specific government job portal or a general job-board aggregator —
+  a fundamentally different sourcing strategy (scrape a public board) than
+  this project's design (poll each company's own ATS), and none are
+  India-relevant. Out of scope by design, not an oversight.
+
 **TCS, Infosys, Wipro, Cognizant, HCL, Hexaware, LTIMindtree, Genpact** all
 appeared repeatedly across every campus's recruiter list — correctly excluded
 by `SERVICE_COMPANIES` regardless of platform, per your standing instruction.

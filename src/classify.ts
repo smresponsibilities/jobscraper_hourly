@@ -96,9 +96,11 @@ const HARD_EXCLUDE = new RegExp(
     'mechanical engineer|refrigeration|fire protection|\\bhvac\\b|plant layout|cable tray|piping engineer',
     'field service engineer|reliability (?:&|and) maintenance|\\brme\\b|process engineer',
     'application(?:s)? scientist|field applications? scientist|protein biology|\\bbiopharma\\b',
-    // Same leak, automotive flavor: Mahindra's Workday-style boards are full of
-    // "Engineer - <part>" reqs for physical vehicle components, not software.
+    // Same leak, automotive flavor: Mahindra's and Bajaj Auto's boards are full
+    // of "Engineer - <part>" reqs for physical vehicle components, not software.
     'chassis|transaxle|powertrain|drive away|dimensional engg|body systems|tractor engine|\\bbrakes\\b',
+    'vehicle testing|vehicle style|vehicle integration|lighting systems|plastic parts',
+    'casting (?:&|and) forging|steering systems|civil engineer|facility management',
     'data entry',
   ].join('|'),
   'i',
