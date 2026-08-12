@@ -1377,7 +1377,8 @@
     "token": "apply.careers.microsoft.com",
     "site": "microsoft.com",
     "industry": "tech",
-    "source": "curated"
+    "source": "curated",
+    "failingSince": "2026-08-12T11:59:57.172Z"
   },
   {
     "name": "2k",
@@ -3416,7 +3417,8 @@
     "host": "fa.ocs",
     "siteNumber": "CX_1",
     "industry": "tech",
-    "source": "curated"
+    "source": "curated",
+    "failingSince": "2026-08-12T11:59:57.172Z"
   },
   {
     "name": "Clarios",
@@ -6215,8 +6217,7 @@
     "host": "wd3",
     "site": "GSKCareers",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-12T08:39:58.208Z"
+    "source": "discovered"
   },
   {
     "name": "kantar",
@@ -6234,8 +6235,7 @@
     "host": "wd3",
     "site": "broadbean_external",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-12T08:39:58.208Z"
+    "source": "discovered"
   },
   {
     "name": "johnsonelectric",
@@ -6244,8 +6244,7 @@
     "host": "wd3",
     "site": "Career_JE",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-12T08:39:58.208Z"
+    "source": "discovered"
   },
   {
     "name": "maersk",
@@ -6263,8 +6262,7 @@
     "host": "wd3",
     "site": "External",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-12T10:20:21.453Z"
+    "source": "discovered"
   },
   {
     "name": "murex",
@@ -6291,8 +6289,7 @@
     "host": "wd3",
     "site": "PlanseeGroup_Career",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-12T08:39:58.208Z"
+    "source": "discovered"
   },
   {
     "name": "michelinhr",
@@ -6301,8 +6298,7 @@
     "host": "wd3",
     "site": "Michelin",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-12T08:39:58.208Z"
+    "source": "discovered"
   },
   {
     "name": "novartis",
@@ -6311,8 +6307,7 @@
     "host": "wd3",
     "site": "Novartis_Careers",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-12T08:39:58.208Z"
+    "source": "discovered"
   },
   {
     "name": "iconcareers",
@@ -6748,8 +6743,7 @@
     "host": "wd3",
     "site": "Nutreco_External",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-12T08:39:58.208Z"
+    "source": "discovered"
   },
   {
     "name": "jensenhughes",
@@ -8303,8 +8297,7 @@
     "host": "wd5",
     "site": "EXT",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-12T08:39:58.208Z"
+    "source": "discovered"
   },
   {
     "name": "generalmotors",
@@ -8341,7 +8334,8 @@
     "host": "wd5",
     "site": "GMED_Careers",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-12T11:59:57.172Z"
   },
   {
     "name": "greif",
@@ -10403,7 +10397,8 @@
     "host": "wd5",
     "site": "external",
     "industry": "tech",
-    "source": "curated"
+    "source": "curated",
+    "failingSince": "2026-08-12T11:59:57.172Z"
   },
   {
     "name": "Arista Networks",
