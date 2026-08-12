@@ -1377,7 +1377,8 @@
     "token": "apply.careers.microsoft.com",
     "site": "microsoft.com",
     "industry": "tech",
-    "source": "curated"
+    "source": "curated",
+    "failingSince": "2026-08-12T00:00:26.468Z"
   },
   {
     "name": "2k",
@@ -1559,7 +1560,8 @@
     "ats": "greenhouse",
     "token": "andurilindustries",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-12T00:00:26.468Z"
   },
   {
     "name": "apolloio",
@@ -9275,7 +9277,8 @@
     "host": "wd5",
     "site": "jobs",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-12T00:00:26.468Z"
   },
   {
     "name": "rocket",
