@@ -878,8 +878,7 @@
     "host": "wd3",
     "site": "valeo_jobs",
     "industry": "tech",
-    "source": "curated",
-    "failingSince": "2026-08-12T18:07:57.727Z"
+    "source": "curated"
   },
   {
     "name": "Palo Alto Networks",
@@ -7605,7 +7604,8 @@
     "ats": "greenhouse",
     "token": "noble",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-12T19:21:48.624Z"
   },
   {
     "name": "noctrixhealth",
@@ -10395,7 +10395,8 @@
     "host": "wd5",
     "site": "external",
     "industry": "tech",
-    "source": "curated"
+    "source": "curated",
+    "failingSince": "2026-08-12T19:21:48.624Z"
   },
   {
     "name": "Arista Networks",
