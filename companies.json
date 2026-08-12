@@ -797,8 +797,7 @@
     "host": "wd1",
     "site": "gileadcareers",
     "industry": "tech",
-    "source": "curated",
-    "failingSince": "2026-08-12T17:13:14.778Z"
+    "source": "curated"
   },
   {
     "name": "Medtronic",
@@ -879,7 +878,8 @@
     "host": "wd3",
     "site": "valeo_jobs",
     "industry": "tech",
-    "source": "curated"
+    "source": "curated",
+    "failingSince": "2026-08-12T18:07:57.727Z"
   },
   {
     "name": "Palo Alto Networks",
@@ -4306,8 +4306,7 @@
     "ats": "greenhouse",
     "token": "centriaautism",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-12T17:13:14.778Z"
+    "source": "discovered"
   },
   {
     "name": "chartbeatinc",
@@ -8297,7 +8296,8 @@
     "host": "wd5",
     "site": "EXT",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-12T18:07:57.727Z"
   },
   {
     "name": "generalmotors",
@@ -8343,7 +8343,8 @@
     "host": "wd5",
     "site": "Greif",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-12T18:07:57.727Z"
   },
   {
     "name": "hexcel",
@@ -8644,7 +8645,8 @@
     "host": "wd5",
     "site": "LightWonderExternalCareers",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-12T18:07:57.727Z"
   },
   {
     "name": "manh",
@@ -8692,7 +8694,8 @@
     "host": "wd5",
     "site": "EXT",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-12T18:07:57.727Z"
   },
   {
     "name": "ruelala",
@@ -9261,7 +9264,8 @@
     "host": "wd5",
     "site": "Qualifacts_External_Careers",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-12T18:07:57.727Z"
   },
   {
     "name": "qualys",
