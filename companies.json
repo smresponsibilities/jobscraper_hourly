@@ -8295,8 +8295,7 @@
     "host": "wd5",
     "site": "EXT",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-12T05:03:16.334Z"
+    "source": "discovered"
   },
   {
     "name": "generalmotors",
@@ -8343,8 +8342,7 @@
     "host": "wd5",
     "site": "Greif",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-12T05:03:16.334Z"
+    "source": "discovered"
   },
   {
     "name": "hexcel",
@@ -8627,8 +8625,7 @@
     "host": "wd5",
     "site": "Careers",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-12T05:03:16.334Z"
+    "source": "discovered"
   },
   {
     "name": "loyola",
@@ -8646,8 +8643,7 @@
     "host": "wd5",
     "site": "LightWonderExternalCareers",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-12T05:03:16.334Z"
+    "source": "discovered"
   },
   {
     "name": "manh",
@@ -10396,7 +10392,8 @@
     "host": "wd5",
     "site": "external",
     "industry": "tech",
-    "source": "curated"
+    "source": "curated",
+    "failingSince": "2026-08-12T06:43:02.966Z"
   },
   {
     "name": "Arista Networks",
