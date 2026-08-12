@@ -530,8 +530,7 @@
     "host": "wd1",
     "site": "careers",
     "industry": "tech",
-    "source": "curated",
-    "failingSince": "2026-08-12T21:03:42.910Z"
+    "source": "curated"
   },
   {
     "name": "Fractal Analytics",
@@ -1335,8 +1334,7 @@
     "host": "wd1",
     "site": "IQVIA",
     "industry": "tech",
-    "source": "curated",
-    "failingSince": "2026-08-12T21:03:42.910Z"
+    "source": "curated"
   },
   {
     "name": "Skyflow",
@@ -3245,8 +3243,7 @@
     "host": "wd1",
     "site": "bah_jobs",
     "industry": "tech",
-    "source": "curated",
-    "failingSince": "2026-08-12T21:03:42.910Z"
+    "source": "curated"
   },
   {
     "name": "Kastle",
@@ -3655,8 +3652,7 @@
     "host": "wd1",
     "site": "nidec",
     "industry": "tech",
-    "source": "curated",
-    "failingSince": "2026-08-12T21:03:42.910Z"
+    "source": "curated"
   },
   {
     "name": "Trading Technologies",
@@ -4707,8 +4703,7 @@
     "host": "wd1",
     "site": "SynechronCareers",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-12T21:03:42.910Z"
+    "source": "discovered"
   },
   {
     "name": "tcsedsystem",
@@ -4717,8 +4712,7 @@
     "host": "wd1",
     "site": "TCSPP",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-12T21:03:42.910Z"
+    "source": "discovered"
   },
   {
     "name": "trellix",
@@ -4736,8 +4730,7 @@
     "host": "wd1",
     "site": "terexcareers",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-12T21:03:42.910Z"
+    "source": "discovered"
   },
   {
     "name": "tiaa",
@@ -4764,8 +4757,7 @@
     "host": "wd1",
     "site": "StrykerCareers",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-12T21:03:42.910Z"
+    "source": "discovered"
   },
   {
     "name": "tmobile",
@@ -5925,7 +5917,8 @@
     "ats": "greenhouse",
     "token": "growe",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-12T23:01:58.453Z"
   },
   {
     "name": "Growe",
@@ -8313,7 +8306,8 @@
     "host": "wd5",
     "site": "Careers_GM",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-12T23:01:58.453Z"
   },
   {
     "name": "guardianpharmacy",
@@ -8668,7 +8662,8 @@
     "host": "wd5",
     "site": "Logitech",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-12T23:01:58.453Z"
   },
   {
     "name": "magellanhealth",
@@ -8677,7 +8672,8 @@
     "host": "wd5",
     "site": "magellan_health_careers",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-12T23:01:58.453Z"
   },
   {
     "name": "lowes",
@@ -8686,7 +8682,8 @@
     "host": "wd5",
     "site": "lws_external_cs",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-12T23:01:58.453Z"
   },
   {
     "name": "meredith",
@@ -9264,7 +9261,8 @@
     "host": "wd5",
     "site": "Qualifacts_External_Careers",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-12T23:01:58.453Z"
   },
   {
     "name": "qualys",
@@ -9273,7 +9271,8 @@
     "host": "wd5",
     "site": "Careers",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-12T23:01:58.453Z"
   },
   {
     "name": "redhat",
@@ -9282,7 +9281,8 @@
     "host": "wd5",
     "site": "jobs",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-12T23:01:58.453Z"
   },
   {
     "name": "rocket",
@@ -9291,7 +9291,8 @@
     "host": "wd5",
     "site": "rocket_careers",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-12T23:01:58.453Z"
   },
   {
     "name": "republic",
@@ -9310,7 +9311,8 @@
     "host": "wd5",
     "site": "rocket_careers",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-12T23:01:58.453Z"
   },
   {
     "name": "surefirecyber",
@@ -9627,7 +9629,8 @@
     "host": "wd5",
     "site": "taylormadegolf",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-12T23:01:58.453Z"
   },
   {
     "name": "tempus",
@@ -9636,7 +9639,8 @@
     "host": "wd5",
     "site": "Tempus_Careers",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-12T23:01:58.453Z"
   },
   {
     "name": "thermofisher",
@@ -9655,7 +9659,8 @@
     "host": "wd5",
     "site": "careers_external",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-12T23:01:58.453Z"
   },
   {
     "name": "tollgroup",
@@ -9664,7 +9669,8 @@
     "host": "wd5",
     "site": "TollGroup",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-12T23:01:58.453Z"
   },
   {
     "name": "townepark",
@@ -9673,7 +9679,8 @@
     "host": "wd5",
     "site": "ext",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-12T23:01:58.453Z"
   },
   {
     "name": "transperfect",
@@ -9702,7 +9709,8 @@
     "host": "wd5",
     "site": "External",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-12T23:01:58.453Z"
   },
   {
     "name": "wexinc",
@@ -10024,7 +10032,8 @@
     "host": "wd5",
     "site": "Zoom",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-12T23:01:58.453Z"
   },
   {
     "name": "modmed",
@@ -10042,7 +10051,8 @@
     "host": "wd5",
     "site": "ZOLLMedicalCorp",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-12T23:01:58.453Z"
   },
   {
     "name": "wri",
@@ -10277,8 +10287,7 @@
     "host": "wd1",
     "site": "wellsfargojobs",
     "industry": "banking",
-    "source": "curated",
-    "failingSince": "2026-08-12T21:03:42.910Z"
+    "source": "curated"
   },
   {
     "name": "Samsung",
