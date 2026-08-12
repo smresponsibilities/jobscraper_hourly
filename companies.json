@@ -1860,8 +1860,7 @@
     "ats": "greenhouse",
     "token": "bugcrowd",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-12T08:39:58.208Z"
+    "source": "discovered"
   },
   {
     "name": "cambridgemobiletelematics",
@@ -6180,8 +6179,7 @@
     "host": "wd3",
     "site": "fme",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-12T08:39:58.208Z"
+    "source": "discovered"
   },
   {
     "name": "harriscomputer",
@@ -6265,7 +6263,8 @@
     "host": "wd3",
     "site": "External",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-12T10:20:21.453Z"
   },
   {
     "name": "murex",
@@ -8342,8 +8341,7 @@
     "host": "wd5",
     "site": "GMED_Careers",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-12T05:03:16.334Z"
+    "source": "discovered"
   },
   {
     "name": "greif",
@@ -8636,7 +8634,8 @@
     "host": "wd5",
     "site": "Careers",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-12T10:20:21.453Z"
   },
   {
     "name": "loyola",
@@ -8654,7 +8653,8 @@
     "host": "wd5",
     "site": "LightWonderExternalCareers",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-12T10:20:21.453Z"
   },
   {
     "name": "manh",
@@ -10043,7 +10043,8 @@
     "host": "wd5",
     "site": "Zoom",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-12T10:20:21.453Z"
   },
   {
     "name": "modmed",
