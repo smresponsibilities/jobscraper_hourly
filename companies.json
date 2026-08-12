@@ -1377,8 +1377,7 @@
     "token": "apply.careers.microsoft.com",
     "site": "microsoft.com",
     "industry": "tech",
-    "source": "curated",
-    "failingSince": "2026-08-12T11:59:57.172Z"
+    "source": "curated"
   },
   {
     "name": "2k",
@@ -3417,8 +3416,7 @@
     "host": "fa.ocs",
     "siteNumber": "CX_1",
     "industry": "tech",
-    "source": "curated",
-    "failingSince": "2026-08-12T11:59:57.172Z"
+    "source": "curated"
   },
   {
     "name": "Clarios",
@@ -8334,8 +8332,7 @@
     "host": "wd5",
     "site": "GMED_Careers",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-12T11:59:57.172Z"
+    "source": "discovered"
   },
   {
     "name": "greif",
@@ -8628,8 +8625,7 @@
     "host": "wd5",
     "site": "Careers",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-12T10:20:21.453Z"
+    "source": "discovered"
   },
   {
     "name": "loyola",
@@ -8647,8 +8643,7 @@
     "host": "wd5",
     "site": "LightWonderExternalCareers",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-12T10:20:21.453Z"
+    "source": "discovered"
   },
   {
     "name": "manh",
@@ -10397,8 +10392,7 @@
     "host": "wd5",
     "site": "external",
     "industry": "tech",
-    "source": "curated",
-    "failingSince": "2026-08-12T11:59:57.172Z"
+    "source": "curated"
   },
   {
     "name": "Arista Networks",
