@@ -1860,7 +1860,8 @@
     "ats": "greenhouse",
     "token": "bugcrowd",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-12T08:39:58.208Z"
   },
   {
     "name": "cambridgemobiletelematics",
@@ -6179,7 +6180,8 @@
     "host": "wd3",
     "site": "fme",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-12T08:39:58.208Z"
   },
   {
     "name": "harriscomputer",
@@ -6215,7 +6217,8 @@
     "host": "wd3",
     "site": "GSKCareers",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-12T08:39:58.208Z"
   },
   {
     "name": "kantar",
@@ -6233,7 +6236,8 @@
     "host": "wd3",
     "site": "broadbean_external",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-12T08:39:58.208Z"
   },
   {
     "name": "johnsonelectric",
@@ -6242,7 +6246,8 @@
     "host": "wd3",
     "site": "Career_JE",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-12T08:39:58.208Z"
   },
   {
     "name": "maersk",
@@ -6287,7 +6292,8 @@
     "host": "wd3",
     "site": "PlanseeGroup_Career",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-12T08:39:58.208Z"
   },
   {
     "name": "michelinhr",
@@ -6296,7 +6302,8 @@
     "host": "wd3",
     "site": "Michelin",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-12T08:39:58.208Z"
   },
   {
     "name": "novartis",
@@ -6305,7 +6312,8 @@
     "host": "wd3",
     "site": "Novartis_Careers",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-12T08:39:58.208Z"
   },
   {
     "name": "iconcareers",
@@ -6741,7 +6749,8 @@
     "host": "wd3",
     "site": "Nutreco_External",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-12T08:39:58.208Z"
   },
   {
     "name": "jensenhughes",
@@ -8295,7 +8304,8 @@
     "host": "wd5",
     "site": "EXT",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-12T08:39:58.208Z"
   },
   {
     "name": "generalmotors",
@@ -8342,7 +8352,8 @@
     "host": "wd5",
     "site": "Greif",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-12T08:39:58.208Z"
   },
   {
     "name": "hexcel",
@@ -10032,8 +10043,7 @@
     "host": "wd5",
     "site": "Zoom",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-11T21:05:08.226Z"
+    "source": "discovered"
   },
   {
     "name": "modmed",
@@ -10392,8 +10402,7 @@
     "host": "wd5",
     "site": "external",
     "industry": "tech",
-    "source": "curated",
-    "failingSince": "2026-08-12T06:43:02.966Z"
+    "source": "curated"
   },
   {
     "name": "Arista Networks",
