@@ -1559,7 +1559,8 @@
     "ats": "greenhouse",
     "token": "andurilindustries",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-13T15:15:15.351Z"
   },
   {
     "name": "apolloio",
@@ -6296,8 +6297,7 @@
     "host": "wd3",
     "site": "Michelin",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-13T13:48:39.105Z"
+    "source": "discovered"
   },
   {
     "name": "novartis",
@@ -6742,8 +6742,7 @@
     "host": "wd3",
     "site": "Nutreco_External",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-13T13:48:39.105Z"
+    "source": "discovered"
   },
   {
     "name": "jensenhughes",
@@ -8680,7 +8679,8 @@
     "host": "wd5",
     "site": "lws_external_cs",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-13T15:15:15.351Z"
   },
   {
     "name": "meredith",
@@ -9267,7 +9267,8 @@
     "host": "wd5",
     "site": "Careers",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-13T15:15:15.351Z"
   },
   {
     "name": "redhat",
@@ -9276,7 +9277,8 @@
     "host": "wd5",
     "site": "jobs",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-13T15:15:15.351Z"
   },
   {
     "name": "rocket",
@@ -9285,7 +9287,8 @@
     "host": "wd5",
     "site": "rocket_careers",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-13T15:15:15.351Z"
   },
   {
     "name": "republic",
@@ -9622,7 +9625,8 @@
     "host": "wd5",
     "site": "taylormadegolf",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-13T15:15:15.351Z"
   },
   {
     "name": "tempus",
@@ -9751,7 +9755,8 @@
     "host": "wd5",
     "site": "External",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-13T15:15:15.351Z"
   },
   {
     "name": "torcrobotics",
@@ -10023,8 +10028,7 @@
     "host": "wd5",
     "site": "Zoom",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-12T23:01:58.453Z"
+    "source": "discovered"
   },
   {
     "name": "modmed",
@@ -10042,8 +10046,7 @@
     "host": "wd5",
     "site": "ZOLLMedicalCorp",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-12T23:01:58.453Z"
+    "source": "discovered"
   },
   {
     "name": "wri",
