@@ -716,8 +716,7 @@
     "host": "wd1",
     "site": "Careers",
     "industry": "tech",
-    "source": "curated",
-    "failingSince": "2026-08-13T19:21:07.467Z"
+    "source": "curated"
   },
   {
     "name": "Tdbank",
@@ -6216,7 +6215,8 @@
     "host": "wd3",
     "site": "GSKCareers",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-13T21:04:05.448Z"
   },
   {
     "name": "kantar",
@@ -6234,7 +6234,8 @@
     "host": "wd3",
     "site": "broadbean_external",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-13T21:04:05.448Z"
   },
   {
     "name": "johnsonelectric",
@@ -6243,7 +6244,8 @@
     "host": "wd3",
     "site": "Career_JE",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-13T21:04:05.448Z"
   },
   {
     "name": "maersk",
@@ -6288,7 +6290,8 @@
     "host": "wd3",
     "site": "PlanseeGroup_Career",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-13T21:04:05.448Z"
   },
   {
     "name": "michelinhr",
@@ -6297,7 +6300,8 @@
     "host": "wd3",
     "site": "Michelin",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-13T21:04:05.448Z"
   },
   {
     "name": "novartis",
@@ -6306,7 +6310,8 @@
     "host": "wd3",
     "site": "Novartis_Careers",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-13T21:04:05.448Z"
   },
   {
     "name": "iconcareers",
@@ -8297,8 +8302,7 @@
     "host": "wd5",
     "site": "EXT",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-13T19:21:07.467Z"
+    "source": "discovered"
   },
   {
     "name": "generalmotors",
@@ -8307,8 +8311,7 @@
     "host": "wd5",
     "site": "Careers_GM",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-13T19:21:07.467Z"
+    "source": "discovered"
   },
   {
     "name": "guardianpharmacy",
@@ -8344,8 +8347,7 @@
     "host": "wd5",
     "site": "Greif",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-13T19:21:07.467Z"
+    "source": "discovered"
   },
   {
     "name": "hexcel",
@@ -8664,8 +8666,7 @@
     "host": "wd5",
     "site": "Logitech",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-13T19:21:07.467Z"
+    "source": "discovered"
   },
   {
     "name": "magellanhealth",
@@ -8674,8 +8675,7 @@
     "host": "wd5",
     "site": "magellan_health_careers",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-13T19:21:07.467Z"
+    "source": "discovered"
   },
   {
     "name": "lowes",
@@ -8694,8 +8694,7 @@
     "host": "wd5",
     "site": "EXT",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-13T19:21:07.467Z"
+    "source": "discovered"
   },
   {
     "name": "ruelala",
@@ -9264,8 +9263,7 @@
     "host": "wd5",
     "site": "Qualifacts_External_Careers",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-13T19:21:07.467Z"
+    "source": "discovered"
   },
   {
     "name": "qualys",
@@ -9274,8 +9272,7 @@
     "host": "wd5",
     "site": "Careers",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-13T19:21:07.467Z"
+    "source": "discovered"
   },
   {
     "name": "redhat",
@@ -9284,8 +9281,7 @@
     "host": "wd5",
     "site": "jobs",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-13T18:08:17.741Z"
+    "source": "discovered"
   },
   {
     "name": "rocket",
@@ -9294,8 +9290,7 @@
     "host": "wd5",
     "site": "rocket_careers",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-13T19:21:07.467Z"
+    "source": "discovered"
   },
   {
     "name": "republic",
@@ -10324,7 +10319,8 @@
     "token": "qualcomm.eightfold.ai",
     "site": "qualcomm.com",
     "industry": "tech",
-    "source": "curated"
+    "source": "curated",
+    "failingSince": "2026-08-13T21:04:05.448Z"
   },
   {
     "name": "SAP",
