@@ -6215,8 +6215,7 @@
     "host": "wd3",
     "site": "GSKCareers",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-13T21:04:05.448Z"
+    "source": "discovered"
   },
   {
     "name": "kantar",
@@ -6234,8 +6233,7 @@
     "host": "wd3",
     "site": "broadbean_external",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-13T21:04:05.448Z"
+    "source": "discovered"
   },
   {
     "name": "johnsonelectric",
@@ -6244,8 +6242,7 @@
     "host": "wd3",
     "site": "Career_JE",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-13T21:04:05.448Z"
+    "source": "discovered"
   },
   {
     "name": "maersk",
@@ -6290,8 +6287,7 @@
     "host": "wd3",
     "site": "PlanseeGroup_Career",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-13T21:04:05.448Z"
+    "source": "discovered"
   },
   {
     "name": "michelinhr",
@@ -6300,8 +6296,7 @@
     "host": "wd3",
     "site": "Michelin",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-13T21:04:05.448Z"
+    "source": "discovered"
   },
   {
     "name": "novartis",
@@ -6310,8 +6305,7 @@
     "host": "wd3",
     "site": "Novartis_Careers",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-13T21:04:05.448Z"
+    "source": "discovered"
   },
   {
     "name": "iconcareers",
@@ -8684,8 +8678,7 @@
     "host": "wd5",
     "site": "lws_external_cs",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-13T18:08:17.741Z"
+    "source": "discovered"
   },
   {
     "name": "meredith",
@@ -9627,8 +9620,7 @@
     "host": "wd5",
     "site": "taylormadegolf",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-13T18:08:17.741Z"
+    "source": "discovered"
   },
   {
     "name": "tempus",
@@ -10319,8 +10311,7 @@
     "token": "qualcomm.eightfold.ai",
     "site": "qualcomm.com",
     "industry": "tech",
-    "source": "curated",
-    "failingSince": "2026-08-13T21:04:05.448Z"
+    "source": "curated"
   },
   {
     "name": "SAP",
