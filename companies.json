@@ -1377,8 +1377,7 @@
     "token": "apply.careers.microsoft.com",
     "site": "microsoft.com",
     "industry": "tech",
-    "source": "curated",
-    "failingSince": "2026-08-14T19:14:35.538Z"
+    "source": "curated"
   },
   {
     "name": "2k",
@@ -2284,8 +2283,7 @@
     "ats": "rendered",
     "token": "dazn",
     "industry": "tech",
-    "source": "curated",
-    "failingSince": "2026-08-14T19:14:35.538Z"
+    "source": "curated"
   },
   {
     "name": "eqvilentjobs",
@@ -4053,8 +4051,7 @@
     "ats": "greenhouse",
     "token": "zoominfo",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-14T19:14:35.538Z"
+    "source": "discovered"
   },
   {
     "name": "beatboxbeveragesllc",
@@ -8271,8 +8268,7 @@
     "host": "wd5",
     "site": "GMED_Careers",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-14T19:14:35.538Z"
+    "source": "discovered"
   },
   {
     "name": "greif",
@@ -8583,7 +8579,8 @@
     "host": "wd5",
     "site": "LightWonderExternalCareers",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-14T19:57:49.432Z"
   },
   {
     "name": "manh",
@@ -10304,8 +10301,7 @@
     "host": "wd5",
     "site": "external",
     "industry": "tech",
-    "source": "curated",
-    "failingSince": "2026-08-14T19:14:35.538Z"
+    "source": "curated"
   },
   {
     "name": "Arista Networks",
