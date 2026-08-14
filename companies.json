@@ -1377,7 +1377,8 @@
     "token": "apply.careers.microsoft.com",
     "site": "microsoft.com",
     "industry": "tech",
-    "source": "curated"
+    "source": "curated",
+    "failingSince": "2026-08-14T19:14:35.538Z"
   },
   {
     "name": "2k",
@@ -2283,7 +2284,8 @@
     "ats": "rendered",
     "token": "dazn",
     "industry": "tech",
-    "source": "curated"
+    "source": "curated",
+    "failingSince": "2026-08-14T19:14:35.538Z"
   },
   {
     "name": "eqvilentjobs",
@@ -3654,8 +3656,7 @@
     "host": "wd1",
     "site": "careers",
     "industry": "tech",
-    "source": "curated",
-    "failingSince": "2026-08-14T18:07:11.226Z"
+    "source": "curated"
   },
   {
     "name": "Poshmark",
@@ -4052,7 +4053,8 @@
     "ats": "greenhouse",
     "token": "zoominfo",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-14T19:14:35.538Z"
   },
   {
     "name": "beatboxbeveragesllc",
@@ -8269,7 +8271,8 @@
     "host": "wd5",
     "site": "GMED_Careers",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-14T19:14:35.538Z"
   },
   {
     "name": "greif",
@@ -8278,7 +8281,8 @@
     "host": "wd5",
     "site": "Greif",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-14T19:14:35.538Z"
   },
   {
     "name": "hexcel",
@@ -8579,8 +8583,7 @@
     "host": "wd5",
     "site": "LightWonderExternalCareers",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-14T18:07:11.226Z"
+    "source": "discovered"
   },
   {
     "name": "manh",
@@ -9566,7 +9569,8 @@
     "host": "wd5",
     "site": "taylormadegolf",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-14T19:14:35.538Z"
   },
   {
     "name": "tempus",
@@ -9948,7 +9952,8 @@
     "host": "wd5",
     "site": "Zoom",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-14T19:14:35.538Z"
   },
   {
     "name": "modmed",
@@ -9966,7 +9971,8 @@
     "host": "wd5",
     "site": "ZOLLMedicalCorp",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-14T19:14:35.538Z"
   },
   {
     "name": "wri",
@@ -10298,7 +10304,8 @@
     "host": "wd5",
     "site": "external",
     "industry": "tech",
-    "source": "curated"
+    "source": "curated",
+    "failingSince": "2026-08-14T19:14:35.538Z"
   },
   {
     "name": "Arista Networks",
