@@ -8231,7 +8231,8 @@
     "host": "wd5",
     "site": "EXT",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-14T20:56:19.673Z"
   },
   {
     "name": "generalmotors",
@@ -8268,7 +8269,8 @@
     "host": "wd5",
     "site": "GMED_Careers",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-14T20:56:19.673Z"
   },
   {
     "name": "greif",
@@ -8561,7 +8563,8 @@
     "host": "wd5",
     "site": "Careers",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-14T20:56:19.673Z"
   },
   {
     "name": "loyola",
