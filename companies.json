@@ -1377,7 +1377,8 @@
     "token": "apply.careers.microsoft.com",
     "site": "microsoft.com",
     "industry": "tech",
-    "source": "curated"
+    "source": "curated",
+    "failingSince": "2026-08-14T16:06:54.681Z"
   },
   {
     "name": "2k",
@@ -6278,8 +6279,7 @@
     "host": "wd3",
     "site": "Lonza_Careers",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-14T15:07:44.972Z"
+    "source": "discovered"
   },
   {
     "name": "myhr",
@@ -6288,8 +6288,7 @@
     "host": "wd3",
     "site": "PlanseeGroup_Career",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-14T15:07:44.972Z"
+    "source": "discovered"
   },
   {
     "name": "michelinhr",
@@ -6743,8 +6742,7 @@
     "host": "wd3",
     "site": "Nutreco_External",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-14T15:07:44.972Z"
+    "source": "discovered"
   },
   {
     "name": "jensenhughes",
@@ -8299,7 +8297,8 @@
     "host": "wd5",
     "site": "EXT",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-14T16:06:54.681Z"
   },
   {
     "name": "generalmotors",
@@ -8345,7 +8344,8 @@
     "host": "wd5",
     "site": "Greif",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-14T16:06:54.681Z"
   },
   {
     "name": "hexcel",
@@ -8628,7 +8628,8 @@
     "host": "wd5",
     "site": "Careers",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-14T16:06:54.681Z"
   },
   {
     "name": "loyola",
@@ -10396,7 +10397,8 @@
     "host": "wd5",
     "site": "external",
     "industry": "tech",
-    "source": "curated"
+    "source": "curated",
+    "failingSince": "2026-08-14T16:06:54.681Z"
   },
   {
     "name": "Arista Networks",
