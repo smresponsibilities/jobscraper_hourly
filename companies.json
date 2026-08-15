@@ -297,8 +297,7 @@
     "host": "wd5",
     "site": "external_experienced",
     "industry": "tech",
-    "source": "curated",
-    "failingSince": "2026-08-15T12:59:13.476Z"
+    "source": "curated"
   },
   {
     "name": "PayPal",
@@ -8555,7 +8554,8 @@
     "host": "wd5",
     "site": "KyndrylEarlyCareers",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-15T13:44:30.543Z"
   },
   {
     "name": "lifestance",
@@ -8574,7 +8574,8 @@
     "host": "wd5",
     "site": "External",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-15T13:44:30.543Z"
   },
   {
     "name": "lnw",
@@ -10230,21 +10231,24 @@
     "ats": "successfactors",
     "token": "jobs.sap.com",
     "industry": "tech",
-    "source": "curated"
+    "source": "curated",
+    "failingSince": "2026-08-15T13:44:30.543Z"
   },
   {
     "name": "Volvo Cars",
     "ats": "successfactors",
     "token": "jobs.volvocars.com",
     "industry": "tech",
-    "source": "curated"
+    "source": "curated",
+    "failingSince": "2026-08-15T13:44:30.543Z"
   },
   {
     "name": "ZF",
     "ats": "successfactors",
     "token": "jobs.zf.com",
     "industry": "tech",
-    "source": "curated"
+    "source": "curated",
+    "failingSince": "2026-08-15T13:44:30.543Z"
   },
   {
     "name": "Mahindra",
@@ -10286,8 +10290,7 @@
     "host": "wd5",
     "site": "external",
     "industry": "tech",
-    "source": "curated",
-    "failingSince": "2026-08-15T12:59:13.476Z"
+    "source": "curated"
   },
   {
     "name": "Arista Networks",
@@ -10331,7 +10334,8 @@
     "ats": "successfactors",
     "token": "basf.jobs",
     "industry": "tech",
-    "source": "curated"
+    "source": "curated",
+    "failingSince": "2026-08-15T13:44:30.543Z"
   },
   {
     "name": "Lupin",
@@ -10345,6 +10349,7 @@
     "ats": "successfactors",
     "token": "careers.bajajauto.com",
     "industry": "tech",
-    "source": "curated"
+    "source": "curated",
+    "failingSince": "2026-08-15T13:44:30.543Z"
   }
 ]
