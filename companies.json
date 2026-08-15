@@ -1377,8 +1377,7 @@
     "token": "apply.careers.microsoft.com",
     "site": "microsoft.com",
     "industry": "tech",
-    "source": "curated",
-    "failingSince": "2026-08-15T01:50:39.443Z"
+    "source": "curated"
   },
   {
     "name": "2k",
@@ -6125,8 +6124,7 @@
     "host": "wd3",
     "site": "1",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-15T01:50:39.443Z"
+    "source": "discovered"
   },
   {
     "name": "heidelbergmaterials",
@@ -6135,8 +6133,7 @@
     "host": "wd3",
     "site": "Global_HM_Career_Site",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-15T01:50:39.443Z"
+    "source": "discovered"
   },
   {
     "name": "harman",
@@ -6194,8 +6191,7 @@
     "host": "wd3",
     "site": "APMT_Careers",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-15T01:50:39.443Z"
+    "source": "discovered"
   },
   {
     "name": "mars",
@@ -6214,8 +6210,7 @@
     "host": "wd3",
     "site": "MurexCareerPage1",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-15T01:50:39.443Z"
+    "source": "discovered"
   },
   {
     "name": "lonza",
@@ -6234,8 +6229,7 @@
     "host": "wd3",
     "site": "PlanseeGroup_Career",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-15T01:50:39.443Z"
+    "source": "discovered"
   },
   {
     "name": "michelinhr",
@@ -6254,8 +6248,7 @@
     "host": "wd3",
     "site": "Novartis_Careers",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-15T01:50:39.443Z"
+    "source": "discovered"
   },
   {
     "name": "iconcareers",
@@ -8202,8 +8195,7 @@
     "host": "wd5",
     "site": "Primary-External-1",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-15T01:50:39.443Z"
+    "source": "discovered"
   },
   {
     "name": "geaerospace",
@@ -8248,8 +8240,7 @@
     "host": "wd5",
     "site": "EXT",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-15T01:50:39.443Z"
+    "source": "discovered"
   },
   {
     "name": "generalmotors",
@@ -8268,8 +8259,7 @@
     "host": "wd5",
     "site": "Guardian_Pharmacy",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-15T01:50:39.443Z"
+    "source": "discovered"
   },
   {
     "name": "healthcatalyst",
