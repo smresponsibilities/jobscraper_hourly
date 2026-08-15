@@ -314,8 +314,7 @@
     "token": "jpmc",
     "siteNumber": "CX_1001",
     "industry": "banking",
-    "source": "curated",
-    "failingSince": "2026-08-15T16:42:06.097Z"
+    "source": "curated"
   },
   {
     "name": "Amazon",
@@ -7536,14 +7535,6 @@
     "source": "discovered"
   },
   {
-    "name": "noble",
-    "ats": "greenhouse",
-    "token": "noble",
-    "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-12T19:21:48.624Z"
-  },
-  {
     "name": "noctrixhealth",
     "ats": "greenhouse",
     "token": "noctrixhealth",
@@ -8270,8 +8261,7 @@
     "host": "wd5",
     "site": "GMED_Careers",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-15T18:48:12.549Z"
+    "source": "discovered"
   },
   {
     "name": "greif",
@@ -8582,8 +8572,7 @@
     "host": "wd5",
     "site": "LightWonderExternalCareers",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-15T18:48:12.549Z"
+    "source": "discovered"
   },
   {
     "name": "manh",
@@ -10228,21 +10217,24 @@
     "ats": "successfactors",
     "token": "jobs.sap.com",
     "industry": "tech",
-    "source": "curated"
+    "source": "curated",
+    "failingSince": "2026-08-15T19:35:01.980Z"
   },
   {
     "name": "Volvo Cars",
     "ats": "successfactors",
     "token": "jobs.volvocars.com",
     "industry": "tech",
-    "source": "curated"
+    "source": "curated",
+    "failingSince": "2026-08-15T19:35:01.980Z"
   },
   {
     "name": "ZF",
     "ats": "successfactors",
     "token": "jobs.zf.com",
     "industry": "tech",
-    "source": "curated"
+    "source": "curated",
+    "failingSince": "2026-08-15T19:35:01.980Z"
   },
   {
     "name": "Mahindra",
@@ -10328,7 +10320,8 @@
     "ats": "successfactors",
     "token": "basf.jobs",
     "industry": "tech",
-    "source": "curated"
+    "source": "curated",
+    "failingSince": "2026-08-15T19:35:01.980Z"
   },
   {
     "name": "Lupin",
@@ -10342,6 +10335,7 @@
     "ats": "successfactors",
     "token": "careers.bajajauto.com",
     "industry": "tech",
-    "source": "curated"
+    "source": "curated",
+    "failingSince": "2026-08-15T19:35:01.980Z"
   }
 ]
