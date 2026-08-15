@@ -521,7 +521,8 @@
     "host": "wd503",
     "site": "Uniphore",
     "industry": "tech",
-    "source": "curated"
+    "source": "curated",
+    "failingSince": "2026-08-15T05:42:26.762Z"
   },
   {
     "name": "Sprinklr",
@@ -3596,7 +3597,8 @@
     "host": "wd503",
     "site": "thorntontomasetti",
     "industry": "tech",
-    "source": "curated"
+    "source": "curated",
+    "failingSince": "2026-08-15T05:42:26.762Z"
   },
   {
     "name": "WindBorne Systems",
@@ -8231,7 +8233,8 @@
     "host": "wd5",
     "site": "EXT",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-15T05:42:26.762Z"
   },
   {
     "name": "generalmotors",
@@ -8578,7 +8581,8 @@
     "host": "wd5",
     "site": "LightWonderExternalCareers",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-15T05:42:26.762Z"
   },
   {
     "name": "manh",
@@ -8626,7 +8630,8 @@
     "host": "wd5",
     "site": "EXT",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-15T05:42:26.762Z"
   },
   {
     "name": "ruelala",
@@ -9617,16 +9622,6 @@
     "failingSince": "2026-08-13T19:21:07.467Z"
   },
   {
-    "name": "transperfect",
-    "ats": "workday",
-    "token": "transperfect",
-    "host": "wd5",
-    "site": "transperfect",
-    "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-12T05:03:16.334Z"
-  },
-  {
     "name": "unisys",
     "ats": "workday",
     "token": "unisys",
@@ -9635,16 +9630,6 @@
     "industry": "tech",
     "source": "discovered",
     "failingSince": "2026-08-12T23:01:58.453Z"
-  },
-  {
-    "name": "wexinc",
-    "ats": "workday",
-    "token": "wexinc",
-    "host": "wd5",
-    "site": "WEXInc",
-    "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-12T05:03:16.334Z"
   },
   {
     "name": "vanguard",
