@@ -8223,8 +8223,7 @@
     "host": "wd5",
     "site": "EXT",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-15T09:41:33.405Z"
+    "source": "discovered"
   },
   {
     "name": "generalmotors",
@@ -8261,8 +8260,7 @@
     "host": "wd5",
     "site": "GMED_Careers",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-15T21:35:23.846Z"
+    "source": "discovered"
   },
   {
     "name": "greif",
@@ -8271,8 +8269,7 @@
     "host": "wd5",
     "site": "Greif",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-15T09:41:33.405Z"
+    "source": "discovered"
   },
   {
     "name": "hexcel",
@@ -8555,8 +8552,7 @@
     "host": "wd5",
     "site": "Careers",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-15T21:35:23.846Z"
+    "source": "discovered"
   },
   {
     "name": "loyola",
@@ -8565,8 +8561,7 @@
     "host": "wd5",
     "site": "External",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-15T21:35:23.846Z"
+    "source": "discovered"
   },
   {
     "name": "lnw",
@@ -8575,8 +8570,7 @@
     "host": "wd5",
     "site": "LightWonderExternalCareers",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-15T21:35:23.846Z"
+    "source": "discovered"
   },
   {
     "name": "manh",
@@ -8585,8 +8579,7 @@
     "host": "wd5",
     "site": "External",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-15T21:35:23.846Z"
+    "source": "discovered"
   },
   {
     "name": "logitech",
@@ -8625,8 +8618,7 @@
     "host": "wd5",
     "site": "EXT",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-15T18:48:12.549Z"
+    "source": "discovered"
   },
   {
     "name": "ruelala",
