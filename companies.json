@@ -2276,7 +2276,8 @@
     "ats": "rendered",
     "token": "vanguard",
     "industry": "banking",
-    "source": "curated"
+    "source": "curated",
+    "failingSince": "2026-08-15T15:35:15.964Z"
   },
   {
     "name": "DAZN",
@@ -8241,8 +8242,7 @@
     "host": "wd5",
     "site": "Careers_GM",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-15T01:50:39.443Z"
+    "source": "discovered"
   },
   {
     "name": "guardianpharmacy",
@@ -8251,8 +8251,7 @@
     "host": "wd5",
     "site": "Guardian_Pharmacy",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-15T14:39:47.351Z"
+    "source": "discovered"
   },
   {
     "name": "healthcatalyst",
@@ -8290,8 +8289,7 @@
     "host": "wd5",
     "site": "HexcelCareers",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-15T14:39:47.351Z"
+    "source": "discovered"
   },
   {
     "name": "pushpay",
@@ -8538,8 +8536,7 @@
     "host": "wd5",
     "site": "lu_job_board_faculty",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-15T14:39:47.351Z"
+    "source": "discovered"
   },
   {
     "name": "liveramp",
@@ -8548,8 +8545,7 @@
     "host": "wd5",
     "site": "LiveRampCareers",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-15T14:39:47.351Z"
+    "source": "discovered"
   },
   {
     "name": "kyndryl",
@@ -8558,8 +8554,7 @@
     "host": "wd5",
     "site": "KyndrylEarlyCareers",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-15T13:44:30.543Z"
+    "source": "discovered"
   },
   {
     "name": "lifestance",
@@ -8568,8 +8563,7 @@
     "host": "wd5",
     "site": "Careers",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-15T11:34:04.710Z"
+    "source": "discovered"
   },
   {
     "name": "loyola",
@@ -8578,8 +8572,7 @@
     "host": "wd5",
     "site": "External",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-15T13:44:30.543Z"
+    "source": "discovered"
   },
   {
     "name": "lnw",
@@ -8598,8 +8591,7 @@
     "host": "wd5",
     "site": "External",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-15T11:34:04.710Z"
+    "source": "discovered"
   },
   {
     "name": "logitech",
