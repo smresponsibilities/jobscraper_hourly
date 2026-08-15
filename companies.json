@@ -8270,7 +8270,8 @@
     "host": "wd5",
     "site": "GMED_Careers",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-15T18:48:12.549Z"
   },
   {
     "name": "greif",
@@ -8581,7 +8582,8 @@
     "host": "wd5",
     "site": "LightWonderExternalCareers",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-15T18:48:12.549Z"
   },
   {
     "name": "manh",
@@ -8629,7 +8631,8 @@
     "host": "wd5",
     "site": "EXT",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-15T18:48:12.549Z"
   },
   {
     "name": "ruelala",
