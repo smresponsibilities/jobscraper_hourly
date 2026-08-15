@@ -6114,7 +6114,8 @@
     "host": "wd3",
     "site": "fme",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-15T20:40:32.689Z"
   },
   {
     "name": "harriscomputer",
@@ -6141,7 +6142,8 @@
     "host": "wd3",
     "site": "harman",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-15T20:40:32.689Z"
   },
   {
     "name": "gsknch",
@@ -6150,7 +6152,8 @@
     "host": "wd3",
     "site": "GSKCareers",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-15T20:40:32.689Z"
   },
   {
     "name": "kantar",
@@ -6168,7 +6171,8 @@
     "host": "wd3",
     "site": "broadbean_external",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-15T20:40:32.689Z"
   },
   {
     "name": "johnsonelectric",
@@ -6177,7 +6181,8 @@
     "host": "wd3",
     "site": "Career_JE",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-15T20:40:32.689Z"
   },
   {
     "name": "maersk",
@@ -6195,7 +6200,8 @@
     "host": "wd3",
     "site": "External",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-15T20:40:32.689Z"
   },
   {
     "name": "murex",
@@ -6213,7 +6219,8 @@
     "host": "wd3",
     "site": "Lonza_Careers",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-15T20:40:32.689Z"
   },
   {
     "name": "myhr",
@@ -6222,7 +6229,8 @@
     "host": "wd3",
     "site": "PlanseeGroup_Career",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-15T20:40:32.689Z"
   },
   {
     "name": "michelinhr",
@@ -6231,7 +6239,8 @@
     "host": "wd3",
     "site": "Michelin",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-15T20:40:32.689Z"
   },
   {
     "name": "novartis",
@@ -6240,7 +6249,8 @@
     "host": "wd3",
     "site": "Novartis_Careers",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-15T20:40:32.689Z"
   },
   {
     "name": "iconcareers",
@@ -6676,7 +6686,8 @@
     "host": "wd3",
     "site": "Nutreco_External",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-15T20:40:32.689Z"
   },
   {
     "name": "jensenhughes",
@@ -10217,24 +10228,21 @@
     "ats": "successfactors",
     "token": "jobs.sap.com",
     "industry": "tech",
-    "source": "curated",
-    "failingSince": "2026-08-15T19:35:01.980Z"
+    "source": "curated"
   },
   {
     "name": "Volvo Cars",
     "ats": "successfactors",
     "token": "jobs.volvocars.com",
     "industry": "tech",
-    "source": "curated",
-    "failingSince": "2026-08-15T19:35:01.980Z"
+    "source": "curated"
   },
   {
     "name": "ZF",
     "ats": "successfactors",
     "token": "jobs.zf.com",
     "industry": "tech",
-    "source": "curated",
-    "failingSince": "2026-08-15T19:35:01.980Z"
+    "source": "curated"
   },
   {
     "name": "Mahindra",
@@ -10320,8 +10328,7 @@
     "ats": "successfactors",
     "token": "basf.jobs",
     "industry": "tech",
-    "source": "curated",
-    "failingSince": "2026-08-15T19:35:01.980Z"
+    "source": "curated"
   },
   {
     "name": "Lupin",
@@ -10335,7 +10342,6 @@
     "ats": "successfactors",
     "token": "careers.bajajauto.com",
     "industry": "tech",
-    "source": "curated",
-    "failingSince": "2026-08-15T19:35:01.980Z"
+    "source": "curated"
   }
 ]
