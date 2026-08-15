@@ -1377,8 +1377,7 @@
     "token": "apply.careers.microsoft.com",
     "site": "microsoft.com",
     "industry": "tech",
-    "source": "curated",
-    "failingSince": "2026-08-15T10:39:09.252Z"
+    "source": "curated"
   },
   {
     "name": "2k",
@@ -6125,7 +6124,8 @@
     "host": "wd3",
     "site": "1",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-15T11:34:04.710Z"
   },
   {
     "name": "heidelbergmaterials",
@@ -6154,7 +6154,8 @@
     "host": "wd3",
     "site": "GSKCareers",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-15T11:34:04.710Z"
   },
   {
     "name": "kantar",
@@ -6192,7 +6193,8 @@
     "host": "wd3",
     "site": "APMT_Careers",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-15T11:34:04.710Z"
   },
   {
     "name": "mars",
@@ -8567,7 +8569,8 @@
     "host": "wd5",
     "site": "KyndrylEarlyCareers",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-15T11:34:04.710Z"
   },
   {
     "name": "lifestance",
@@ -8576,7 +8579,8 @@
     "host": "wd5",
     "site": "Careers",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-15T11:34:04.710Z"
   },
   {
     "name": "loyola",
@@ -8585,7 +8589,8 @@
     "host": "wd5",
     "site": "External",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-15T11:34:04.710Z"
   },
   {
     "name": "lnw",
@@ -8604,7 +8609,8 @@
     "host": "wd5",
     "site": "External",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-15T11:34:04.710Z"
   },
   {
     "name": "logitech",
