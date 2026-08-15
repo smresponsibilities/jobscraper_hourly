@@ -8251,7 +8251,8 @@
     "host": "wd5",
     "site": "Guardian_Pharmacy",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-15T14:39:47.351Z"
   },
   {
     "name": "healthcatalyst",
@@ -8289,7 +8290,8 @@
     "host": "wd5",
     "site": "HexcelCareers",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-15T14:39:47.351Z"
   },
   {
     "name": "pushpay",
@@ -8536,7 +8538,8 @@
     "host": "wd5",
     "site": "lu_job_board_faculty",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-15T14:39:47.351Z"
   },
   {
     "name": "liveramp",
@@ -8545,7 +8548,8 @@
     "host": "wd5",
     "site": "LiveRampCareers",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-15T14:39:47.351Z"
   },
   {
     "name": "kyndryl",
@@ -10231,24 +10235,21 @@
     "ats": "successfactors",
     "token": "jobs.sap.com",
     "industry": "tech",
-    "source": "curated",
-    "failingSince": "2026-08-15T13:44:30.543Z"
+    "source": "curated"
   },
   {
     "name": "Volvo Cars",
     "ats": "successfactors",
     "token": "jobs.volvocars.com",
     "industry": "tech",
-    "source": "curated",
-    "failingSince": "2026-08-15T13:44:30.543Z"
+    "source": "curated"
   },
   {
     "name": "ZF",
     "ats": "successfactors",
     "token": "jobs.zf.com",
     "industry": "tech",
-    "source": "curated",
-    "failingSince": "2026-08-15T13:44:30.543Z"
+    "source": "curated"
   },
   {
     "name": "Mahindra",
@@ -10334,8 +10335,7 @@
     "ats": "successfactors",
     "token": "basf.jobs",
     "industry": "tech",
-    "source": "curated",
-    "failingSince": "2026-08-15T13:44:30.543Z"
+    "source": "curated"
   },
   {
     "name": "Lupin",
@@ -10349,7 +10349,6 @@
     "ats": "successfactors",
     "token": "careers.bajajauto.com",
     "industry": "tech",
-    "source": "curated",
-    "failingSince": "2026-08-15T13:44:30.543Z"
+    "source": "curated"
   }
 ]
