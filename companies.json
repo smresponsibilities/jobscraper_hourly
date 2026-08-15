@@ -314,7 +314,8 @@
     "token": "jpmc",
     "siteNumber": "CX_1001",
     "industry": "banking",
-    "source": "curated"
+    "source": "curated",
+    "failingSince": "2026-08-15T16:42:06.097Z"
   },
   {
     "name": "Amazon",
@@ -2276,8 +2277,7 @@
     "ats": "rendered",
     "token": "vanguard",
     "industry": "banking",
-    "source": "curated",
-    "failingSince": "2026-08-15T15:35:15.964Z"
+    "source": "curated"
   },
   {
     "name": "DAZN",
@@ -8242,7 +8242,8 @@
     "host": "wd5",
     "site": "Careers_GM",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-15T16:42:06.097Z"
   },
   {
     "name": "guardianpharmacy",
