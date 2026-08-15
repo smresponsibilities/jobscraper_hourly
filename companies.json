@@ -6229,7 +6229,8 @@
     "host": "wd3",
     "site": "PlanseeGroup_Career",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-15T03:54:40.720Z"
   },
   {
     "name": "michelinhr",
@@ -6248,7 +6249,8 @@
     "host": "wd3",
     "site": "Novartis_Careers",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-15T03:54:40.720Z"
   },
   {
     "name": "iconcareers",
@@ -8240,7 +8242,8 @@
     "host": "wd5",
     "site": "EXT",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-15T03:54:40.720Z"
   },
   {
     "name": "generalmotors",
@@ -8259,7 +8262,8 @@
     "host": "wd5",
     "site": "Guardian_Pharmacy",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-15T03:54:40.720Z"
   },
   {
     "name": "healthcatalyst",
@@ -8297,8 +8301,7 @@
     "host": "wd5",
     "site": "HexcelCareers",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-15T01:50:39.443Z"
+    "source": "discovered"
   },
   {
     "name": "pushpay",
