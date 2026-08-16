@@ -6114,8 +6114,7 @@
     "host": "wd3",
     "site": "fme",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-16T05:43:47.110Z"
+    "source": "discovered"
   },
   {
     "name": "harriscomputer",
@@ -6133,8 +6132,7 @@
     "host": "wd3",
     "site": "Global_HM_Career_Site",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-16T05:43:47.110Z"
+    "source": "discovered"
   },
   {
     "name": "harman",
@@ -6143,8 +6141,7 @@
     "host": "wd3",
     "site": "harman",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-16T05:43:47.110Z"
+    "source": "discovered"
   },
   {
     "name": "gsknch",
@@ -6153,8 +6150,7 @@
     "host": "wd3",
     "site": "GSKCareers",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-16T05:43:47.110Z"
+    "source": "discovered"
   },
   {
     "name": "kantar",
@@ -6172,7 +6168,8 @@
     "host": "wd3",
     "site": "broadbean_external",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-16T07:00:17.384Z"
   },
   {
     "name": "johnsonelectric",
@@ -6181,8 +6178,7 @@
     "host": "wd3",
     "site": "Career_JE",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-16T05:43:47.110Z"
+    "source": "discovered"
   },
   {
     "name": "maersk",
@@ -6209,8 +6205,7 @@
     "host": "wd3",
     "site": "MurexCareerPage1",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-16T05:43:47.110Z"
+    "source": "discovered"
   },
   {
     "name": "lonza",
@@ -8292,8 +8287,7 @@
     "host": "wd5",
     "site": "HexcelCareers",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-16T05:43:47.110Z"
+    "source": "discovered"
   },
   {
     "name": "pushpay",
@@ -8540,8 +8534,7 @@
     "host": "wd5",
     "site": "lu_job_board_faculty",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-16T05:43:47.110Z"
+    "source": "discovered"
   },
   {
     "name": "liveramp",
@@ -8550,8 +8543,7 @@
     "host": "wd5",
     "site": "LiveRampCareers",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-16T05:43:47.110Z"
+    "source": "discovered"
   },
   {
     "name": "kyndryl",
