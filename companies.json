@@ -3414,8 +3414,7 @@
     "host": "wd1",
     "site": "GNW",
     "industry": "tech",
-    "source": "curated",
-    "failingSince": "2026-08-16T01:57:57.311Z"
+    "source": "curated"
   },
   {
     "name": "Deepgram",
@@ -8224,7 +8223,8 @@
     "host": "wd5",
     "site": "EXT",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-16T03:13:42.371Z"
   },
   {
     "name": "generalmotors",
@@ -8261,7 +8261,8 @@
     "host": "wd5",
     "site": "GMED_Careers",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-16T03:13:42.371Z"
   },
   {
     "name": "greif",
@@ -8270,7 +8271,8 @@
     "host": "wd5",
     "site": "Greif",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-16T03:13:42.371Z"
   },
   {
     "name": "hexcel",
@@ -8553,7 +8555,8 @@
     "host": "wd5",
     "site": "Careers",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-16T03:13:42.371Z"
   },
   {
     "name": "loyola",
@@ -8571,7 +8574,8 @@
     "host": "wd5",
     "site": "LightWonderExternalCareers",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-16T03:13:42.371Z"
   },
   {
     "name": "manh",
@@ -8580,7 +8584,8 @@
     "host": "wd5",
     "site": "External",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-16T03:13:42.371Z"
   },
   {
     "name": "logitech",
@@ -8589,7 +8594,8 @@
     "host": "wd5",
     "site": "Logitech",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-16T03:13:42.371Z"
   },
   {
     "name": "magellanhealth",
@@ -8618,7 +8624,8 @@
     "host": "wd5",
     "site": "EXT",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-16T03:13:42.371Z"
   },
   {
     "name": "ruelala",
@@ -9187,7 +9194,8 @@
     "host": "wd5",
     "site": "Qualifacts_External_Careers",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-16T03:13:42.371Z"
   },
   {
     "name": "qualys",
@@ -9228,16 +9236,6 @@
     "industry": "tech",
     "source": "discovered",
     "failingSince": "2026-08-14T13:43:54.442Z"
-  },
-  {
-    "name": "quickenloans",
-    "ats": "workday",
-    "token": "quickenloans",
-    "host": "wd5",
-    "site": "rocket_careers",
-    "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-13T02:48:16.426Z"
   },
   {
     "name": "surefirecyber",
