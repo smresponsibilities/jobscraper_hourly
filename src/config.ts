@@ -45,6 +45,28 @@ export const EMAIL_FRESHNESS_DAYS = 21;
 export const CONCURRENCY = 9;
 
 /**
+ * Per-rate-limit-domain concurrency. Total throughput is now the sum across
+ * domains rather than one global number, so this is much faster than the old
+ * flat CONCURRENCY while being *gentler* on any single host.
+ *
+ * Workday is deliberately the lowest: a whole pod (wd5 hosts 93 boards) started
+ * returning 429 under a global cap of 9, because nothing stopped those 9 slots
+ * all landing on the same pod. Greenhouse is the highest because it is one
+ * CDN-backed API serving 981 boards — the per-board cost is a cheap cached
+ * response, and throttling it would dominate the whole run's wall clock.
+ */
+export const HOST_CONCURRENCY: Record<string, number> = {
+  greenhouse: 10,
+  workday: 3,
+  ashby: 6,
+  lever: 6,
+  smartrecruiters: 6,
+  oracle: 4,
+  successfactors: 2, // its XML feeds take 30-170s each; parallelism here buys nothing
+  default: 4,
+};
+
+/**
  * Word-bounded, and that matters more than it looks: without `\b`, "india"
  * matches **Indiana** and **Indianapolis** (62 US roles were leaking through),
  * and "goa" matches "Goal". Substring matching on place names is a trap.

@@ -1,12 +1,12 @@
 import { appendFile, mkdir, writeFile } from 'node:fs/promises';
 import type { Company, Job, RawJob } from './types.js';
 import { FETCHERS } from './fetchers/index.js';
-import { mapLimit } from './fetchers/util.js';
+import { mapLimit, mapLimitByKey } from './fetchers/util.js';
 import { classify } from './classify.js';
 import { isFreshEnough, normalizeForDedup, preScreen, shouldAlert } from './filter.js';
 import { renderEmail, subject } from './email.js';
 import { updateCatalog } from './catalog.js';
-import { CONCURRENCY, DROP_AFTER_FAILING_DAYS } from './config.js';
+import { CONCURRENCY, DROP_AFTER_FAILING_DAYS, HOST_CONCURRENCY } from './config.js';
 import { loadCompanies, loadSeen, readJson, recordFailure, recordSuccess, saveCompanies, saveSeen } from './state.js';
 
 const nowIso = new Date().toISOString();
@@ -24,6 +24,26 @@ interface BoardResult {
   jobs: RawJob[];
   error?: string;
 }
+
+/**
+ * The host that actually enforces the rate limit, which is not the same as the
+ * ATS. Every Greenhouse board shares one API host, but Workday tenants are
+ * spread across pods (wd1, wd3, wd5, ...) that throttle independently — so the
+ * pod has to be part of the key, or 93 wd5 boards queue as if they were 93
+ * unrelated hosts. Phenom and Eightfold run on the customer's own domain, so
+ * each tenant is genuinely its own host and can go at full speed.
+ */
+function rateLimitKey(company: Company): string {
+  if (company.ats === 'workday') return `workday:${company.host ?? 'wd'}`;
+  if (company.ats === 'phenom' || company.ats === 'eightfold') {
+    return `${company.ats}:${company.token}`;
+  }
+  if (company.ats === 'successfactors') return `successfactors:${company.host ?? company.token}`;
+  return company.ats;
+}
+
+const limitForHost = (key: string): number =>
+  HOST_CONCURRENCY[key.split(':')[0]!] ?? HOST_CONCURRENCY.default!;
 
 async function pollBoard(company: Company): Promise<BoardResult> {
   try {
@@ -69,7 +89,7 @@ async function main(): Promise<void> {
   }
 
   console.log(`polling ${companies.length} boards`);
-  const results = await mapLimit(companies, CONCURRENCY, pollBoard);
+  const results = await mapLimitByKey(companies, rateLimitKey, limitForHost, pollBoard);
 
   const updatedCompanies: Company[] = [];
   const dropped: string[] = [];
@@ -95,18 +115,30 @@ async function main(): Promise<void> {
     for (const job of jobs) {
       const id = `${company.ats}:${company.token}:${job.externalId}`;
       liveIds.add(id);
+
+      /**
+       * Screen BEFORE recording, not after. A posting that fails location or
+       * role screening can never alert, so remembering it buys nothing — and
+       * it was ~94% of the corpus, which is the entire reason seen.json
+       * reached 9.7 MB at 1,394 boards. Re-screening those every run instead
+       * costs a couple of regexes and no HTTP, while the file now grows with
+       * *candidates* rather than with total postings. That is what makes a
+       * five-figure board count survivable: the Actions cache holds one copy
+       * per run, so 100 MB of state would evict itself within days.
+       */
+      if (!preScreen(job, company)) continue;
       if (seen[id] && !testEmail) continue;
       seen[id] = nowIso;
       fresh.push({ company, job });
     }
   }
 
-  console.log(`${totalSeen} live postings, ${fresh.length} not seen before`);
-
-  // Screen on title and location first — an extra HTTP round trip per posting is
-  // only worth paying for candidates that could actually survive the filters.
-  const candidates = fresh.filter(({ company, job }) => preScreen(job, company));
-  console.log(`${candidates.length} pass location and role screening, enriching those`);
+  // Already screened above, so every fresh job is a candidate worth enriching —
+  // an extra HTTP round trip per posting is only worth paying for those.
+  const candidates = fresh;
+  console.log(
+    `${totalSeen} live postings, ${candidates.length} newly pass location and role screening`,
+  );
 
   const enriched = await mapLimit(candidates, CONCURRENCY, async ({ company, job }) => ({
     company,
