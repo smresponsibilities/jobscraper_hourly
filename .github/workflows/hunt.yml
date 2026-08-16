@@ -4,7 +4,13 @@ on:
   schedule:
     # :17 rather than :00 — the top of the hour is when GitHub's scheduler queue
     # is most congested and runs get delayed the longest.
-    - cron: '17 * * * *'
+    #
+    # Every 2 hours rather than hourly: the board count is growing past 3,000, and
+    # a run that overlaps the next one wastes a runner and races the same cache
+    # key. Nothing is lost by halving the cadence — postings do not expire in an
+    # hour, and the corpus is saturated, so a run's yield is set by how many roles
+    # were posted since the last one, not by how often we look.
+    - cron: '17 */2 * * *'
   workflow_dispatch:
     inputs:
       test_email:

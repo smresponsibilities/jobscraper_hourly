@@ -14,8 +14,8 @@ explicitly excluded — that was a direct, deliberate request, not a default.
 
 ## Current state (as of this doc's last edit)
 
-- **1,411 boards**, ~150-160K live postings per run, ~2,300-2,500 open matches
-  in the catalogue. Full run takes ~6-12 minutes depending on corpus growth.
+- **3,793 boards**, ~350-400K live postings per run, ~2,300-2,500 open matches
+  in the catalogue. Runs every 2 hours (see hunt.yml for why not hourly).
 - **`main`** branch has the code. **`data`** branch (orphan, force-pushed,
   always 1 commit) has the catalogue the web UI reads.
 - **The web UI (`web/`) is built but NOT deployed to Vercel yet.** This matters —
@@ -72,6 +72,35 @@ overlapping-but-not-identical postings. Fix was renaming both entries'
 collapses true duplicates while keeping each board's unique postings. If you
 see the same real company under two different names in the catalogue, this is
 the fix — not a special case in the dedup logic.
+
+**Scale is bounded by `seen.json` and by per-host rate limits, not by runtime.**
+Both were fixed together, and both are load-bearing if the board count keeps
+growing:
+
+- `seen.json` used to record *every* posting, including the ~93% that fail
+  location/role screening and could therefore never alert. Screening before
+  recording cut it from 167,194 IDs to 12,151 (measured: **7.3% pass**), i.e.
+  9.7 MB → ~0.7 MB. This matters because the Actions cache stores one copy per
+  run: at ~105 MB it would evict itself within days and drop the run into a
+  permanent cold start. If you ever add a filter that runs *after* screening,
+  don't move it before — the 93% must stay unrecorded.
+- A single global `CONCURRENCY` is the wrong shape. ~70% of boards are
+  Greenhouse sharing one API host, and Workday tenants cluster on pods (wd5
+  alone hosts 93), so nine "global" slots could all land on one pod — and did,
+  producing dozens of 429s in a single run. Scheduling per *rate-limit domain*
+  (`HOST_CONCURRENCY`, pod-aware for Workday) took that to 8 errors while
+  *raising* throughput, since domains now run in parallel. **Raising a global
+  concurrency number would make rate limiting worse, not better.**
+- 429/503 retry with backoff. Without it a throttled board is indistinguishable
+  from a broken one, so `recordFailure` starts the `DROP_AFTER_FAILING_DAYS`
+  clock and quietly evicts healthy companies three days after a bad burst.
+
+**The email gate is `new_count`, and it must track whether the email was
+actually written.** `out/` is gitignored, so it is empty on every fresh runner.
+`index.ts` skips writing `email.html` on a cold start, but used to still report
+`new_count > 0` — pointing the workflow's send step at a file that does not
+exist. That is the "no email arrived even though roles were found" failure, and
+it is invisible locally because a local run has an `out/` directory lying around.
 
 ## The recurring bug class — watch for this specifically
 
@@ -140,6 +169,8 @@ npm test                          # regression suite — run after any regex cha
 npm run debug -- "Company Name"   # shows every role from one board + why it passed/failed
 npm run detect -- domains.txt     # resolve careers pages to ATS boards, in bulk
 npm run probe -- candidates.txt   # guess board tokens from company names, in bulk
+npm run bulk-import -- --bar india   # import + validate ats-scrapers' tenant lists
+npm run bulk-import -- --limit 200   # ...sample first; runs weekly in discover.yml
 npm run preview                   # render out/matches.json as the actual email HTML
 npm run discover                  # manual trigger of the weekly Common Crawl sweep
 ```

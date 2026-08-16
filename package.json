@@ -13,6 +13,7 @@
     "probe": "tsx src/probe.ts",
     "detect": "tsx src/detect.ts",
     "import": "tsx src/import-urls.ts",
+    "bulk-import": "tsx src/bulk-import.ts",
     "debug": "tsx src/debug.ts",
     "discover-news": "tsx src/discover-news.ts"
   },
