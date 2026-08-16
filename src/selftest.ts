@@ -129,6 +129,31 @@ check('finance family off at tech firms', roleFamily('Associate, Operations', 't
 check('finance family on at banks', roleFamily('Asset Servicing Analyst', 'banking'), 'finance');
 check('swe family', roleFamily('Backend Engineer', 'tech'), 'swe');
 
+// 830 of 1,969 India roles across the 12 highest-volume boards were being
+// dropped for having no family at all. Each of these is a category that was
+// invisible until measured — not a hypothetical.
+check('spelled-out QA, which \\bqa\\b never matched', roleFamily('Executive - Digital Quality Assurance', 'tech'), 'swe');
+check('silicon roles at the semiconductor GCCs', roleFamily('Physical Design Engineer', 'tech'), 'swe');
+check('embedded/firmware', roleFamily('Firmware Developer', 'tech'), 'swe');
+// "Advisory" appeared 235 times in the dropped set — KPMG and PwC label
+// nearly every engagement with it.
+check('consulting advisory work', roleFamily('Executive - TPRM-Advisory Services', 'consulting'), 'finance');
+check('product family', roleFamily('Associate Product Manager', 'tech'), 'product');
+check('design family', roleFamily('Product Designer', 'tech'), 'design');
+check('security family', roleFamily('Cyber Defense Analyst', 'tech'), 'security');
+// Widening a family must not promote the senior rungs: `manager` is still a
+// senior term everywhere, so the family only makes the role visible.
+check('product family does not smuggle in managers', classify(job('Product Manager'), 'tech').isJunior, false);
+
+// Back-office roles reached the inbox through the finance family's junior
+// "Analyst"/"Executive" titles. "Analyst - Employee Vetting & Background
+// checks" was posted ~10 times in a single KPMG sweep.
+check('HR vetting ops excluded', classify(job('Analyst - Employee Vetting & Background checks'), 'consulting').excluded, true);
+check('admin roles excluded', classify(job('Analyst - Executive Assistant'), 'consulting').excluded, true);
+check('finance back-office excluded', classify(job('Executive - Accounts Payable, Finance'), 'consulting').excluded, true);
+// The carve-outs above must not take real engineering with them.
+check('real consulting engineering still kept', classify(job('Consultant - Gen AI'), 'consulting').excluded, false);
+
 console.log('dedup normalization');
 // Cigna posted the same requisition twice — one title used a plain hyphen,
 // the other an en-dash in "HIH – Evernorth" — so an exact-string dedup key

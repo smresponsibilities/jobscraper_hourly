@@ -83,6 +83,12 @@ const HARD_EXCLUDE = new RegExp(
     // Annotation/ops roles that look technical but are not engineering.
     'data associate|digital associate|ai data|support associate|it support',
     'customer (?:service|support)|account executive|recruiter',
+    // Back-office roles at the consulting firms. These reach the inbox via the
+    // `finance` family's "Analyst"/"Executive" (both junior titles in Indian
+    // consulting), not via anything technical — "Analyst - Employee Vetting &
+    // Background checks" alone was posted ~10 times on one KPMG sweep.
+    'employee vetting|background check|executive assistant|\\bsecretary\\b',
+    'accounts payable|accounts receivable|payroll|talent acquisition|human resources',
     // Commercial roles slip in through keyword overlap — "Cloud Data Platform
     // Sales" matched the data family on the word "Data". \bsales\b is safe:
     // "Salesforce Developer" has no word boundary after "sales".

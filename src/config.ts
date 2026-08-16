@@ -96,9 +96,33 @@ export const REGION_LOCKED =
 export const SERVICE_COMPANIES =
   /\b(tcs|tata consultancy|infosys|wipro|cognizant|accenture|capgemini|hcl|hcltech|tech mahindra|ltimindtree|mphasis|hexaware|birlasoft|coforge|persistent systems|zensar|mindtree|dxc|atos|virtusa|ust global|quess|randstad|adecco|genpact|firstsource|wns global|conduent|concentrix|teleperformance)\b/i;
 
-/** A role only alerts if its title matches one of these families. */
+/**
+ * A role only alerts if its title matches one of these families.
+ *
+ * Measured against the 12 highest-India-volume boards, 830 of 1,969 India
+ * roles (42%) were being dropped here — not because they were senior or
+ * irrelevant, but because whole job categories had no family at all. The
+ * additions below come from that measured vocabulary, not from guesswork:
+ * `advisory` alone appeared 235 times (KPMG/PwC label nearly everything
+ * "Advisory"), and `qa|test` never matched the spelled-out "Quality
+ * Assurance".
+ *
+ * Widening a family only makes a role *visible*; the per-industry seniority
+ * rules in classify.ts still gate it. That division is deliberate — it is why
+ * adding `product` does not flood the inbox with "Product Manager", since
+ * `manager` remains a senior term everywhere.
+ */
 export const ROLE_FAMILIES: Record<string, RegExp> = {
-  swe: /\b(software|engineer|developer|sde|swe|programmer|full[- ]?stack|backend|back[- ]end|frontend|front[- ]end|mobile|android|ios|platform|infrastructure|devops|sre|reliability|qa|test|security engineer|systems)\b/i,
+  // Hardware/silicon terms matter here specifically because the semiconductor
+  // GCCs (Qualcomm, TI, AMD, Infineon, Microchip) are now covered, and their
+  // India design centres hire freshers heavily.
+  swe: /\b(software|engineer|developer|sde|swe|programmer|full[- ]?stack|backend|back[- ]end|frontend|front[- ]end|mobile|android|ios|platform|infrastructure|devops|sre|reliability|qa|quality assurance|sdet|test|automation|security engineer|systems|embedded|firmware|vlsi|rtl|asic|fpga|silicon|physical design)\b/i,
   data: /\b(data|machine learning|\bml\b|\bai\b|analytics|scientist|research|nlp|computer vision|deep learning|quantitative|quant)\b/i,
-  finance: /\b(analyst|associate|consultant|investment|risk|trading|trader|actuar|audit|finance|banking|strategy|operations analyst)\b/i,
+  finance: /\b(analyst|associate|consultant|advisory|investment|risk|\bgrc\b|\btprm\b|compliance|treasury|\btax\b|trading|trader|actuar|audit|finance|banking|strategy|operations analyst)\b/i,
+  // Product and program work is a standard CS-grad path; `manager` still gates
+  // the senior end, so in practice this surfaces APM/Product Analyst/Product
+  // Owner rather than the manager rungs.
+  product: /\b(product manager|product owner|product analyst|associate product|\bapm\b|program manager|programme manager|technical program|project manager|scrum|business analyst)\b/i,
+  design: /\b(designer|\bux\b|\bui\b|user experience|user research|product design|interaction design)\b/i,
+  security: /\b(security|cyber|infosec|penetration test|appsec|threat|vulnerability|identity (?:&|and) access)\b/i,
 };

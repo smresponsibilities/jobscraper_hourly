@@ -184,15 +184,24 @@ async function main(): Promise<void> {
     console.log(`${staleForEmail.length} matches are 21+ days old — shown as backlog, not urgent`);
   }
 
-  if (deduped.length > 0 && !dryRun && !coldStart) {
+  const wroteEmail = deduped.length > 0 && !dryRun && !coldStart;
+  if (wroteEmail) {
     await writeFile('out/email.html', renderEmail(freshForEmail, staleForEmail), 'utf8');
   }
 
+  /**
+   * `new_count` gates the workflow's email step, and `out/` is gitignored — so
+   * it is empty on every fresh runner. Reporting a non-zero count without
+   * having written the file points that step at a file that does not exist,
+   * which is exactly the "no email arrived even though roles were found" case.
+   * The count must therefore track whether the email was actually rendered,
+   * not just how many matches were found.
+   */
   const output = process.env.GITHUB_OUTPUT;
   if (output) {
     await appendFile(
       output,
-      `new_count=${deduped.length}\nsubject=${subject(freshForEmail, staleForEmail)}\nhour=${new Date().getUTCHours()}\n`,
+      `new_count=${wroteEmail ? deduped.length : 0}\nsubject=${subject(freshForEmail, staleForEmail)}\nhour=${new Date().getUTCHours()}\n`,
     );
   }
 }
