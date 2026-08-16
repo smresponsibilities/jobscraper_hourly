@@ -1162,7 +1162,8 @@
     "ats": "phenom",
     "token": "careers.lilly.com",
     "industry": "tech",
-    "source": "curated"
+    "source": "curated",
+    "failingSince": "2026-08-16T20:41:35.017Z"
   },
   {
     "name": "Marriott",
