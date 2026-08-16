@@ -6114,8 +6114,7 @@
     "host": "wd3",
     "site": "fme",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-16T09:42:33.788Z"
+    "source": "discovered"
   },
   {
     "name": "harriscomputer",
@@ -6210,8 +6209,7 @@
     "host": "wd3",
     "site": "MurexCareerPage1",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-16T09:42:33.788Z"
+    "source": "discovered"
   },
   {
     "name": "lonza",
@@ -6240,8 +6238,7 @@
     "host": "wd3",
     "site": "Michelin",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-16T09:42:33.788Z"
+    "source": "discovered"
   },
   {
     "name": "novartis",
@@ -8235,7 +8232,8 @@
     "host": "wd5",
     "site": "EXT",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-16T10:41:42.457Z"
   },
   {
     "name": "generalmotors",
@@ -8244,8 +8242,7 @@
     "host": "wd5",
     "site": "Careers_GM",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-16T09:42:33.788Z"
+    "source": "discovered"
   },
   {
     "name": "guardianpharmacy",
@@ -8272,8 +8269,7 @@
     "host": "wd5",
     "site": "GMED_Careers",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-16T09:42:33.788Z"
+    "source": "discovered"
   },
   {
     "name": "greif",
@@ -8282,8 +8278,7 @@
     "host": "wd5",
     "site": "Greif",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-16T09:42:33.788Z"
+    "source": "discovered"
   },
   {
     "name": "hexcel",
@@ -8584,8 +8579,7 @@
     "host": "wd5",
     "site": "LightWonderExternalCareers",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-16T09:42:33.788Z"
+    "source": "discovered"
   },
   {
     "name": "manh",
@@ -9591,7 +9585,8 @@
     "host": "wd5",
     "site": "TollGroup",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-16T10:41:42.457Z"
   },
   {
     "name": "townepark",
