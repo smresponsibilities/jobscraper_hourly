@@ -2269,7 +2269,8 @@
     "ats": "rendered",
     "token": "uber",
     "industry": "tech",
-    "source": "curated"
+    "source": "curated",
+    "failingSince": "2026-08-16T13:45:31.149Z"
   },
   {
     "name": "Vanguard",
