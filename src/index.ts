@@ -97,6 +97,7 @@ async function main(): Promise<void> {
   const liveIds = new Set<string>();
   const polledBoards = new Set<string>();
   let totalSeen = 0;
+  let screened = 0;
 
   for (const { company, jobs, error } of results) {
     if (error) {
@@ -127,6 +128,7 @@ async function main(): Promise<void> {
        * per run, so 100 MB of state would evict itself within days.
        */
       if (!preScreen(job, company)) continue;
+      screened++;
       if (seen[id] && !testEmail) continue;
       seen[id] = nowIso;
       fresh.push({ company, job });
@@ -137,7 +139,9 @@ async function main(): Promise<void> {
   // an extra HTTP round trip per posting is only worth paying for those.
   const candidates = fresh;
   console.log(
-    `${totalSeen} live postings, ${candidates.length} newly pass location and role screening`,
+    `${totalSeen} live postings, ${screened} pass location and role screening ` +
+      `(${((100 * screened) / Math.max(totalSeen, 1)).toFixed(1)}% — only these enter seen state), ` +
+      `${candidates.length} of them new`,
   );
 
   const enriched = await mapLimit(candidates, CONCURRENCY, async ({ company, job }) => ({
