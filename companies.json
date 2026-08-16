@@ -6231,8 +6231,7 @@
     "host": "wd3",
     "site": "Michelin",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-16T05:43:47.110Z"
+    "source": "discovered"
   },
   {
     "name": "novartis",
@@ -9220,8 +9219,7 @@
     "host": "wd5",
     "site": "Republic",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-16T04:50:47.973Z"
+    "source": "discovered"
   },
   {
     "name": "surefirecyber",
@@ -9607,7 +9605,8 @@
     "host": "wd5",
     "site": "External",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-16T08:47:17.163Z"
   },
   {
     "name": "torcrobotics",
@@ -9879,7 +9878,8 @@
     "host": "wd5",
     "site": "Zoom",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-16T08:47:17.163Z"
   },
   {
     "name": "modmed",
