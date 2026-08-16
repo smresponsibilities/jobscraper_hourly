@@ -9219,8 +9219,7 @@
     "host": "wd5",
     "site": "Republic",
     "industry": "tech",
-    "source": "discovered",
-    "failingSince": "2026-08-16T14:39:28.220Z"
+    "source": "discovered"
   },
   {
     "name": "surefirecyber",
