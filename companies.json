@@ -2269,8 +2269,7 @@
     "ats": "rendered",
     "token": "uber",
     "industry": "tech",
-    "source": "curated",
-    "failingSince": "2026-08-16T13:45:31.149Z"
+    "source": "curated"
   },
   {
     "name": "Vanguard",
@@ -9220,7 +9219,8 @@
     "host": "wd5",
     "site": "Republic",
     "industry": "tech",
-    "source": "discovered"
+    "source": "discovered",
+    "failingSince": "2026-08-16T14:39:28.220Z"
   },
   {
     "name": "surefirecyber",
