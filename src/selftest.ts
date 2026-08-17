@@ -1,5 +1,6 @@
 import { classify } from './classify.js';
 import { isFreshEnough, locationMatches, normalizeForDedup, roleFamily } from './filter.js';
+import { extractNames, FUNDING, INVESTORS } from './news-extract.js';
 import { detectOutage } from './outage.js';
 import { selectBoards } from './select-boards.js';
 import type { Company, Industry, RawJob } from './types.js';
@@ -257,6 +258,41 @@ const allHot = selectBoards(
 );
 check('hot boards are never sacrificed to the ceiling', allHot.polling.length, 3);
 check('no cold slots remain when hot overflows', allHot.cold, 0);
+
+console.log('news extraction (discover-news.ts)');
+// All cases below are real headlines pulled from the six live RSS feeds
+// during an audit — each one was a genuine extraction bug, not a
+// hypothetical. "Series B/C" leaking as a fake candidate, "FY27" surviving
+// because only fy24-26 were hardcoded (the staleness the original author's
+// own comment predicted, one year later), and a FUNDING trigger verb
+// ("Backed", "Nets") getting capitalised mid-headline and extracted as its
+// own candidate all shipped in production before this suite existed.
+check(
+  '"Series B" is not extracted as a company name',
+  extractNames('AI code testing platform Blacksmith raises $45 Mn in Series B led by Peak XV').join(','),
+  'Blacksmith',
+);
+check(
+  'fiscal-year token is stripped regardless of which year it is (FY27, not just FY24-26)',
+  extractNames('PhysicsWallah Q1 FY27 revenue jumps 24% to Rs 1,054 Cr amid Rs 88 Cr net loss').join(','),
+  'PhysicsWallah',
+);
+check(
+  'a capitalised FUNDING trigger verb ("Backed") does not attach itself to the real name',
+  extractNames("CRED-Backed NewTap Finance's FY26 Profit More Than Doubles To ₹2.4 Cr").includes('NewTap Finance'),
+  true,
+);
+check(
+  'the funded company survives even when "Nets" (a FUNDING verb) is title-cased next to it',
+  extractNames('D2C Brand Scrubsy Nets $3 Mn to Expand Home Cleaning Offerings').includes('Scrubsy'),
+  true,
+);
+check('KKR is filtered as an investor, not extracted as the funded company', INVESTORS.has('kkr'), true);
+check(
+  '"invest $X in Y" (amount between the verb and "in") still matches FUNDING, not just "invest in Y"',
+  FUNDING.test('Nvidia-OpenAI partnership: US chipmaker plans to invest $3 billion in SB Energy'),
+  true,
+);
 
 console.log(failures === 0 ? '\nall checks pass' : `\n${failures} failing check(s)`);
 process.exit(failures === 0 ? 0 : 1);
