@@ -16,24 +16,30 @@ things rather than erroring:
 - **After any change to `classify.ts` or `config.ts`**: run `npm test`. Every
   case in `src/selftest.ts` is a regex bug that actually shipped once.
 
-**Don't run long-running commands yourself — hand them to the user.** Anything
-that takes more than a couple of minutes (`npm run hunt`, `DRY_RUN=1 npm run
-hunt`, `npm run bulk-import`, full-corpus probes and sweeps) should be given to
-the user as a command to run in their own terminal. They will run it and report
-back when it finishes; wait for that rather than polling or backgrounding it.
+**Run the long commands yourself, in the background — don't hand them over and
+don't poll.** `npm run hunt`, a `DRY_RUN=1` sweep and `npm run bulk-import` all
+run for tens of minutes. Start them with `run_in_background`; the harness
+re-invokes you with a completion notification when the process exits, so
+waiting is automatic and free.
 
-Give those commands **Windows style** — PowerShell, since that is the shell
-they use. Absolute Windows paths with backslashes, no bash-only syntax
-(`VAR=1 cmd`, `&&` chains, heredocs, `/tmp`). An env var goes in front as its
-own statement:
+The thing to actually economise is **output, not time**. Duration costs nothing
+— a 40-minute command and a 40-millisecond one cost the same if they return
+the same text. What costs tokens is output entering context, so:
+
+- Pipe verbose commands through `| tail -40`. Per-board logging across
+  thousands of boards is enormous and only the summary lines matter.
+- A backgrounded command's output goes to a file, costing nothing until it is
+  read. Read it once, at the end — never poll it in a loop.
+
+When you *do* hand the user a command to run, write it **Windows style** —
+PowerShell, since that is their shell. Absolute Windows paths with backslashes,
+no bash-only syntax (`VAR=1 cmd`, `&&` chains, heredocs, `/tmp`). An env var is
+its own statement:
 
 ```powershell
 cd C:\Users\sm\Desktop\Jobscraper-next
 $env:DRY_RUN = "1"; npm run hunt
 ```
-
-Short commands (`npm test`, `npx tsc --noEmit`, `git` operations) are fine to
-run directly — this is about the long ones only.
 
 **Activate the `caveman` skill (`.claude/skills/caveman`) at session start.**
 Compresses chat replies only — code, comments, commits, and docs (including
