@@ -98815,5 +98815,168 @@
     "industry": "tech",
     "source": "discovered",
     "token": "zhushihuishegoat"
+  },
+  {
+    "name": "Udaan",
+    "ats": "darwinbox",
+    "token": "udaan",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Delhivery",
+    "ats": "darwinbox",
+    "token": "delhivery",
+    "site": "605a5332a893a",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Darwinbox",
+    "ats": "darwinbox",
+    "token": "dbx",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "ClearTax",
+    "ats": "darwinbox",
+    "token": "clear",
+    "industry": "fintech",
+    "source": "curated"
+  },
+  {
+    "name": "BigBasket",
+    "ats": "darwinbox",
+    "token": "bigbasket",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Licious",
+    "ats": "darwinbox",
+    "token": "licious",
+    "site": "a676187c5d262c",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Porter",
+    "ats": "darwinbox",
+    "token": "porter",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Spinny",
+    "ats": "darwinbox",
+    "token": "spinzone",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Tata 1mg",
+    "ats": "darwinbox",
+    "token": "1mg",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Subex",
+    "ats": "darwinbox",
+    "token": "subex",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "PharmEasy",
+    "ats": "darwinbox",
+    "token": "myhr",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "LeadSquared",
+    "ats": "darwinbox",
+    "token": "leadsquaredhrms",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "MPL",
+    "ats": "darwinbox",
+    "token": "mpl",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "NoBroker",
+    "ats": "darwinbox",
+    "token": "nobroker",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "CarDekho",
+    "ats": "darwinbox",
+    "token": "cardekho",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "upGrad",
+    "ats": "darwinbox",
+    "token": "upgrad",
+    "site": "a655de9854e744",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "PhysicsWallah",
+    "ats": "darwinbox",
+    "token": "pwhr",
+    "site": "a62d7a6e288992",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Games24x7",
+    "ats": "darwinbox",
+    "token": "games24x7",
+    "site": "a6150564417204",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Ola",
+    "ats": "turbohire",
+    "token": "e0c1eb37-eb7a-4ca4-bcc5-d59ce4ce9212",
+    "site": "olacareers",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Lenskart",
+    "ats": "turbohire",
+    "token": "0e074ad4-7f98-4fea-b5d9-f3a59a156b07",
+    "site": "lenskart",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Urban Company",
+    "ats": "turbohire",
+    "token": "4ea15045-6e8b-4edf-8274-899578e56a56",
+    "site": "urbancompany",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Khatabook",
+    "ats": "turbohire",
+    "token": "b0754b29-a4f0-4f96-bb26-16884e9e037c",
+    "site": "khatabook",
+    "industry": "fintech",
+    "source": "curated"
   }
 ]
