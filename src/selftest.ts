@@ -1,6 +1,6 @@
 import { classify } from './classify.js';
 import { isFreshEnough, locationMatches, normalizeForDedup, roleFamily } from './filter.js';
-import { extractNames, FUNDING, INVESTORS } from './news-extract.js';
+import { extractNames, FUNDING, INVESTORS, LONE_ONLY, TRAILING_ONLY } from './news-extract.js';
 import { detectOutage } from './outage.js';
 import { selectBoards } from './select-boards.js';
 import type { Company, Industry, RawJob } from './types.js';
@@ -293,6 +293,51 @@ check(
   FUNDING.test('Nvidia-OpenAI partnership: US chipmaker plans to invest $3 billion in SB Energy'),
   true,
 );
+
+// Second audit pass (2026-08-17), against the live feeds. Three new bug
+// classes shipped between the first audit and this one:
+//
+//  1. Investor-suffix truncation: "SMBC Asia Rising Fund" was cut to its
+//     first three words before INVESTOR_SUFFIX ran, so the trailing "Fund"
+//     never matched and the investor leaked through as a candidate.
+//  2. Trailing verbs/nouns stuck to the real name ("Khartis Therapeutics
+//     Emerges") and stray single capitalised words leaked from longer
+//     phrases ("Deep-tech startup Quarkitech" -> "Deep", "led by 12 Flags"
+//     -> "Flags", "files UDRHP" -> "UDRHP", "ESOP buyback" -> "ESOP").
+//  3. A junk phrase split across the stopword classes ("Expand Home
+//     Cleaning Offerings" -> "Expand Home") survived because the trailing
+//     trim stopped on a lone-only word.
+check(
+  'a 4-word investor name is filtered whole, not truncated past its suffix',
+  extractNames('Centricity raises Rs 280 Cr in Series A round led by SMBC Asia Rising Fund').join(','),
+  'Centricity',
+);
+check(
+  'a trailing verb attached to the real name is trimmed (Emerges from Stealth)',
+  extractNames('Khartis Therapeutics Emerges from Stealth with $95 Million in Funding to Advance Oral Small Molecule Immunology Pipeline')[0],
+  'Khartis Therapeutics',
+);
+check('the orphan of "Deep-tech startup X" is not extracted as its own company', extractNames('Deep-tech startup Quarkitech raises pre-seed funding').join(','), 'Quarkitech');
+check('"Home cleaning products startup X" extracts only X, not the sector word', extractNames('Home cleaning products startup Scrubsy raises Rs 27 Cr from V3 Ventures').join(','), 'Scrubsy');
+check('"Every fusion startup" (a feature headline) extracts nothing', extractNames('Every fusion startup that has raised over $100M').join(','), '');
+check('"Seven cos" (a count, not a company) extracts nothing', extractNames('IPO wave: Seven cos eye to raise Rs 6,400 Cr next week').join(','), '');
+check('"Tribunal allows Zee" extracts only Zee', extractNames('Tribunal allows Zee to proceed with fundraise, but keeps market ban intact').join(','), 'Zee');
+check('IPO-document acronyms are not companies (UDRHP, OFS)', extractNames('Zetwerk files UDRHP to raise Rs 2,600 Cr via fresh issue; promoters to account for 53% of OFS').join(','), 'Zetwerk');
+check('ESOP is not a company', extractNames('Astrotalk turns unicorn at $1 Bn valuation via ESOP buyback').join(','), 'Astrotalk');
+check('the tail of a numeral-led VC name ("led by 12 Flags" -> "Flags") is not a company', extractNames('Wippi raises $1.2 Mn in seed round led by 12 Flags').join(','), 'Wippi');
+check('": WSJ" (a publication suffix) is not a company', extractNames('Nvidia scales back funding guarantee for Ohio OpenAI data centre: WSJ').join(',').split(',').filter((n) => n.toLowerCase() === 'wsj').length, 0);
+check('"Trump-backed" extracts the company, not the backer', extractNames('US regulator approves bank charter for Trump-backed crypto company World Liberty Financial').join(','), 'World Liberty Financial');
+check('a junk phrase split across stopword classes is dropped whole', extractNames('D2C Brand Scrubsy Nets $3 Mn to Expand Home Cleaning Offerings').join(','), 'Scrubsy');
+
+// The junk-class words must only suppress *junk* — each one is also a
+// plausible first word of a real company, and multi-word names that start
+// with one must survive untouched.
+check('lone-only words do not lead-trim real multi-word names (Deep Industries)', extractNames('Deep Industries bags Rs 100 Cr contract').join(','), 'Deep Industries');
+check('lone-only words do not lead-trim real multi-word names (Seven Seas)', extractNames('Seven Seas Technologies raises Series A').join(','), 'Seven Seas Technologies');
+check('lone-only words do not lead-trim real multi-word names (Cleaning Solutions)', extractNames('Cleaning Solutions raises seed round').join(','), 'Cleaning Solutions');
+check('lone-only words do not lead-trim real multi-word names (Home Depot)', extractNames('Home Depot opens India sourcing office').includes('Home Depot'), true);
+check('trailing-only words do not lead-trim real multi-word names (Expand)', extractNames('Expand Corp raises Series B').join(','), 'Expand Corp');
+check('the sets exist and are disjoint from STOPWORDS', LONE_ONLY.has('deep') && TRAILING_ONLY.has('emerges') && !LONE_ONLY.has('the'), true);
 
 console.log(failures === 0 ? '\nall checks pass' : `\n${failures} failing check(s)`);
 process.exit(failures === 0 ? 0 : 1);

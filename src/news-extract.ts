@@ -49,6 +49,33 @@ export const STOPWORDS = new Set([
 ]);
 
 /**
+ * Words that only ever appear as junk at the END of a capitalised phrase —
+ * verbs and generic nouns that trail the real name ("Khartis Therapeutics
+ * Emerges", "Expand Home Cleaning Offerings", "Profit More Than Doubles").
+ * They are trimmed like stopwords but must never lead-trim, because each one
+ * can also be the first word of a real company ("Expand" -> "Expand"), so
+ * putting them in STOPWORDS would eat multi-word names.
+ */
+export const TRAILING_ONLY = new Set([
+  'emerges', 'doubles', 'expand', 'offerings', 'cleaning',
+]);
+
+/**
+ * Words that are only junk when they stand ALONE as a single-word candidate.
+ * "Deep-tech startup Quarkitech" yields a stray capitalised "Deep"; "Seven
+ * cos", "$95 Million", ": WSJ", "files UDRHP" and "led by 12 Flags" each
+ * leave one capitalised orphan. But every one of these is also a plausible
+ * first word of a real company ("Deep Industries", "Seven Seas", "Home
+ * Depot", "Cleaning Solutions"), so they must not lead-trim multi-word
+ * names — only suppress a candidate that is exactly that one word.
+ */
+export const LONE_ONLY = new Set([
+  'home', 'deep', 'every', 'seven', 'investors', 'tribunal', 'million', 'billion',
+  'wsj', 'drhp', 'udrhp', 'rhp', 'ofs', 'esop', 'flags', 'trump',
+]);
+
+
+/**
  * Investors, not employers. Funding headlines name the VC at least as often as
  * the company ("X raises $40 Mn led by Accel"), and on the first live run the
  * only boards this found were Lightspeed's and a "Stealth" placeholder — i.e.
@@ -61,6 +88,10 @@ export const INVESTORS = new Set([
   'info edge', 'fireside', 'westbridge', 'avataar', 'iron pillar', 'trifecta',
   'alteria', 'beenext', 'jungle ventures', 'vertex', 'temasek', 'khosla',
   'andreessen', 'a16z', 'lightbox', 'omidyar', 'prosus', 'naspers', 'stealth', 'kkr',
+  // "led by 12 Flags" — the numeral breaks the capitalized-token regex, so the
+  // VC surfaces as "Flags" (already a stopword) rather than under this name,
+  // but keep the full name filtered for when the numeral is spelled out.
+  '12 flags',
 ]);
 
 /** Investor houses share these suffixes; hiring companies rarely do. */
@@ -73,6 +104,16 @@ function isDatedToken(word: string): boolean {
 
 function isStopword(word: string): boolean {
   return STOPWORDS.has(word.toLowerCase()) || isDatedToken(word);
+}
+
+/** Junk only when it trails a longer phrase ("Khartis Therapeutics Emerges"). */
+function isTrailingOnly(word: string): boolean {
+  return TRAILING_ONLY.has(word.toLowerCase());
+}
+
+/** Junk only when it is the whole candidate ("Deep-tech startup" -> "Deep"). */
+function isLoneOnly(word: string): boolean {
+  return LONE_ONLY.has(word.toLowerCase());
 }
 
 export function decode(s: string): string {
@@ -99,17 +140,39 @@ export function extractNames(headline: string): string[] {
   const cleaned = headline.replace(/[’']s\b/g, '').replace(/[“”"‘’]/g, '');
   const names: string[] = [];
 
-  for (const m of cleaned.matchAll(/\b([A-Z][A-Za-z0-9]*(?:\s+[A-Z][A-Za-z0-9]*){0,2})\b/g)) {
+  // Capture up to FOUR capitalized words, not three: "SMBC Asia Rising Fund"
+  // used to be truncated to "SMBC Asia Rising" before INVESTOR_SUFFIX ran, so
+  // the trailing "Fund" never matched and the investor leaked through as a
+  // candidate (live audit find). Check the investor pattern against the full
+  // phrase first, then truncate the survivor back to three words.
+  for (const m of cleaned.matchAll(/\b([A-Z][A-Za-z0-9]*(?:\s+[A-Z][A-Za-z0-9]*){0,3})\b/g)) {
     const phrase = m[1]!.trim();
     const words = phrase.split(/\s+/);
-    // Trim trailing stopwords ("Zetwerk Revenue" -> "Zetwerk").
-    while (words.length && isStopword(words[words.length - 1]!)) words.pop();
+    // Trim trailing stopwords ("Zetwerk Revenue" -> "Zetwerk"). Trailing-only
+    // words join this pass — a verb or generic noun attached after the name
+    // ("Emerges") is never part of it, but the same word can lead a real
+    // company name, so it must not be trimmed from the front.
+    while (words.length && (isStopword(words[words.length - 1]!) || isTrailingOnly(words[words.length - 1]!))) {
+      words.pop();
+    }
     while (words.length && isStopword(words[0]!)) words.shift();
     if (words.length === 0) continue;
-    const name = words.join(' ');
+    const full = words.join(' ');
+    if (INVESTORS.has(full.toLowerCase()) || INVESTOR_SUFFIX.test(full)) continue;
+    const name = words.slice(0, 3).join(' ');
     if (name.length < 3 || name.length > 40) continue;
-    if (words.every((w) => w.length <= 2)) continue;
-    if (INVESTORS.has(name.toLowerCase()) || INVESTOR_SUFFIX.test(name)) continue;
+    if (name.split(/\s+/).every((w) => w.length <= 2)) continue;
+    // If every remaining word is junk-class, the candidate itself is junk.
+    // This catches the orphan of a longer phrase ("Deep-tech startup
+    // Quarkitech" -> "Deep") AND the split case where the trailing trim
+    // stops on a lone-only word ("Expand Home Cleaning Offerings" ->
+    // "Expand Home": all four words are junk-class, just split across
+    // STOPWORDS/TRAILING_ONLY/LONE_ONLY). Real multi-word names survive
+    // because they contain at least one non-junk word ("Deep Industries",
+    // "Seven Seas", "Cleaning Solutions", "Home Depot").
+    const isJunkClass = (w: string) =>
+      isStopword(w) || isTrailingOnly(w) || isLoneOnly(w);
+    if (name.split(/\s+/).every(isJunkClass)) continue;
     names.push(name);
   }
   return [...new Set(names)];
