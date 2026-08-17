@@ -2,10 +2,11 @@ name: discover-news
 
 on:
   schedule:
-    # Daily. Funding and India-expansion coverage turns over every day, and the
-    # feeds only expose the most recent ~20-50 items — a weekly run would read
-    # the same window and silently miss everything announced in between.
-    - cron: '25 5 * * *'
+    # Twice daily, 12h apart. Feeds expose only the most recent ~20-50 items
+    # each; a single daily pull can miss items pushed off that window during
+    # high-volume news days (Entrackr/Inc42 alone post dozens/day). 25 17 covers
+    # the second half of the day the 25 5 run can't see yet.
+    - cron: '25 5,17 * * *'
   workflow_dispatch:
 
 permissions:

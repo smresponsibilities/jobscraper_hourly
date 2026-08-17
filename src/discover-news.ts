@@ -29,6 +29,7 @@ const FEEDS = [
   'https://techcrunch.com/feed/',
   'https://startupstorymedia.com/feed/',
   'https://www.livemint.com/rss/companies',
+  'https://economictimes.indiatimes.com/tech/startups/rssfeeds/13357270.cms',
 ];
 
 async function fetchFeed(url: string): Promise<string> {
@@ -93,6 +94,11 @@ async function main(): Promise<void> {
 
   console.log(`\n${hits.length} live boards, ${keep.length} with India/remote roles`);
   if (keep.length === 0) return;
+
+  if (process.env.DRY_RUN === '1') {
+    console.log(`DRY_RUN=1 — not writing companies.json (would go ${existing.length} -> ${existing.length + keep.length})`);
+    return;
+  }
 
   await saveCompanies([...existing, ...keep.map((hit) => hit.company)]);
   console.log(`companies.json: ${existing.length} -> ${existing.length + keep.length}`);
