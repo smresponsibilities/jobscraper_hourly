@@ -8,6 +8,7 @@ import { renderEmail, subject } from './email.js';
 import { updateCatalog } from './catalog.js';
 import { CONCURRENCY, DROP_AFTER_FAILING_DAYS, HOST_CONCURRENCY } from './config.js';
 import { loadCompanies, loadSeen, readJson, recordFailure, recordSuccess, saveCompanies, saveSeen } from './state.js';
+import { detectOutage } from './outage.js';
 
 const nowIso = new Date().toISOString();
 const dryRun = process.env.DRY_RUN === '1';
@@ -99,13 +100,23 @@ async function main(): Promise<void> {
   let totalSeen = 0;
   let screened = 0;
 
+  const suspectedOutage = detectOutage(results.map((r) => ({ ats: r.company.ats, error: r.error })));
+  if (suspectedOutage.size > 0) {
+    console.warn(
+      `suspected platform-wide outage this run, not evicting boards on: ${[...suspectedOutage].join(', ')}`,
+    );
+  }
+
   for (const { company, jobs, error } of results) {
     if (error) {
       const failed = recordFailure(company, nowIso);
       const days = (Date.now() - new Date(failed.failingSince!).getTime()) / 86_400_000;
       console.warn(`  ! ${company.name}: ${error}`);
-      if (days >= DROP_AFTER_FAILING_DAYS) dropped.push(company.name);
-      else updatedCompanies.push(failed);
+      if (days >= DROP_AFTER_FAILING_DAYS && !suspectedOutage.has(company.ats)) {
+        dropped.push(company.name);
+      } else {
+        updatedCompanies.push(failed);
+      }
       continue;
     }
 

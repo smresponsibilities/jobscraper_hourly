@@ -1,5 +1,6 @@
 import { classify } from './classify.js';
 import { isFreshEnough, locationMatches, normalizeForDedup, roleFamily } from './filter.js';
+import { detectOutage } from './outage.js';
 import type { Industry, RawJob } from './types.js';
 
 /**
@@ -176,6 +177,48 @@ check('posted 20 days ago is fresh', isFreshEnough(daysAgo(20)), true);
 check('posted 111 days ago is not fresh', isFreshEnough(daysAgo(111)), false);
 check('no posting date at all defaults to fresh', isFreshEnough(undefined), true);
 check('unparseable date (Workday relative strings) defaults to fresh', isFreshEnough('Posted Today'), true);
+
+console.log('outage detection');
+// Every tracked Darwinbox board (PhysicsWallah, Porter, Licious, Tata 1mg,
+// PharmEasy, Subex, LeadSquared, BigBasket) was silently evicted within days
+// of each other — testing the same adapter and tenant by hand afterward
+// returned live jobs immediately, so this was a platform-wide block (almost
+// certainly Cloudflare on GitHub Actions' shared runner IPs), not eight
+// coincidental deaths. `detectOutage` exists so that pattern gets caught
+// instead of trusted as eight independent failures.
+const asSet = (s: Set<string>) => [...s].sort().join(',');
+check(
+  'most of one platform failing at once is flagged as a suspected outage',
+  asSet(detectOutage([
+    { ats: 'darwinbox', error: 'timeout' },
+    { ats: 'darwinbox', error: 'timeout' },
+    { ats: 'darwinbox', error: 'timeout' },
+    { ats: 'darwinbox' },
+  ])),
+  'darwinbox',
+);
+check(
+  'one company failing among many healthy ones on the same platform is not an outage',
+  asSet(detectOutage([
+    { ats: 'greenhouse', error: 'timeout' },
+    ...Array.from({ length: 20 }, () => ({ ats: 'greenhouse' as const })),
+  ])),
+  '',
+);
+check(
+  'a tiny platform with too few boards to judge is never flagged, even at 100% failure',
+  asSet(detectOutage([{ ats: 'phenom', error: 'timeout' }, { ats: 'phenom', error: 'timeout' }])),
+  '',
+);
+check(
+  'two platforms failing simultaneously are both flagged, independently',
+  asSet(detectOutage([
+    { ats: 'darwinbox', error: 'x' }, { ats: 'darwinbox', error: 'x' }, { ats: 'darwinbox', error: 'x' },
+    { ats: 'turbohire', error: 'x' }, { ats: 'turbohire', error: 'x' }, { ats: 'turbohire', error: 'x' },
+    { ats: 'greenhouse' }, { ats: 'greenhouse' }, { ats: 'greenhouse' },
+  ])),
+  'darwinbox,turbohire',
+);
 
 console.log(failures === 0 ? '\nall checks pass' : `\n${failures} failing check(s)`);
 process.exit(failures === 0 ? 0 : 1);
