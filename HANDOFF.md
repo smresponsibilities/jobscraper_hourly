@@ -63,10 +63,35 @@ Zepto, Myntra, Blinkit, Zerodha, Ola, Ola Electric, Oyo, and Darwinbox (the
 company itself) all came back UNVERIFIED — no ATS found, or a client-rendered
 SPA with no extractable titles, or (Oyo specifically) `oyo.darwinbox.in`
 resolves but is a **different real company** ("MPOWER") — the exact
-wildcard-domain trap this doc already warns about elsewhere. A third pass —
-possibly via a slower/more persistent tool (the user is running one on
-"freebuff," output expected in a scratchpad file) — is in flight as of this
-edit.
+wildcard-domain trap this doc already warns about elsewhere.
+
+**Third pass in flight now, on an external tool ("freebuff"), 5-hour budget.**
+Full prompt saved at
+`…\98fea03f-f366-420e-94f7-fd9e8295d247\scratchpad\freebuff-prompt.txt`,
+output expected at `…\scratchpad\freebuff-report.txt` in the same folder —
+read that file directly once it exists, don't ask the user to paste it. The
+prompt is split Part 1 (retry the unresolved list above, ~3h) / Part 2
+(deepen 8 already-confirmed finds with more evidence, ~1h) / Part 3 (23
+fresh companies not yet touched — Jupiter, Cashfree, Juspay, Acko, upGrad,
+PhysicsWallah, Tata 1mg, PharmEasy, and others, ~1h). **When it lands: verify
+every claim against our own fetchers before touching `companies.json`** —
+same discipline as every other addition this session, a resolved tenant is
+not proof of the right company (see the IBM-tenant note in
+ADDING-COMPANIES.md §4d).
+
+**Why BigBasket — and it turns out PhysicsWallah, Porter, Licious, Tata 1mg,
+PharmEasy, Subex, LeadSquared too — got auto-dropped: solved, don't
+re-investigate.** All eight were on Darwinbox, all evicted by
+`DROP_AFTER_FAILING_DAYS` within days of each other. Tested the exact same
+adapter and tenant by hand afterward — PhysicsWallah returned 106 live jobs
+immediately. The boards were never dead, only unreachable from GitHub
+Actions (almost certainly a Cloudflare block on the runners' shared IP
+ranges). Fixed: `src/outage.ts`'s `detectOutage()` now recognizes "most of
+one platform failed this run" as a suspected outage and withholds eviction
+for boards on that platform, rather than treating each as an independent
+per-company death. Covered by the `outage detection` block in
+`src/selftest.ts`. **This means it's now safe to re-add all eight** — the
+mechanism that ate them is fixed, not just the individual boards.
 
 **Correction to carry forward**: an early draft of the research prompt
 claimed a working Keka adapter. **There isn't one** — `src/fetchers/` has no
