@@ -13444,7 +13444,8 @@
     "source": "discovered",
     "token": "capitalhealth",
     "host": "wd1",
-    "site": "capitalhealthcareers"
+    "site": "capitalhealthcareers",
+    "failingSince": "2026-08-16T22:40:34.862Z"
   },
   {
     "name": "CapNexus",
@@ -17372,7 +17373,8 @@
     "source": "discovered",
     "token": "geisinger",
     "host": "wd5",
-    "site": "geisingerexternal"
+    "site": "geisingerexternal",
+    "failingSince": "2026-08-16T22:40:34.862Z"
   },
   {
     "name": "Gen Digital Inc.",
