@@ -1,7 +1,8 @@
 import { classify } from './classify.js';
 import { isFreshEnough, locationMatches, normalizeForDedup, roleFamily } from './filter.js';
 import { detectOutage } from './outage.js';
-import type { Industry, RawJob } from './types.js';
+import { selectBoards } from './select-boards.js';
+import type { Company, Industry, RawJob } from './types.js';
 
 /**
  * Regression tests for the two regex layers that decide everything.
@@ -219,6 +220,43 @@ check(
   ])),
   'darwinbox,turbohire',
 );
+
+console.log('board selection');
+// Rotation is what lets the corpus hold ~21,000 boards without the run time
+// growing with it. The failure modes here are silent: a hot board demoted to
+// rotation stops alerting promptly, and a cold board that never reaches the
+// front of the queue is effectively deleted without anyone noticing.
+const board = (token: string, extra: Partial<Company> = {}): Company => ({
+  name: token, ats: 'greenhouse', token, industry: 'tech', source: 'discovered', ...extra,
+});
+
+const mixed = [
+  board('hot1', { lastIndiaAt: '2026-08-01T00:00:00Z', lastPolledAt: '2026-08-17T00:00:00Z' }),
+  board('hot2', { lastIndiaAt: '2026-07-01T00:00:00Z', lastPolledAt: '2026-08-17T00:00:00Z' }),
+  board('coldNew'),                                          // never polled
+  board('coldOld', { lastPolledAt: '2026-08-01T00:00:00Z' }),
+  board('coldRecent', { lastPolledAt: '2026-08-16T00:00:00Z' }),
+];
+
+const picked = selectBoards(mixed, 4);
+check('every hot board is polled', picked.hot, 2);
+check('cold boards fill the remaining slots only', picked.cold, 2);
+check('overflow cold boards are deferred, not dropped', picked.skipped, 1);
+// Never-polled sorts first, so a fresh import is swept promptly instead of
+// queueing behind boards that were already checked.
+check(
+  'cold rotation is oldest-polled-first, unpolled ahead of all',
+  picked.polling.slice(2).map((c) => c.token).join(','),
+  'coldNew,coldOld',
+);
+// A board that can alert must never wait on rotation, even if hot boards
+// alone blow past the ceiling.
+const allHot = selectBoards(
+  [board('a', { lastIndiaAt: 'x' }), board('b', { lastIndiaAt: 'x' }), board('c', { lastIndiaAt: 'x' })],
+  1,
+);
+check('hot boards are never sacrificed to the ceiling', allHot.polling.length, 3);
+check('no cold slots remain when hot overflows', allHot.cold, 0);
 
 console.log(failures === 0 ? '\nall checks pass' : `\n${failures} failing check(s)`);
 process.exit(failures === 0 ? 0 : 1);
