@@ -99,9 +99,29 @@ jobs:
           subject: '[jobs] ${{ steps.hunt.outputs.subject }}'
           html_body: file://out/email.html
 
+      # The runner checked out `main` at queue time, so any push landing during
+      # the run leaves it behind and the commit below is rejected. That is not
+      # hypothetical: it failed twice, and because a failed step skips the rest
+      # of the job it also took the catalog publish with it.
+      - name: Rebase onto any commits that landed mid-run
+        if: '!inputs.test_email'
+        continue-on-error: true
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git pull --rebase --autostash origin main
+
       # companies.json is hand-curated, so its history is worth keeping on main.
+      #
+      # continue-on-error because this is bookkeeping, not the product: losing
+      # one board-list commit costs nothing (the next run rewrites the same
+      # state), while failing the job here skips "Publish catalog" and leaves
+      # the data branch stale. It matters more since boards became tiered —
+      # `lastPolledAt` lives in this file, and if it never persists the cold
+      # rotation freezes on the same slice and never reaches the rest.
       - name: Commit board list
         if: '!inputs.test_email'
+        continue-on-error: true
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: 'companies: board list update [skip ci]'
