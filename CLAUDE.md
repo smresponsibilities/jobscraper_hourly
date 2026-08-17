@@ -15,3 +15,8 @@ things rather than erroring:
   Full sequence in HANDOFF.md's "Git workflow" section.
 - **After any change to `classify.ts` or `config.ts`**: run `npm test`. Every
   case in `src/selftest.ts` is a regex bug that actually shipped once.
+
+**Activate the `caveman` skill (`.claude/skills/caveman`) at session start.**
+Compresses chat replies only — code, comments, commits, and docs (including
+this file and HANDOFF.md) stay normal prose per the skill's own rules, so this
+doesn't affect anything committed to the repo.
