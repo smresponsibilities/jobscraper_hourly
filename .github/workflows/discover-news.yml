@@ -29,7 +29,8 @@ jobs:
 
       - run: npm install --no-audit --no-fund
 
-      - run: npm run discover-news
+      - id: discover-news
+        run: npm run discover-news
 
       # Most days this changes nothing — a run that finds no new board with an
       # India role is the normal outcome, not a failure. git-auto-commit is a
@@ -39,3 +40,21 @@ jobs:
         with:
           commit_message: 'discover: new boards from funding news [skip ci]'
           file_pattern: companies.json
+
+      # Separate from hunt.yml's job-alert email — this is a raw, unverified
+      # candidate-name digest ("these companies were in funding/expansion news
+      # today, go find their HR contact yourself"), not a claim any of them
+      # have a real job board. Same SMTP secrets as hunt.yml; different content.
+      - name: Email candidate digest
+        if: steps.discover-news.outputs.candidate_count != '0'
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          secure: true
+          username: ${{ secrets.GMAIL_USER }}
+          password: ${{ secrets.GMAIL_APP_PASSWORD }}
+          from: Job Alerts <${{ secrets.GMAIL_USER }}>
+          to: ${{ secrets.ALERT_TO }}
+          subject: '[discover-news] ${{ steps.discover-news.outputs.candidate_count }} candidates, ${{ steps.discover-news.outputs.kept_count }} boards confirmed'
+          html_body: file://out/discover-news.html
