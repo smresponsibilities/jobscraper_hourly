@@ -112059,5 +112059,155 @@
     "source": "discovered",
     "token": "ovoenergy",
     "lastPolledAt": "2026-08-17T10:52:30.154Z"
+  },
+  {
+    "name": "Digit Insurance",
+    "ats": "darwinbox",
+    "token": "godigit",
+    "site": "a651fdd75445d1",
+    "industry": "banking",
+    "source": "curated"
+  },
+  {
+    "name": "Netradyne",
+    "ats": "greenhouse",
+    "token": "netradyne",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "KreditBee",
+    "ats": "darwinbox",
+    "token": "kreditbee",
+    "industry": "fintech",
+    "source": "curated"
+  },
+  {
+    "name": "Lendingkart",
+    "ats": "darwinbox",
+    "token": "hrlendingkart",
+    "industry": "fintech",
+    "source": "curated"
+  },
+  {
+    "name": "Wakefit",
+    "ats": "darwinbox",
+    "token": "wakefit",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "HealthifyMe",
+    "ats": "darwinbox",
+    "token": "healthify",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Bewakoof",
+    "ats": "darwinbox",
+    "token": "bewakoof",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "smallcase",
+    "ats": "darwinbox",
+    "token": "smallcase",
+    "site": "a62da465bba5d0",
+    "industry": "fintech",
+    "source": "curated"
+  },
+  {
+    "name": "Snapdeal",
+    "ats": "darwinbox",
+    "token": "snapdeal",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Niva Bupa",
+    "ats": "darwinbox",
+    "token": "disha",
+    "industry": "banking",
+    "source": "curated"
+  },
+  {
+    "name": "Bajaj Finserv Direct",
+    "ats": "darwinbox",
+    "token": "hrisbdirect",
+    "industry": "fintech",
+    "source": "curated"
+  },
+  {
+    "name": "Ather Energy",
+    "ats": "darwinbox",
+    "token": "atherenergy",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Pine Labs",
+    "ats": "turbohire",
+    "token": "0c477d09-037b-4de1-a1d6-6e42dad1ff4d",
+    "site": "pinelabsgroup",
+    "industry": "fintech",
+    "source": "curated"
+  },
+  {
+    "name": "Great Learning",
+    "ats": "darwinbox",
+    "token": "greatlearning",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "IIFL",
+    "ats": "darwinbox",
+    "token": "iifl",
+    "industry": "banking",
+    "source": "curated"
+  },
+  {
+    "name": "Perfios",
+    "ats": "darwinbox",
+    "token": "perfios",
+    "industry": "fintech",
+    "source": "curated"
+  },
+  {
+    "name": "Fisdom",
+    "ats": "darwinbox",
+    "token": "fisdom",
+    "industry": "fintech",
+    "source": "curated"
+  },
+  {
+    "name": "Treebo Hotels",
+    "ats": "darwinbox",
+    "token": "treebo",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Ninjacart",
+    "ats": "darwinbox",
+    "token": "ninjacart",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "AgroStar",
+    "ats": "darwinbox",
+    "token": "agrostar",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Affle",
+    "ats": "darwinbox",
+    "token": "affle",
+    "industry": "tech",
+    "source": "curated"
   }
 ]
