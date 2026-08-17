@@ -2,17 +2,24 @@ name: hunt
 
 on:
   schedule:
-    # :17 rather than :00 — the top of the hour is when GitHub's scheduler queue
-    # is most congested and runs get delayed the longest.
+    # Every 20 minutes, and that is NOT because the job needs to run that often
+    # — it is because GitHub's scheduler is best-effort and silently drops runs.
     #
-    # Briefly moved to every 2 hours out of concern that 3,793 boards wouldn't
-    # fit inside an hour. Measured instead of assuming: a real dry run at that
-    # board count finished in 23m59s (and that includes the user's own delay
-    # appending the END timestamp, so true runtime is somewhat less) — comfortable
-    # margin inside 60 minutes. Freshness matters more than the hypothetical
-    # overlap risk, so this stays hourly; revisit only if a *measured* run
-    # approaches ~45 min.
-    - cron: '17 * * * *'
+    # Measured over 30 consecutive runs on an hourly ('17 * * * *') schedule:
+    # median gap 58 min, but 9 of 29 gaps exceeded 70 min and the worst was
+    # 274 min. A cron asking for hourly delivered a 4.5-hour hole. Actual job
+    # runtime was 4-8 min throughout, so this was never a capacity problem —
+    # the schedule simply did not fire.
+    #
+    # Asking every 20 min means a dropped run costs 20 min instead of an hour,
+    # and two consecutive drops still land inside the 1-hour freshness target.
+    # Overlap is handled by the `concurrency` block below (queues, never
+    # cancels), and public-repo Actions minutes are free, so the only real cost
+    # is more 'board list update' commits.
+    #
+    # Before lengthening this again: check real run durations first. The last
+    # schedule change was made on an unmeasured hunch and had to be reverted.
+    - cron: '*/20 * * * *'
   workflow_dispatch:
     inputs:
       test_email:
