@@ -15,7 +15,10 @@ explicitly excluded — that was a direct, deliberate request, not a default.
 ## Current state (as of this doc's last edit)
 
 - **3,793 boards**, ~350-400K live postings per run, ~2,300-2,500 open matches
-  in the catalogue. Runs every 2 hours (see hunt.yml for why not hourly).
+  in the catalogue. **Runs hourly** — briefly moved to every 2 hours out of an
+  unmeasured concern that 3,793 boards wouldn't fit in an hour, then reverted
+  once a real dry run measured 23m59s at that board count. See the comment on
+  `hunt.yml`'s cron line before touching the schedule again: measure first.
 - **`main`** branch has the code. **`data`** branch (orphan, force-pushed,
   always 1 commit) has the catalogue the web UI reads.
 - **The web UI (`web/`) is built but NOT deployed to Vercel yet.** This matters —
@@ -24,6 +27,51 @@ explicitly excluded — that was a direct, deliberate request, not a default.
   env var `NEXT_PUBLIC_REPO` = `smresponsibilities/jobscraper_hourly`.
 - Regression suite (`npm test`) passes; treat a failing test as a real bug, not
   noise — every case in `src/selftest.ts` is a bug that actually shipped once.
+
+## In progress — pick up here
+
+Researching ATS credentials for ~45 well-known Indian unicorns/startups
+(Zerodha, Zepto, Ola, Zoho, boAt, ...) that are real 15-40 LPA fresher
+employers but weren't turned up by `detect`/`probe`/`bulk-import` — those
+tools only reach Greenhouse/Lever/Ashby/SmartRecruiters/Workday/Oracle
+automatically, and most of this list runs Darwinbox, TurboHire, or a
+custom in-house ATS, none of which are derivable from a domain name.
+
+**25 companies came back CONFIRMED with real job titles as evidence, and are
+NOT YET in `companies.json`.** They still need one more pass — verifying each
+against our own fetchers (same discipline as the KPMG/PwC/AMD finds:
+resolved tenant ≠ real company, see the IBM-tenant note in ADDING-COMPANIES.md
+§4d) — before being added. On Darwinbox: ClearTax (`clear`, old-style, no
+hash), BigBasket (`bigbasket`, old-style — was previously tracked, then
+auto-dropped by `DROP_AFTER_FAILING_DAYS`, worth checking why before
+re-adding), Licious (`licious`, hash `a676187c5d262c`), Porter (`porter`,
+old-style), Spinny (**tenant is `spinzone`, not `spinny`** — a naive guess
+would miss it), BharatPe/Ather Energy/Rapido (tenants confirmed via matching
+legal entity name, but 0 open roles right now — real boards, nothing to
+alert on yet). On TurboHire: Lenskart (GUID `0e074ad4-7f98-4fea-b5d9-f3a59a156b07`),
+Urban Company (GUID `4ea15045-6e8b-4edf-8274-899578e56a56`), Khatabook (GUID
+not captured, only the public job-link path). The rest resolved to platforms
+we don't have adapters for (CoinDCX/MakeMyTrip/ShareChat/Nykaa/Practo custom
+in-house; Dream11/MobiKwik/PolicyBazaar on Trakstar Hire; CoinSwitch on
+Recruiterflow) — **not worth building a new adapter for a single company**,
+skip unless a pattern emerges across several.
+
+**Still unresolved after two research passes**: Udaan and Vedantu have real
+Darwinbox tenants but the public URL redirects to Microsoft SSO login rather
+than showing listings. Upstox's old Lever board 404s (migrated off it).
+Zepto, Myntra, Blinkit, Zerodha, Ola, Ola Electric, Oyo, and Darwinbox (the
+company itself) all came back UNVERIFIED — no ATS found, or a client-rendered
+SPA with no extractable titles, or (Oyo specifically) `oyo.darwinbox.in`
+resolves but is a **different real company** ("MPOWER") — the exact
+wildcard-domain trap this doc already warns about elsewhere. A third pass —
+possibly via a slower/more persistent tool (the user is running one on
+"freebuff," output expected in a scratchpad file) — is in flight as of this
+edit.
+
+**Correction to carry forward**: an early draft of the research prompt
+claimed a working Keka adapter. **There isn't one** — `src/fetchers/` has no
+`keka.ts`. If a company resolves to Keka, record the credentials but treat
+it as a new-adapter candidate, not a drop-in add.
 
 ## Decisions that aren't obvious from the code alone
 
@@ -102,6 +150,39 @@ actually written.** `out/` is gitignored, so it is empty on every fresh runner.
 exist. That is the "no email arrived even though roles were found" failure, and
 it is invisible locally because a local run has an `out/` directory lying around.
 
+**A missing role family is invisible, and it looks exactly like "there's
+nothing to send."** The user reported sparse emails and specifically Target
+(already tracked) not showing an obviously-real job they'd seen on LinkedIn.
+`npm run debug` looked clean because it hardcoded `.slice(0, 25)` — it was
+quietly hiding 58 of Target's 83 India roles, including the fact that 48 of
+them were being dropped on `role family`, not seniority. Removed the slice;
+`debug` now prints every role plus a reason tally. Measuring the same drop
+across the 12 highest-India-volume boards found 830 of 1,969 India roles
+(42%) had no family at all — not senior, not irrelevant, just uncategorized.
+`ROLE_FAMILIES` gained `product`, `design`, `security`, and `swe`/`finance`
+both widened (VLSI/embedded terms for the semiconductor GCCs; `advisory`,
+which alone was 235 of the dropped titles at KPMG/PwC). Widening a family
+only makes a role *visible* — `classify.ts`'s per-industry seniority rules
+still gate it, which is why `product` doesn't flood the inbox with "Product
+Manager." The widening did pull in consulting back-office work through
+finance's junior "Analyst"/"Executive" titles (`HARD_EXCLUDE` gained
+`employee vetting`, `executive assistant`, `accounts payable`, etc.) — **if
+you widen a family again, re-run the same kind of `role family` tally on a
+few high-volume boards before shipping, because the junk always slips in
+through the industry's own junior-seniority words, not through the family
+regex.**
+
+**A subagent tried to open a Cloudflare bot-check page in the in-app browser
+pane and the pane's Chromium process crashed** (GPU/canvas-heavy Turnstile
+rendering, ~380MB memory spike in 3s, per the crash's own account when
+resumed and asked). This happened specifically while researching Darwinbox
+tenant credentials for Indian unicorns — Darwinbox is Cloudflare-fronted
+(see the TurboHire/Darwinbox note below), so any future agent doing this kind
+of research should be told up front: **no in-app browser tool for this kind
+of lookup, text-fetch only, and mark a bot-gated page `UNVERIFIED` rather
+than trying to push through the challenge.** Cost two agent runs before the
+guardrail was added to the prompt.
+
 ## The recurring bug class — watch for this specifically
 
 **`'\bfoo\b'` in a plain JS/TS string literal is `<backspace>foo<backspace>`,
@@ -156,11 +237,20 @@ without intervention nearly every time.
 - **iCIMS** (DocuSign, D.E. Shaw): still open. HTML with no JSON, though detail
   pages do carry a `schema.org/JobPosting` JSON-LD block — same shape of fix as
   SuccessFactors would take (a genuinely new code path), just not built yet.
-- **~60 large enterprises named in top-college placement reports** (BlackRock,
-  Deutsche Bank, PwC, McKinsey, Bain, Morgan Stanley, HSBC, Samsung, Qualcomm,
-  IBM, VMware, Texas Instruments, Mahindra, L&T, Bosch, ...) — no detectable ATS
-  on their careers domain at all. This is the honest floor of what
-  unauthenticated public JSON endpoints reach; these build bespoke portals.
+- **Large enterprises with no detectable ATS on their careers domain** — the
+  honest floor of what unauthenticated public JSON endpoints reach; these
+  build bespoke portals. Most of the original ~60-name list from placement
+  reports (BlackRock, PwC, Morgan Stanley, HSBC, Samsung, Qualcomm, Texas
+  Instruments, Mahindra, ...) turned out to be reachable after all — see
+  ADDING-COMPANIES.md §4c/§4d for how (mostly: their real tenant just wasn't
+  linked from an obvious `/careers` page, so `detect` never found it).
+  Still genuinely unreachable: Deutsche Bank, McKinsey, Bain & Company
+  (Bain Capital is a different entity, don't confuse them), IBM (three
+  Oracle tenants that *looked* like IBM turned out to be unrelated orgs —
+  see the evidence-requirement note in ADDING-COMPANIES.md §4d), VMware,
+  Walmart, L&T (the core conglomerate — L&T Technology Services is separate
+  and does resolve, on SuccessFactors), Bosch (the group entity is tracked;
+  most subsidiaries aren't).
 
 ## Useful commands
 
