@@ -1,5 +1,38 @@
 [
   {
+    "name": "American Express",
+    "ats": "oracle",
+    "token": "egug",
+    "host": "fa.us2",
+    "industry": "banking",
+    "source": "curated"
+  },
+  {
+    "name": "Nasdaq",
+    "ats": "workday",
+    "token": "nasdaq",
+    "host": "wd1",
+    "site": "Global_External_Site",
+    "industry": "fintech",
+    "source": "curated"
+  },
+  {
+    "name": "Akamai",
+    "ats": "oracle",
+    "token": "fa-extu-saasfaprod1",
+    "host": "fa.ocs",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Eaton",
+    "ats": "eightfold",
+    "token": "eaton.eightfold.ai",
+    "site": "eaton.com",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
     "name": "Owkin",
     "ats": "ashby",
     "industry": "tech",

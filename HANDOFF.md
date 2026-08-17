@@ -8,9 +8,16 @@ the decisions, the gotchas, and what's still open.
 
 BE CSE grad, final semester ending August 2026, wants full-time + internships,
 India and genuinely-remote only, ≤3 years experience (unstated years kept),
-SWE/Data/ML plus finance/banking/consulting/quant. Mass-hiring IT-services and
-BPO firms (TCS, Infosys, Wipro, Cognizant, HCL, Hexaware, Genpact, ...) are
-explicitly excluded — that was a direct, deliberate request, not a default.
+SWE/Data/ML plus finance/banking/consulting/quant. **Service-based IT and BPO
+firms are excluded as a category, not a fixed list** — confirmed examples:
+TCS, Infosys, Wipro, Cognizant, HCL, Hexaware, Genpact, and Accenture (its
+India Workday board is real, fetcher-confirmed, excluded anyway — global
+mass-hiring IT-services/consulting is the same category even though it
+isn't a BPO by self-description). The test when a new company comes up: is
+its India hiring model "sell client projects, staff them with bulk campus
+hires" rather than a product/engineering org hiring for its own product —
+if yes, exclude it even if it's not on this list yet. This was a direct,
+deliberate request, not a default.
 
 ## Current state (as of this doc's last edit)
 
@@ -29,6 +36,39 @@ explicitly excluded — that was a direct, deliberate request, not a default.
   noise — every case in `src/selftest.ts` is a bug that actually shipped once.
 
 ## In progress — pick up here
+
+**Freebuff round 12, source was a referral-site catalog (reffido.com), not a
+sector sweep.** Diffed reffido's 460 companies against `companies.json`
+locally first (no model needed — plain script), 160 were missing, filtered
+to 147 real candidates (dropped 10 IT-services/BPO firms per the standing
+exclusion policy, 3 already-known-unreachable). freebuff researched all 147;
+fetcher-verification against `src/fetchers/*.ts` caught it hallucinating
+tenant tokens for **Wayfair, Revolut, Rippling** (all 404 on the real API)
+and over-counting **Verizon** (its "77 India roles" was Indiana, US matching
+the substring "India" — zero real India roles). None of those four were
+added. **4 added, fetcher-confirmed real**: American Express (Oracle Cloud
+HCM), Nasdaq (Workday), Akamai (Oracle Cloud HCM), Eaton (Eightfold).
+Meesho and Jio/Jiostar came back too but were already tracked.
+
+**Accenture — decided, excluded.** Its India board
+(`accenture.wd103.myworkdayjobs.com/AccentureCareers`) is real,
+fetcher-confirmed, thousands of India roles — but it's a mass-hiring
+IT-services/consulting firm, same category as TCS/Infosys/Cognizant/Wipro/
+HCL. Not added. See "The user" above — the exclusion is now stated as a
+category test, not a fixed list, specifically because of this case.
+
+**CIBC India** — Workday tenant confirmed to exist (`cibc.wd3.myworkdayjobs.com`,
+Cloudflare-fronted), but the site slug (the `/wday/cxs/cibc/{site}/jobs` path
+segment) wasn't recoverable from a handful of common guesses or a plain
+`curl` of the base host (406, needs real browser headers). Not worth
+chasing further with basic requests — same class of problem as FarEye's
+Darwinbox hash, low priority to revisit.
+
+The rest of the 147 resolved to platforms with no adapter here (Docusign,
+D.E. Shaw, NetApp, Nokia, Siemens, Zoho, Tesla, and others — mostly custom
+in-house portals) or came back genuinely UNVERIFIED (no India presence:
+Box, Shopify, GitHub, Gusto, Hulu, Audible, Geico, Abnormal AI, Two Sigma, X,
+Indeed). Full detail in the scratchpad's `freebuff-report-12.txt`.
 
 Researching ATS credentials for ~45 well-known Indian unicorns/startups
 (Zerodha, Zepto, Ola, Zoho, boAt, ...) that are real 15-40 LPA fresher
