@@ -34,10 +34,10 @@ it done.
 
 ## Build order — 12 stages, in sequence
 
-- [x] **1. Deploy `web/` to Vercel** — DONE. Live at the user's Vercel URL.
-- [-] **2. Telegram bot channel alongside email** — SKIPPED, user request.
-- [ ] **3. Surface outage detection as an issue/comment** — `freebuff: no`. Touches `outage.ts` + the `hunt.yml` workflow. No dependencies. **Next actionable stage.**
-- [-] **4. Discord/Slack via the same webhook shape** — blocked, depended on stage 2 (skipped). Revisit only if a notification channel gets requested again.
+- [ ] **1. Deploy `web/` to Vercel** — `freebuff: no` (needs the user's own account). Root directory `web`, env var `NEXT_PUBLIC_REPO`. No dependencies.
+- [ ] **2. Telegram bot channel alongside email** — `freebuff: partial` (freebuff drafts the send boilerplate; Claude wires it into `email.ts`'s freshness/backlog gating — that gate broke once before, see `HANDOFF.md`). Blocks stage 4.
+- [ ] **3. Surface outage detection as an issue/comment** — `freebuff: no`. Touches `outage.ts` + the `hunt.yml` workflow. No dependencies.
+- [ ] **4. Discord/Slack via the same webhook shape** — `freebuff: partial`. Depends on stage 2.
 - [ ] **5. freebuff round — close out the 25 CONFIRMED-but-unadded companies** — `freebuff: yes`. ClearTax, Licious, Porter, Spinny, Lenskart, Urban Company, etc. — credentials already in `HANDOFF.md`, need fetcher-verify pass before `companies.json`.
 - [ ] **6. freebuff round — re-add the 8 auto-dropped Darwinbox companies** — `freebuff: yes` for verification, Claude confirms the `outage.ts` fix holds before re-adding. BigBasket, PhysicsWallah, Porter, Licious, Tata 1mg, PharmEasy, Subex, LeadSquared.
 - [ ] **7. freebuff round — platform-parity diff vs kalil0321/ats-scrapers** — `freebuff: yes` for the lookup legwork, Claude triages which gaps justify a new adapter. See `ADDING-COMPANIES.md` §4d.
