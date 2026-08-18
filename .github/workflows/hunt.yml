@@ -29,6 +29,7 @@ on:
 
 permissions:
   contents: write
+  issues: write
 
 concurrency:
   group: hunt
@@ -53,6 +54,15 @@ jobs:
           path: state/seen.json
           key: seen-${{ github.run_id }}
           restore-keys: seen-
+
+      # Tiny (one boolean per ATS) — only exists so outage_started/outage_recovered
+      # below fire on transitions, not on every run of an ongoing outage.
+      - name: Restore outage state
+        uses: actions/cache/restore@v4
+        with:
+          path: state/outage.json
+          key: outage-${{ github.run_id }}
+          restore-keys: outage-
 
       - run: npm install --no-audit --no-fund
 
@@ -98,6 +108,43 @@ jobs:
         with:
           path: state/seen.json
           key: seen-${{ github.run_id }}
+
+      - name: Save outage state
+        uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: state/outage.json
+          key: outage-${{ github.run_id }}
+
+      # Silent self-healing (outage.ts withholds eviction) was the whole fix for
+      # boards vanishing under a platform-wide block, but nothing told anyone it
+      # had happened. This is the other half: one tracking issue per platform,
+      # opened when it first looks like an outage and closed when it clears —
+      # not a comment every 20 minutes for as long as the outage lasts, since
+      # `outage_started`/`outage_recovered` only fire on the actual transition.
+      - name: Report suspected ATS outage
+        if: "!inputs.test_email && (steps.hunt.outputs.outage_started != '' || steps.hunt.outputs.outage_recovered == '1')"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          STARTED: ${{ steps.hunt.outputs.outage_started }}
+          RECOVERED: ${{ steps.hunt.outputs.outage_recovered }}
+        run: |
+          if [ -n "$STARTED" ]; then
+            for ats in ${STARTED//,/ }; do
+              existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --label outage --state open \
+                --search "in:title $ats" --json number --jq '.[0].number')
+              if [ -z "$existing" ]; then
+                gh issue create --repo "$GITHUB_REPOSITORY" \
+                  --title "Suspected outage: $ats" --label outage \
+                  --body "Most $ats boards failed in the same run — see \`outage.ts\`. Boards are not being evicted while this holds; this issue closes itself automatically once the run stops seeing it. Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+              fi
+            done
+          fi
+          if [ "$RECOVERED" = "1" ]; then
+            for number in $(gh issue list --repo "$GITHUB_REPOSITORY" --label outage --state open --json number --jq '.[].number'); do
+              gh issue close "$number" --repo "$GITHUB_REPOSITORY" --comment "Cleared — the run no longer sees most of this platform's boards failing."
+            done
+          fi
 
       - name: Email new roles
         if: steps.hunt.outputs.new_count != '0'

@@ -1,7 +1,7 @@
 import { classify } from './classify.js';
 import { isFreshEnough, locationMatches, normalizeForDedup, roleFamily } from './filter.js';
 import { extractNames, FUNDING, INVESTORS, LONE_ONLY, TRAILING_ONLY } from './news-extract.js';
-import { detectOutage } from './outage.js';
+import { detectOutage, outageChanges } from './outage.js';
 import { selectBoards } from './select-boards.js';
 import type { Company, Industry, RawJob } from './types.js';
 
@@ -220,6 +220,30 @@ check(
     { ats: 'greenhouse' }, { ats: 'greenhouse' }, { ats: 'greenhouse' },
   ])),
   'darwinbox,turbohire',
+);
+
+// outageChanges is what the workflow reports from — a 20-minute schedule
+// means a single multi-hour outage gets flagged by detectOutage dozens of
+// times, so the workflow-facing signal must fire only on actual transitions.
+check(
+  'a platform newly joining the suspected set is reported as started',
+  outageChanges({}, new Set(['darwinbox'])).started.join(','),
+  'darwinbox',
+);
+check(
+  'a platform still suspected from last run is not reported again',
+  outageChanges({ darwinbox: true }, new Set(['darwinbox'])).started.join(','),
+  '',
+);
+check(
+  'clearing the entire suspected set is reported as recovered',
+  outageChanges({ darwinbox: true }, new Set()).recovered,
+  true,
+);
+check(
+  'no prior outage and none now is not a recovery',
+  outageChanges({}, new Set()).recovered,
+  false,
 );
 
 console.log('board selection');
