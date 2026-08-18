@@ -112848,5 +112848,26 @@
     "source": "discovered",
     "token": "cpm",
     "lastPolledAt": "2026-08-18T11:02:50.583Z"
+  },
+  {
+    "name": "BharatPe",
+    "ats": "darwinbox",
+    "token": "bharatpe",
+    "industry": "fintech",
+    "source": "curated"
+  },
+  {
+    "name": "Rapido",
+    "ats": "darwinbox",
+    "token": "rapido",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Upstox",
+    "ats": "darwinbox",
+    "token": "upstox",
+    "industry": "fintech",
+    "source": "curated"
   }
 ]
