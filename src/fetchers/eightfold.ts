@@ -56,9 +56,9 @@ export async function list(company: Company): Promise<RawJob[]> {
         externalId: String(position.displayJobId ?? position.atsJobId ?? position.id),
         title: position.name,
         location: [where.join(', '), remote].filter(Boolean).join(' · '),
-        url:
-          position.positionUrl ??
-          `https://${company.token}/global/en/job/${position.id}`,
+        url: position.positionUrl?.startsWith('http')
+          ? position.positionUrl
+          : `https://${company.token}${position.positionUrl ?? `/global/en/job/${position.id}`}`,
         postedAt: position.postedTs
           ? new Date(position.postedTs * 1000).toISOString()
           : undefined,
