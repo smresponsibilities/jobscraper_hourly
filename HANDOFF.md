@@ -146,6 +146,20 @@ because two of the three didn't survive contact with real testing:
   other host that run (most Workday pods were 35-65s p95). One data point
   isn't a pattern yet — worth watching over several runs, not acting on
   immediately.
+  **Now persisted across runs (2026-08-19)**, same state-file pattern as
+  `outage.ts`: `updateHistory()` keeps a rolling worst-N-of-last-10-runs
+  boolean per host in `state/host-stats.json`
+  (`loadHostHistory`/`saveHostHistory` in `state.ts`, cache restore/save
+  steps added to `hunt.yml` mirroring `seen.json`/`outage.json` exactly),
+  and `persistentlySlow()` (≥5 runs observed, ≥80% of them in that run's
+  worst-3) turns "was wd504's 117s p95 one noisy run or a pattern" into an
+  actual answer instead of a guess, logged as a `console.warn` — still
+  read-only, `HOST_CONCURRENCY` is still untouched. Covered in `selftest.ts`
+  ("host history (rolling worst-N persistence)"). Like `outage.json`, this
+  can only be verified end-to-end on a real (non-`DRY_RUN`) run, since dry
+  runs deliberately skip every state write — local testing was unit tests +
+  typecheck + a dry-run smoke test confirming no crash and no stray write,
+  same verification bar already used for `outage.json`'s persistence.
 
 **Tried and reverted: sitemap-based board detection.** The idea (from a
 crawler-technique research round): companies that want Google for Jobs
@@ -167,6 +181,15 @@ network round-trip to every `detect.ts` call for a measured 0% hit rate.
 research that suggested it was reasoning from the *idea* being sound, not
 from testing it against real companies.
 ## In progress — pick up here
+
+**`discover-news.ts` now names which RSS feed died (2026-08-19).** It
+already logged a bare `N/FEEDS.length feeds reachable` count; a dead source
+in that count gave no way to tell which of the 7 `FEEDS` URLs needed
+attention without re-running with extra logging by hand. One line —
+`if (dead.length > 0) console.log(...)` — prints the actual unreachable
+URLs. No persistence added (unlike the host-stats history below): a weekly,
+low-stakes feed list doesn't need a rolling-history state file, a per-run
+name is enough evidence to act on if one starts failing repeatedly.
 
 **`candidates.txt` probe run (2026-08-19) — 3 net new, several confirmed
 wrong-company matches caught and removed.** Ran the full existing
