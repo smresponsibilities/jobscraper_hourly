@@ -179,20 +179,20 @@ tools only reach Greenhouse/Lever/Ashby/SmartRecruiters/Workday/Oracle
 automatically, and most of this list runs Darwinbox, TurboHire, or a
 custom in-house ATS, none of which are derivable from a domain name.
 
-**25 companies came back CONFIRMED with real job titles as evidence, and are
-NOT YET in `companies.json`.** They still need one more pass — verifying each
-against our own fetchers (same discipline as the KPMG/PwC/AMD finds:
-resolved tenant ≠ real company, see the IBM-tenant note in ADDING-COMPANIES.md
-§4d) — before being added. On Darwinbox: ClearTax (`clear`, old-style, no
-hash), BigBasket (`bigbasket`, old-style — was previously tracked, then
-auto-dropped by `DROP_AFTER_FAILING_DAYS`, worth checking why before
-re-adding), Licious (`licious`, hash `a676187c5d262c`), Porter (`porter`,
-old-style), Spinny (**tenant is `spinzone`, not `spinny`** — a naive guess
-would miss it), BharatPe/Ather Energy/Rapido (tenants confirmed via matching
-legal entity name, but 0 open roles right now — real boards, nothing to
-alert on yet). On TurboHire: Lenskart (GUID `0e074ad4-7f98-4fea-b5d9-f3a59a156b07`),
-Urban Company (GUID `4ea15045-6e8b-4edf-8274-899578e56a56`), Khatabook (GUID
-not captured, only the public job-link path). The rest resolved to platforms
+**Resolved (2026-08-18): the 25-CONFIRMED list above was re-verified by a
+freebuff round and fetcher-checked against `src/fetchers/darwinbox.ts` before
+touching anything.** Of the named ones, ClearTax, BigBasket, Licious, Porter,
+Spinny, Ather Energy (`atherenergy`, already correct), Lenskart, Urban
+Company and Khatabook were **already in `companies.json`** — this paragraph
+was stale, not a real gap. Only three were genuinely missing and got added:
+**BharatPe** and **Rapido** (both real Darwinbox boards, 0 open roles right
+now — same "nothing to alert on yet" precedent as Ather), and **Upstox**
+(migrated off its old dead Lever board onto Darwinbox, tenant `upstox`, 9
+live roles, fetcher-confirmed). **Vedantu's Darwinbox tenant is dead** —
+`{"status":...}` with a non-array `data`, our own fetcher throws
+`batch is not iterable` — not added, don't re-chase without a new tenant.
+Full freebuff report: `freebuff-report-13.txt` in that session's scratchpad.
+The rest resolved to platforms
 we don't have adapters for (CoinDCX/MakeMyTrip/ShareChat/Nykaa/Practo custom
 in-house; Dream11/MobiKwik/PolicyBazaar on Trakstar Hire; CoinSwitch on
 Recruiterflow) — **not worth building a new adapter for a single company**,
