@@ -1,5 +1,447 @@
 [
   {
+    "name": "Way.com India",
+    "ats": "greythr",
+    "token": "waydot",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "SAAHAS",
+    "ats": "greythr",
+    "token": "saahas1",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Buildout Retail",
+    "ats": "greythr",
+    "token": "buildoutretail",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Aditya Birla Group",
+    "ats": "peoplestrong",
+    "token": "abgcareers",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Larsen & Toubro",
+    "ats": "peoplestrong",
+    "token": "larsentoubrocareers",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "DS Group",
+    "ats": "peoplestrong",
+    "token": "dscareers",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Akasa Air",
+    "ats": "peoplestrong",
+    "token": "careers-akasa",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "PeopleStrong",
+    "ats": "peoplestrong",
+    "token": "careers",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "HDFC Life",
+    "ats": "peoplestrong",
+    "token": "hdfclife",
+    "industry": "fintech",
+    "source": "curated"
+  },
+  {
+    "name": "Zuventus Healthcare",
+    "ats": "peoplestrong",
+    "token": "zuventuscareers",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Manipal Finance Corp",
+    "ats": "peoplestrong",
+    "token": "careers-mfcw",
+    "industry": "fintech",
+    "source": "curated"
+  },
+  {
+    "name": "Born West",
+    "ats": "pyjamahr",
+    "token": "born-west-private-limited",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "PyjamaHR",
+    "ats": "pyjamahr",
+    "token": "pyjamahr",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "eDataBae",
+    "ats": "pyjamahr",
+    "token": "edatabae",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Zappyhire",
+    "ats": "zappyhire",
+    "token": "zappyhire",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Wuerth India",
+    "ats": "zappyhire",
+    "token": "wuerth",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "SE-Mentor",
+    "ats": "zappyhire",
+    "token": "sementor",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Zimyo",
+    "ats": "zimyo",
+    "token": "1",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Solarium",
+    "ats": "keka",
+    "token": "solarium",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Omnify",
+    "ats": "recruiterflow",
+    "token": "omnify",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "LogiNext",
+    "ats": "trakstar",
+    "token": "loginext",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Dream11",
+    "ats": "trakstar",
+    "token": "dream11",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "MobiKwik",
+    "ats": "trakstar",
+    "token": "mobikwik",
+    "industry": "fintech",
+    "source": "curated"
+  },
+  {
+    "name": "PolicyBazaar",
+    "ats": "trakstar",
+    "token": "policybazaar",
+    "industry": "fintech",
+    "source": "curated"
+  },
+  {
+    "name": "WeWork India",
+    "ats": "trakstar",
+    "token": "weworkindia",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Exotel",
+    "ats": "trakstar",
+    "token": "exotel",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "HappyFox",
+    "ats": "trakstar",
+    "token": "happyfox",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Whatfix",
+    "ats": "trakstar",
+    "token": "whatfix101",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "MoEngage",
+    "ats": "trakstar",
+    "token": "moengage",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Agara",
+    "ats": "trakstar",
+    "token": "agaralabs",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Ziplr",
+    "ats": "trakstar",
+    "token": "ziplr",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Vakilsearch",
+    "ats": "trakstar",
+    "token": "vakilsearch",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "ColumbusAgain Software",
+    "ats": "trakstar",
+    "token": "columbusagain",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "IMI Process Automation",
+    "ats": "trakstar",
+    "token": "imicriticalengineering",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Worksoft",
+    "ats": "trakstar",
+    "token": "worksoft",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "HackerEarth",
+    "ats": "trakstar",
+    "token": "hackerearthjobs",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Rentokil Initial",
+    "ats": "workable",
+    "token": "rentokil-initial",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Rokt",
+    "ats": "workable",
+    "token": "rokt",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Lokal App",
+    "ats": "workable",
+    "token": "lokal-app",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Mercari India",
+    "ats": "workable",
+    "token": "mercari-india",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Innovaccer Analytics",
+    "ats": "workable",
+    "token": "innovaccer-analytics",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Weekday AI",
+    "ats": "workable",
+    "token": "weekday-1",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Laundryheap",
+    "ats": "workable",
+    "token": "laundryheap-2",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Teleport",
+    "ats": "workable",
+    "token": "teleport-careers",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Stadium",
+    "ats": "workable",
+    "token": "bystadium",
+    "industry": "fintech",
+    "source": "curated"
+  },
+  {
+    "name": "Two Circles",
+    "ats": "workable",
+    "token": "twocircles",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Vestd",
+    "ats": "workable",
+    "token": "vestd",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "BlackBuck Insights",
+    "ats": "zohorecruit",
+    "token": "https://careers.bbinsight.com/jobs/Careers",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Zoho Corporation",
+    "ats": "zohorecruit",
+    "token": "https://careers.zohocorp.com/jobs/careers",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Aerobay",
+    "ats": "zohorecruit",
+    "token": "https://aerobay.zohorecruit.in/jobs/Careers",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Indus Action",
+    "ats": "zohorecruit",
+    "token": "https://indusaction.zohorecruit.com/jobs/careers",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "DocuSign",
+    "ats": "icims",
+    "token": "careers.docusign.com",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "iCIMS",
+    "ats": "icims",
+    "token": "careers.icims.com",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Enveu",
+    "ats": "keka",
+    "token": "enveu",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Secutech",
+    "ats": "keka",
+    "token": "secutech",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "NxtWave",
+    "ats": "freshteam",
+    "token": "nxtwave",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "The Better India",
+    "ats": "freshteam",
+    "token": "thebetterindia",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Credit Saison India",
+    "ats": "freshteam",
+    "token": "creditsaisonin-talent",
+    "industry": "banking",
+    "source": "curated"
+  },
+  {
+    "name": "PriceLabs",
+    "ats": "freshteam",
+    "token": "pricelabs",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Ditto",
+    "ats": "freshteam",
+    "token": "joinditto",
+    "industry": "fintech",
+    "source": "curated"
+  },
+  {
+    "name": "Pepper Content",
+    "ats": "freshteam",
+    "token": "peppercontent-talent",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "CoinSwitch",
+    "ats": "recruiterflow",
+    "token": "coinswitch",
+    "industry": "fintech",
+    "source": "curated"
+  },
+  {
+    "name": "American Express",
+    "ats": "oracle",
+    "token": "egug",
+    "host": "fa.us2",
+    "industry": "banking",
+    "source": "curated"
+  },
+  {
     "name": "General Proximity",
     "ats": "greenhouse",
     "industry": "tech",
@@ -62019,17 +62461,6 @@
     "lastPolledAt": "2026-08-18T04:03:29.253Z"
   },
   {
-    "name": "Egug",
-    "ats": "oracle",
-    "token": "egug",
-    "host": "fa.us2",
-    "siteNumber": "CX_1",
-    "industry": "tech",
-    "source": "curated",
-    "lastIndiaAt": "2026-08-18T04:03:29.253Z",
-    "lastPolledAt": "2026-08-18T04:03:29.253Z"
-  },
-  {
     "name": "Knowbe4",
     "ats": "greenhouse",
     "token": "knowbe4",
@@ -78845,17 +79276,6 @@
     "industry": "tech",
     "source": "discovered",
     "token": "fa-exdu-saasfaprod1",
-    "host": "fa.ocs",
-    "siteNumber": "CX_1",
-    "lastIndiaAt": "2026-08-18T04:03:29.253Z",
-    "lastPolledAt": "2026-08-18T04:03:29.253Z"
-  },
-  {
-    "name": "Fa Extu Saasfaprod1",
-    "ats": "oracle",
-    "industry": "tech",
-    "source": "discovered",
-    "token": "fa-extu-saasfaprod1",
     "host": "fa.ocs",
     "siteNumber": "CX_1",
     "lastIndiaAt": "2026-08-18T04:03:29.253Z",

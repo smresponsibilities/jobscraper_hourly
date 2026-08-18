@@ -37,6 +37,97 @@ deliberate request, not a default.
 
 ## In progress — pick up here
 
+**Round 16: 5 more ATS adapters, 18 more companies — includes fixing the
+"L&T unreachable" gap.** `greythr.ts`, `peoplestrong.ts`, `pyjamahr.ts`,
+`zappyhire.ts`, `zimyo.ts` — all fetcher-verified live, same discipline as
+before. **PeopleStrong is the big one**: Aditya Birla Group (~2,444 live
+India roles) and **Larsen & Toubro** (`larsentoubrocareers.peoplestrong.com`)
+— the "Known gaps" section below has said L&T core was "still genuinely
+unreachable" since early in this project; that's no longer true, it has a
+real public PeopleStrong board. Also added: DS Group, Akasa Air,
+PeopleStrong's own board, HDFC Life/Zuventus Healthcare (real boards, 0
+roles right now), Manipal Finance Corp. Other 4 platforms: greytHR (Way.com
+India, SAAHAS, Buildout Retail), PyjamaHR (Born West — a real
+`min_experience:0, max_experience:2` fresher SWE role — PyjamaHR itself,
+eDataBae), Zappyhire (itself, Wuerth India, SE-Mentor), Zimyo (only its own
+board — every other customer's `org_id` is opaque and unenumerable, would
+need to be captured from a live board's embed code same as a Workday site
+slug). One real bug caught during build: Zappyhire's Elasticsearch backend
+sorts jobs with no date to a sentinel (`-9223372036854776000`) that's
+outside JS `Date`'s valid range — a naive `new Date(sort[0])` throws
+`RangeError: Invalid time value` on page 2+ of any board large enough to
+have missing dates. Fixed with a bounds check before constructing the
+Date; **if another adapter ever epoch-converts an ATS's own sort/rank
+field again, guard it the same way, don't assume the API's numbers are
+always in `Date`'s ±8,640,000,000,000,000 ms range.**
+
+Skipped, not buildable: **HROne** (opaque ~200-char per-org tokens, no
+derivable pattern, no customer example found — not "hard," genuinely no
+path in). Tier 2 confirmed dead ends this round: factoHR, ZingHR, Spine HR
+Suite (all vendor-internal-dashboard products, no hosted public boards
+exist for any customer), Avature/PageUp/Ceridian Dayforce (real platforms
+with public portals, but no anonymous API confirmed and no strong India
+example — would need a session-bearing follow-up pass to be worth it, not
+worth it blind).
+
+**7 new ATS adapters built (rounds 13/15), 44 companies added (round 14),
+all fetcher-verified against live boards, not just against freebuff's
+notes.** `npx tsc --noEmit && npm test` pass. New fetchers: `trakstar.ts`
+(RSS feed, one call, no pagination), `icims.ts` (JSON API, page+limit),
+`workable.ts` (widget JSON list + HTML enrich for description),
+`zohorecruit.ts` (parses a JSON array embedded in a hidden `<input>` on the
+careers page — `token` holds the full board URL since there's no single
+subdomain pattern), `keka.ts` (simplest of the seven, one unauthenticated
+GET), `freshteam.ts` (list page's `data-portal-title` attribute is a
+lowercase slug, NOT the real title — the real title is a sibling
+`.job-title` div's visible text, both pulled in one regex pass; JSON-LD on
+detail pages for description via `enrich()`), `recruiterflow.ts` (job list
+is a `window.jobsList = {...}` JS object literal embedded in the page,
+extracted with a balanced-brace scan, not a regex terminator guess).
+
+**iCIMS turned out much rarer among Indian employers than expected** — a
+~20-company probe across large India-GCC employers found zero besides
+DocuSign and iCIMS's own board. Built anyway since DocuSign alone (58 India
+roles) justified it, but don't expect this platform to pay off further
+without a new lead.
+
+**A re-check pass after the initial 42 found a real bug and closed 2 loose
+ends.** The bug: the hourly bot's own `discover.ts` sweep independently
+found the same American Express and Akamai Oracle tenants right around the
+same time, auto-adding them under raw-token stub names ("Egug", "Fa Extu
+Saasfaprod1") — same `ats`+`token` pair as the two I'd just added under
+real names, which would have polled the identical board twice and shown
+the same postings under two different company names in the digest.
+Removed the stub duplicates. **Worth checking `ats`+`token` for collisions
+any time a manual addition might overlap with something `discover.ts`
+could plausibly find on its own** — Oracle tenants especially, since their
+tokens are opaque and get picked up incidentally. The 2 loose ends: Keka's
+Solarium (freebuff only said "board live, small," no evidence — verified
+live myself, 2 real jobs, added) and Recruiterflow's Omnify (confirmed
+genuinely empty board, added anyway per the same "real board, nothing to
+alert on yet" precedent as BharatPe/Ather/Rapido). Naukri RMS's
+unreachability was NOT runner-specific — retried from this machine too,
+same connection failure, so it stays unbuilt.
+
+**Zwayam identified but not built** — its API lives on `public.zwayam.com`,
+unreachable from the research runner (connection failures), so the response
+shape was never confirmed. Only one known example (Loadshare) anyway. Retry
+from a different network if it comes up again, otherwise leave it.
+
+**Excluded from the 42 despite a live, evidenced board** — same
+service-based-IT/BPO category test as Accenture, or a data-quality problem,
+not an oversight: Tenthpin, Frontline Managed Services, Indium Software,
+Blue Altair, Interscripts, Zyphra Tech Solutions, Gravitix Tech Solutions,
+FPT India (all service/staffing-model businesses), CHi Networks and Codvo
+(ambiguous naming, excluded conservatively without stronger evidence),
+Wishup (its own business model is VA-staffing-as-a-service, same category
+even though its internal hiring didn't look like it), Side/Sidequest (real
+board, but the roles found were evergreen "Talent Pool" placeholders, not
+distinct openings). `config.ts`'s `SERVICE_COMPANIES` regex already has
+"accenture" — worth extending if any of the clearly-major names above
+(Indium Software, FPT) recur enough to be worth a permanent runtime
+safety net rather than just being left out of `companies.json`.
+
 **Freebuff round 12, source was a referral-site catalog (reffido.com), not a
 sector sweep.** Diffed reffido's 460 companies against `companies.json`
 locally first (no model needed — plain script), 160 were missing, filtered
@@ -313,9 +404,10 @@ without intervention nearly every time.
   (Bain Capital is a different entity, don't confuse them), IBM (three
   Oracle tenants that *looked* like IBM turned out to be unrelated orgs —
   see the evidence-requirement note in ADDING-COMPANIES.md §4d), VMware,
-  Walmart, L&T (the core conglomerate — L&T Technology Services is separate
-  and does resolve, on SuccessFactors), Bosch (the group entity is tracked;
-  most subsidiaries aren't).
+  Walmart, Bosch (the group entity is tracked; most subsidiaries aren't).
+  **L&T is no longer on this list** — the core conglomerate resolved on
+  PeopleStrong (`larsentoubrocareers.peoplestrong.com`, round 16), tracked
+  alongside L&T Technology Services (SuccessFactors, separate entity).
 
 ## Useful commands
 
