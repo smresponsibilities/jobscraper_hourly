@@ -3,6 +3,8 @@ import { isFreshEnough, locationMatches, normalizeForDedup, roleFamily } from '.
 import { extractNames, FUNDING, INVESTORS, LONE_ONLY, TRAILING_ONLY } from './news-extract.js';
 import { detectOutage, outageChanges } from './outage.js';
 import { selectBoards } from './select-boards.js';
+import { epochToIso } from './fetchers/eightfold.js';
+import { safeIso } from './fetchers/darwinbox.js';
 import type { Company, Industry, RawJob } from './types.js';
 
 /**
@@ -245,6 +247,29 @@ check(
   outageChanges({}, new Set()).recovered,
   false,
 );
+
+console.log('epoch conversion (eightfold)');
+// Same bug class Zappyhire shipped: an ATS's own sort/rank field can hold a
+// sentinel value with no real date behind it, far outside JS Date's valid
+// range — `new Date()` throws RangeError rather than returning something
+// falsy, so it has to be caught before construction, not after.
+check('a normal unix-seconds timestamp converts to ISO', epochToIso(1_700_000_000) !== undefined, true);
+check('undefined stays undefined', epochToIso(undefined), undefined);
+check('zero (falsy) stays undefined, not epoch-zero', epochToIso(0), undefined);
+check(
+  'a sentinel far outside Date range is dropped, not thrown',
+  epochToIso(-9_223_372_036_854_776),
+  undefined,
+);
+
+console.log('date parsing (darwinbox)');
+// created_on arrives as either a string or a number depending on tenant, and
+// either shape can fail to parse into a real date.
+check('a real ISO string parses', safeIso('2026-01-15T10:00:00Z') !== undefined, true);
+check('a real epoch-ms number parses', safeIso(1_700_000_000_000) !== undefined, true);
+check('a garbled string is dropped, not thrown', safeIso('not a date'), undefined);
+check('an out-of-range number is dropped, not thrown', safeIso(-9_223_372_036_854_776_000), undefined);
+check('undefined stays undefined', safeIso(undefined), undefined);
 
 console.log('board selection');
 // Rotation is what lets the corpus hold ~21,000 boards without the run time

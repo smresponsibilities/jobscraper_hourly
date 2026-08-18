@@ -58,6 +58,38 @@ deliberate request, not a default.
 - **`npm run query -- --role swe --company X`** — a small CLI filter over
   `data/jobs.json`, reusing `filter.ts`'s `roleFamily()`. No new backend,
   verified working.
+- **Board count is actually ~13,158, not the 3,793 this doc cited for a
+  while** (verified directly, `companies.json`'s own length) — the number
+  above will drift again, it always does; don't trust it without re-checking.
+  Runtime is NOT affected by that growth, by design: `BOARDS_PER_RUN` caps
+  what any single run polls, so total corpus size only changes how often cold
+  boards rotate through, not wall-clock time. Raised `BOARDS_PER_RUN` 6,000 ->
+  8,000 (2026-08-18) because hot boards (which are never skipped, and only
+  ever grow) had reached 65% of the old ceiling — verified with a real timed
+  run before committing (8,000 boards: 26m28s), not a guess. See the comment
+  on the constant itself before raising it again.
+- **Workday's ~300-role cap was silently dropping real India postings at
+  large employers** — not a platform limit (Workday's API pages fine past
+  offset 300, confirmed both by testing and against how other public
+  ATS-scraper projects handle it), just a self-imposed constant that was too
+  low. Measured across ~650 live Workday boards on 2026-08-18: 21 currently
+  exceed 300, up to Citi (1,046), Fresenius Medical Care (1,091), Amgen (978),
+  Live Nation (1,230) — Citi alone went from 300 to 1,263 total jobs returned
+  after the fix. Raised the India-specific search's cap to 75 pages (1,500
+  roles) in `workday.ts`, covers 19 of the 21 found; the other 2 (Walmart,
+  Genpact) both report exactly 2,000 as their *total*, which is very likely
+  Workday's own reporting ceiling rather than something a higher page cap
+  would reach — not chased further without evidence it's real. Genpact's
+  extra roles wouldn't have alerted anyway (`SERVICE_COMPANIES` excludes it).
+- **Two more instances of the epoch/date bug class** (see "recurring bug
+  class" below) — found proactively, not from a crash report. `eightfold.ts`
+  did the exact same unguarded `new Date(x * 1000)` that already shipped
+  broken once in `zappyhire.ts`; `darwinbox.ts`'s `created_on` field is typed
+  `string | number` and neither shape was validated before `.toISOString()`.
+  Both now guard against `RangeError: Invalid time value` the same way
+  Zappyhire does, both covered in `selftest.ts`. Swept every other fetcher's
+  `url:`/date-construction pattern live against a real board on that platform
+  — no other instances found, the rest were already correct.
 - **BharatPe, Rapido added** (Darwinbox, 0 open roles each — real boards,
   same "nothing to alert on yet" precedent as Ather). **Upstox added**
   (migrated off its old dead Lever board onto Darwinbox `upstox`, 9 live
@@ -387,6 +419,19 @@ pattern match nothing, and each one only surfaced because `npm test` was run
 immediately after. **Any time you add a `\b`-containing pattern as a bare
 string (not inside `/…/` regex literal syntax), double-escape it and run
 `npm test` before considering the change done.**
+
+**`new Date(x).toISOString()` throws `RangeError` instead of returning
+something falsy, whenever `x` doesn't resolve to a real date** — an
+out-of-range epoch number (a sentinel like `-9223372036854776000` an ATS
+uses for "no date") or a garbled string both hit this the same way. Shipped
+once for real in `zappyhire.ts` (silently evicted every tracked board on that
+platform as "dead" — see the outage-detection section above), found
+proactively a second and third time in `eightfold.ts` and `darwinbox.ts`
+before either shipped broken. **Any time a fetcher constructs a `Date` from a
+field the ATS's own API controls (not your own code), guard it —
+`Number.isNaN(date.getTime())` before calling `.toISOString()`, or check the
+value's magnitude before multiplying into milliseconds — and add a
+`selftest.ts` case for it, the same way `epochToIso`/`safeIso` are covered.**
 
 ## Git workflow — this is not optional context
 

@@ -9,8 +9,21 @@ interface WdPosting {
   bulletFields?: string[];
 }
 
-const PAGE_SIZE = 20; // Workday caps `limit` at 20 regardless of what you ask for.
-const MAX_PAGES = 15; // ~300 newest roles per board; see note below.
+const PAGE_SIZE = 20; // Workday caps `limit` at 20 regardless of what you ask for — a real API limit, not ours.
+
+// The unfiltered sweep only needs to catch *recent* postings across the whole
+// company (India roles that outrank it get caught by the India-specific search
+// below), so it stays cheap.
+const RECENT_MAX_PAGES = 15; // ~300 newest roles company-wide.
+
+// The India-specific search is what actually has to be complete, and 300 was
+// silently clipping real roles: measured 2026-08-18 across ~720 live Workday
+// boards, at least 10 companies exceed it — Citi (1,046), Fresenius Medical
+// Care (1,091) and Amgen (978) alone were losing 700+ real India postings a
+// run. 75 pages (1,500 roles) covers every measured case with headroom; if a
+// board ever exceeds that, re-measure before raising further, same rule as
+// BOARDS_PER_RUN in config.ts.
+const INDIA_MAX_PAGES = 75;
 
 function base(company: Company): string {
   return `https://${company.token}.${company.host}.myworkdayjobs.com`;
@@ -27,14 +40,17 @@ export async function list(company: Company): Promise<RawJob[]> {
   // employer the India roles can sit well beyond the page cap. Running an
   // explicit "India" search alongside the unfiltered sweep surfaces them for a
   // handful of extra requests.
-  const [recent, india] = await Promise.all([search(company, ''), search(company, 'India')]);
+  const [recent, india] = await Promise.all([
+    search(company, '', RECENT_MAX_PAGES),
+    search(company, 'India', INDIA_MAX_PAGES),
+  ]);
 
   const byId = new Map(recent.map((job) => [job.externalId, job]));
   for (const job of india) byId.set(job.externalId, job);
   return [...byId.values()];
 }
 
-async function search(company: Company, searchText: string): Promise<RawJob[]> {
+async function search(company: Company, searchText: string, maxPages: number): Promise<RawJob[]> {
   const endpoint = `${base(company)}/wday/cxs/${company.token}/${company.site}/jobs`;
   const jobs: RawJob[] = [];
 
@@ -43,7 +59,7 @@ async function search(company: Company, searchText: string): Promise<RawJob[]> {
   // page silently caps every board at 40 jobs.
   let total = 0;
 
-  for (let page = 0; page < MAX_PAGES; page++) {
+  for (let page = 0; page < maxPages; page++) {
     const data = await getJson<{ total?: number; jobPostings?: WdPosting[] }>(endpoint, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },

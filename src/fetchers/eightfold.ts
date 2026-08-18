@@ -22,6 +22,18 @@ const PAGE_SIZE = 10;
 const MAX_PAGES = 30;
 
 /**
+ * Same bug class Zappyhire shipped once: a sort/rank field with no real date
+ * can hold a sentinel far outside JS Date's ±8,640,000,000,000,000ms range,
+ * and `new Date()` throws RangeError rather than returning an invalid date.
+ * Never trust an ATS's own numeric field to be in range without checking.
+ */
+export function epochToIso(seconds: number | undefined): string | undefined {
+  if (!seconds) return undefined;
+  const ms = seconds * 1000;
+  return Math.abs(ms) > 8_640_000_000_000_000 ? undefined : new Date(ms).toISOString();
+}
+
+/**
  * Eightfold AI ("pcsx") powers Microsoft's careers site and a number of other
  * large employers. The search endpoint is unauthenticated and takes a `domain`
  * parameter identifying the tenant.
@@ -59,9 +71,7 @@ export async function list(company: Company): Promise<RawJob[]> {
         url: position.positionUrl?.startsWith('http')
           ? position.positionUrl
           : `https://${company.token}${position.positionUrl ?? `/global/en/job/${position.id}`}`,
-        postedAt: position.postedTs
-          ? new Date(position.postedTs * 1000).toISOString()
-          : undefined,
+        postedAt: epochToIso(position.postedTs),
         text: toPlainText([position.department, position.job_description ?? ''].join(' ')),
       });
     }
