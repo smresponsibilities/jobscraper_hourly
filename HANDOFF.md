@@ -28,10 +28,13 @@ deliberate request, not a default.
   `hunt.yml`'s cron line before touching the schedule again: measure first.
 - **`main`** branch has the code. **`data`** branch (orphan, force-pushed,
   always 1 commit) has the catalogue the web UI reads.
-- **The web UI (`web/`) is built but NOT deployed to Vercel yet.** This matters —
-  it's why the email backlog section exists (see below). Deploying it is an
-  outstanding step: `vercel.com/new` → import repo → Root Directory `web` →
-  env var `NEXT_PUBLIC_REPO` = `smresponsibilities/jobscraper_hourly`.
+- **The web UI is deployed**: https://jobscraper-hourly.vercel.app/ (live as
+  of 2026-08-19, user-confirmed and independently verified — fetched the
+  `data` branch's `jobs.json` directly and it's current, e.g. Allianz/DHL
+  Group both present from tonight's international-index sweep). The email's
+  "backlog" section still exists on its own merits (an early-mover signal
+  that's stale isn't worth losing even with the site live), not because the
+  site is missing anymore.
 - Regression suite (`npm test`) passes; treat a failing test as a real bug, not
   noise — every case in `src/selftest.ts` is a bug that actually shipped once.
 - **Suspected ATS outages now open a GitHub issue instead of failing silently.**

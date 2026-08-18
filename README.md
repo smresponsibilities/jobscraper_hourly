@@ -72,11 +72,13 @@ them once, run **hunt** manually with the test-email box ticked.
 
 ## The web UI
 
+Live at **https://jobscraper-hourly.vercel.app/**.
+
 `web/` is a static Next.js site. It fetches `data/jobs.json` from GitHub at
 runtime, so the hourly workflow's commit updates the live site **without a
 redeploy** — Vercel only rebuilds when you change the UI code itself.
 
-Deploy:
+Deploy your own:
 
 1. Go to [vercel.com/new](https://vercel.com/new) and import the repo.
 2. Set **Root Directory** to `web`.

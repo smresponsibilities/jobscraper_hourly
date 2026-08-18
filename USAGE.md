@@ -22,9 +22,9 @@ genuinely new shows up. Each email has two parts:
 If a run finds nothing new, no email arrives — silence is the expected,
 common case, not a sign something's broken.
 
-**The web dashboard**, once deployed (see `README.md`'s Setup section if it
-isn't yet). It shows every open match, live, and refreshes on its own — you
-never need to redeploy it for new jobs to show up. On the page you can:
+**The web dashboard**, live at https://jobscraper-hourly.vercel.app/. It
+shows every open match, live, and refreshes on its own — you never need to
+redeploy it for new jobs to show up. On the page you can:
 
 - Search by keyword
 - Filter by max years of experience

@@ -34,7 +34,7 @@ it done.
 
 ## Build order — 12 stages, in sequence
 
-- [ ] **1. Deploy `web/` to Vercel** — `freebuff: no` (needs the user's own account). Root directory `web`, env var `NEXT_PUBLIC_REPO`. No dependencies.
+- [x] **1. Deploy `web/` to Vercel** — DONE (2026-08-19). Live at https://jobscraper-hourly.vercel.app/ — verified independently, not just taken on the user's word: the site's own data source (`data` branch's `jobs.json`) fetched directly and confirmed current, including companies added the same day.
 - [ ] **2. Telegram bot channel alongside email** — `freebuff: partial` (freebuff drafts the send boilerplate; Claude wires it into `email.ts`'s freshness/backlog gating — that gate broke once before, see `HANDOFF.md`). Blocks stage 4.
 - [x] **3. Surface outage detection as an issue/comment** — ALREADY DONE (commit `65ba33b`, predates this roadmap). `hunt.yml`'s "Report suspected ATS outage" step already opens/closes a GitHub issue per platform on `outage_started`/`outage_recovered`. This roadmap line was wrong — written from `HANDOFF.md`'s prose without checking the actual workflow file.
 - [ ] **4. Discord/Slack via the same webhook shape** — `freebuff: partial`. Depends on stage 2.
