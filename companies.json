@@ -112869,5 +112869,14 @@
     "token": "upstox",
     "industry": "fintech",
     "source": "curated"
+  },
+  {
+    "name": "Path",
+    "ats": "workday",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "path",
+    "host": "wd1",
+    "site": "external"
   }
 ]

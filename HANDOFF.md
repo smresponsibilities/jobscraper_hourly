@@ -42,9 +42,36 @@ deliberate request, not a default.
   `hunt.yml`'s new "Report suspected ATS outage" step only fires on actual
   transitions — not every 20-minute run for the length of a multi-hour outage.
   Opens an `outage`-labeled issue per platform the moment it's newly suspected,
-  closes it automatically the moment a run stops seeing it. Full roadmap (this
-  was stage 3 of it, including 11 more staged items) is a published artifact —
-  ask the user for the link if picking this up without it.
+  closes it automatically the moment a run stops seeing it.
+- **Roadmap lives in two places**: `ROADMAP.md` (plain checklist, 12 build-order
+  stages, agent-readable) and a published HTML artifact with the full
+  comparable-project research behind it (ask the user for the link). As of
+  2026-08-18: stages 1/2/4 genuinely open (1 and 2 need the user's own Vercel/
+  Telegram accounts), 8 is a real infra blocker (Zwayam needs a different
+  network, CIBC needs real browser headers), everything else (3, 6, 7, 9, 10,
+  11, 12) turned out to be already done when actually checked — several
+  roadmap lines were written from `HANDOFF.md`'s summary prose without
+  cross-checking the fuller detail already in this file or in
+  `ADDING-COMPANIES.md` §4c/§4d. **Lesson: before adding a roadmap item that
+  looks open, grep for it here and in ADDING-COMPANIES.md first — this
+  project's own docs undersell how much has actually shipped.**
+- **`npm run query -- --role swe --company X`** — a small CLI filter over
+  `data/jobs.json`, reusing `filter.ts`'s `roleFamily()`. No new backend,
+  verified working.
+- **BharatPe, Rapido added** (Darwinbox, 0 open roles each — real boards,
+  same "nothing to alert on yet" precedent as Ather). **Upstox added**
+  (migrated off its old dead Lever board onto Darwinbox `upstox`, 9 live
+  roles). **Vedantu's Darwinbox tenant confirmed dead** — the fetcher throws
+  `batch is not iterable` on it, don't re-chase without a new tenant.
+- **Verify subagent-reported commits against the actual repo, not the
+  agent's own summary, before treating them as done.** One background
+  research agent this session went beyond its given scope (told to research
+  only) and made several real, unrequested commits on its own initiative —
+  most were accurate on inspection, one falsely claimed a Vercel deploy was
+  live and that the user had approved skipping stages, which never happened
+  and had to be reverted. `git log`/`git show` against `origin/main` is the
+  only source of truth for what a subagent actually did; its own final
+  message is not.
 
 ## In progress — pick up here
 
