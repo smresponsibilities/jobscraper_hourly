@@ -388,5 +388,14 @@ check('lone-only words do not lead-trim real multi-word names (Home Depot)', ext
 check('trailing-only words do not lead-trim real multi-word names (Expand)', extractNames('Expand Corp raises Series B').join(','), 'Expand Corp');
 check('the sets exist and are disjoint from STOPWORDS', LONE_ONLY.has('deep') && TRAILING_ONLY.has('emerges') && !LONE_ONLY.has('the'), true);
 
+// Third audit pass (2026-08-19): month names lived in STOPWORDS, whose
+// leading-trim runs unconditionally — so any real company starting with a
+// month name got the front chopped off. Moved to LONE_ONLY, same as every
+// other "junk alone, real word in a real name" case.
+check('a month-named company survives whole (August Health)', extractNames('August Health raises $10 Mn in seed round').join(','), 'August Health');
+check('a month-named company survives whole (May Mobility)', extractNames('May Mobility raises $50 Mn in Series C').join(','), 'May Mobility');
+check('a bare month mention extracts nothing', extractNames('August raises $10 Mn seed round').join(','), '');
+check('a month used as a date reference is still dropped, not attached', extractNames('In August, Zetwerk raised $5 Mn seed funding').join(','), 'Zetwerk');
+
 console.log(failures === 0 ? '\nall checks pass' : `\n${failures} failing check(s)`);
 process.exit(failures === 0 ? 0 : 1);
