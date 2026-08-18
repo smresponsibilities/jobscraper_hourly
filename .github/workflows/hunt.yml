@@ -69,8 +69,17 @@ jobs:
       # Non-fatal: only 5 of 381 boards need a browser, and the adapter returns
       # empty rather than throwing when Playwright is missing. A bad install
       # should never cost you the other 376.
+      #
+      # timeout-minutes matters here specifically: continue-on-error only
+      # catches a step that *fails*, not one that hangs. Run #133 (2026-08-17)
+      # got stuck in this step on what looks like an apt/dpkg stall and sat
+      # there for the full 6-hour default job timeout, skipping every step
+      # after it — including the hunt itself — and backing up the concurrency
+      # queue for hours. A short timeout here turns that into a fast, cheap
+      # failure instead.
       - name: Install Chromium
         continue-on-error: true
+        timeout-minutes: 5
         run: npx playwright install --with-deps chromium
 
       - id: hunt
