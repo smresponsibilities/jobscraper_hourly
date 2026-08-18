@@ -5,7 +5,7 @@ import { detectOutage, outageChanges } from './outage.js';
 import { selectBoards } from './select-boards.js';
 import { epochToIso } from './fetchers/eightfold.js';
 import { safeIso } from './fetchers/darwinbox.js';
-import { summarizeHostStats } from './host-stats.js';
+import { summarizeHostStats, updateHistory, persistentlySlow } from './host-stats.js';
 import type { Company, Industry, RawJob } from './types.js';
 
 /**
@@ -410,6 +410,30 @@ check('one bucket per key, not per result', hostStats.length, 2);
 check('worst p95 sorts first', hostStats[0]!.key, 'workday:wd5');
 check('error count only counts results with an error', hostStats.find((s) => s.key === 'greenhouse')!.errors, 1);
 check('count is every result for that key, errors included', hostStats.find((s) => s.key === 'greenhouse')!.count, 3);
+
+console.log('host history (rolling worst-N persistence)');
+// updateHistory takes stats.slice(0, WORST_N=3) as-is (already worst-first
+// from summarizeHostStats), so this run needs >3 hosts for "never worst" to
+// mean anything — with only 2 entries both would land in the top 3.
+const alwaysWorst = { key: 'wd504', count: 1, errors: 0, p50: 1, p95: 1 };
+const filler = (key: string) => ({ key, count: 1, errors: 0, p50: 1, p95: 1 });
+const neverWorst = { key: 'greenhouse', count: 1, errors: 0, p50: 1, p95: 1 };
+const runStats = [alwaysWorst, filler('a'), filler('b'), neverWorst];
+let history: Record<string, boolean[]> = {};
+for (let i = 0; i < 6; i++) history = updateHistory(history, runStats);
+check('a host in the worst-N every run accumulates all-true history', history['wd504']!.every(Boolean), true);
+check('a host never in the worst-N accumulates all-false history', history['greenhouse']!.some(Boolean), false);
+check('a host consistently worst is flagged persistently slow', persistentlySlow(history).includes('wd504'), true);
+check('a host never worst is not flagged persistently slow', persistentlySlow(history).includes('greenhouse'), false);
+
+const skippedRun = updateHistory(history, [neverWorst]);
+check('a host skipped this run (cold rotation) keeps its prior history untouched', skippedRun['wd504']!.join(','), history['wd504']!.join(','));
+
+const cappedHistory = updateHistory({ wd504: Array(10).fill(true) }, [alwaysWorst]);
+check('history is capped at 10 runs, oldest dropped first', cappedHistory['wd504']!.length, 10);
+
+const oneBadRun = updateHistory({ wd504: [true, false, false, false, false] }, [neverWorst]);
+check('a single bad run among mostly-good ones does not trip the flag', persistentlySlow(oneBadRun).length, 0);
 
 console.log(failures === 0 ? '\nall checks pass' : `\n${failures} failing check(s)`);
 process.exit(failures === 0 ? 0 : 1);

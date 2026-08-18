@@ -64,6 +64,16 @@ jobs:
           key: outage-${{ github.run_id }}
           restore-keys: outage-
 
+      # A capped window of booleans per host — small even with hundreds of
+      # hosts. Persists worst-N appearances across runs so persistentlySlow()
+      # can tell "consistently bad" from "one noisy run."
+      - name: Restore host stats history
+        uses: actions/cache/restore@v4
+        with:
+          path: state/host-stats.json
+          key: host-stats-${{ github.run_id }}
+          restore-keys: host-stats-
+
       - run: npm install --no-audit --no-fund
 
       # Only Google and Meta need a real browser; everything else is a JSON call.
@@ -115,6 +125,13 @@ jobs:
         with:
           path: state/outage.json
           key: outage-${{ github.run_id }}
+
+      - name: Save host stats history
+        uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: state/host-stats.json
+          key: host-stats-${{ github.run_id }}
 
       # Silent self-healing (outage.ts withholds eviction) was the whole fix for
       # boards vanishing under a platform-wide block, but nothing told anyone it

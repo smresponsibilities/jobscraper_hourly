@@ -9,18 +9,20 @@ import { updateCatalog } from './catalog.js';
 import { CONCURRENCY, DROP_AFTER_FAILING_DAYS, HOST_CONCURRENCY } from './config.js';
 import {
   loadCompanies,
+  loadHostHistory,
   loadOutageState,
   loadSeen,
   readJson,
   recordFailure,
   recordSuccess,
   saveCompanies,
+  saveHostHistory,
   saveOutageState,
   saveSeen,
 } from './state.js';
 import { detectOutage, outageChanges, outageStateFrom } from './outage.js';
 import { selectBoards } from './select-boards.js';
-import { formatHostStats, summarizeHostStats, type PollTiming } from './host-stats.js';
+import { formatHostStats, persistentlySlow, summarizeHostStats, updateHistory, type PollTiming } from './host-stats.js';
 
 const nowIso = new Date().toISOString();
 const dryRun = process.env.DRY_RUN === '1';
@@ -87,6 +89,7 @@ async function main(): Promise<void> {
   const companies = await loadCompanies();
   const seen = await loadSeen();
   const previousOutage = await loadOutageState();
+  const previousHostHistory = await loadHostHistory();
 
   /**
    * The seen state lives in the Actions cache, not in git — at ~150,000 live
@@ -115,6 +118,14 @@ async function main(): Promise<void> {
     results.map((r): PollTiming => ({ key: rateLimitKey(r.company), durationMs: r.durationMs, error: r.error })),
   );
   console.log(`slowest hosts this run (p95, worst first):\n${formatHostStats(hostStats)}`);
+
+  const hostHistory = updateHistory(previousHostHistory, hostStats);
+  const slowHosts = persistentlySlow(hostHistory);
+  if (slowHosts.length > 0) {
+    console.warn(
+      `consistently among the worst hosts across its last several runs, not just this one: ${slowHosts.join(', ')}`,
+    );
+  }
 
   /**
    * Boards not polled this run must survive untouched. `updatedCompanies` is
@@ -252,6 +263,7 @@ async function main(): Promise<void> {
     const prunedCount = await saveSeen(seen);
     if (prunedCount) console.log(`pruned ${prunedCount} expired IDs`);
     await saveOutageState(outageStateFrom(suspectedOutage));
+    await saveHostHistory(hostHistory);
   }
 
   await mkdir('out', { recursive: true });

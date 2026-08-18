@@ -2,11 +2,13 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import type { Company, SeenState } from './types.js';
 import type { OutageState } from './outage.js';
+import type { HostHistory } from './host-stats.js';
 import { SEEN_RETENTION_DAYS } from './config.js';
 
 const SEEN_PATH = 'state/seen.json';
 const COMPANIES_PATH = 'companies.json';
 const OUTAGE_PATH = 'state/outage.json';
+const HOST_STATS_PATH = 'state/host-stats.json';
 
 export async function readJson<T>(path: string, fallback: T): Promise<T> {
   try {
@@ -28,6 +30,10 @@ export const saveCompanies = (c: Company[]) => writeJson(COMPANIES_PATH, c);
 /** Tiny — one boolean per ATS — so it rides in the same cache as seen.json. */
 export const loadOutageState = () => readJson<OutageState>(OUTAGE_PATH, {});
 export const saveOutageState = (state: OutageState) => writeJson(OUTAGE_PATH, state);
+
+/** A capped window of booleans per host — small even with hundreds of hosts. */
+export const loadHostHistory = () => readJson<HostHistory>(HOST_STATS_PATH, {});
+export const saveHostHistory = (history: HostHistory) => writeJson(HOST_STATS_PATH, history);
 
 /**
  * Pruning is what keeps this viable without a database. Git stores a full blob

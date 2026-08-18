@@ -71,6 +71,7 @@ async function main(): Promise<void> {
 
   const feeds = await mapLimit(FEEDS, 6, fetchFeed);
   const live = feeds.filter(Boolean).length;
+  const dead = FEEDS.filter((_, i) => !feeds[i]);
 
   const relevant: string[] = [];
   for (const xml of feeds) {
@@ -79,6 +80,7 @@ async function main(): Promise<void> {
     }
   }
   console.log(`${live}/${FEEDS.length} feeds reachable, ${relevant.length} funding/expansion headlines`);
+  if (dead.length > 0) console.log(`  unreachable: ${dead.join(', ')}`);
 
   const candidates = new Map<string, Candidate>();
   for (const title of relevant) {
