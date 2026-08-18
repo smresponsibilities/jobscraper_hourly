@@ -115,6 +115,41 @@ deliberate request, not a default.
 
 ## In progress — pick up here
 
+**`candidates.txt` probe run (2026-08-19) — 3 net new, several confirmed
+wrong-company matches caught and removed.** Ran the full existing
+`candidates.txt` (216 candidates, already curated across India consumer/
+fintech/SaaS, quant/HFT, and consulting — this predates tonight, wasn't a
+fresh list) through `npm run probe -- candidates.txt --all`. **Note for
+next time: `probe.ts` has no `DRY_RUN` guard at all — it always saves,
+unlike `index.ts`/`discover-news.ts`.** Also: an earlier attempt this
+session accidentally overwrote the whole file with a smaller ad-hoc list
+before realizing it already had real content — recovered via `git show
+HEAD:candidates.txt`, no data lost, but a reminder to `git status`/read a
+file before writing over it even when it looks like a scratch file.
+
+Kept, fetcher-verified: **Optiver** (Greenhouse `optiverus` — a different
+tenant than the `optiverprivate` one checked before and marked "no India
+office"; this one has 177 jobs including 4 real Mumbai roles — that
+earlier conclusion was wrong, just checked the wrong tenant), **Lendingkart**
+and **Crediwatch** (SmartRecruiters, real Bengaluru roles, both small but
+real Indian fintech companies).
+
+Removed after checking real job content, not just resolving a token:
+**GSA Capital** (real board, but London/NYC only, 0 India). And several
+confirmed **wrong-company matches** — the token resolved to a live board,
+but the actual jobs on it belong to an unrelated company that happens to
+share the name: Lever `porter` (a Massachusetts nurse-staffing agency, not
+the India logistics company), Greenhouse `wise` ("Supplemental Sales
+Agent" in Anchorage/Bronx, not the global fintech), SmartRecruiters
+`graviton` ("ODM Lead" in Bethesda, not Graviton Research Capital the
+quant firm — the real Graviton is already tracked separately on
+Greenhouse), Greenhouse `bcg` (one posting literally titled "Test Job
+Live" — a sandbox account), SmartRecruiters `uber` (single "Test UAT"
+posting, also a sandbox tenant). **Same collision class as the "LEAP"
+incident already documented in `board-probe.ts` — a short, generic company
+name on a platform where anyone can register a tenant is not sufficient
+evidence on its own, always check the actual job titles.**
+
 **International-index sweep (5 freebuff rounds — DAX 40, Nifty Next 50,
 Nikkei 225 subset, Big 4/consulting, Fortune Global 500 non-overlap) — 4
 net new companies, 3 renamed, and one important process finding.** Diffed
@@ -280,10 +315,36 @@ alert on yet" precedent as BharatPe/Ather/Rapido). Naukri RMS's
 unreachability was NOT runner-specific — retried from this machine too,
 same connection failure, so it stays unbuilt.
 
-**Zwayam identified but not built** — its API lives on `public.zwayam.com`,
-unreachable from the research runner (connection failures), so the response
-shape was never confirmed. Only one known example (Loadshare) anyway. Retry
-from a different network if it comes up again, otherwise leave it.
+**Zwayam — partially resolved 2026-08-19, still not built.** The domain is
+reachable now (it wasn't before — genuinely a transient network issue, not
+a permanent block): a plain `curl` to the root times out, but real paths
+respond normally. Found Loadshare's actual careers page
+(`careers.loadshare.net/loadshare/`), but it's an Angular SPA — the real
+API call to `public.zwayam.com` isn't visible in the static HTML, and ~13
+reasonable endpoint-shape guesses (`/api/jobs`, `/widget/{tenant}/jobs`,
+etc.) all 404'd. This genuinely needs a browser's Network tab, not more
+curl guessing — low priority anyway, only one known example.
+
+**CIBC — resolved 2026-08-19, deliberately not added.** The 406 was
+real-browser-header-only, same class as Darwinbox's Cloudflare fingerprint
+issue: a `curl` with a normal `User-Agent` gets a clean response, no code
+change needed. The site slug was never a guessable name — it's literally
+`search` (found via `siteId: "search"` embedded in the careers page's own
+JS config, not discoverable by guessing common site-name patterns).
+Fetcher-verified against the real board: 302 jobs, all Canada-focused
+(Toronto, Saskatoon), **zero India roles**. CIBC India hiring runs through
+`talent500.com/cibcindia` instead — a GCC talent-marketplace platform this
+project has no adapter for, not Workday. Not adding the Workday board
+(polling 302 irrelevant roles hourly for no real payoff); if CIBC ever
+comes up again, the technical blocker is gone but the real lead is
+Talent500, not this tenant.
+
+**Optiver has an India office after all — the earlier "no India office"
+finding checked the wrong tenant.** `probe.ts` (candidates.txt already had
+this) found a second, different Optiver Greenhouse board (`optiverus`,
+distinct from the previously-checked `optiverprivate`) with 177 jobs
+including 4 real Mumbai roles (Data Center Engineer, Lead Quantitative
+Engineer, Network Engineer, Head of Execution Technology). Added.
 
 **Excluded from the 42 despite a live, evidenced board** — same
 service-based-IT/BPO category test as Accenture, or a data-quality problem,

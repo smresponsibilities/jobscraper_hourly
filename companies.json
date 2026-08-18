@@ -113020,5 +113020,26 @@
     "site": "Daikin-Careers",
     "industry": "tech",
     "source": "curated"
+  },
+  {
+    "name": "Optiverus",
+    "ats": "greenhouse",
+    "token": "optiverus",
+    "industry": "quant",
+    "source": "curated"
+  },
+  {
+    "name": "Lendingkart",
+    "ats": "smartrecruiters",
+    "token": "lendingkart",
+    "industry": "fintech",
+    "source": "curated"
+  },
+  {
+    "name": "Crediwatch",
+    "ats": "smartrecruiters",
+    "token": "crediwatch",
+    "industry": "tech",
+    "source": "curated"
   }
 ]
