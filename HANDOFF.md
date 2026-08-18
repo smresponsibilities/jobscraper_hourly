@@ -34,6 +34,17 @@ deliberate request, not a default.
   env var `NEXT_PUBLIC_REPO` = `smresponsibilities/jobscraper_hourly`.
 - Regression suite (`npm test`) passes; treat a failing test as a real bug, not
   noise — every case in `src/selftest.ts` is a bug that actually shipped once.
+- **Suspected ATS outages now open a GitHub issue instead of failing silently.**
+  `outage.ts`'s `detectOutage()` already withheld eviction when most of one
+  platform's boards fail together (the fix for the BigBasket/PhysicsWallah/etc.
+  mass-eviction bug — see below); it just never told anyone. `outageChanges()`
+  diffs each run's suspected set against a small cached `state/outage.json` so
+  `hunt.yml`'s new "Report suspected ATS outage" step only fires on actual
+  transitions — not every 20-minute run for the length of a multi-hour outage.
+  Opens an `outage`-labeled issue per platform the moment it's newly suspected,
+  closes it automatically the moment a run stops seeing it. Full roadmap (this
+  was stage 3 of it, including 11 more staged items) is a published artifact —
+  ask the user for the link if picking this up without it.
 
 ## In progress — pick up here
 
