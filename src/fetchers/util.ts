@@ -1,6 +1,50 @@
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+
+const run = promisify(execFile);
+
 /** Identify the bot honestly. Boards are far more tolerant of a named client. */
 export const UA =
   'jobscraper-next/1.0 (personal job alert bot; +https://github.com/topics/job-scraper)';
+
+/** A real browser's UA, for the curl-impersonation path below — the opposite
+ * choice from `UA` above, deliberately: this path exists specifically to
+ * pass as a real browser, not to self-identify as a bot. */
+const BROWSER_UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36';
+
+/**
+ * Shells out to system `curl` instead of Node's `fetch`, for the rare board
+ * behind Cloudflare-grade bot detection that fingerprints the TLS/HTTP2
+ * handshake itself, not just headers — Node's OpenSSL-based fetch gets
+ * rejected outright regardless of what headers you send, while curl's
+ * handshake (via the system's own TLS library) passes. `curl` is
+ * preinstalled on GitHub's runners, no new dependency.
+ *
+ * First proven necessary for Darwinbox, generalized here so a second
+ * adapter hitting the same wall doesn't have to re-derive this from
+ * scratch. If a future board's Cloudflare deployment gets strict enough
+ * that even plain curl starts failing, the documented next step is
+ * `curl-impersonate` (a curl build patched to match a specific browser's
+ * *exact* TLS fingerprint, not just its headers) — not built speculatively
+ * here, since no currently-tracked board has needed it.
+ */
+export async function curlJson<T>(
+  url: string,
+  options: { method?: 'GET' | 'POST'; headers?: Record<string, string>; body?: string } = {},
+): Promise<T> {
+  const { method = 'GET', headers = {}, body } = options;
+  const args = ['-s', '--max-time', '30'];
+  if (method === 'POST') args.push('-X', 'POST');
+  for (const [key, value] of Object.entries({ 'User-Agent': BROWSER_UA, ...headers })) {
+    args.push('-H', `${key}: ${value}`);
+  }
+  if (body !== undefined) args.push('-d', body);
+  args.push(url);
+
+  const { stdout } = await run('curl', args, { maxBuffer: 32 * 1024 * 1024 });
+  return JSON.parse(stdout) as T;
+}
 
 const RETRY_STATUS = new Set([429, 503]);
 const MAX_ATTEMPTS = 3;

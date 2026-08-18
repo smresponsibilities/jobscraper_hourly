@@ -20,6 +20,7 @@ import {
 } from './state.js';
 import { detectOutage, outageChanges, outageStateFrom } from './outage.js';
 import { selectBoards } from './select-boards.js';
+import { formatHostStats, summarizeHostStats, type PollTiming } from './host-stats.js';
 
 const nowIso = new Date().toISOString();
 const dryRun = process.env.DRY_RUN === '1';
@@ -35,6 +36,7 @@ interface BoardResult {
   company: Company;
   jobs: RawJob[];
   error?: string;
+  durationMs: number;
 }
 
 /**
@@ -58,11 +60,12 @@ const limitForHost = (key: string): number =>
   HOST_CONCURRENCY[key.split(':')[0]!] ?? HOST_CONCURRENCY.default!;
 
 async function pollBoard(company: Company): Promise<BoardResult> {
+  const started = Date.now();
   try {
     const jobs = await FETCHERS[company.ats].list(company);
-    return { company, jobs };
+    return { company, jobs, durationMs: Date.now() - started };
   } catch (error) {
-    return { company, jobs: [], error: (error as Error).message };
+    return { company, jobs: [], error: (error as Error).message, durationMs: Date.now() - started };
   }
 }
 
@@ -107,6 +110,11 @@ async function main(): Promise<void> {
       `(${selection.hot} hot, ${selection.cold} cold on rotation, ${selection.skipped} waiting)`,
   );
   const results = await mapLimitByKey(selection.polling, rateLimitKey, limitForHost, pollBoard);
+
+  const hostStats = summarizeHostStats(
+    results.map((r): PollTiming => ({ key: rateLimitKey(r.company), durationMs: r.durationMs, error: r.error })),
+  );
+  console.log(`slowest hosts this run (p95, worst first):\n${formatHostStats(hostStats)}`);
 
   /**
    * Boards not polled this run must survive untouched. `updatedCompanies` is

@@ -116,6 +116,56 @@ deliberate request, not a default.
   only source of truth for what a subagent actually did; its own final
   message is not.
 
+**The three crawler-technique findings from research, and what actually got
+built from them** — deliberately not all three as originally proposed,
+because two of the three didn't survive contact with real testing:
+
+- **`curl-impersonate`, generalized instead of installed.** Round 2's
+  research found this explains *why* `darwinbox.ts`'s curl-shell-out trick
+  works (Cloudflare fingerprints the TLS handshake itself, not just
+  headers). But no currently-tracked board actually needs stronger evasion
+  than plain curl already provides — CIBC's 406 turned out to be a plain
+  header issue, not a TLS one. Installing a new binary dependency for zero
+  current benefit would be exactly the premature-infrastructure mistake
+  this project's own culture warns against. Built the honest version
+  instead: extracted `darwinbox.ts`'s curl call into a reusable `curlJson()`
+  helper in `fetchers/util.ts`, so a *second* adapter hitting the same wall
+  doesn't re-derive it from scratch. `curl-impersonate` stays a documented
+  escalation path in the code comment, not code — pull it in only when a
+  real board needs it.
+- **Sitemap-based board detection — tried, reverted.** See above.
+- **Adaptive per-host throttling — built as measurement only, not adaptive
+  behavior.** New `src/host-stats.ts`, logged every run: per-rate-limit-key
+  p50/p95 latency and error count, worst-p95-first. `HOST_CONCURRENCY`'s
+  static numbers are unchanged — this only answers whether they're actually
+  leaving throughput on the table, which right now is a guess. Same
+  "measure before touching" rule as `BOARDS_PER_RUN` — if a few weeks of
+  this log show a host consistently slow or erroring under its current cap,
+  that's the evidence to act on, not before. **First real run already
+  surfaced something**: `workday:wd504` at p95 117s, 2-3x worse than every
+  other host that run (most Workday pods were 35-65s p95). One data point
+  isn't a pattern yet — worth watching over several runs, not acting on
+  immediately.
+
+**Tried and reverted: sitemap-based board detection.** The idea (from a
+crawler-technique research round): companies that want Google for Jobs
+visibility publish a `sitemap-jobs.xml`, and if it links the ATS's own raw
+domain directly (`boards.greenhouse.io/company`, same assumption `detect.ts`'s
+existing HTML scan already relies on), that's a faster, more current signal
+than waiting for the weekly Common Crawl sweep. Built it, wired it into
+`detect.ts` ahead of the existing `CAREER_PATHS` scan, reusing
+`parseBoardUrl` — then tested it live against 20 real companies (big tech:
+Notion, Figma, Airtable, Linear, Vercel; Indian: Razorpay, Zerodha, CRED,
+Groww, Meesho, UrbanCompany) before trusting it. **Zero resolved boards out
+of 20.** Modern companies overwhelmingly white-label their careers URL
+(`company.com/careers/...`) even when a third-party ATS powers it behind
+the scenes — the raw ATS-domain link this approach depends on essentially
+never appears in a sitemap, even at companies confirmed to run Greenhouse/
+Lever. Reverted the code rather than ship a detection path that adds a
+network round-trip to every `detect.ts` call for a measured 0% hit rate.
+**Don't rebuild this without new evidence it'd actually help** — the
+research that suggested it was reasoning from the *idea* being sound, not
+from testing it against real companies.
 ## In progress — pick up here
 
 **`candidates.txt` probe run (2026-08-19) — 3 net new, several confirmed

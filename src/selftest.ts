@@ -5,6 +5,7 @@ import { detectOutage, outageChanges } from './outage.js';
 import { selectBoards } from './select-boards.js';
 import { epochToIso } from './fetchers/eightfold.js';
 import { safeIso } from './fetchers/darwinbox.js';
+import { summarizeHostStats } from './host-stats.js';
 import type { Company, Industry, RawJob } from './types.js';
 
 /**
@@ -396,6 +397,19 @@ check('a month-named company survives whole (August Health)', extractNames('Augu
 check('a month-named company survives whole (May Mobility)', extractNames('May Mobility raises $50 Mn in Series C').join(','), 'May Mobility');
 check('a bare month mention extracts nothing', extractNames('August raises $10 Mn seed round').join(','), '');
 check('a month used as a date reference is still dropped, not attached', extractNames('In August, Zetwerk raised $5 Mn seed funding').join(','), 'Zetwerk');
+
+console.log('host stats (per-host latency/error summary)');
+const hostSample = [
+  { key: 'greenhouse', durationMs: 100 },
+  { key: 'greenhouse', durationMs: 200 },
+  { key: 'greenhouse', durationMs: 300, error: 'timeout' },
+  { key: 'workday:wd5', durationMs: 5000 },
+];
+const hostStats = summarizeHostStats(hostSample);
+check('one bucket per key, not per result', hostStats.length, 2);
+check('worst p95 sorts first', hostStats[0]!.key, 'workday:wd5');
+check('error count only counts results with an error', hostStats.find((s) => s.key === 'greenhouse')!.errors, 1);
+check('count is every result for that key, errors included', hostStats.find((s) => s.key === 'greenhouse')!.count, 3);
 
 console.log(failures === 0 ? '\nall checks pass' : `\n${failures} failing check(s)`);
 process.exit(failures === 0 ? 0 : 1);
