@@ -81,6 +81,14 @@ deliberate request, not a default.
   Workday's own reporting ceiling rather than something a higher page cap
   would reach — not chased further without evidence it's real. Genpact's
   extra roles wouldn't have alerted anyway (`SERVICE_COMPANIES` excludes it).
+  **Eightfold had the identical bug**: its India-scoped search also capped at
+  300, and Qualcomm's real total is 572 — 272 real roles were invisible.
+  Raised `MAX_PAGES` 30 -> 100, live-verified: 572 returned, not 300. Checked
+  every other platform's page cap the same way (Phenom, Darwinbox, iCIMS,
+  TurboHire) — none show a clipping signature (a result landing exactly on
+  the cap boundary); TurboHire doesn't even paginate, it returns the whole
+  set in one call. Worth re-running this same live check periodically as
+  companies grow, not just once.
 - **Two more instances of the epoch/date bug class** (see "recurring bug
   class" below) — found proactively, not from a crash report. `eightfold.ts`
   did the exact same unguarded `new Date(x * 1000)` that already shipped

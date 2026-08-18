@@ -19,7 +19,13 @@ interface EightfoldPosition {
 
 /** The endpoint returns 10 per call and ignores any `num` you pass. */
 const PAGE_SIZE = 10;
-const MAX_PAGES = 30;
+// Same clipping bug as Workday's old 300 cap, found the same way: measured
+// 2026-08-18, Qualcomm's real India total is 572 (`data.count`), but 300 was
+// silently dropping 272 of them - the endpoint's `total` was never wrong,
+// nothing was reading past page 30 to see it. 100 pages (1,000 roles) covers
+// it with headroom; the loop already stops early once `total` is reached, so
+// raising this doesn't add requests for smaller boards.
+const MAX_PAGES = 100;
 
 /**
  * Same bug class Zappyhire shipped once: a sort/rank field with no real date
