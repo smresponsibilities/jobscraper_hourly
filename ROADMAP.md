@@ -43,7 +43,7 @@ it done.
 - [ ] **7. freebuff round — platform-parity diff vs kalil0321/ats-scrapers** — `freebuff: yes` for the lookup legwork, Claude triages which gaps justify a new adapter. See `ADDING-COMPANIES.md` §4d.
 - [ ] **8. freebuff round — Zwayam retry + CIBC Workday site-slug recovery** — `freebuff: yes`. Two bounded single-company lookups already scoped in `HANDOFF.md`.
 - [ ] **9. freebuff round — re-check "unreachable" giants** — `freebuff: yes`, recurring every few months, not one-off. Deutsche Bank, McKinsey, Bain, IBM, VMware, Bosch subsidiaries. This list has shrunk before (L&T, PeopleStrong) purely from looking again.
-- [ ] **10. iCIMS: read the JSON-LD block on detail pages** — `freebuff: no`. New fetcher code, same shape of fix as `successfactors.ts`. Unlocks DocuSign, D.E. Shaw. Run `npm test` after.
+- [x] **10. iCIMS adapter** — MOSTLY ALREADY DONE, doc was stale again. `icims.ts` already reads iCIMS's real `/api/jobs` JSON endpoint (no JSON-LD parsing needed — that was a leftover premise from before the adapter existed), live-confirmed against DocuSign. D.E. Shaw checked 2026-08-18: their public careers page shows no iCIMS link at all, so the "D.E. Shaw runs iCIMS" assumption is unconfirmed — needs real research to find their actual ATS before any code gets written, not a code task.
 - [ ] **11. Uber / Walmart via headless render** — `freebuff: no`. Extend `rendered.ts`'s existing pattern (already solved Google/Meta this way). Not guaranteed to work.
 - [ ] **12. Query CLI over `data/jobs.json`** — `freebuff: partial` for scaffolding, Claude reviews anything touching `filter.ts`. `npm run query -- --role swe --company X`, reuses existing filter logic — no new backend.
 
