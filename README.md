@@ -8,6 +8,9 @@ it has the decisions and gotchas that aren't obvious from the code alone (the
 git-merge workflow you need every time, a regex bug class that's shipped three
 times, why the email has a "backlog" section, what's deliberately unfinished).
 
+**Just using it — reading the emails, tuning what you get, adding a company
+you care about?** Read [USAGE.md](USAGE.md) instead — no code required.
+
 Verified working against 1,381 boards: **153,596 live postings → ~2,350 open matches
 across 400+ companies**, in about eleven minutes.
 
