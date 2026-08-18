@@ -59093,7 +59093,7 @@
     "lastPolledAt": "2026-08-18T12:59:41.335Z"
   },
   {
-    "name": "Juniper Networks",
+    "name": "Hewlett Packard Enterprise",
     "ats": "workday",
     "token": "hpe",
     "host": "wd5",
@@ -62432,7 +62432,7 @@
     "lastPolledAt": "2026-08-18T12:59:41.335Z"
   },
   {
-    "name": "Globalhr",
+    "name": "RTX",
     "ats": "workday",
     "token": "globalhr",
     "host": "wd5",
@@ -62639,7 +62639,7 @@
     "lastPolledAt": "2026-08-18T12:59:41.335Z"
   },
   {
-    "name": "Hp",
+    "name": "HP",
     "ats": "workday",
     "token": "hp",
     "host": "wd5",
@@ -62818,7 +62818,7 @@
     "lastPolledAt": "2026-08-18T12:59:41.335Z"
   },
   {
-    "name": "Motorolasolutions",
+    "name": "Motorola Solutions",
     "ats": "workday",
     "token": "motorolasolutions",
     "host": "wd5",
@@ -68421,7 +68421,7 @@
     "lastPolledAt": "2026-08-18T12:59:41.335Z"
   },
   {
-    "name": "cat",
+    "name": "Caterpillar",
     "ats": "workday",
     "token": "cat",
     "host": "wd5",
@@ -70511,7 +70511,7 @@
     "lastPolledAt": "2026-08-18T12:59:41.335Z"
   },
   {
-    "name": "thermofisher",
+    "name": "Thermo Fisher Scientific",
     "ats": "workday",
     "token": "thermofisher",
     "host": "wd5",
@@ -72951,7 +72951,7 @@
     "lastPolledAt": "2026-08-18T12:59:41.335Z"
   },
   {
-    "name": "Analogdevices",
+    "name": "Analog Devices",
     "ats": "workday",
     "industry": "tech",
     "source": "discovered",
@@ -73866,7 +73866,7 @@
     "lastPolledAt": "2026-08-18T12:59:41.335Z"
   },
   {
-    "name": "Att",
+    "name": "AT&T",
     "ats": "workday",
     "industry": "tech",
     "source": "discovered",
@@ -75791,7 +75791,7 @@
     "lastPolledAt": "2026-08-18T12:59:41.335Z"
   },
   {
-    "name": "Chrobinson",
+    "name": "C.H. Robinson",
     "ats": "workday",
     "industry": "tech",
     "source": "discovered",
@@ -81900,7 +81900,7 @@
     "lastPolledAt": "2026-08-18T12:59:41.335Z"
   },
   {
-    "name": "Ibqbjb",
+    "name": "Honeywell International",
     "ats": "oracle",
     "industry": "tech",
     "source": "discovered",
@@ -84538,7 +84538,7 @@
     "lastPolledAt": "2026-08-18T12:59:41.335Z"
   },
   {
-    "name": "Mdlz",
+    "name": "Mondelez International",
     "ats": "workday",
     "industry": "tech",
     "source": "discovered",
@@ -84977,7 +84977,7 @@
     "lastPolledAt": "2026-08-18T12:59:41.335Z"
   },
   {
-    "name": "Mmc",
+    "name": "Marsh & McLennan",
     "ats": "workday",
     "industry": "tech",
     "source": "discovered",
@@ -85340,7 +85340,7 @@
     "lastPolledAt": "2026-08-18T12:59:41.335Z"
   },
   {
-    "name": "Myhrabc",
+    "name": "Cencora",
     "ats": "workday",
     "industry": "tech",
     "source": "discovered",
@@ -90536,7 +90536,7 @@
     "lastPolledAt": "2026-08-18T12:59:41.335Z"
   },
   {
-    "name": "Spgi",
+    "name": "S&P Global",
     "ats": "workday",
     "industry": "tech",
     "source": "discovered",
@@ -112868,5 +112868,102 @@
     "source": "discovered",
     "token": "GroupeMontoni",
     "lastPolledAt": "2026-08-18T12:59:41.335Z"
+  },
+  {
+    "name": "Verizon",
+    "ats": "workday",
+    "token": "verizon",
+    "host": "wd12",
+    "site": "verizon-careers",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Kimberly-Clark",
+    "ats": "workday",
+    "token": "kimberlyclark",
+    "host": "wd1",
+    "site": "GLOBAL",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Corteva",
+    "ats": "workday",
+    "token": "corteva",
+    "host": "wd5",
+    "site": "Corteva",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "PVH",
+    "ats": "workday",
+    "token": "pvh",
+    "host": "wd1",
+    "site": "PVH_Careers",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Hartford Insurance Group",
+    "ats": "workday",
+    "token": "thehartford",
+    "host": "wd5",
+    "site": "Careers_External",
+    "industry": "banking",
+    "source": "curated"
+  },
+  {
+    "name": "Advance Auto Parts",
+    "ats": "workday",
+    "token": "advanceauto",
+    "host": "wd5",
+    "site": "AdvanceExternalCareers",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Sonoco Products",
+    "ats": "workday",
+    "token": "sonoco",
+    "host": "wd1",
+    "site": "CorporateCareers",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Kraft Heinz",
+    "ats": "eightfold",
+    "token": "jobs.kraftheinz.com",
+    "site": "kraftheinz.com",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Colgate-Palmolive",
+    "ats": "successfactors",
+    "token": "colgate",
+    "host": "career4.successfactors.com",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "RTX",
+    "ats": "workday",
+    "token": "globalhr",
+    "host": "wd5",
+    "site": "REC_RTX_Ext_Gateway",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Deutsche Bank",
+    "ats": "workday",
+    "token": "db",
+    "host": "wd3",
+    "site": "DBWebsite",
+    "industry": "banking",
+    "source": "curated"
   }
 ]

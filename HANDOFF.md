@@ -115,6 +115,61 @@ deliberate request, not a default.
 
 ## In progress — pick up here
 
+**Fortune 500 sweep (8 freebuff rounds, 209 companies researched) — 11 net
+new companies, 14 renamed, 2 genuine multi-site finds.** Diffed the 2026
+Fortune 500 against `companies.json`, found 222 missing, ran it through
+freebuff in 8 rounds (~25-30 companies each). Every finding was
+fetcher-verified live against the real platform before touching
+`companies.json` — most of the 209 researched turned out to already be
+tracked, just under raw auto-discovered names (`Chrobinson`, `Mdlz`,
+`Spgi`, `Globalhr`, `Ibqbjb`, ...) that would have shown up wrong in a real
+alert email; renamed 14 of those to their real names (C.H. Robinson,
+Mondelez International, S&P Global, RTX, Honeywell International, etc.) —
+purely cosmetic, same ats/token/host/site, zero polling risk.
+
+**Net new adds**: Verizon, Kimberly-Clark, Corteva, PVH, Hartford Insurance
+Group, Advance Auto Parts, Sonoco Products (0 India roles right now, same
+"real board, nothing to alert on yet" precedent as BharatPe/Ather/Rapido),
+Kraft Heinz (Eightfold), Colgate-Palmolive (SuccessFactors), Deutsche Bank.
+
+**Deutsche Bank needed care**: `db.wd3.myworkdayjobs.com` already had a
+company tracked on it (`DWS`, Deutsche Bank's asset-management arm, site
+`dwswebsite`) — genuinely a different site (`DBWebsite`, 454 jobs/211
+India-matching) on the *same tenant*, not a duplicate. Added as a separate
+entry. **RTX had the same shape of gap**: the already-tracked site
+(`Private_Posting_No_TMP`) and freebuff's found site
+(`REC_RTX_Ext_Gateway`) both return real, different job sets (272 vs 418
+jobs, no title overlap) — added the second site under the same "RTX" name
+so canonical-name dedup (the Growe precedent) collapses any real overlap.
+**GE Vernova looked like the same pattern but wasn't** — checked both
+sites live, near-identical counts and matching first title, almost
+certainly the same underlying job set — skipped, not added.
+
+**Confirmed still genuinely unreachable, don't re-chase without a new
+lead**: McKinsey, Bain & Company, IBM — all custom-built portals with a
+gated/origin-restricted API, no anonymous access found (same conclusion as
+every prior pass on IBM specifically). **Prudential Financial matched the
+wrong company** — the "prudential" Workday tenant resolves to Prudential
+plc/PHI (Asia-focused), not the US Prudential Financial from the Fortune
+500 list; not added under that name. Celanese and StoneX's iCIMS hostnames
+from freebuff's report both 404'd on every host variant tried — the real
+hostname wasn't captured accurately, needs a fresh look. Albertsons'
+Oracle Cloud HCM tenant resolves but the guessed site number
+(`CX_1001`) returns 0 India roles against 2000 total (likely capped, same
+signature as Walmart/Genpact) — freebuff's claimed Bengaluru titles don't
+appear in that site number, real site number still unresolved. KKR's
+Greenhouse board guess (`stage`) returned real jobs, but the sample titles
+("Actuarial Associate, Insurance Risk Modeling") read like an insurance
+company, not a PE firm — didn't add, this smells like the same generic-
+board-name collision class as the "LEAP" incident in board-probe.ts.
+
+**Process note**: this round's freebuff output landed as `.txt` files
+directly in the repo root, not an isolated directory — against the
+freebuff-delegate skill's own guidance for pure-research rounds. No actual
+harm this time (just text files, nothing else in the repo was touched,
+verified via `git status` before reading anything), but launch the next
+round from a neutral directory outside the repo, per the skill.
+
 **Round 16: 5 more ATS adapters, 18 more companies — includes fixing the
 "L&T unreachable" gap.** `greythr.ts`, `peoplestrong.ts`, `pyjamahr.ts`,
 `zappyhire.ts`, `zimyo.ts` — all fetcher-verified live, same discipline as
