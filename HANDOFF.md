@@ -115,6 +115,44 @@ deliberate request, not a default.
 
 ## In progress — pick up here
 
+**International-index sweep (5 freebuff rounds — DAX 40, Nifty Next 50,
+Nikkei 225 subset, Big 4/consulting, Fortune Global 500 non-overlap) — 4
+net new companies, 3 renamed, and one important process finding.** Diffed
+each real index against `companies.json` first (whole-word matching, not
+naive substring — the Fortune 500 round's false-positive lesson held).
+
+**Net new**: DHL Group (Phenom, 379/379 jobs India-matching — essentially
+the whole board is India), Allianz (Phenom, 45/45), Merck KGaA (Phenom,
+73/73 — the *German* Merck, a completely separate company from the
+already-tracked US Merck/MSD), Daikin (Workday, small but real). **3
+renamed** from raw auto-discovered names: `abb` → ABB (690 jobs, 305
+India-matching — a big one), `alliance` → Nissan, `gea` → GEA Group; all
+three were already being polled correctly, just mislabeled.
+
+**Important finding: freebuff fabricated specific evidence for at least 3
+companies this round.** Sony, ING Group, and AIA Group were each reported
+with concrete sample job titles and India role counts — but calling the
+exact same platform+credential live returned completely different job
+titles with **zero India matches** for all three (AIA's real board turned
+out to be Philippines/Malaysia-only; ING's real board is US/Amsterdam
+finance roles; Sony's is US-only). This isn't a stale-data issue — the
+reported evidence didn't match what the API actually returns *at all*,
+which is different from "found a board, roles changed since." **Treat any
+freebuff-reported evidence as unverified until independently re-fetched
+live against the real API, even when it looks concrete and specific with
+real-looking city names** — a bounded evidence bar in the prompt doesn't
+guarantee it was actually honored. None of the three were added.
+
+Also surfaced but not resolved: Britannia Industries (TurboHire, needs an
+org GUID freebuff didn't capture), Willis Towers Watson (Greenhouse, real
+board name not captured), Ericsson (Phenom, freebuff's evidence included a
+real "Noida" title but `jobs.ericsson.com` 401s — wrong host), Cummins
+India/BDO/Ricoh/Nokia (Oracle Cloud HCM tenants found but no real site
+number, all guesses failed). Government PSU banks and infrastructure
+companies (Bank of Baroda, Canara Bank, GAIL, IOC, Punjab National Bank,
+and 6 others) correctly came back as "no ATS, recruit via IBPS/official
+notifications" — genuinely not pollable, not a gap to re-chase.
+
 **Fortune 500 sweep (8 freebuff rounds, 209 companies researched) — 11 net
 new companies, 14 renamed, 2 genuine multi-site finds.** Diffed the 2026
 Fortune 500 against `companies.json`, found 222 missing, ran it through

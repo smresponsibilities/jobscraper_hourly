@@ -49772,7 +49772,7 @@
     "lastPolledAt": "2026-08-18T18:06:08.270Z"
   },
   {
-    "name": "abb",
+    "name": "ABB",
     "ats": "workday",
     "token": "abb",
     "host": "wd3",
@@ -50129,7 +50129,7 @@
     "lastPolledAt": "2026-08-18T18:06:08.270Z"
   },
   {
-    "name": "alliance",
+    "name": "Nissan",
     "ats": "workday",
     "token": "alliance",
     "host": "wd3",
@@ -50578,7 +50578,7 @@
     "lastPolledAt": "2026-08-18T18:06:08.270Z"
   },
   {
-    "name": "gea",
+    "name": "GEA Group",
     "ats": "workday",
     "token": "gea",
     "host": "wd3",
@@ -112990,5 +112990,35 @@
     "source": "discovered",
     "token": "amplemarket",
     "lastPolledAt": "2026-08-18T18:06:08.270Z"
+  },
+  {
+    "name": "DHL Group",
+    "ats": "phenom",
+    "token": "careers.dhl.com",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Allianz",
+    "ats": "phenom",
+    "token": "careers.allianz.com",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Merck KGaA",
+    "ats": "phenom",
+    "token": "careers.merckgroup.com",
+    "industry": "tech",
+    "source": "curated"
+  },
+  {
+    "name": "Daikin",
+    "ats": "workday",
+    "token": "daikinapplied",
+    "host": "wd1",
+    "site": "Daikin-Careers",
+    "industry": "tech",
+    "source": "curated"
   }
 ]
