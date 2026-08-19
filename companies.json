@@ -113063,5 +113063,12 @@
     "source": "discovered",
     "token": "nylas",
     "lastPolledAt": "2026-08-19T05:38:22.882Z"
+  },
+  {
+    "name": "Velaura",
+    "ats": "lever",
+    "token": "velaura",
+    "industry": "tech",
+    "source": "discovered"
   }
 ]
