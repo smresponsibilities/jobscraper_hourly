@@ -64,13 +64,32 @@ function experience(job: Job): string {
   return `${job.minYears}+ yrs`;
 }
 
-function JobRow({ job }: { job: Job }) {
+const OPENED_KEY = 'jobradar-opened';
+
+function loadOpened(): Set<string> {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(OPENED_KEY) ?? '[]'));
+  } catch {
+    return new Set();
+  }
+}
+
+function JobRow({
+  job,
+  opened,
+  onOpen,
+}: {
+  job: Job;
+  opened: boolean;
+  onOpen: () => void;
+}) {
   const posted = ago(job.postedAt ?? job.firstSeen);
   return (
-    <li className="job" data-closed={Boolean(job.closedAt)}>
-      <a className="title" href={job.url} target="_blank" rel="noreferrer">
+    <li className="job" data-closed={Boolean(job.closedAt)} data-opened={opened}>
+      <a className="title" href={job.url} target="_blank" rel="noreferrer" onClick={onOpen}>
         {job.title}
       </a>
+      <span className="company-inline">{job.company}</span>
       <div className="company">{job.company}</div>
       <div className="meta">
         <span>{job.location}</span>
@@ -94,6 +113,7 @@ export default function Page() {
   const [internsOnly, setInternsOnly] = useState(false);
   const [showClosed, setShowClosed] = useState(false);
   const [company, setCompany] = useState('');
+  const [opened, setOpened] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     fetch(DATA_URL, { cache: 'no-store' })
@@ -103,7 +123,16 @@ export default function Page() {
       })
       .then(setJobs)
       .catch((e: Error) => setError(e.message));
+    setOpened(loadOpened());
   }, []);
+
+  const markOpened = (id: string) =>
+    setOpened((prev) => {
+      if (prev.has(id)) return prev;
+      const next = new Set(prev).add(id);
+      localStorage.setItem(OPENED_KEY, JSON.stringify([...next]));
+      return next;
+    });
 
   const companies = useMemo(
     () => [...new Set((jobs ?? []).map((j) => j.company))].sort(),
@@ -255,7 +284,12 @@ export default function Page() {
                   </summary>
                   <ul className="jobs">
                     {jobsInGroup.map((job) => (
-                      <JobRow job={job} key={job.id} />
+                      <JobRow
+                        job={job}
+                        key={job.id}
+                        opened={opened.has(job.id)}
+                        onOpen={() => markOpened(job.id)}
+                      />
                     ))}
                   </ul>
                 </details>
@@ -269,7 +303,12 @@ export default function Page() {
                   </summary>
                   <ul className="jobs">
                     {backlogJobs.map((job) => (
-                      <JobRow job={job} key={job.id} />
+                      <JobRow
+                        job={job}
+                        key={job.id}
+                        opened={opened.has(job.id)}
+                        onOpen={() => markOpened(job.id)}
+                      />
                     ))}
                   </ul>
                 </details>
