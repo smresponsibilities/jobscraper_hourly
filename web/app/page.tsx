@@ -17,11 +17,65 @@ function ago(iso?: string): string | null {
   return days === 1 ? 'yesterday' : `${days}d ago`;
 }
 
+// Grouped/sorted by firstSeen (when our hourly crawl first found the posting),
+// not postedAt — ATS-reported dates are often relative ("2 days ago") and get
+// bumped on repost, so crawl time is the only reliable "how new is this" signal.
+function crawledTime(job: Job): number {
+  const t = new Date(job.firstSeen).getTime();
+  return Number.isNaN(t) ? 0 : t;
+}
+
+// Same threshold and "no date = benefit of the doubt" rule as EMAIL_FRESHNESS_DAYS
+// / isFreshEnough in src/config.ts + src/filter.ts. Without this, a newly-added
+// company dumps its whole (real, but old) backlog into the "past hour" bucket
+// just because our crawl found it an hour ago — same bug the email digest hit
+// first, fixed there by demoting backlog to its own section instead of hiding
+// or mis-labeling it.
+const BACKLOG_DAYS = 21;
+
+function isBacklog(job: Job): boolean {
+  if (!job.postedAt) return false;
+  const posted = new Date(job.postedAt).getTime();
+  if (Number.isNaN(posted)) return false;
+  return (Date.now() - posted) / 86_400_000 > BACKLOG_DAYS;
+}
+
+function bucketLabel(job: Job): string {
+  const then = crawledTime(job);
+  if (then === 0) return 'Date unknown';
+  const hours = Math.floor((Date.now() - then) / 3_600_000);
+  if (hours < 1) return 'Past hour';
+  if (hours < 24) return `Past ${hours} hour${hours === 1 ? '' : 's'}`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return 'Yesterday';
+  if (days < 7) return `${days} days ago`;
+  return 'Over a week ago';
+}
+
 function experience(job: Job): string {
   if (job.isIntern) return 'Internship';
   if (job.minYears === null) return 'Not stated';
   if (job.maxYears !== null) return `${job.minYears}–${job.maxYears} yrs`;
   return `${job.minYears}+ yrs`;
+}
+
+function JobRow({ job }: { job: Job }) {
+  const posted = ago(job.postedAt ?? job.firstSeen);
+  return (
+    <li className="job" data-closed={Boolean(job.closedAt)}>
+      <a className="title" href={job.url} target="_blank" rel="noreferrer">
+        {job.title}
+      </a>
+      <div className="company">{job.company}</div>
+      <div className="meta">
+        <span>{job.location}</span>
+        <span className={`tag${job.isIntern ? ' intern' : ''}`}>{experience(job)}</span>
+        {posted && <span>{posted}</span>}
+        {job.salary && <span>{job.salary}</span>}
+        {job.closedAt && <span className="tag closed">closed</span>}
+      </div>
+    </li>
+  );
 }
 
 export default function Page() {
@@ -73,8 +127,22 @@ export default function Page() {
         if (!haystack.includes(needle)) return false;
       }
       return true;
-    });
+    }).sort((a, b) => crawledTime(b) - crawledTime(a));
   }, [jobs, query, maxYears, includeUnstated, industries, internsOnly, showClosed, company]);
+
+  const freshJobs = useMemo(() => shown.filter((j) => !isBacklog(j)), [shown]);
+  const backlogJobs = useMemo(() => shown.filter(isBacklog), [shown]);
+
+  const groups = useMemo(() => {
+    const byLabel = new Map<string, Job[]>();
+    for (const job of freshJobs) {
+      const label = bucketLabel(job);
+      const list = byLabel.get(label);
+      if (list) list.push(job);
+      else byLabel.set(label, [job]);
+    }
+    return [...byLabel.entries()];
+  }, [freshJobs]);
 
   const toggleIndustry = (value: string) =>
     setIndustries((current) =>
@@ -174,26 +242,32 @@ export default function Page() {
           {shown.length === 0 ? (
             <p className="empty">Nothing matches those filters.</p>
           ) : (
-            <ul className="jobs">
-              {shown.map((job) => {
-                const posted = ago(job.postedAt ?? job.firstSeen);
-                return (
-                  <li className="job" key={job.id} data-closed={Boolean(job.closedAt)}>
-                    <a className="title" href={job.url} target="_blank" rel="noreferrer">
-                      {job.title}
-                    </a>
-                    <div className="company">{job.company}</div>
-                    <div className="meta">
-                      <span>{job.location}</span>
-                      <span className={`tag${job.isIntern ? ' intern' : ''}`}>{experience(job)}</span>
-                      {posted && <span>{posted}</span>}
-                      {job.salary && <span>{job.salary}</span>}
-                      {job.closedAt && <span className="tag closed">closed</span>}
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
+            <>
+              {groups.map(([label, jobsInGroup]) => (
+                <section key={label} className="time-group">
+                  <h2 className="time-heading">{label}</h2>
+                  <ul className="jobs">
+                    {jobsInGroup.map((job) => (
+                      <JobRow job={job} key={job.id} />
+                    ))}
+                  </ul>
+                </section>
+              ))}
+
+              {backlogJobs.length > 0 && (
+                <details className="time-group backlog">
+                  <summary className="time-heading">
+                    Backlog — {backlogJobs.length} role{backlogJobs.length === 1 ? '' : 's'} posted
+                    over {BACKLOG_DAYS} days ago
+                  </summary>
+                  <ul className="jobs">
+                    {backlogJobs.map((job) => (
+                      <JobRow job={job} key={job.id} />
+                    ))}
+                  </ul>
+                </details>
+              )}
+            </>
           )}
         </>
       )}

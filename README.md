@@ -59,12 +59,35 @@ repost, so IDs are the only reliable signal.
 ## Setup
 
 1. Push this repo to GitHub (public — needed later so the UI can read the data).
-2. Google Account → 2-Step Verification **on** → App Passwords → generate one.
-3. Repo Settings → Secrets and variables → Actions → add:
+2. Turn on 2-Step Verification, if it isn't already: [myaccount.google.com/signinoptions/two-step-verification](https://myaccount.google.com/signinoptions/two-step-verification)
+   → **Get started** → verify with your phone. App Passwords only appears
+   once this is on.
+3. Generate an app password: [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords)
+   → name it anything (e.g. "jobscraper") → **Create** → copy the
+   16-character password shown (spaces don't matter, and it's shown once —
+   if you navigate away before copying it, just generate a new one).
+4. Repo Settings → Secrets and variables → Actions → **New repository
+   secret**, add all three:
    - `GMAIL_USER` — the sending Gmail address
-   - `GMAIL_APP_PASSWORD` — the 16-character app password (**not** your Gmail password)
-   - `ALERT_TO` — where alerts should land
-4. Actions tab → **hunt** → Run workflow, to confirm it works.
+   - `GMAIL_APP_PASSWORD` — the app password from step 3 (**not** your regular Gmail password)
+   - `ALERT_TO` — where alerts should land (can be the same address as `GMAIL_USER`)
+5. Actions tab → **hunt** → Run workflow, to confirm it works.
+
+### Email stopped sending (Gmail password was reset/changed)
+
+Changing your Google account password revokes every existing App Password —
+`GMAIL_APP_PASSWORD` in GitHub goes stale silently, and `hunt`/`discover-news`
+start failing on the send-email step. Fix:
+
+1. [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords)
+   → generate a new one (needs 2-Step Verification on; the old app password is
+   already dead, no need to revoke it manually).
+2. Repo → Settings → Secrets and variables → Actions → `GMAIL_APP_PASSWORD` →
+   **Update** → paste the new 16-character password (spaces don't matter).
+3. Actions tab → **hunt** → Run workflow, confirm the run goes green.
+
+`GMAIL_USER` and `ALERT_TO` don't change in this scenario — only the app
+password needs replacing.
 
 The first real run marks everything currently posted as seen and emails nothing.
 That's deliberate — otherwise run one would send you 1,139 roles at once. To see
