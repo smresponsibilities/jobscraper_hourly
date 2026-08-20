@@ -95,9 +95,12 @@ label.field { display: flex; flex-direction: column; gap: 5px; font-size: 12px; 
 }
 .time-group:first-child .time-heading { border-top: 0; padding-top: 0; }
 
-details.backlog { margin-top: 22px; }
-details.backlog summary.time-heading { cursor: pointer; }
-details.backlog[open] summary.time-heading { margin-bottom: 10px; }
+summary.time-heading { cursor: pointer; list-style: none; }
+summary.time-heading::-webkit-details-marker { display: none; }
+summary.time-heading::before { content: '▸ '; }
+details[open] > summary.time-heading::before { content: '▾ '; }
+details[open] > summary.time-heading { margin-bottom: 10px; }
+
 details.backlog ul.jobs { opacity: 0.75; }
 
 ul.jobs { list-style: none; margin: 0; padding: 0; display: grid; gap: 9px; }

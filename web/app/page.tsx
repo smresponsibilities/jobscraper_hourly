@@ -40,12 +40,17 @@ function isBacklog(job: Job): boolean {
   return (Date.now() - posted) / 86_400_000 > BACKLOG_DAYS;
 }
 
+// 2-hour bins for the first 24 hours (12 groups), so a group actually holds
+// enough roles to be worth a header — hourly bins were mostly empty since
+// firstSeen depends on when a board happened to be polled, not a steady drip.
 function bucketLabel(job: Job): string {
   const then = crawledTime(job);
   if (then === 0) return 'Date unknown';
   const hours = Math.floor((Date.now() - then) / 3_600_000);
-  if (hours < 1) return 'Past hour';
-  if (hours < 24) return `Past ${hours} hour${hours === 1 ? '' : 's'}`;
+  if (hours < 24) {
+    const binStart = Math.floor(hours / 2) * 2;
+    return binStart === 0 ? 'Past 2 hours' : `${binStart}–${binStart + 2} hours ago`;
+  }
   const days = Math.floor(hours / 24);
   if (days === 1) return 'Yesterday';
   if (days < 7) return `${days} days ago`;
@@ -243,15 +248,17 @@ export default function Page() {
             <p className="empty">Nothing matches those filters.</p>
           ) : (
             <>
-              {groups.map(([label, jobsInGroup]) => (
-                <section key={label} className="time-group">
-                  <h2 className="time-heading">{label}</h2>
+              {groups.map(([label, jobsInGroup], index) => (
+                <details key={label} className="time-group" open={index < 2}>
+                  <summary className="time-heading">
+                    {label} ({jobsInGroup.length})
+                  </summary>
                   <ul className="jobs">
                     {jobsInGroup.map((job) => (
                       <JobRow job={job} key={job.id} />
                     ))}
                   </ul>
-                </section>
+                </details>
               ))}
 
               {backlogJobs.length > 0 && (
