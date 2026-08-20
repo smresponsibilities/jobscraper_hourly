@@ -113091,5 +113091,101 @@
     "source": "discovered",
     "token": "onthestage",
     "lastPolledAt": "2026-08-20T06:04:45.030Z"
+  },
+  {
+    "name": "BizLibrary",
+    "ats": "lever",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "bizlibrary"
+  },
+  {
+    "name": "Coates Group",
+    "ats": "lever",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "coatesgroup"
+  },
+  {
+    "name": "CrowdRiff",
+    "ats": "lever",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "crowdriff"
+  },
+  {
+    "name": "hza.fa.us1.oraclecloud.com",
+    "ats": "oracle",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "hza",
+    "host": "fa.us1",
+    "siteNumber": "CX_1"
+  },
+  {
+    "name": "Integra LifeSciences",
+    "ats": "workday",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "integralife",
+    "host": "wd1",
+    "site": "careers"
+  },
+  {
+    "name": "Nature Conservancy",
+    "ats": "workday",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "nature",
+    "host": "wd108",
+    "site": "externalcareers"
+  },
+  {
+    "name": "Nitricity",
+    "ats": "greenhouse",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "nitricity"
+  },
+  {
+    "name": "RGA",
+    "ats": "workday",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "rgare",
+    "host": "wd1",
+    "site": "careers"
+  },
+  {
+    "name": "Sandoz",
+    "ats": "workday",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "sandoz",
+    "host": "wd103",
+    "site": "sandoz_careers"
+  },
+  {
+    "name": "Scottsmiraclegro",
+    "ats": "workday",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "scottsmiraclegro",
+    "host": "wd5",
+    "site": "smgexternal"
+  },
+  {
+    "name": "ThriveCart",
+    "ats": "greenhouse",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "thrivecart"
+  },
+  {
+    "name": "TSMG",
+    "ats": "lever",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "tsmg"
   }
 ]
