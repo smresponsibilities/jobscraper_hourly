@@ -34,7 +34,13 @@ function freshness(job: Job): string | undefined {
 }
 
 function card(job: Job): string {
-  const meta = [job.location, experienceLabel(job), freshness(job), job.salary]
+  const salary = job.salaryMin
+    ? `₹${fmtLpa(job.salaryMin)}${job.salaryMax && job.salaryMax !== job.salaryMin ? `–${fmtLpa(job.salaryMax)}` : ''} LPA`
+    : undefined;
+  const flags = [job.isRepost && 'reposted', job.visa && 'visa sponsorship']
+    .filter((v): v is string => Boolean(v));
+  const mode = job.workMode === 'remote' ? 'Remote' : job.workMode === 'hybrid' ? 'Hybrid' : undefined;
+  const meta = [job.location, experienceLabel(job), freshness(job), salary, mode, ...flags]
     .filter((value): value is string => Boolean(value))
     .map(escape);
   return `
@@ -70,6 +76,8 @@ function section(title: string, jobs: Job[], detailBudget: number): string {
         : ''
     }`;
 }
+
+const fmtLpa = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
 
 /**
  * "New" means new to this tracker, not newly posted (see EMAIL_FRESHNESS_DAYS

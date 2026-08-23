@@ -768,5 +768,57 @@ check('lifetime backstop halts on slow rot', bounceGateDecision(rot, NOW).halt, 
 // Sparse pause: too few recent sends to judge → silent.
 check('sparse window stays quiet', bounceGateDecision([mk([1], 1), mk([2]), mk([3])], NOW).halt, false);
 
+// --- Phase A: salary extraction, work-mode/visa classification, repost state.
+import { extractSalary } from './salary.js';
+import { updateReposts } from './state.js';
+import type { RepostState } from './types.js';
+
+console.log('salary extraction');
+const sal = (s?: string, t?: string) => extractSalary(s, t);
+check('lpa range', JSON.stringify(sal(undefined, 'CTC: 12-18 LPA')), JSON.stringify({ minLpa: 12, maxLpa: 18 }));
+check('lakhs wording', JSON.stringify(sal('₹8.5 - 12 Lakhs P.A.')), JSON.stringify({ minLpa: 8.5, maxLpa: 12 }));
+check('single lpa figure', JSON.stringify(sal('15 LPA fixed')), JSON.stringify({ minLpa: 15, maxLpa: 15 }));
+check(
+  'absolute inr range needs per-annum marker',
+  JSON.stringify(sal(undefined, '₹8,00,000 - 12,00,000 per annum')),
+  JSON.stringify({ minLpa: 8, maxLpa: 12 }),
+);
+check('absolute inr without marker rejected', sal(undefined, 'get 800000-1200000 users'), null);
+check('monthly stipend converts', JSON.stringify(sal(undefined, 'Stipend: ₹30,000/month')), JSON.stringify({ minLpa: 3.6, maxLpa: 3.6 }));
+check('garbage is null not wrong', sal(undefined, 'salary negotiable, 500 employees'), null);
+check('absurd range rejected', sal(undefined, '0.5-99 LPA'), null);
+check('ats field beats body noise', JSON.stringify(sal('10-14 LPA', 'we once paid someone 2 LPA')), JSON.stringify({ minLpa: 10, maxLpa: 14 }));
+
+console.log('work mode + visa');
+const wm = (location: string, text?: string) => classify({ externalId: 'x', title: 'Engineer', location, url: '', text }, 'tech').workMode;
+check('remote location', wm('Remote'), 'remote');
+check('india city defaults onsite', wm('Bengaluru, Karnataka, India'), 'onsite');
+check('hybrid wins over remote wording', wm('Remote', 'this is a hybrid role'), 'hybrid');
+check('body remote breaks city tie', wm('Pune, India', 'remote work available'), 'remote');
+check('visa sponsorship detected', classify({ externalId: 'x', title: 'Engineer', location: 'Pune', url: '', text: 'we provide visa sponsorship' }, 'tech').visa, true);
+check('visa absent stays false', classify({ externalId: 'x', title: 'Engineer', location: 'Pune', url: '' }, 'tech').visa, false);
+
+console.log('repost tracking (board-scoped)');
+const T0 = '2026-08-01T00:00:00Z';
+const T1 = '2026-08-02T00:00:00Z';
+const T3 = '2026-08-04T00:00:00Z';
+let rs: RepostState = updateReposts({}, ['a:1:x'], 'a:1:', T0);
+check('live id tracked clean', rs['a:1:x']?.gone, undefined);
+rs = updateReposts(rs, [], 'a:1:', T1);
+check('absent id stamped gone', Boolean(rs['a:1:x']?.gone), true);
+rs = updateReposts(rs, ['a:1:x'], 'a:1:', T3);
+check('return clears gone', rs['a:1:x']?.gone, undefined);
+// Other-board entries are never touched by another board's poll — cold
+// rotation must not stamp absence on boards nobody looked at.
+rs['b:2:y'] = { last: T0 };
+rs = updateReposts(rs, [], 'a:1:', T1);
+check('foreign board entry untouched by this poll', rs['b:2:y']?.gone, undefined);
+check('own board entry got gone stamp', Boolean(rs['a:1:x']?.gone), true);
+// Window expiry: an entry last seen long ago is pruned even while absent.
+const OLD = '2026-06-01T00:00:00Z';
+rs = { 'stale:x': { last: OLD } };
+rs = updateReposts(rs, [], 'stale:', '2026-08-04T00:00:00Z');
+check('expired absent entry pruned', rs['stale:x'], undefined);
+
 console.log(failures === 0 ? '\nall checks pass' : `\n${failures} failing check(s)`);
 process.exit(failures === 0 ? 0 : 1);

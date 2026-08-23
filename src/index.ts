@@ -12,6 +12,7 @@ import {
   loadCompanies,
   loadHostHistory,
   loadOutageState,
+  loadReposts,
   loadSeen,
   readJson,
   recordFailure,
@@ -19,8 +20,11 @@ import {
   saveCompanies,
   saveHostHistory,
   saveOutageState,
+  saveReposts,
   saveSeen,
+  updateReposts,
 } from './state.js';
+import { extractSalary } from './salary.js';
 import { detectOutage, outageChanges, outageStateFrom } from './outage.js';
 import { selectBoards } from './select-boards.js';
 import { formatHostStats, persistentlySlow, summarizeHostStats, updateHistory, type PollTiming } from './host-stats.js';
@@ -100,6 +104,8 @@ async function main(): Promise<void> {
   const seen = await loadSeen();
   const previousOutage = await loadOutageState();
   const previousHostHistory = await loadHostHistory();
+  let reposts = await loadReposts();
+  const repostIds = new Set<string>();
 
   /**
    * The seen state lives in the Actions cache, not in git — at ~150,000 live
@@ -165,6 +171,11 @@ async function main(): Promise<void> {
   if (outageDelta.recovered) console.log('previously suspected outage has cleared');
 
   for (const { company, jobs, error, blockKind } of results) {
+    // Repost tracking is per-board: only a board we just polled gives evidence
+    // about which of its ids are still live (cold rotation means the others
+    // carry none). Collected across the inner loop, applied once after it.
+    const boardPrefix = `${company.ats}:${company.token}:`;
+    const boardIds: string[] = [];
     if (error) {
       const failed = recordFailure(company, nowIso);
       const days = (Date.now() - new Date(failed.failingSince!).getTime()) / 86_400_000;
@@ -224,10 +235,15 @@ async function main(): Promise<void> {
        */
       if (!preScreen(job, company)) continue;
       screened++;
+      boardIds.push(id);
       if (seen[id] && !testEmail) continue;
+      // A previously-live id alerting again while stamped `gone` is a reopened
+      // requisition — flagged on the job, not silently treated as brand-new.
+      if (reposts[id]?.gone) repostIds.add(id);
       seen[id] = nowIso;
       fresh.push({ company, job });
     }
+    reposts = updateReposts(reposts, boardIds, boardPrefix, nowIso);
   }
 
   // Already screened above, so every fresh job is a candidate worth enriching —
@@ -249,6 +265,7 @@ async function main(): Promise<void> {
     const c = classify(job, company.industry);
     const verdict = shouldAlert(job, company, c);
     if (!verdict.keep) continue;
+    const salary = extractSalary(job.salary, job.text);
     matches.push({
       ...job,
       id: `${company.ats}:${company.token}:${job.externalId}`,
@@ -257,6 +274,10 @@ async function main(): Promise<void> {
       minYears: c.minYears,
       maxYears: c.maxYears,
       isIntern: c.isIntern,
+      ...(salary ? { salaryMin: salary.minLpa, salaryMax: salary.maxLpa } : {}),
+      workMode: c.workMode,
+      visa: c.visa || undefined,
+      isRepost: repostIds.has(`${company.ats}:${company.token}:${job.externalId}`) || undefined,
     });
   }
 
@@ -290,6 +311,7 @@ async function main(): Promise<void> {
     if (prunedCount) console.log(`pruned ${prunedCount} expired IDs`);
     await saveOutageState(outageStateFrom(suspectedOutage));
     await saveHostHistory(hostHistory);
+    await saveReposts(reposts);
   }
 
   await mkdir('out', { recursive: true });
