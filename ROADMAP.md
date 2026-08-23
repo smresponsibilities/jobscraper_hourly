@@ -157,6 +157,49 @@ numbered list stands; these sharpen or extend it):
   CMS kits — none applicable. Deprecated/abandoned repos are common even at
   high star counts; `pushed_at` mattered more than stars.
 
+**Autopsy of the dead repos (~45 pre-2020 or explicitly abandoned) — why
+they died, and what each death teaches this repo:**
+
+1. **Died of the target site (the dominant cause).** olindgallet/jobscraperv2's
+   own changelog names it: "Many of these job search websites now use
+   Cloudflare to stop automation" — abandoned March 2025 after trying to
+   out-wait rendering with Playwright. kelvinxuande/glassdoor-scraper died of
+   Glassdoor's auth wall; every old LinkedIn scraper (kirkhunter 2016,
+   nicolomantini 2019, xtstc131) died of login-wall/guest-API removal;
+   thayton/casperjs-taleo died of Taleo UI changes. Lesson: this repo's
+   anonymous-JSON-API-only identity isn't just philosophy, it's the survival
+   trait — there is no private endpoint for a site to revoke or a page layout
+   to change under us. Corollary: any future adapter needing headless
+   rendering takes on the exact dependency that killed these — last resort,
+   which the roadmap already treats it as.
+2. **Died of silent breakage nobody noticed.** The scrapers above didn't fail
+   loudly; they returned wrong/empty results until the owner lost interest.
+   This is the strongest argument yet for gap #5 (per-board volume anomaly
+   detection): a board drifting from 200 postings to 5 must open an issue,
+   not just log.
+3. **Died of hardcoded single-purpose config.** jobscraperv2's own comeback
+   plan listed "transition from command line parameters to JSON
+   configurations — things like location and position are hard-coded." Same
+   for lefnire/jobpig, bbzzzz/Job-Aggregator, austintackaberry/jobsort.
+   Lesson: keep `config.ts` the single data-driven brain; never let a filter
+   or search param live in scraper code.
+4. **Died of framework rot.** wtrevino/django-djobberbase ("incompatible with
+   recent versions of Django"), jobskee/joobsbox PHP boards, jobapis/
+   collector (Laravel+Algolia+S3 stack). Lesson: the runtime is `tsx` on
+   GitHub Actions with near-zero dependencies — keep it that way; every added
+   service is a future death sentence.
+5. **Died of maintainer time — the baseline cause.** jobscraperv2 again:
+   "Just don't have the time." Most common of all, stars notwithstanding.
+   Lesson: the self-healing machinery (outage-aware eviction, block holds,
+   host-stats history, auto-issues) is not gold-plating — it is what lets a
+   solo project survive periods where its author has no time. Prefer more of
+   it over more features when in doubt.
+6. **Not deaths: pivots and curated-list decay.** KnlnKS pivoted the browser
+   extension into a hosted site; curated markdown job lists (pmuens/
+   remotework, DevOpsTW/jobs, AndreaBarghigiani/working-remotely) decay the
+   moment the curator stops — an automated pipeline has no such failure mode,
+   which is the other half of this repo's design paying off.
+
 Rejected again by this sweep, consistent with prior batches: LinkedIn/Indeed
 scraping (JobSpy et al. — fragile, against repo identity), auto-apply bots,
 resume tailoring (huge genre, different product).
