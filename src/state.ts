@@ -5,6 +5,7 @@ import type { OutageState } from './outage.js';
 import type { HostHistory } from './host-stats.js';
 import { SEEN_RETENTION_DAYS, REPOST_WINDOW_DAYS } from './config.js';
 import type { RepostState } from './types.js';
+import type { VolumeDropState, VolumeHistory } from './volume-stats.js';
 
 const SEEN_PATH = 'state/seen.json';
 const COMPANIES_PATH = 'companies.json';
@@ -39,6 +40,14 @@ export const saveHostHistory = (history: HostHistory) => writeJson(HOST_STATS_PA
 const REPOSTS_PATH = 'state/reposts.json';
 export const loadReposts = () => readJson<RepostState>(REPOSTS_PATH, {});
 export const saveReposts = (state: RepostState) => writeJson(REPOSTS_PATH, state);
+
+const VOLUME_DROPS_PATH = 'state/volume-drops.json';
+export const loadVolumeDrops = () => readJson<VolumeDropState>(VOLUME_DROPS_PATH, {});
+export const saveVolumeDrops = (state: VolumeDropState) => writeJson(VOLUME_DROPS_PATH, state);
+
+const BOARD_VOLUMES_PATH = 'state/board-volumes.json';
+export const loadBoardVolumes = () => readJson<VolumeHistory>(BOARD_VOLUMES_PATH, {});
+export const saveBoardVolumes = (history: VolumeHistory) => writeJson(BOARD_VOLUMES_PATH, history);
 
 /**
  * Repost bookkeeping for one board (see the function comment below for why

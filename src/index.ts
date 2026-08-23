@@ -10,22 +10,33 @@ import { CONCURRENCY, BLOCK_HOLD_DAYS, DROP_AFTER_FAILING_DAYS, HOST_CONCURRENCY
 import { BlockError, type BlockKind } from './fetchers/block.js';
 import {
   loadCompanies,
+  loadBoardVolumes,
   loadHostHistory,
   loadOutageState,
   loadReposts,
   loadSeen,
+  loadVolumeDrops,
   readJson,
   recordFailure,
   recordSuccess,
+  saveBoardVolumes,
   saveCompanies,
   saveHostHistory,
   saveOutageState,
   saveReposts,
+  saveVolumeDrops,
   saveSeen,
   updateReposts,
 } from './state.js';
 import { extractSalary } from './salary.js';
 import { detectOutage, outageChanges, outageStateFrom } from './outage.js';
+import {
+  detectVolumeDrops,
+  updateVolumeHistory,
+  volumeDropChanges,
+  volumeDropStateFrom,
+  type VolumeDropState,
+} from './volume-stats.js';
 import { selectBoards } from './select-boards.js';
 import { formatHostStats, persistentlySlow, summarizeHostStats, updateHistory, type PollTiming } from './host-stats.js';
 
@@ -106,6 +117,8 @@ async function main(): Promise<void> {
   const previousHostHistory = await loadHostHistory();
   let reposts = await loadReposts();
   const repostIds = new Set<string>();
+  const previousVolumeDrops: VolumeDropState = await loadVolumeDrops();
+  const previousBoardVolumes = await loadBoardVolumes();
 
   /**
    * The seen state lives in the Actions cache, not in git — at ~150,000 live
@@ -134,6 +147,34 @@ async function main(): Promise<void> {
     results.map((r): PollTiming => ({ key: rateLimitKey(r.company), durationMs: r.durationMs, error: r.error })),
   );
   console.log(`slowest hosts this run (p95, worst first):\n${formatHostStats(hostStats)}`);
+
+  // Reconciliation: every board selected must have produced a result, error or
+  // not. mapLimitByKey has no reason to drop one, so a shortfall means the
+  // polling layer itself misbehaved — say it loudly rather than let the run
+  // quietly cover fewer boards than it claims.
+  if (results.length !== selection.polling.length) {
+    console.warn(
+      `RECONCILIATION: ${selection.polling.length - results.length} selected boards produced no result ` +
+        `(expected ${selection.polling.length}, got ${results.length})`,
+    );
+  }
+
+  // Silent partial-loss detection (see volume-stats.ts): only successful polls
+  // carry evidence, and only boards polled this run are judged.
+  const volumeKey = (c: Company) => `${c.ats}:${c.token}:${c.site ?? ''}`;
+  const volumeSamples = results
+    .filter((r) => !r.error)
+    .map((r) => ({ key: volumeKey(r.company), count: r.jobs.length }));
+  const polledVolumeKeys = new Set(volumeSamples.map((s) => s.key));
+  const boardVolumes = updateVolumeHistory(previousBoardVolumes, volumeSamples);
+  const volumeDrops = detectVolumeDrops(boardVolumes, polledVolumeKeys);
+  const volumeDelta = volumeDropChanges(previousVolumeDrops, volumeDrops, polledVolumeKeys);
+  if (volumeDelta.started.length) {
+    console.warn(`suspected silent posting drop: ${volumeDelta.started.join(', ')}`);
+  }
+  if (volumeDelta.recovered.length) {
+    console.log(`earlier suspected posting drops cleared: ${volumeDelta.recovered.join(', ')}`);
+  }
 
   const hostHistory = updateHistory(previousHostHistory, hostStats);
   const slowHosts = persistentlySlow(hostHistory);
@@ -284,13 +325,16 @@ async function main(): Promise<void> {
   matches.sort((a, b) => a.company.localeCompare(b.company) || a.title.localeCompare(b.title));
 
   // Large employers post one role as several requisitions — Amazon lists the
-  // same job three times under different IDs. They're one application to you, so
-  // collapse them. Every original ID still went into `seen`, so the copies are
-  // suppressed permanently rather than re-alerting next hour.
+  // same job three times under different IDs. They're one application to you,
+  // so collapse them. The company name goes through the same normalizer as
+  // the title: two tracked entries for one employer that differ only by case
+  // or punctuation (the Growe two-boards shape, before canonical renaming)
+  // must collapse too. Every original ID still went into `seen`, so the
+  // copies are suppressed permanently rather than re-alerting next hour.
   //
   const byRole = new Map<string, Job>();
   for (const job of matches) {
-    const key = `${job.company}|${normalizeForDedup(job.title)}|${normalizeForDedup(job.location)}`;
+    const key = `${normalizeForDedup(job.company)}|${normalizeForDedup(job.title)}|${normalizeForDedup(job.location)}`;
     const previous = byRole.get(key);
     if (!previous || (job.minYears ?? 99) < (previous.minYears ?? 99)) byRole.set(key, job);
   }
@@ -312,6 +356,8 @@ async function main(): Promise<void> {
     await saveOutageState(outageStateFrom(suspectedOutage));
     await saveHostHistory(hostHistory);
     await saveReposts(reposts);
+    await saveBoardVolumes(boardVolumes);
+    await saveVolumeDrops(volumeDropStateFrom(volumeDrops));
   }
 
   await mkdir('out', { recursive: true });
@@ -359,7 +405,9 @@ async function main(): Promise<void> {
       `new_count=${wroteEmail ? deduped.length : 0}\nsubject=${subject(freshForEmail, staleForEmail)}\n` +
         `hour=${new Date().getUTCHours()}\n` +
         `outage_started=${outageDelta.started.join(',')}\n` +
-        `outage_recovered=${outageDelta.recovered ? '1' : ''}\n`,
+        `outage_recovered=${outageDelta.recovered ? '1' : ''}\n` +
+        `volume_dropped=${volumeDelta.started.join(',')}\n` +
+        `volume_recovered=${volumeDelta.recovered.join(',')}\n`,
     );
   }
 }

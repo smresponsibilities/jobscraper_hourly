@@ -820,5 +820,30 @@ rs = { 'stale:x': { last: OLD } };
 rs = updateReposts(rs, [], 'stale:', '2026-08-04T00:00:00Z');
 check('expired absent entry pruned', rs['stale:x'], undefined);
 
+console.log('board volume anomaly detection');
+import { detectVolumeDrops, updateVolumeHistory, volumeDropChanges } from './volume-stats.js';
+// Build a 5-run history of ~200 postings then a collapse.
+let vh = {};
+for (const c of [200, 210, 190, 205, 195, 8]) vh = updateVolumeHistory(vh, [{ key: 'k', count: c }]);
+check('collapse below 20% of baseline flagged', detectVolumeDrops(vh, new Set(['k'])).has('k'), true);
+vh = updateVolumeHistory(vh, [{ key: 'k', count: 198 }]);
+check('recovered count clears the flag', detectVolumeDrops(vh, new Set(['k'])).has('k'), false);
+vh = updateVolumeHistory({}, [{ key: 'k', count: 3 }]);
+check('too little history stays quiet', detectVolumeDrops(vh, new Set(['k'])).has('k'), false);
+let vs = {};
+for (const c of [30, 32, 28]) vs = updateVolumeHistory(vs, [{ key: 'small', count: c }]);
+vs = updateVolumeHistory(vs, [{ key: 'small', count: 1 }]);
+check('tiny baseline board exempt', detectVolumeDrops(vs, new Set(['small'])).has('small'), false);
+// Unpolled boards are never judged — no evidence either way.
+for (const c of [200, 200, 200, 200, 200]) vh = updateVolumeHistory(vh, [{ key: 'cold', count: c }]);
+vh = updateVolumeHistory(vh, [{ key: 'cold', count: 2 }]);
+check('unpolled board not judged this run', detectVolumeDrops(vh, new Set(['k'])).has('cold'), false);
+check('polled board with drop is judged', detectVolumeDrops(vh, new Set(['k', 'cold'])).has('cold'), true);
+// Transition diff: held keys for unpolled boards, recovery only on real polls.
+const prevDrops = { cold: true as const };
+check('unpolled dropped key held, not recovered', volumeDropChanges(prevDrops, new Set(['cold']), new Set(['k'])).recovered.length, 0);
+check('recovery requires an actual poll', volumeDropChanges(prevDrops, new Set(), new Set(['cold'])).recovered.length, 1);
+check('new drop reported as started', volumeDropChanges({}, new Set(['x']), new Set(['x'])).started.length, 1);
+
 console.log(failures === 0 ? '\nall checks pass' : `\n${failures} failing check(s)`);
 process.exit(failures === 0 ? 0 : 1);

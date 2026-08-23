@@ -163,6 +163,32 @@ jobs:
             done
           fi
 
+      - name: Report suspected board volume drop
+        if: "!inputs.test_email && (steps.hunt.outputs.volume_dropped != '' || steps.hunt.outputs.volume_recovered != '')"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DROPPED: ${{ steps.hunt.outputs.volume_dropped }}
+          RECOVERED: ${{ steps.hunt.outputs.volume_recovered }}
+        run: |
+          if [ -n "$DROPPED" ]; then
+            for key in ${DROPPED//,/ }; do
+              existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --label board-drop --state open \
+                --search "in:title $key" --json number --jq '.[0].number')
+              if [ -z "$existing" ]; then
+                gh issue create --repo "$GITHUB_REPOSITORY" \
+                  --title "Suspected posting drop: $key" --label board-drop \
+                  --body "This board returned a small fraction of its recent posting count in the latest run while its adapter reported success — see \`volume-stats.ts\`. Usual causes: changed site slug, truncated response, or a cap regression. This issue closes itself automatically once the count recovers. Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+              fi
+            done
+          fi
+          if [ -n "$RECOVERED" ]; then
+            for key in ${RECOVERED//,/ }; do
+              for number in $(gh issue list --repo "$GITHUB_REPOSITORY" --label board-drop --state open --search "in:title $key" --json number --jq '.[].number'); do
+                gh issue close "$number" --repo "$GITHUB_REPOSITORY" --comment "Cleared — posting count back in line with the board's own baseline."
+              done
+            done
+          fi
+
       - name: Email new roles
         if: steps.hunt.outputs.new_count != '0'
         uses: dawidd6/action-send-mail@v3

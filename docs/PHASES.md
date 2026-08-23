@@ -24,21 +24,22 @@ bookkeeping — no new surfaces, all covered in `selftest.ts`.
 
 Why first: pure signal gain, zero infra risk, directly improves every email.
 
-## Phase B — Silent-failure defenses (self-healing)
+## Phase B — Silent-failure defenses (self-healing) — DONE 2026-08-23
 
 The autopsy's #1 lesson: projects die of unnoticed breakage. This phase makes
 quiet rot loud.
 
-4. **Per-board volume anomaly detection** (#96) — append per-board posting
-   counts to a rolling history file (same pattern as `state/host-stats.json`);
-   when a board drops sharply below its own baseline (e.g. >80% below median
-   of last N runs, minimum sample size), open/close an auto-issue exactly like
-   outage.ts does.
-5. **Expected-vs-actual reconciliation** (#98) — assert polled-board count vs
-   selection count each run; warn on shortfall (catches partial workflow
-   failures adgramigna built compare_workflow_success.py for).
-6. **Cross-board content dedup** (#25) — title+location hash collapse across
-   companies' boards so multi-posted reqs alert once, labeled.
+4. **Per-board volume anomaly detection** (#96) — SHIPPED (`src/volume-stats.ts`,
+   `state/board-volumes.json` + `state/volume-drops.json`, auto-issues via
+   hunt.yml's "Report suspected board volume drop" step, label `board-drop`).
+5. **Expected-vs-actual reconciliation** (#98) — SHIPPED as a loud
+   reconciliation warning in `index.ts` when selected boards outnumber results.
+6. **Cross-board content dedup** (#6) — SHIPPED as normalized-company-name
+   dedup key. The originally imagined stronger version (collapsing identical
+   titles across *different* companies) was deliberately NOT built while here:
+   two companies posting "SDE 1, Bengaluru" are two distinct opportunities,
+   and collapsing them would hide real leads. The real multi-board case is one
+   employer under differently-normalized names, which the key now covers.
 
 ## Phase C — Web UI depth (client-side only, no backend)
 
