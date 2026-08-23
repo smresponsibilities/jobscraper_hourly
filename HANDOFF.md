@@ -202,6 +202,77 @@ network round-trip to every `detect.ts` call for a measured 0% hit rate.
 **Don't rebuild this without new evidence it'd actually help** — the
 research that suggested it was reasoning from the *idea* being sound, not
 from testing it against real companies.
+## Cold outreach — contact discovery built and measured, deployed sender live (2026-08-21 to 2026-08-24)
+
+Full design and research lives in `COLDMAIL-PLAN.md` (companion doc, same
+"why not just what" convention as this file). Summary here is what a fresh
+session needs before touching any of it.
+
+**Contact discovery works and is measured, not estimated.** `src/contacts.ts`
+pulls commit authors from a company's public GitHub repos — a company's own
+engineers commit from work addresses, so this is free, needs no LinkedIn, and
+returns the *real* mail domain rather than a guessed one (catches cases like
+`swiggy.in`, `juspay.in`, `cred.club` that name-guessing gets wrong). A swept
+run across all 12,988 companies in `companies.json` (`npm run contacts-sweep`,
+result cached in gitignored `state/contact-sweep.json`) found **1,637 usable
+companies, 8,722 addresses, 12.6% hit rate**. The `domainMatchesOrg` guard in
+`contacts.ts` is the single most important piece of correctness in that file:
+open-source repos attract outside contributors, and without it roughly half
+the raw hits point at the *wrong* company (a repo where Nordic Semiconductor
+engineers out-commit the actual employer reports `nordicsemi.no` with total
+confidence). Loosening that guard for a higher hit rate is not a small
+tradeoff — it turns into bounces, and bounce damage is domain-wide.
+
+**Verification is real but three-valued.** `src/verify-email.ts` does raw SMTP
+`RCPT TO` probing with a catch-all control probe first. Needs outbound port
+25, confirmed present on the user's machine and confirmed **blocked on
+GitHub-hosted Actions runners** (Azure default) — so real verification only
+ever happens locally; the deployed/CI path always reports `unknown`. Verdicts
+cache in `contacted.json` for 14 days, so a periodic local
+`npm run outreach` run is what keeps a CI-built batch mostly verified rather
+than all-`unknown`.
+
+**The deployed sender (`.github/workflows/outreach.yml` + the Vercel
+`/api/outreach/*` route) is live and fully configured as of 2026-08-24** —
+secrets/variables verified present on both GitHub Actions and Vercel, the
+private `outreach-data` repo initialized (its `main` branch had zero commits
+and would have failed the first push; fixed by creating a README via the
+Contents API directly). Runs on a daily 09:00 IST cron
+(`30 3 * * *`, UTC) plus manual `workflow_dispatch`, and there's an "Outreach
+batch" button in the site header (`web/app/page.tsx`) that opens the hosted
+page — the access key is prompted once and kept in the browser's
+`localStorage`, never compiled into the public bundle, since the batch is
+keyed by real people's addresses and this repo is public.
+
+**This shipped after a review caught four real bugs, none of which had ever
+gone live** (the workflow had never run before the review, so nothing had
+leaked) — worth remembering as a class, not just as fixed:
+1. The state-restore curl call was missing `Accept: application/vnd.github.raw`,
+   so it wrote the Contents API's base64 JSON *envelope* into
+   `state/contacted.json` instead of the decoded file. That's valid JSON of
+   the wrong shape — dedup silently found zero ids, every already-mailed
+   person got re-offered, and the envelope then got committed back over the
+   real state. `src/publish-outreach.ts` now decodes properly.
+2. The batch (draft map keyed by real work addresses, full mail bodies) was
+   first written to `web/public/`, served by Vercel at a guessable URL, in
+   this **public** repo. Moved to a private data repo
+   (`OUTREACH_DATA_REPO`) — nothing personal is committed here, ever.
+3. The click-handler indexed follow-up gaps as `GAPS[touch - 1]` against
+   `GAPS = [0, 4, 9, 16]`, while the source of truth in `outreach.ts` indexes
+   by `touch` directly — every follow-up fired one slot early, first one due
+   immediately after the initial send.
+4. A failed state write was ignored and the code redirected to Gmail anyway —
+   a lost write means a follow-up later goes out mislabeled as a first touch.
+   Writes now retry against a fresh sha and hard-fail the request rather than
+   redirect on an unconfirmed save.
+
+**Sending itself is not built.** Contact discovery, verification, and the
+click-recording/follow-up-scheduling infrastructure are done; actually
+composing and sending the first real cold email — plus the domain-age and
+mailbox-warmup ramp `COLDMAIL-PLAN.md` details (6–8 weeks, deliberately slow)
+— has not started. Don't conflate "the sender is deployed" with "cold email is
+happening"; the button builds and serves a batch, a human still clicks send.
+
 ## Detection latency — why a just-posted job isn't caught instantly (measured 2026-08-23)
 
 Four stacked delays, in order of size:

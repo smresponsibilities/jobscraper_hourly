@@ -139,7 +139,16 @@ jobs:
       # opened when it first looks like an outage and closed when it clears —
       # not a comment every 20 minutes for as long as the outage lasts, since
       # `outage_started`/`outage_recovered` only fire on the actual transition.
+      # continue-on-error: a missing label ('outage' didn't exist until
+      # 2026-08-24) crashed this step with `set -e`, which — since no later
+      # step has `if: always()` — skipped every step after it INCLUDING Email
+      # new roles, Commit board list, and Publish catalog to data branch.
+      # Confirmed on run 32652192922: one full run's alert email, board-list
+      # commit, and web catalog publish were all silently lost to a missing
+      # GitHub label. This step is notification-only and must never be able
+      # to take the real pipeline down with it again.
       - name: Report suspected ATS outage
+        continue-on-error: true
         if: "!inputs.test_email && (steps.hunt.outputs.outage_started != '' || steps.hunt.outputs.outage_recovered == '1')"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -163,7 +172,11 @@ jobs:
             done
           fi
 
+      # Same reasoning as the outage step above: notification-only, runs after
+      # the real work is committed, must never fail a run that already
+      # succeeded.
       - name: Report suspected board volume drop
+        continue-on-error: true
         if: "!inputs.test_email && (steps.hunt.outputs.volume_dropped != '' || steps.hunt.outputs.volume_recovered != '')"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

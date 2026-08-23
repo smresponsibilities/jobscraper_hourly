@@ -54,3 +54,8 @@
 - 2026-08-22T13:43:53Z session ended, HEAD: a25c2d3 Merge remote board-list updates
 - 2026-08-22T19:38:04Z session ended, HEAD: a25c2d3 Merge remote board-list updates
 - 2026-08-22T19:40:11Z session ended, HEAD: a25c2d3 Merge remote board-list updates
+- 2026-08-23T20:29:27Z session ended, HEAD: 085e728 feat: deploy the cold-emailer — Actions button builds batch, Vercel serves it, clicks record via GitHub API
+- 2026-08-23T20:55:48Z session ended, HEAD: 085e728 feat: deploy the cold-emailer — Actions button builds batch, Vercel serves it, clicks record via GitHub API
+- 2026-08-23T21:34:38Z session ended, HEAD: 085e728 feat: deploy the cold-emailer — Actions button builds batch, Vercel serves it, clicks record via GitHub API
+- 2026-08-23T22:24:07Z session ended, HEAD: 1dbb71d feat: fix and secure the deployed cold-emailer, add outreach button + daily 9am IST run
+- 2026-08-23T22:25:31Z session ended, HEAD: 1dbb71d feat: fix and secure the deployed cold-emailer, add outreach button + daily 9am IST run

@@ -1,8 +1,14 @@
 # Cold outreach plan
 
-Companion to HANDOFF.md. Covers the proposed "find a human at the company, mail
-them when a matching role opens" feature. Stages 1 and 2 are built; the rest is
-the design, the measured constraints, and the open decisions.
+Companion to HANDOFF.md — see its "Cold outreach" section for the short
+version. Covers the proposed "find a human at the company, mail them when a
+matching role opens" feature. Stages 1 and 2 (contact discovery, verification)
+are built and measured; the deployed sender (GitHub Actions + Vercel,
+`.github/workflows/outreach.yml`) is live and fully configured as of
+2026-08-24, daily at 09:00 IST plus a manual button in the site header.
+Actually composing and sending the first real cold email — and the
+domain-age/mailbox-warmup ramp below — has not started. The rest of this doc
+is the design, the measured constraints, and the open decisions.
 
 ## 1. What the ApplyBolt LinkedIn email finder actually does
 

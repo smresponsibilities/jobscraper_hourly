@@ -63,6 +63,10 @@ jobs:
         env:
           OUTREACH_LINK_BASE: ${{ vars.OUTREACH_LINK_BASE }}
           OUTREACH_KEY: ${{ secrets.OUTREACH_KEY }}
+          # contacts.ts's gh() reads this to raise the GitHub API cap from
+          # 60/hr unauth to 5000/hr. The runner-provided token already exists
+          # per job with read access to public repos — no new secret needed.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm run outreach -- --static
 
       - name: Publish batch to the private data repo

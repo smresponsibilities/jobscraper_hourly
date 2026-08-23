@@ -970,8 +970,41 @@ if (process.argv[1]?.endsWith('outreach.ts')) {
   if (args.includes('--serve')) {
     await serve(batch);
   } else if (!args.includes('--print')) {
+    // buildBatch() computed a fresh SMTP verdict (and gravatar check, for
+    // catch-all/unknown addresses) per candidate, but only held it on the
+    // in-memory Draft — nothing persisted it. Every static build was
+    // therefore re-probing every address from scratch, silently defeating the
+    // 14-day verdict cache this same file documents elsewhere. Fold the
+    // results back into state before writing the page, merging rather than
+    // overwriting so an address that already has send history keeps it.
+    const freshState = await readJson<OutreachState>(STATE_PATH, {});
+    const now = new Date().toISOString();
+    for (const d of [...batch.followups, ...batch.triggered, ...batch.random]) {
+      const prev = freshState[d.addr];
+      freshState[d.addr] = {
+        company: prev?.company ?? d.company,
+        role: prev?.role ?? d.role,
+        location: prev?.location ?? d.location,
+        jobUrl: prev?.jobUrl ?? d.jobUrl,
+        firstName: prev?.firstName ?? d.firstName,
+        touch: prev?.touch ?? 0,
+        sentAt: prev?.sentAt ?? [],
+        nextDueAt: prev?.nextDueAt ?? now,
+        fact: prev?.fact ?? d.fact,
+        subject: prev?.subject ?? d.subject,
+        verdict: d.verdict,
+        gravatar: d.gravatar ?? prev?.gravatar,
+        verifiedAt: now,
+        replied: prev?.replied,
+        skipped: prev?.skipped,
+        bounced: prev?.bounced,
+        bouncedAt: prev?.bouncedAt,
+      };
+    }
+    await saveState(freshState);
+
     await mkdir('out/outbox', { recursive: true });
-    await writeFile(PAGE_PATH, page(batch, recentlySent(await readJson<OutreachState>(STATE_PATH, {}))), 'utf8');
+    await writeFile(PAGE_PATH, page(batch, recentlySent(freshState)), 'utf8');
     console.log(`static page written → ${PAGE_PATH}`);
     // Deployed mode companion: the hosted click-API needs each draft's
     // redirect targets (the Gmail/mailto URLs are computed at build time from

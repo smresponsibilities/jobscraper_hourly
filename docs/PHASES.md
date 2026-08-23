@@ -108,19 +108,40 @@ published). What was wrong, because each is a trap worth not re-entering:
 Also added: every route requires `?k=<OUTREACH_KEY>`, since the ids are
 addresses and an ungated API let anyone mark the campaign skipped.
 
-**Deployed outreach:** the cold-email batch builder now
-runs in GitHub Actions via a `workflow_dispatch` button
-(`.github/workflows/outreach.yml`) and publishes the batch to a private data
-repo, which the Vercel site serves at `/api/outreach/page?k=<key>`. Card buttons point at new serverless routes
-(`/api/outreach/open|mailapp|replied|skip|bounce/[id]`,
-`web/app/api/outreach/...`) which record clicks into `state/contacted.json`
-through the GitHub Contents API — identical bookkeeping to the localhost
-server, hosted. Requires `OUTREACH_GH_TOKEN` (Contents read/write) in Vercel.
+**Deployed outreach:** the cold-email batch builder runs in GitHub Actions,
+triggered either by the green `workflow_dispatch` button or automatically on a
+**daily 09:00 IST cron** (`.github/workflows/outreach.yml`, `30 3 * * *` UTC —
+change to `30 3 * * 1-5` for weekdays-only, matching the sending plan). It
+publishes the batch to a private data repo, which the Vercel site serves at
+`/api/outreach/page?k=<key>`. The site header (`web/app/page.tsx`) has an
+"Outreach batch" button that opens that page — the key is prompted once and
+kept in `localStorage`, never in the bundle, since the batch is keyed by real
+people's addresses and this repo is public. Card buttons point at serverless
+routes (`/api/outreach/open|mailapp|replied|skip|bounce/[id]`,
+`web/app/api/outreach/...`) which record clicks into the private repo's
+`contacted.json` through the GitHub Contents API — identical bookkeeping to the
+localhost server, hosted.
+
+**Fully configured and verified live as of 2026-08-24**: `OUTREACH_GH_TOKEN`,
+`OUTREACH_KEY` set as GitHub Actions secrets; `OUTREACH_DATA_REPO`,
+`OUTREACH_LINK_BASE` set as Actions variables; the same three set as Vercel
+env vars (confirmed indirectly — the deployed route returned 403 on a wrong
+key rather than 500 "not configured"); the private `outreach-data` repo's
+`main` branch initialized (it had zero commits, which would have failed the
+workflow's first push — fixed by creating a README via the Contents API
+directly, since GitHub's create-file-contents endpoint can bootstrap an empty
+repo's default branch on its own).
+
 Caveats documented in the workflow: Actions runners block port 25, so SMTP
-verdicts degrade to `unknown` there; run locally when you need real ones.
-This forced one config change: web dropped `output: 'export'` so the route
-could exist — the job page is still client-fetching and needs no redeploy for
-hourly data.
+verdicts degrade to `unknown` there; verdicts cached in `contacted.json` last
+14 days, so a periodic local `npm run outreach` run is what keeps a
+CI-built batch mostly verified rather than all-`unknown`. This forced one
+config change: web dropped `output: 'export'` so the route could exist — the
+job page is still client-fetching and needs no redeploy for hourly data.
+
+See `HANDOFF.md`'s "Cold outreach" section and `COLDMAIL-PLAN.md` for the full
+design, the four review-caught bugs this rework fixed, and what's still not
+built (actually sending the first real email, the domain-age/warmup ramp).
 
 Still open from E:
 
