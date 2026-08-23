@@ -845,5 +845,36 @@ check('unpolled dropped key held, not recovered', volumeDropChanges(prevDrops, n
 check('recovery requires an actual poll', volumeDropChanges(prevDrops, new Set(), new Set(['cold'])).recovered.length, 1);
 check('new drop reported as started', volumeDropChanges({}, new Set(['x']), new Set(['x'])).started.length, 1);
 
+console.log('trend intelligence (Phase D)');
+import { companyVelocity, rampingCompanies, salaryTrends } from './trends.js';
+import type { CatalogEntry } from './catalog.js';
+const NOW_T = new Date('2026-08-23T00:00:00Z').getTime();
+const mkEntry = (over: Partial<CatalogEntry>): CatalogEntry => ({
+  id: over.id ?? 'x', title: over.title ?? 'Software Engineer', company: over.company ?? 'Acme',
+  industry: 'tech', location: 'Bengaluru', url: '', minYears: 0, maxYears: 3, isIntern: false,
+  firstSeen: over.firstSeen ?? new Date(NOW_T - 5 * 86_400_000).toISOString(), lastSeen: '', ...over,
+});
+// RampCo: 10 open, half brand new. StaleCo: 40 open, all months old.
+const trendEntries = [
+  ...Array.from({ length: 10 }, (_, i) => mkEntry({ id: `r${i}`, company: 'RampCo', firstSeen: new Date(NOW_T - (i < 5 ? 3 : 60) * 86_400_000).toISOString() })),
+  ...Array.from({ length: 40 }, (_, i) => mkEntry({ id: `s${i}`, company: 'StaleCo', firstSeen: new Date(NOW_T - 90 * 86_400_000).toISOString(), closedAt: i === 0 ? undefined : undefined })),
+];
+const vel = companyVelocity(trendEntries, NOW_T);
+check('velocity sorts ramping first', vel[0]?.company, 'RampCo');
+check('stale giant ranks by volume not churn', vel.find((c) => c.company === 'StaleCo')?.newLast30, 0);
+check('ramping filter keeps real ramps', JSON.stringify(rampingCompanies(trendEntries, 6, 8, 3, NOW_T).map((c) => c.company)), JSON.stringify(['RampCo']));
+check('floors exclude one-posting noise', rampingCompanies([mkEntry({ id: 'one', company: 'Tiny' })], 6, 8, 3, NOW_T).length, 0);
+// Salary medians bucketed by crawl month; unparsed salaries must not dilute.
+const salEntries = [
+  mkEntry({ id: 'a', title: 'Data Analyst', salaryMin: 10, salaryMax: 14, firstSeen: '2026-08-02T00:00:00Z' }),
+  mkEntry({ id: 'b', title: 'Data Scientist II', salaryMin: 12, salaryMax: 16, firstSeen: '2026-08-10T00:00:00Z' }),
+  mkEntry({ id: 'c', title: 'Data Scientist', salaryMin: 30, salaryMax: 40, firstSeen: '2026-07-05T00:00:00Z' }),
+  mkEntry({ id: 'd', title: 'Data Analyst' }), // no band — excluded
+];
+const st = salaryTrends(salEntries, 3, NOW_T);
+check('salary buckets split by month', st.map((t) => `${t.family}/${t.month}`).join(','), 'data/2026-07,data/2026-08');
+check('august median band', JSON.stringify(st.find((t) => t.month === '2026-08')), JSON.stringify({ family: 'data', month: '2026-08', n: 2, medianMin: 11, medianMax: 15 }));
+check('entry without band skipped from n', st.every((t) => t.n <= 2), true);
+
 console.log(failures === 0 ? '\nall checks pass' : `\n${failures} failing check(s)`);
 process.exit(failures === 0 ? 0 : 1);

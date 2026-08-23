@@ -17,6 +17,7 @@
     "debug": "tsx src/debug.ts",
     "discover-news": "tsx src/discover-news.ts",
     "query": "tsx src/query.ts",
+    "trends": "tsx src/trends.ts",
     "outreach": "tsx src/outreach.ts",
     "contacts": "tsx src/contacts.ts",
     "verify": "tsx src/verify-email.ts",

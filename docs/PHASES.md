@@ -64,18 +64,24 @@ Catalogue change enabling the facets: `CatalogEntry` gained `salaryMin/`
 `salaryMax/workMode/visa` (a few bytes/entry; `isRepost` deliberately excluded
 as alert-time state, not a property of the posting).
 
-## Phase D — Trend intelligence
+## Phase D — Trend intelligence — DONE 2026-08-23
 
-Needs Phase B's history files as input.
+Needs no new state: the catalogue's own `firstSeen` is the only clock hiring
+velocity needs, and Phase A's salary fields feed the medians directly.
 
-12. **Hiring-velocity trending** (#54) — month-over-month posting-count delta
-    per company; surface "ramping" companies in the email footer or a weekly
-    section even when no single posting is new.
-13. **Salary trend aggregates** (#39 partial) — median offered band per role
-    family per month, from Phase A's extracted salaries. Answers "is the
-    market moving" for the fresher segment.
-14. **Cert/skill demand analytics** (#47) — aggregate keyword frequency over
-    the JD corpus; optional, fun, cheap once histories exist.
+12. **Hiring-velocity trending** (#54) — SHIPPED: `companyVelocity()`/
+    `rampingCompanies()` in `src/trends.ts` (open count, new-in-30d, churn-in
+    ratio; floors of 8 open / 3 new keep one-posting companies out). Surfaced
+    two ways: `npm run trends` CLI report, and a quiet "Ramping" strip in the
+    email computed from the pre-update catalogue (aggregate view lags one run
+    by design, zero extra state).
+13. **Salary trend aggregates** (#39 partial) — SHIPPED as the second half of
+    `npm run trends`: median offered band per role family per calendar month,
+    bucketed by firstSeen; postings without an extracted band are skipped so
+    unparsed salaries never dilute a median.
+14. **Cert/skill demand analytics** (#47) — NOT BUILT, deliberately: fun but
+    answers no question this single-user tool actually asks. Revisit only if
+    that changes.
 
 ## Phase E — Interfaces (only if wanted)
 

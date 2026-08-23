@@ -5,7 +5,8 @@ import { mapLimit, mapLimitByKey } from './fetchers/util.js';
 import { classify } from './classify.js';
 import { isFreshEnough, locationMatches, normalizeForDedup, preScreen, shouldAlert } from './filter.js';
 import { renderEmail, subject } from './email.js';
-import { updateCatalog } from './catalog.js';
+import { rampingCompanies } from './trends.js';
+import { updateCatalog, type CatalogEntry } from './catalog.js';
 import { CONCURRENCY, BLOCK_HOLD_DAYS, DROP_AFTER_FAILING_DAYS, HOST_CONCURRENCY } from './config.js';
 import { BlockError, type BlockKind } from './fetchers/block.js';
 import {
@@ -386,8 +387,19 @@ async function main(): Promise<void> {
   }
 
   const wroteEmail = deduped.length > 0 && !dryRun && !coldStart;
+
+  /**
+   * Ramping employers come from the catalogue as it stood BEFORE this run's
+   * update — the aggregate view lags one run by design and costs no extra
+   * state. Only read when an email will actually be written.
+   */
+  let ramping: Awaited<ReturnType<typeof rampingCompanies>> = [];
   if (wroteEmail) {
-    await writeFile('out/email.html', renderEmail(freshForEmail, staleForEmail), 'utf8');
+    const previousCatalog = await readJson<CatalogEntry[]>('data/jobs.json', []);
+    ramping = rampingCompanies(previousCatalog);
+  }
+  if (wroteEmail) {
+    await writeFile('out/email.html', renderEmail(freshForEmail, staleForEmail, ramping), 'utf8');
   }
 
   /**
