@@ -35311,10 +35311,10 @@
     "lastPolledAt": "2026-08-23T10:31:38.247Z"
   },
   {
-    "name": "staged",
+    "name": "KKR",
     "ats": "greenhouse",
-    "industry": "tech",
-    "source": "discovered",
+    "industry": "banking",
+    "source": "curated",
     "token": "staged",
     "lastPolledAt": "2026-08-23T10:31:38.247Z"
   },
@@ -75006,13 +75006,21 @@
     "lastPolledAt": "2026-08-23T10:58:40.982Z"
   },
   {
-    "name": "stage",
+    "name": "KKR",
     "ats": "greenhouse",
-    "industry": "tech",
-    "source": "discovered",
+    "industry": "banking",
+    "source": "curated",
     "token": "stage",
     "lastIndiaAt": "2026-08-23T10:58:40.982Z",
     "lastPolledAt": "2026-08-23T10:58:40.982Z"
+  },
+  {
+    "name": "Ericsson",
+    "ats": "eightfold",
+    "token": "jobs.ericsson.com",
+    "site": "ericsson.com",
+    "industry": "tech",
+    "source": "curated"
   },
   {
     "name": "StarCompliance",
