@@ -77,6 +77,63 @@ each time, per the freebuff-delegate skill.
   found) — a different product, the "after you found the job" half of the
   funnel, not a discovery-pipeline feature.
 
+## Research addendum (batch 3 — 2026-08-23, 580-repo sweep)
+
+Method: GitHub search across 7 queries (job scraper, job alert bot, ATS/careers
+monitor, jobs aggregator), 580 unique repos collected, all triaged by stars,
+11 most comparable deep-read: santifer/career-ops (67k★, AI evaluate/CV
+pipeline), colophon-group/jobseek (5,300 companies, Typesense facets, MCP,
+application tracker), elliottdehn/open-jobs (967K jobs Parquet CC0, LLM
+fields + embeddings + Bradley-Terry ranker), outscal/OpenJobs (12,144-company
+registry with derived hiring-countries), amikai/openings-mcp (41K-company ATS
+roster behind one MCP tool), dchernopolskii/Flare (macOS watcher, repost
+labels, detect-and-preview board-add flow), Feashliaa/job-board-aggregator
+(1M jobs, per-platform volume anomaly detector opening issues),
+adgramigna/job-board-scraper, CarterPerez-dev/exs-cyberjob-scraper (aggregate
+stats over postings), kbhujbal/go-get-jobs, SESHASHAYANAN/Liopleurodon.
+
+**Confirms again:** nobody else does per-industry seniority vocabulary, Indian
+ATS coverage (Darwinbox/TurboHire/Keka/etc.), hourly cadence (all competitors
+daily at best), or platform-outage-aware eviction. Those stay differentiators.
+
+**Gaps it exposes, ranked by fit to this repo's goals:**
+
+1. **Salary extraction from JD text (deterministic)** — open-jobs ships
+   `salary_min_k`/`salary_max_k` for every row; we only pass through whatever
+   the ATS API happens to include. A regex pass over `text` (₹ X–Y LPA, CTC,
+   stipend formats) fits the "every mistake is one line in classify.ts"
+   philosophy and directly serves the fresher-compared use case.
+2. **Repost detection** — Flare labels jobs new vs *reposted*. A req that
+   closes and reopens is one of the strongest urgency signals and we currently
+   treat it as permanently seen (`seen.json` one-alert-per-lifetime).
+   Cheap version: keep id + firstSeen; if an id vanishes from `liveIds` then
+   reappears, alert again flagged as repost.
+3. **Faceted web UI search** — jobseek's facet set (seniority, work mode,
+   location, employment type) with URL-state sync; Feashliaa's exclude-keyword
+   filter and localStorage applied/saved states. All client-side over the
+   existing `data/jobs.json` — no backend needed.
+4. **Derived hiring-country metadata per company** — outscal derives a
+   `countries` array per company by joining postings against a geocoded
+   locations table. Would have caught several wrong-company token collisions
+   (Porter/Wise/Graviton class) automatically at probe time instead of by hand.
+5. **Per-board volume anomaly detection** — Feashliaa opens a GitHub issue
+   when a platform's daily count deviates sharply from its baseline. We cover
+   *outages* (all-fail) but not *silent partial loss* (board returns 5 jobs
+   instead of its usual 200 — e.g. a site-slug change or a cap regression like
+   the Workday 300 bug). Natural extension of `host-stats.ts`'s history file.
+6. **API/MCP surface over the catalogue** — jobseek (hosted read-only MCP),
+   openings-mcp, ever-jobs all expose the corpus to AI clients. Our `query.ts`
+   CLI is the seed; an MCP wrapper would be small. Parked unless the user
+   wants agent access.
+7. **Dataset publication** — open-jobs releases the whole corpus as daily
+   Parquet, CC0. If this project ever wants external users, publishing
+   `data/jobs.json` snapshots as a dataset costs nothing (the `data` branch
+   already exists). Not urgent for a single-user tool.
+
+Rejected again by this sweep, consistent with prior batches: LinkedIn/Indeed
+scraping (JobSpy et al. — fragile, against repo identity), auto-apply bots,
+resume tailoring (huge genre, different product).
+
 ## Research addendum (batch 2 — 20 more projects)
 
 Findings that update or sharpen the original 18-project survey:
