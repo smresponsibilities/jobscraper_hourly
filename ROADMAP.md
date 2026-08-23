@@ -130,6 +130,33 @@ daily at best), or platform-outage-aware eviction. Those stay differentiators.
    `data/jobs.json` snapshots as a dataset costs nothing (the `data` branch
    already exists). Not urgent for a single-user tool.
 
+**Second-pass notes after reading all 130 READMEs individually** (the
+numbered list stands; these sharpen or extend it):
+
+- **Cross-board dedup by content identity** (freehire): "the same role posted
+  to three boards collapses into one." We dedup by canonical company name;
+  a title+location hash across boards would catch multi-board reposting of
+  one req. Related: MabudAlam/JobsScraper dedups on a content hash rather
+  than the ATS's own id.
+- **Hiring-velocity trending** (Hiring-Radar's `--recent-days` + month-over-
+  month comparison): a company whose posting count is climbing is ramping —
+  worth surfacing even when no single posting is new. The `host-stats.ts`
+  history-file pattern would take a per-company count series cheaply.
+- **Saved repeatable searches** (BjornMelin's Job Tracker): our filter config
+  is hardcoded single-profile (parked decision), but named saved filters over
+  `query.ts` would be the thin version.
+- **Telegram channels as a source class** (JobMonitor watches Telegram
+  channels, delivers via bot): many India fresher-job channels exist. New
+  source category for us — but channel reads need a login (Telethon), against
+  the zero-login identity. Park unless email-only proves insufficient.
+- **Salary normalization** (golang-cafe keeps FX rates to normalize ranges,
+  shows regional salary trends) — extends gap #1: extract, then normalize to
+  ₹ LPA.
+- Reconfirmed noise: the bulk of the corpus is LinkedIn/Indeed/Glassdoor/
+  Upwork scrapers, auto-apply bots, resume tailors, and self-hosted job-board
+  CMS kits — none applicable. Deprecated/abandoned repos are common even at
+  high star counts; `pushed_at` mattered more than stars.
+
 Rejected again by this sweep, consistent with prior batches: LinkedIn/Indeed
 scraping (JobSpy et al. — fragile, against repo identity), auto-apply bots,
 resume tailoring (huge genre, different product).
