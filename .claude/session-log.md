@@ -1,0 +1,56 @@
+- 2026-08-17T14:07:48Z session ended, HEAD: 8553d86 Add 21 boards from freebuff reports 2-11, all fetcher-verified
+- 2026-08-17T14:07:56Z session ended, HEAD: 8553d86 Add 21 boards from freebuff reports 2-11, all fetcher-verified
+- 2026-08-17T14:08:52Z session ended, HEAD: 8553d86 Add 21 boards from freebuff reports 2-11, all fetcher-verified
+- 2026-08-17T14:23:57Z session ended, HEAD: 8553d86 Add 21 boards from freebuff reports 2-11, all fetcher-verified
+- 2026-08-17T14:25:05Z session ended, HEAD: 8553d86 Add 21 boards from freebuff reports 2-11, all fetcher-verified
+- 2026-08-17T15:34:19Z session ended, HEAD: 8553d86 Add 21 boards from freebuff reports 2-11, all fetcher-verified
+- 2026-08-17T15:56:49Z session ended, HEAD: 8553d86 Add 21 boards from freebuff reports 2-11, all fetcher-verified
+- 2026-08-17T16:11:48Z session ended, HEAD: 8553d86 Add 21 boards from freebuff reports 2-11, all fetcher-verified
+- 2026-08-17T16:14:28Z session ended, HEAD: 8553d86 Add 21 boards from freebuff reports 2-11, all fetcher-verified
+- 2026-08-17T19:22:27Z session ended, HEAD: b29d76b Merge remote board-list updates
+- 2026-08-17T19:42:36Z session ended, HEAD: b29d76b Merge remote board-list updates
+- 2026-08-18T04:05:38Z session ended, HEAD: b29d76b Merge remote board-list updates
+- 2026-08-18T04:19:43Z session ended, HEAD: b29d76b Merge remote board-list updates
+- 2026-08-18T06:09:29Z session ended, HEAD: 32a8391 hunt.yml: retry Install Chromium instead of giving up on first hang
+- 2026-08-18T07:04:22Z session ended, HEAD: 32a8391 hunt.yml: retry Install Chromium instead of giving up on first hang
+- 2026-08-18T08:46:05Z session ended, HEAD: 1eda707 dedupe Workday regex, hosted-ATS pattern table, and slug prettify()
+- 2026-08-18T09:39:47Z session ended, HEAD: 1eda707 dedupe Workday regex, hosted-ATS pattern table, and slug prettify()
+- 2026-08-18T09:41:13Z session ended, HEAD: 1eda707 dedupe Workday regex, hosted-ATS pattern table, and slug prettify()
+- 2026-08-18T10:54:16Z session ended, HEAD: 8a2c36d ROADMAP.md: correct stage 3 — already shipped in hunt.yml (65ba33b), not open work
+- 2026-08-18T11:17:11Z session ended, HEAD: f487119 ROADMAP.md: correct stage 10 — icims.ts already reads JSON, D.E. Shaw's ATS unconfirmed
+- 2026-08-18T11:44:16Z session ended, HEAD: 321676c Merge remote-tracking branch 'origin/main'
+- 2026-08-18T11:59:25Z session ended, HEAD: 7e68188 HANDOFF.md: consolidate tonight's session state; bulk-import refresh adds Path (Workday)
+- 2026-08-18T13:42:54Z session ended, HEAD: de33ab6 fix Eightfold's identical 300-role cap bug (Qualcomm: 572 real, only 300 captured)
+- 2026-08-18T14:43:20Z session ended, HEAD: ac964ec fix month-named companies getting mangled, and discover-news.yml's missing rebase
+- 2026-08-18T15:22:59Z session ended, HEAD: ac964ec fix month-named companies getting mangled, and discover-news.yml's missing rebase
+- 2026-08-18T15:30:37Z session ended, HEAD: ac964ec fix month-named companies getting mangled, and discover-news.yml's missing rebase
+- 2026-08-18T15:45:34Z session ended, HEAD: ac964ec fix month-named companies getting mangled, and discover-news.yml's missing rebase
+- 2026-08-18T15:45:55Z session ended, HEAD: ac964ec fix month-named companies getting mangled, and discover-news.yml's missing rebase
+- 2026-08-18T16:08:48Z session ended, HEAD: ac964ec fix month-named companies getting mangled, and discover-news.yml's missing rebase
+- 2026-08-18T16:21:28Z session ended, HEAD: ac964ec fix month-named companies getting mangled, and discover-news.yml's missing rebase
+- 2026-08-18T16:36:33Z session ended, HEAD: ac964ec fix month-named companies getting mangled, and discover-news.yml's missing rebase
+- 2026-08-18T16:36:45Z session ended, HEAD: ac964ec fix month-named companies getting mangled, and discover-news.yml's missing rebase
+- 2026-08-18T16:41:41Z session ended, HEAD: ac964ec fix month-named companies getting mangled, and discover-news.yml's missing rebase
+- 2026-08-18T16:57:16Z session ended, HEAD: ac964ec fix month-named companies getting mangled, and discover-news.yml's missing rebase
+- 2026-08-18T17:23:38Z session ended, HEAD: 910188b Merge remote board-list updates
+- 2026-08-18T17:38:34Z session ended, HEAD: 910188b Merge remote board-list updates
+- 2026-08-18T18:16:18Z session ended, HEAD: 910188b Merge remote board-list updates
+- 2026-08-18T18:17:17Z session ended, HEAD: 910188b Merge remote board-list updates
+- 2026-08-18T18:32:15Z session ended, HEAD: cd15b9e add USAGE.md for humans running the tool day-to-day; fix ROADMAP stage 5
+- 2026-08-19T12:16:33Z session ended, HEAD: 00c7178 HANDOFF.md: document host-history persistence and news-feed visibility fix
+- 2026-08-20T08:19:39Z session ended, HEAD: 00c7178 HANDOFF.md: document host-history persistence and news-feed visibility fix
+- 2026-08-20T08:34:42Z session ended, HEAD: 00c7178 HANDOFF.md: document host-history persistence and news-feed visibility fix
+- 2026-08-20T09:41:27Z session ended, HEAD: a25c2d3 Merge remote board-list updates
+- 2026-08-20T13:08:19Z session ended, HEAD: a25c2d3 Merge remote board-list updates
+- 2026-08-20T13:26:33Z session ended, HEAD: a25c2d3 Merge remote board-list updates
+- 2026-08-21T15:05:47Z session ended, HEAD: a25c2d3 Merge remote board-list updates
+- 2026-08-21T15:10:39Z session ended, HEAD: a25c2d3 Merge remote board-list updates
+- 2026-08-21T18:28:22Z session ended, HEAD: a25c2d3 Merge remote board-list updates
+- 2026-08-22T08:07:53Z session ended, HEAD: a25c2d3 Merge remote board-list updates
+- 2026-08-22T09:38:22Z session ended, HEAD: a25c2d3 Merge remote board-list updates
+- 2026-08-22T11:42:17Z session ended, HEAD: a25c2d3 Merge remote board-list updates
+- 2026-08-22T12:17:13Z session ended, HEAD: a25c2d3 Merge remote board-list updates
+- 2026-08-22T12:58:03Z session ended, HEAD: a25c2d3 Merge remote board-list updates
+- 2026-08-22T13:43:53Z session ended, HEAD: a25c2d3 Merge remote board-list updates
+- 2026-08-22T19:38:04Z session ended, HEAD: a25c2d3 Merge remote board-list updates
+- 2026-08-22T19:40:11Z session ended, HEAD: a25c2d3 Merge remote board-list updates

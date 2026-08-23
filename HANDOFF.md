@@ -46,6 +46,28 @@ deliberate request, not a default.
   transitions — not every 20-minute run for the length of a multi-hour outage.
   Opens an `outage`-labeled issue per platform the moment it's newly suspected,
   closes it automatically the moment a run stops seeing it.
+- **Per-response bot-wall classification (`src/fetchers/block.ts`), ported
+  from fastCRW** (github.com/us/crw, an OSS Firecrawl-alternative; its
+  antibot classifier was read and reduced to what this project's JSON-first
+  fetchers can encounter, not installed). A failed poll now says *why* it
+  failed: `getJson()` reads the body as text first, classifies non-JSON and
+  failed-parse responses (`classifyFailure`/`classifyOkBody`), and throws a
+  `BlockError` tagged `rate_limited | challenge | waf_block | structural`.
+  Key rules: Cloudflare Turnstile interstitials arrive as HTTP 200 with a big
+  HTML body (strong markers like `_cf_chl_opt`, `/cdn-cgi/challenge-platform/`);
+  CF 52x/530 statuses are CF-side; a 4xx whose body is the API's own **JSON**
+  stays unclassified and evictable on purpose (that's real evidence of a dead
+  board config); garbled-but-JSON-shaped bodies stay unclassified so genuine
+  parse bugs surface honestly. `index.ts` holds a block-tagged failure past
+  the day-3 eviction clock until `BLOCK_HOLD_DAYS` (14) — this covers the
+  single-board-on-a-healthy-ATS case that the platform-ratio outage detector
+  structurally cannot see; staleness stays bounded. `detect.ts` also gained
+  fastCRW's SPA-shell heuristic: a careers page that's a client-rendered shell
+  (framework root marker + <200 visible chars) now reports itself as needing
+  the rendered/manual path instead of silently meaning "nothing found".
+  Covered by the `bot-wall classification` block in `selftest.ts`. Retry
+  behavior is deliberately unchanged (429/503 only) — classification is
+  orthogonal to retry by design.
 - **Roadmap lives in two places**: `ROADMAP.md` (plain checklist, 12 build-order
   stages, agent-readable) and a published HTML artifact with the full
   comparable-project research behind it (ask the user for the link). As of

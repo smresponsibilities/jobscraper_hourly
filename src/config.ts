@@ -15,6 +15,15 @@ export const INCLUDE_INTERNSHIPS = true;
  */
 export const DROP_AFTER_FAILING_DAYS = 3;
 
+/**
+ * Bot-wall failures (see `fetchers/block.ts`) hold the eviction clock longer
+ * than ordinary failures: a board behind a fresh Cloudflare rule is not dead,
+ * and the Darwinbox mass-eviction proved waiting it out is correct. This is
+ * the hard backstop — a board blocked continuously for this long needs eyes
+ * on it either way, so staleness stays bounded instead of growing forever.
+ */
+export const BLOCK_HOLD_DAYS = 14;
+
 /** Forget a job ID after this long, so the state file stays small. */
 export const SEEN_RETENTION_DAYS = 45;
 

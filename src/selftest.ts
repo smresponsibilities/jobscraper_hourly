@@ -5,7 +5,21 @@ import { detectOutage, outageChanges } from './outage.js';
 import { selectBoards } from './select-boards.js';
 import { epochToIso } from './fetchers/eightfold.js';
 import { safeIso } from './fetchers/darwinbox.js';
+import { BlockError, classifyFailure, classifyOkBody } from './fetchers/block.js';
 import { summarizeHostStats, updateHistory, persistentlySlow } from './host-stats.js';
+import {
+  applyPattern,
+  dominantDomain,
+  dominantPattern,
+  inferPattern,
+  isCorporateAddress,
+  splitName,
+  domainMatchesOrg,
+  isTrivialCommit,
+  factScore,
+} from './contacts.js';
+import { bodySimilarity, bounceGateDecision, displayName, domainRiskTally, postedAgeDays, renderBody, touchGap } from './outreach.js';
+import { controlAddress, mxProvider, rejectionIsMeaningful } from './verify-email.js';
 import type { Company, Industry, RawJob } from './types.js';
 
 /**
@@ -249,6 +263,95 @@ check(
   false,
 );
 
+// Bot-wall classification (ported from fastCRW's antibot signals). The Darwinbox
+// eviction above was caught only after the damage, and only at platform scale —
+// these make each individual response say which kind of failure it was, so a
+// single blocked board on a healthy ATS is recognized too. Every case below is
+// a real-world shape: Turnstile interstitials arrive as HTTP 200 with a big
+// HTML body; Walls serve 403 with tiny HTML; the API's own JSON 4xx means the
+// board config is genuinely stale and MUST stay evictable.
+console.log('bot-wall classification');
+check(
+  'cloudflare turnstile served with HTTP 200 is a challenge',
+  classifyFailure(200, '<html><head><script>window._cf_chl_opt={"cType":"managed"}</script>')?.kind,
+  'challenge',
+);
+check(
+  'a strong CF marker outranks an otherwise clean-looking page',
+  classifyFailure(200, '<!doctype html><html>/cdn-cgi/challenge-platform/orchestrate</html>')?.vendor,
+  'cloudflare',
+);
+check('plain JSON success classifies as nothing', classifyFailure(200, '{"jobs":[]}'), undefined);
+check('429 is rate limiting', classifyFailure(429, '')?.kind, 'rate_limited');
+check(
+  '403 with a near-empty body is a wall, not a dead board',
+  classifyFailure(403, '<html></html>')?.kind,
+  'waf_block',
+);
+check(
+  '403 with HTML but no known fingerprint is still a wall',
+  classifyFailure(403, '<html><body>Request blocked.</body></html>')?.kind,
+  'waf_block',
+);
+check(
+  "403 with the API's own JSON refusal stays evictable",
+  classifyFailure(403, '{"status":403,"error":"Forbidden"}'),
+  undefined,
+);
+check('a real 404 stays evictable', classifyFailure(404, '{"error":"Not Found"}'), undefined);
+check('522 is cloudflare-side', classifyFailure(522, 'x')?.vendor, 'cloudflare');
+check('530 is cloudflare-side', classifyFailure(530, '')?.vendor, 'cloudflare');
+check(
+  'datadome interstitial is recognized',
+  classifyFailure(403, '<script src="https://captcha-delivery.com/c.js"></script>')?.vendor,
+  'datadome',
+);
+check(
+  'akamai reference-id page is recognized',
+  classifyFailure(403, 'Access Denied. Reference #18.4f9f6d17.1760438400.a1b2c3d')?.vendor,
+  'akamai',
+);
+check(
+  'perimeterx app-id script is recognized',
+  classifyFailure(403, '<script>window._pxAppId="PX1234"</script>')?.vendor,
+  'perimeterx',
+);
+check(
+  'vercel checkpoint needs both phrases, prose alone does not trip it',
+  [
+    classifyFailure(403, '<p>Vercel Security Checkpoint blocked us</p>')?.vendor === 'vercel',
+    classifyFailure(403, '<h1>Vercel Security Checkpoint</h1><p>verifying your browser</p>')?.vendor,
+  ].join(','),
+  'false,vercel',
+);
+check(
+  '"Just a moment" title is the classic CF challenge',
+  classifyFailure(503, '<title>Just a moment...</title>')?.kind,
+  'challenge',
+);
+check(
+  'an empty 200 body that fails JSON.parse is structural, not a bug to chase',
+  classifyOkBody('   \n ')?.kind,
+  'structural',
+);
+check(
+  'a 200 HTML shell is structural',
+  classifyOkBody('<div id="root"></div>')?.kind,
+  'structural',
+);
+check(
+  'garbled-but-real data stays unclassified so the parse error surfaces honestly',
+  classifyOkBody('{"jobs":[{"broken"'),
+  undefined,
+);
+check(
+  'the error message carries the verdict tag for log lines that only see text',
+  new BlockError({ kind: 'challenge', vendor: 'cloudflare' }, 200, 'https://x').message.startsWith(
+    '[challenge] cloudflare',
+  ),
+  true,
+);
+
 console.log('epoch conversion (eightfold)');
 // Same bug class Zappyhire shipped: an ATS's own sort/rank field can hold a
 // sentinel value with no real date behind it, far outside JS Date's valid
@@ -434,6 +537,236 @@ check('history is capped at 10 runs, oldest dropped first', cappedHistory['wd504
 
 const oneBadRun = updateHistory({ wd504: [true, false, false, false, false] }, [neverWorst]);
 check('a single bad run among mostly-good ones does not trip the flag', persistentlySlow(oneBadRun).length, 0);
+
+
+console.log('contact addresses (which commit authors are usable)');
+const addresses: [string, boolean][] = [
+  // Real corporate addresses seen in the 2026-08-21 sweep.
+  ['manish.soni@razorpay.com', true],
+  ['someone@swiggy.in', true],
+  ['dev@cred.club', true],
+  // GitHub's privacy addresses are the single biggest source of noise.
+  ['89454448+ankitdas13@users.noreply.github.com', false],
+  ['noreply@github.com', false],
+  // Bots commit constantly and would dominate any tally.
+  ['dependabot[bot]@users.noreply.github.com', false],
+  ['actions@github.com', false],
+  // Personal mail is real but useless for reaching someone at work.
+  ['vividvilla@gmail.com', false],
+  ['nasir.ciem.it@gmail.com', false],
+  ['someone@protonmail.com', false],
+  // A shared service account is corporate; deciding to skip it is the
+  // caller's job, not the filter's.
+  ['security-svc@razorpay.com', true],
+];
+for (const [email, want] of addresses) check(`usable ${email}`, isCorporateAddress(email), want);
+
+console.log('name splitting');
+check('two-part name', JSON.stringify(splitName('Manish Soni')), '{"first":"manish","last":"soni"}');
+check('middle name is dropped, not treated as the surname', JSON.stringify(splitName('Mahlaqa Fatima Haque')), '{"first":"mahlaqa","last":"haque"}');
+check('accents fold to ASCII', JSON.stringify(splitName('Jose\u0301 Rami\u0301rez')), '{"first":"jose","last":"ramirez"}');
+// Mononyms are common in Indian datasets. Guessing a surname would poison the
+// pattern tally for the whole company, so they are refused outright.
+check('single-token name yields nothing', splitName('Ankit'), null);
+check('empty name yields nothing', splitName('   '), null);
+
+console.log('email pattern inference');
+check('first.last', inferPattern('Manish Soni', 'manish.soni@razorpay.com'), 'first.last');
+check('firstlast', inferPattern('Manish Soni', 'manishsoni@razorpay.com'), 'firstlast');
+check('flast', inferPattern('Manish Soni', 'msoni@razorpay.com'), 'flast');
+check('f.last', inferPattern('Manish Soni', 'm.soni@razorpay.com'), 'f.last');
+check('first_last', inferPattern('Manish Soni', 'manish_soni@razorpay.com'), 'first_last');
+check('last.first', inferPattern('Manish Soni', 'soni.manish@razorpay.com'), 'last.first');
+check('bare first', inferPattern('Manish Soni', 'manish@razorpay.com'), 'first');
+// A vanity or legacy address matches nothing and must not be forced into the
+// nearest pattern — one wrong inference mislabels every colleague.
+check('nickname matches no pattern', inferPattern('Manish Soni', 'mani@razorpay.com'), null);
+check('mononym author cannot establish a pattern', inferPattern('Ankit', 'ankit@razorpay.com'), null);
+
+console.log('pattern application');
+check('construct first.last', applyPattern('first.last', 'Priya Nair', 'meesho.com'), 'priya.nair@meesho.com');
+check('construct flast', applyPattern('flast', 'Priya Nair', 'meesho.com'), 'pnair@meesho.com');
+check('cannot construct from a mononym', applyPattern('first.last', 'Priya', 'meesho.com'), null);
+
+console.log('domain and pattern tallies');
+const authors = [
+  { name: 'Manish Soni', email: 'manish.soni@razorpay.com' },
+  { name: 'Mahlaqa Haque', email: 'mahlaqa.haque@razorpay.com' },
+  { name: 'Rohan Verma', email: 'rohan@rohanverma.net' },
+];
+check('dominant domain is the one most authors share', dominantDomain(authors), 'razorpay.com');
+check('dominant pattern ignores authors on other domains', dominantPattern(authors, 'razorpay.com'), 'first.last');
+check('no authors means no domain', dominantDomain([]), null);
+// One person with a legacy address must not outvote the house style.
+const mixedAuthors = [
+  { name: 'A One', email: 'a.one@x.com' },
+  { name: 'B Two', email: 'b.two@x.com' },
+  { name: 'C Three', email: 'cthree@x.com' },
+];
+check('the majority pattern wins over a single outlier', dominantPattern(mixedAuthors, 'x.com'), 'first.last');
+
+console.log('mail provider classification');
+// Measured MX hosts from the 2026-08-21 sweep. Which provider is behind an
+// address decides whether a rejection means anything at all.
+check('google workspace', mxProvider('aspmx.l.google.com.'), 'google');
+check('google, newer host form', mxProvider('smtp.google.com'), 'google');
+check('microsoft 365', mxProvider('company-com.mail.protection.outlook.com'), 'microsoft');
+check('mimecast gateway', mxProvider('eu-smtp-inbound-1.mimecast.com'), 'gateway');
+check('proofpoint gateway', mxProvider('mxa-001d9801.gslb.pphosted.com'), 'gateway');
+check('anything else', mxProvider('mailstream-bom.mxrecord.mx'), 'other');
+// The whole point of the classification: Microsoft accepts RCPT TO for dead
+// mailboxes and the gateways only ever answer for themselves, so a rejection
+// from either is inconclusive rather than proof the address is wrong.
+check('google rejections are conclusive', rejectionIsMeaningful('google'), true);
+check('microsoft rejections are not', rejectionIsMeaningful('microsoft'), false);
+check('gateway rejections are not', rejectionIsMeaningful('gateway'), false);
+check('control address is scoped to the domain under test', controlAddress('razorpay.com').endsWith('@razorpay.com'), true);
+
+
+console.log('domain belongs to the company (wrong-company guard)');
+// Real hits from the sweep — these must survive.
+check('exact match', domainMatchesOrg('razorpay', 'razorpay.com'), true);
+check('non-com TLD', domainMatchesOrg('swiggy', 'swiggy.in'), true);
+check('non-standard TLD', domainMatchesOrg('cred', 'cred.club'), true);
+check('subdomain mail host', domainMatchesOrg('aussiebroadband', 'team.aussiebroadband.com.au'), true);
+check('multi-word company flattens', domainMatchesOrg('augmentcode', 'augmentcode.com'), true);
+// Real false positives from the first sweep — an open-source repo where
+// outside contributors out-commit the company's own engineers. Mailing these
+// reaches the wrong company entirely, which is worse than finding nothing.
+check('outside contributor domain', domainMatchesOrg('audinate', 'nordicsemi.no'), false);
+check('unrelated big-company domain', domainMatchesOrg('augusthealth', 'intuit.com'), false);
+check('unrelated vendor domain', domainMatchesOrg('authentic8', 'thinstuff.at'), false);
+// Short names are prefix-matched, or "cred" would match "credentials.io".
+check('short name must prefix, not merely appear', domainMatchesOrg('cred', 'accredited.com'), false);
+
+console.log('regional freemail is not a corporate address');
+// qq.com reached the first sweep as a "company domain" — Chinese and Korean
+// consumer providers were missing from the original list.
+for (const email of ['x@qq.com', 'x@163.com', 'x@naver.com', 'x@foxmail.com', 'x@web.de']) {
+  check(`freemail ${email}`, isCorporateAddress(email), false);
+}
+
+console.log('outreach drafts');
+// Housekeeping messages would open a mail with noise; only real work qualifies.
+check('merge commit is trivial', isTrivialCommit('Merge pull request #12 from x'), true);
+check('bump commit is trivial', isTrivialCommit('Bump vite from 5.1 to 5.2'), true);
+check('release tag is trivial', isTrivialCommit('v2.3.1'), true);
+check('real work survives', isTrivialCommit('fix partial-fill race in order book'), false);
+check('merge remote-tracking is trivial', isTrivialCommit("Merge remote-tracking branch 'personal/b'"), true);
+
+console.log('fact ranking');
+// Substance beats housekeeping: both survive the trivial filter, only one
+// should win when an author has committed both.
+const strongFact = factScore('fix partial-fill race in order matching service');
+const weakFact = factScore('update code of conduct contents');
+check('race fix outscores conduct update', strongFact > weakFact, true);
+check('strong fact clears the default bar', strongFact >= 3, true);
+check('ticketed work scores mid', factScore('SP-1173: say what to do when CUI marking fails') >= 3, true);
+check(
+  'feat outranks docs',
+  factScore('feat: add streaming ingest for live quotes') > factScore('docs: replace agents board screenshot with new one'),
+  true,
+);
+// "Add comprehensive README" wears an action prefix over docs substance.
+check(
+  'readme-in-disguise penalized below the bar',
+  factScore('Add comprehensive README with installation instructions') < 3,
+  true,
+);
+// The similarity guard is what makes "same role, same company, many people"
+// safe: identical skeletons must still score high enough to be blocked.
+const twinA = renderBody({
+  greet: 'Hi',
+  first: 'a',
+  fact: 'saw your commit fixing rate limits in gateway',
+  roleLine: 'Acme just opened an SDE II in Bangalore.',
+  ask: 'Is this req open? y/n works.',
+  passAlong: 'Not you? Happy if you point me right.',
+});
+const twinB = renderBody({
+  greet: 'Hi',
+  first: 'b',
+  fact: 'saw your commit adding retries in scheduler',
+  roleLine: 'Acme just opened an SDE II in Bangalore.',
+  ask: 'Is this req open? y/n works.',
+  passAlong: 'Not you? Happy if you point me right.',
+});
+check('same-template twins cluster', bodySimilarity(twinA, twinB) > 0.6, true);
+check(
+  'unrelated bodies stay apart',
+  bodySimilarity(twinA, 'invoice attached for august services rendered thanks accounts team') < 0.4,
+  true,
+);
+check('touch gaps are day 0/4/9/16', JSON.stringify([0, 1, 2, 3].map(touchGap)), JSON.stringify([0, 4, 9, 16]));
+const sample = renderBody({
+  greet: 'Hey',
+  first: 'x',
+  fact: 'Saw your recent commit — "fix partial-fill race".',
+  roleLine: 'Zerodha just opened an SDE II (Bangalore).',
+  ask: 'Is this req open? y/n works.',
+  passAlong: 'If this isn\'t yours, who should it go to?',
+});
+check('body carries the fact', sample.includes('partial-fill race'), true);
+check('body carries the signature', sample.includes('— SM'), true);
+
+console.log('outreach lane gating');
+// Workday's relative strings must land in the triggered lane, not parse as null.
+check('posted today is fresh', postedAgeDays('Posted Today'), 0);
+check('posted N days ago parses', postedAgeDays('Posted 30+ Days Ago'), 30);
+const isoAge = postedAgeDays(new Date(Date.now() - 5 * 86_400_000).toISOString())!;
+check('iso date age ~5d', isoAge >= 4 && isoAge <= 6, true);
+check('garbage date is unknown, never fresh', postedAgeDays('whenever'), null);
+check('missing date is unknown', postedAgeDays(undefined), null);
+check('lowercase catalogue name displays capitalized', displayName('valtech'), 'Valtech');
+check('mixed-case names pass through', displayName('WorldQuant'), 'WorldQuant');
+
+console.log('outreach risk memory');
+const tally = domainRiskTally({
+  'a@airbus.com': { company: 'Airbus', role: 'x', jobUrl: '', touch: 1, sentAt: ['2026-08-20T00:00:00Z'], nextDueAt: '', subject: 's', bounced: true },
+  'b@airbus.com': { company: 'Airbus', role: 'x', jobUrl: '', touch: 1, sentAt: ['2026-08-21T00:00:00Z'], nextDueAt: '', subject: 's', bounced: true },
+  'c@workato.com': { company: 'Workato', role: 'x', jobUrl: '', touch: 1, sentAt: ['2026-08-22T00:00:00Z'], nextDueAt: '', subject: 's' },
+});
+check('bounces tally per domain', tally.get('airbus.com'), 2);
+check('clean domain absent', tally.get('workato.com'), undefined);
+
+console.log('outreach bounce gate');
+const NOW = Date.now();
+const D = 86_400_000;
+const mk = (sentDaysAgo: number[], bouncedDaysAgo?: number) => ({
+  sentAt: sentDaysAgo.map((d) => new Date(NOW - d * D).toISOString()),
+  bounced: bouncedDaysAgo != null,
+  bouncedAt: bouncedDaysAgo != null ? new Date(NOW - bouncedDaysAgo * D).toISOString() : undefined,
+});
+// Week-1 spike: 30 fresh sends, 2 fresh bounces → incident halt.
+check(
+  'fresh spike halts',
+  bounceGateDecision([{ ...mk([...Array(28).keys()].map((i) => i % 25 + 1), undefined) }, mk([3], 2), mk([4], 3)], NOW).halt,
+  true,
+);
+// Healed: same bounces aged out of the window, fresh sends clean → pass.
+const healed = [
+  { ...mk([...Array(40).keys()].map((i) => 45 + i), 44) },
+  mk([...Array(15).keys()].map((i) => i + 1)),
+];
+check('aged-out bounces stop halting', bounceGateDecision(healed, NOW).halt, false);
+// Late incident: huge clean history dilutes lifetime to ~0.5%, window catches it.
+const late = [
+  { ...mk([...Array(400).keys()].map((i) => 60 + i)) },
+  { ...mk([...Array(14).keys()].map((i) => i + 1), 5) },
+  mk([2], 6),
+];
+check('recent spike caught despite clean history', bounceGateDecision(late, NOW).halt, true);
+check('late-incident lifetime ratio stays low', (() => {
+  const d = bounceGateDecision(late, NOW);
+  return !d.reason.includes('lifetime bounces');
+})(), true);
+// Backstop: everything old and sparse in-window, but lifetime rotted.
+const rot = [...Array(60).keys()].map((i) =>
+  i < 5 ? { ...mk([50 + i], 50 + i) } : { ...mk([50 + i]) },
+);
+check('lifetime backstop halts on slow rot', bounceGateDecision(rot, NOW).halt, true);
+// Sparse pause: too few recent sends to judge → silent.
+check('sparse window stays quiet', bounceGateDecision([mk([1], 1), mk([2]), mk([3])], NOW).halt, false);
 
 console.log(failures === 0 ? '\nall checks pass' : `\n${failures} failing check(s)`);
 process.exit(failures === 0 ? 0 : 1);

@@ -16,7 +16,11 @@
     "bulk-import": "tsx src/bulk-import.ts",
     "debug": "tsx src/debug.ts",
     "discover-news": "tsx src/discover-news.ts",
-    "query": "tsx src/query.ts"
+    "query": "tsx src/query.ts",
+    "outreach": "tsx src/outreach.ts",
+    "contacts": "tsx src/contacts.ts",
+    "verify": "tsx src/verify-email.ts",
+    "contacts-sweep": "tsx src/contacts-sweep.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

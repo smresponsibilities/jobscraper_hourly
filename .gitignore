@@ -10,3 +10,4 @@ out/
 # cycle. state/discover-cursor.json IS committed: it's tiny and the weekly
 # Common Crawl sweep needs it to know which block to scan next.
 state/seen.json
+state/contact-sweep.json

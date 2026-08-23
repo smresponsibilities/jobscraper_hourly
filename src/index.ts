@@ -6,7 +6,8 @@ import { classify } from './classify.js';
 import { isFreshEnough, locationMatches, normalizeForDedup, preScreen, shouldAlert } from './filter.js';
 import { renderEmail, subject } from './email.js';
 import { updateCatalog } from './catalog.js';
-import { CONCURRENCY, DROP_AFTER_FAILING_DAYS, HOST_CONCURRENCY } from './config.js';
+import { CONCURRENCY, BLOCK_HOLD_DAYS, DROP_AFTER_FAILING_DAYS, HOST_CONCURRENCY } from './config.js';
+import { BlockError, type BlockKind } from './fetchers/block.js';
 import {
   loadCompanies,
   loadHostHistory,
@@ -38,6 +39,8 @@ interface BoardResult {
   company: Company;
   jobs: RawJob[];
   error?: string;
+  /** Set when the error was a classified bot wall, not an ordinary failure. */
+  blockKind?: BlockKind;
   durationMs: number;
 }
 
@@ -67,7 +70,14 @@ async function pollBoard(company: Company): Promise<BoardResult> {
     const jobs = await FETCHERS[company.ats].list(company);
     return { company, jobs, durationMs: Date.now() - started };
   } catch (error) {
-    return { company, jobs: [], error: (error as Error).message, durationMs: Date.now() - started };
+    const err = error as Error;
+    return {
+      company,
+      jobs: [],
+      error: err.message,
+      blockKind: err instanceof BlockError ? err.kind : undefined,
+      durationMs: Date.now() - started,
+    };
   }
 }
 
@@ -154,14 +164,30 @@ async function main(): Promise<void> {
   if (outageDelta.started.length) console.warn(`newly suspected outage: ${outageDelta.started.join(', ')}`);
   if (outageDelta.recovered) console.log('previously suspected outage has cleared');
 
-  for (const { company, jobs, error } of results) {
+  for (const { company, jobs, error, blockKind } of results) {
     if (error) {
       const failed = recordFailure(company, nowIso);
       const days = (Date.now() - new Date(failed.failingSince!).getTime()) / 86_400_000;
       console.warn(`  ! ${company.name}: ${error}`);
-      if (days >= DROP_AFTER_FAILING_DAYS && !suspectedOutage.has(company.ats)) {
+      /**
+       * A classified bot wall holds the eviction clock past the ordinary day-3
+       * drop — a board behind a fresh Cloudflare rule is unreachable from the
+       * runner's IPs, not dead (the Darwinbox mass-eviction was exactly this,
+       * caught too late because every failure looked identical). The outage
+       * ratio detector covers the platform-wide case; this covers the single
+       * board on an otherwise-healthy ATS. `BLOCK_HOLD_DAYS` bounds the
+       * staleness so a permanently walled board still exits eventually.
+       */
+      const heldByWall = blockKind !== undefined && days < BLOCK_HOLD_DAYS;
+      if (days >= DROP_AFTER_FAILING_DAYS && !suspectedOutage.has(company.ats) && !heldByWall) {
         dropped.push(company.name);
       } else {
+        if (heldByWall) {
+          console.warn(
+            `    bot wall (${blockKind}), holding past day-${DROP_AFTER_FAILING_DAYS} ` +
+              `eviction until day-${BLOCK_HOLD_DAYS}`,
+          );
+        }
         updatedCompanies.push(failed);
       }
       continue;

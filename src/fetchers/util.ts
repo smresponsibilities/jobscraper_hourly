@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { BlockError, classifyFailure, classifyOkBody, headOf } from './block.js';
 
 const run = promisify(execFile);
 
@@ -70,9 +71,24 @@ export async function getJson<T>(url: string, init?: RequestInit): Promise<T> {
       signal: AbortSignal.timeout(30_000),
     });
 
-    if (res.ok) return (await res.json()) as T;
+    // The body is read once and kept as text so a failure can be classified
+    // before parsing — a Cloudflare challenge served with a 200 status would
+    // otherwise surface as an opaque SyntaxError indistinguishable from our
+    // own parsing bugs.
+    const text = await res.text();
 
-    lastError = new Error(`${res.status} ${res.statusText} for ${url}`);
+    if (res.ok) {
+      try {
+        return JSON.parse(text) as T;
+      } catch {
+        const verdict = classifyOkBody(headOf(text));
+        if (verdict) throw new BlockError(verdict, res.status, url);
+        throw new Error(`unparseable 200 body for ${url}: ${text.slice(0, 120)}`);
+      }
+    }
+
+    const verdict = classifyFailure(res.status, headOf(text));
+    lastError = verdict ? new BlockError(verdict, res.status, url) : new Error(`${res.status} ${res.statusText} for ${url}`);
     if (!RETRY_STATUS.has(res.status) || attempt === MAX_ATTEMPTS - 1) throw lastError;
 
     // `Retry-After` is seconds; cap it so one unlucky board can't stall the run.

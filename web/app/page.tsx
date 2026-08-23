@@ -40,21 +40,27 @@ function isBacklog(job: Job): boolean {
   return (Date.now() - posted) / 86_400_000 > BACKLOG_DAYS;
 }
 
-// 2-hour bins for the first 24 hours (12 groups), so a group actually holds
-// enough roles to be worth a header — hourly bins were mostly empty since
-// firstSeen depends on when a board happened to be polled, not a steady drip.
+// 2-hour bins for the first day. The first six are labeled "Last N hours"
+// (Last 2, Last 4, ... Last 12); after that the same bins read as ranges
+// ("12–14 hours ago") since "Last 14 hours" stops meaning anything.
 function bucketLabel(job: Job): string {
   const then = crawledTime(job);
   if (then === 0) return 'Date unknown';
   const hours = Math.floor((Date.now() - then) / 3_600_000);
-  if (hours < 24) {
-    const binStart = Math.floor(hours / 2) * 2;
-    return binStart === 0 ? 'Past 2 hours' : `${binStart}–${binStart + 2} hours ago`;
-  }
+  const binStart = Math.floor(hours / 2) * 2;
+  if (hours < 12) return `Last ${binStart + 2} hours`;
+  if (hours < 24) return `${binStart}–${binStart + 2} hours ago`;
   const days = Math.floor(hours / 24);
   if (days === 1) return 'Yesterday';
+  // Past the first week, keep splitting rather than dumping everything into
+  // one "over a week" pile — with ~2,500 open matches that single group held
+  // thousands of roles and made the page read as "last 2 hours vs everything".
   if (days < 7) return `${days} days ago`;
-  return 'Over a week ago';
+  if (days < 14) return '1–2 weeks ago';
+  if (days < 21) return '2–3 weeks ago';
+  if (days < 28) return '3–4 weeks ago';
+  const months = Math.min(Math.floor(days / 30), 3);
+  return months <= 1 ? 'Over a month ago' : `${months}+ months ago`;
 }
 
 function experience(job: Job): string {
