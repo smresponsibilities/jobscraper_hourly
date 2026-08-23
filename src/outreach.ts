@@ -41,6 +41,13 @@ const MAX_PROBES_PER_COMPANY = Number(process.env.OUTREACH_PROBES ?? 4);
 const VERDICT_TTL_DAYS = 14;
 const SIGNATURE = process.env.OUTREACH_NAME ?? 'SM';
 const PORT = Number(process.env.OUTREACH_PORT ?? 7700);
+/**
+ * Deployed mode: when set (e.g. "https://site.vercel.app/api"), card buttons
+ * point at the hosted API routes instead of the local server, so clicks from
+ * the published page record state exactly like localhost does.
+ */
+const LINK_BASE = (process.env.OUTREACH_LINK_BASE ?? '').replace(/\/$/, '');
+const actionUrl = (path: string) => (LINK_BASE ? `${LINK_BASE}/${path}` : `/${path}`);
 
 const STATE_PATH = process.env.OUTREACH_STATE_PATH ?? 'state/contacted.json';
 const SWEEP_PATH = 'state/contact-sweep.json';
@@ -770,11 +777,11 @@ function card(d: Draft): string {
   <div class="to">to: ${esc(d.addr)}</div>
   <pre>${esc(d.body)}</pre>
   <div class="btns">
-    <a class="btn primary" href="/open/${encodeURIComponent(d.id)}">Open in Gmail</a>
-    <a class="btn" href="/mailapp/${encodeURIComponent(d.id)}">Mail app</a>
-    <a class="btn ghost" href="/replied/${encodeURIComponent(d.id)}">Replied</a>
-    <a class="btn ghost" href="/bounce/${encodeURIComponent(d.id)}">Bounced</a>
-    <a class="btn ghost" href="/skip/${encodeURIComponent(d.id)}">Skip</a>
+    <a class="btn primary" href="${actionUrl(`outreach/open/${encodeURIComponent(d.id)}`)}">Open in Gmail</a>
+    <a class="btn" href="${actionUrl(`outreach/mailapp/${encodeURIComponent(d.id)}`)}">Mail app</a>
+    <a class="btn ghost" href="${actionUrl(`outreach/replied/${encodeURIComponent(d.id)}`)}">Replied</a>
+    <a class="btn ghost" href="${actionUrl(`outreach/bounce/${encodeURIComponent(d.id)}`)}">Bounced</a>
+    <a class="btn ghost" href="${actionUrl(`outreach/skip/${encodeURIComponent(d.id)}`)}">Skip</a>
   </div>
 </div>`;
 }
@@ -958,5 +965,16 @@ if (process.argv[1]?.endsWith('outreach.ts')) {
     await mkdir('out/outbox', { recursive: true });
     await writeFile(PAGE_PATH, page(batch, recentlySent(await readJson<OutreachState>(STATE_PATH, {}))), 'utf8');
     console.log(`static page written → ${PAGE_PATH}`);
+    // Deployed mode companion: the hosted click-API needs each draft's
+    // redirect targets (the Gmail/mailto URLs are computed at build time from
+    // subject+body, and the API route never sees them otherwise).
+    const drafts = Object.fromEntries(
+      [...batch.followups, ...batch.triggered, ...batch.random].map((d) => [
+        d.id,
+        { gmailUrl: d.gmailUrl, mailtoUrl: d.mailtoUrl, company: d.company, role: d.role, touch: d.touch },
+      ]),
+    );
+    await writeFile('out/outbox/batch.json', `${JSON.stringify(drafts, null, 2)}\n`, 'utf8');
+    console.log(`draft map written → out/outbox/batch.json`);
   }
 }

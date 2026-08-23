@@ -83,7 +83,23 @@ velocity needs, and Phase A's salary fields feed the medians directly.
     answers no question this single-user tool actually asks. Revisit only if
     that changes.
 
-## Phase E — Interfaces (only if wanted)
+## Phase E — Interfaces — partially SHIPPED 2026-08-23 (deployed cold-emailer)
+
+**Deployed outreach (new, user-requested):** the cold-email batch builder now
+runs in GitHub Actions via a `workflow_dispatch` button
+(`.github/workflows/outreach.yml`) and publishes the draft page to the Vercel
+site at `/outreach/today.html`. Card buttons point at new serverless routes
+(`/api/outreach/open|mailapp|replied|skip|bounce/[id]`,
+`web/app/api/outreach/...`) which record clicks into `state/contacted.json`
+through the GitHub Contents API — identical bookkeeping to the localhost
+server, hosted. Requires `OUTREACH_GH_TOKEN` (Contents read/write) in Vercel.
+Caveats documented in the workflow: Actions runners block port 25, so SMTP
+verdicts degrade to `unknown` there; run locally when you need real ones.
+This forced one config change: web dropped `output: 'export'` so the route
+could exist — the job page is still client-fetching and needs no redeploy for
+hourly data.
+
+Still open from E:
 
 15. **MCP server over the catalogue** (#73) — wrap `query.ts`'s filtering in
     read-only MCP tools; makes the corpus usable from any AI client.
