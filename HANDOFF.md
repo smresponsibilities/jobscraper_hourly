@@ -316,6 +316,35 @@ so canonical-name dedup (the Growe precedent) collapses any real overlap.
 sites live, near-identical counts and matching first title, almost
 certainly the same underlying job set — skipped, not added.
 
+**Live re-check pass (2026-08-23), every remaining lead closed**:
+- **Ericsson — already tracked**, and correctly: Eightfold via
+  `jobs.ericsson.com` / domain `ericsson.com`, live-verified 105 India roles.
+  The "wrong host" problem from the freebuff round was already fixed by an
+  earlier add; don't re-add.
+- **VMware's own board is gone, not unreachable** — `vmware.wd1.myworkdayjobs.com`
+  now serves Workday's maintenance/decommission redirect (post-Broadcom
+  acquisition); hiring merged into Broadcom. **Broadcom is the new wall**: its
+  careers page is a fully client-rendered CMS app whose JS bundles contain no
+  ATS endpoint at all, and every guessed `broadcom.wd1` site slug 404s
+  (`Job_Posting_Site_ID=…not found`). Needs a real browser Network tab, same
+  class as Zwayam — don't guess more slugs blind.
+- **Albertsons CX_1001 confirmed 0 India roles** against the real tenant
+  (`eofd.fa.us6.oraclecloud.com` — the site slug IS `CX_1001`, linked from
+  Albertsons Market's own careers page; the tenant guess was what was wrong).
+  Whatever India hiring exists isn't on this site number. Closed unless a new
+  site slug surfaces.
+- **StoneX**: `careers-stonex.icims.com` resolves but it's iCIMS's modern
+  Talent Cloud portal — no `/api/jobs` JSON (that endpoint only exists on
+  legacy tenants like DocuSign's), search results are JS-rendered, keyword
+  India search shows zero hits. Not buildable with the current `icims.ts`.
+- **Celanese**: `celanese.icims.com` redirects to a bare legacy servlet root,
+  no jobs module reachable anonymously. Still unresolved, low priority.
+- **KKR**: Greenhouse token `kkr` is a clean 404 (the insurance-looking
+  `stage` board remains a suspected name collision, not added).
+- **McKinsey**: connection blocked outright from this network (curl exits
+  before TLS). **Bain**: careers page server-renders fine but contains zero
+  ATS markers of any platform — custom portal confirmed a third time.
+
 **Confirmed still genuinely unreachable, don't re-chase without a new
 lead**: McKinsey, Bain & Company, IBM — all custom-built portals with a
 gated/origin-restricted API, no anonymous access found (same conclusion as
