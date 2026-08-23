@@ -71,37 +71,71 @@ function experience(job: Job): string {
 }
 
 const OPENED_KEY = 'jobradar-opened';
+const SAVED_KEY = 'jobradar-saved';
+const APPLIED_KEY = 'jobradar-applied';
+const EXCLUDE_KEY = 'jobradar-exclude';
 
-function loadOpened(): Set<string> {
+function loadIdSet(key: string): Set<string> {
   try {
-    return new Set(JSON.parse(localStorage.getItem(OPENED_KEY) ?? '[]'));
+    return new Set(JSON.parse(localStorage.getItem(key) ?? '[]'));
   } catch {
     return new Set();
   }
 }
 
+function loadOpened(): Set<string> {
+  return loadIdSet(OPENED_KEY);
+}
+
 function JobRow({
   job,
   opened,
+  saved,
+  applied,
   onOpen,
+  onMark,
 }: {
   job: Job;
   opened: boolean;
+  saved: boolean;
+  applied: boolean;
   onOpen: () => void;
+  onMark: (kind: 'saved' | 'applied') => void;
 }) {
   const posted = ago(job.postedAt ?? job.firstSeen);
+  const band =
+    job.salaryMin && job.salaryMax
+      ? `₹${Number.isInteger(job.salaryMin) ? job.salaryMin : job.salaryMin.toFixed(1)}–${Number.isInteger(job.salaryMax) ? job.salaryMax : job.salaryMax.toFixed(1)} LPA`
+      : undefined;
   return (
-    <li className="job" data-closed={Boolean(job.closedAt)} data-opened={opened}>
+    <li className="job" data-closed={Boolean(job.closedAt)} data-opened={opened} data-applied={applied}>
       <a className="title" href={job.url} target="_blank" rel="noreferrer" onClick={onOpen}>
         {job.title}
       </a>
       <span className="company-inline">{job.company}</span>
+      <button
+        className={`mark${saved ? ' on' : ''}`}
+        title={saved ? 'Remove from saved' : 'Save for later'}
+        onClick={() => onMark('saved')}
+      >
+        {saved ? '★' : '☆'}
+      </button>
+      <button
+        className={`mark${applied ? ' on' : ''}`}
+        title={applied ? 'Unmark applied' : 'Mark applied'}
+        onClick={() => onMark('applied')}
+      >
+        ✓
+      </button>
       <div className="company">{job.company}</div>
       <div className="meta">
         <span>{job.location}</span>
         <span className={`tag${job.isIntern ? ' intern' : ''}`}>{experience(job)}</span>
         {posted && <span>{posted}</span>}
-        {job.salary && <span>{job.salary}</span>}
+        {band ? <span>{band}</span> : job.salary ? <span>{job.salary}</span> : null}
+        {job.workMode === 'remote' && <span className="tag">remote</span>}
+        {job.workMode === 'hybrid' && <span className="tag">hybrid</span>}
+        {job.visa && <span className="tag">visa sponsorship</span>}
         {job.closedAt && <span className="tag closed">closed</span>}
       </div>
     </li>
@@ -119,7 +153,58 @@ export default function Page() {
   const [internsOnly, setInternsOnly] = useState(false);
   const [showClosed, setShowClosed] = useState(false);
   const [company, setCompany] = useState('');
+  // Facets over the Phase A fields (src/salary.ts + classify.ts).
+  const [workMode, setWorkMode] = useState<'' | 'remote' | 'hybrid' | 'onsite'>('');
+  const [minSalary, setMinSalary] = useState(0);
+  const [visaOnly, setVisaOnly] = useState(false);
+  // Personal, localStorage-only: excluded keywords and saved/applied marks.
+  const [exclude, setExclude] = useState('');
+  const [hideApplied, setHideApplied] = useState(false);
   const [opened, setOpened] = useState<Set<string>>(new Set());
+  const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
+  const [appliedIds, setAppliedIds] = useState<Set<string>>(new Set());
+
+  /**
+   * URL is the shareable source of truth for the filter state. Read once on
+   * mount (not in the lazy initializers — the page is statically exported, so
+   * initializers also run at build time where `location` doesn't exist), and
+   * written back with replaceState so every filtered view has a bookmarkable
+   * URL without polluting history on each keystroke.
+   */
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('q')) setQuery(params.get('q')!);
+    if (params.get('company')) setCompany(params.get('company')!);
+    if (params.get('maxYears')) setMaxYears(Number(params.get('maxYears')));
+    if (params.get('industries')) setIndustries(params.get('industries')!.split(','));
+    if (params.get('mode')) setWorkMode(params.get('mode') as typeof workMode);
+    if (params.get('minSalary')) setMinSalary(Number(params.get('minSalary')));
+    if (params.get('interns') === '1') setInternsOnly(true);
+    if (params.get('visa') === '1') setVisaOnly(true);
+    if (params.get('closed') === '1') setShowClosed(true);
+    if (params.get('unstated') === '0') setIncludeUnstated(false);
+    if (params.get('hideApplied') === '1') setHideApplied(true);
+    if (params.get('exclude')) setExclude(params.get('exclude')!);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (query) params.set('q', query);
+    if (company) params.set('company', company);
+    if (maxYears !== 3) params.set('maxYears', String(maxYears));
+    if (industries.length) params.set('industries', industries.join(','));
+    if (workMode) params.set('mode', workMode);
+    if (minSalary) params.set('minSalary', String(minSalary));
+    if (internsOnly) params.set('interns', '1');
+    if (visaOnly) params.set('visa', '1');
+    if (showClosed) params.set('closed', '1');
+    if (!includeUnstated) params.set('unstated', '0');
+    if (hideApplied) params.set('hideApplied', '1');
+    if (exclude) params.set('exclude', exclude);
+    const qs = params.toString();
+    window.history.replaceState(null, '', qs ? `?${qs}` : window.location.pathname);
+  }, [query, company, maxYears, industries, workMode, minSalary, internsOnly, visaOnly, showClosed, includeUnstated, hideApplied, exclude]);
 
   useEffect(() => {
     fetch(DATA_URL, { cache: 'no-store' })
@@ -130,6 +215,9 @@ export default function Page() {
       .then(setJobs)
       .catch((e: Error) => setError(e.message));
     setOpened(loadOpened());
+    setSavedIds(loadIdSet(SAVED_KEY));
+    setAppliedIds(loadIdSet(APPLIED_KEY));
+    setExclude(localStorage.getItem(EXCLUDE_KEY) ?? '');
   }, []);
 
   const markOpened = (id: string) =>
@@ -140,6 +228,24 @@ export default function Page() {
       return next;
     });
 
+  /** Saved/applied are the same pattern as opened: one id-set per kind. */
+  const toggleMark = (kind: 'saved' | 'applied', id: string) => {
+    const setter = kind === 'saved' ? setSavedIds : setAppliedIds;
+    const key = kind === 'saved' ? SAVED_KEY : APPLIED_KEY;
+    setter((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      localStorage.setItem(key, JSON.stringify([...next]));
+      return next;
+    });
+  };
+
+  const setExcludeBoth = (value: string) => {
+    setExclude(value);
+    localStorage.setItem(EXCLUDE_KEY, value);
+  };
+
   const companies = useMemo(
     () => [...new Set((jobs ?? []).map((j) => j.company))].sort(),
     [jobs],
@@ -148,12 +254,22 @@ export default function Page() {
   const shown = useMemo(() => {
     if (!jobs) return [];
     const needle = query.trim().toLowerCase();
+    const excludeWords = exclude
+      .split(',')
+      .map((w) => w.trim().toLowerCase())
+      .filter(Boolean);
 
     return jobs.filter((job) => {
       if (!showClosed && job.closedAt) return false;
       if (internsOnly && !job.isIntern) return false;
       if (company && job.company !== company) return false;
       if (industries.length && !industries.includes(job.industry)) return false;
+      if (workMode && job.workMode !== workMode) return false;
+      // "Pays at least X" reads off the top of the band — a 10–14 LPA posting
+      // clears a 12 LPA floor even though its min doesn't.
+      if (minSalary && (job.salaryMax ?? 0) < minSalary) return false;
+      if (visaOnly && !job.visa) return false;
+      if (hideApplied && appliedIds.has(job.id)) return false;
 
       // Interns are entry-level by definition, so the years gate doesn't apply.
       if (!job.isIntern) {
@@ -162,13 +278,14 @@ export default function Page() {
         } else if (job.minYears > maxYears) return false;
       }
 
-      if (needle) {
-        const haystack = `${job.title} ${job.company} ${job.location}`.toLowerCase();
-        if (!haystack.includes(needle)) return false;
-      }
+      const haystack = `${job.title} ${job.company} ${job.location}`.toLowerCase();
+      if (needle && !haystack.includes(needle)) return false;
+      // Excluded keywords are personal junk words — same carve-out philosophy
+      // as HARD_EXCLUDE in src/classify.ts, but yours, and client-side only.
+      if (excludeWords.some((word) => haystack.includes(word))) return false;
       return true;
     }).sort((a, b) => crawledTime(b) - crawledTime(a));
-  }, [jobs, query, maxYears, includeUnstated, industries, internsOnly, showClosed, company]);
+  }, [jobs, query, maxYears, includeUnstated, industries, internsOnly, showClosed, company, workMode, minSalary, visaOnly, hideApplied, appliedIds, exclude]);
 
   const freshJobs = useMemo(() => shown.filter((j) => !isBacklog(j)), [shown]);
   const backlogJobs = useMemo(() => shown.filter(isBacklog), [shown]);
@@ -262,6 +379,47 @@ export default function Page() {
             </button>
           ))}
         </div>
+
+        <div className="row">
+          <div className="facet-group">
+            <span className="facet-label">Work mode</span>
+            {(['', 'remote', 'hybrid', 'onsite'] as const).map((value) => (
+              <button
+                key={value || 'any'}
+                className="chip"
+                data-on={workMode === value}
+                onClick={() => setWorkMode(value)}
+              >
+                {value || 'any'}
+              </button>
+            ))}
+          </div>
+          <label className="field">
+            Min salary
+            <select value={minSalary} onChange={(e) => setMinSalary(Number(e.target.value))}>
+              {[0, 4, 6, 8, 10, 12, 15, 20].map((v) => (
+                <option key={v} value={v}>
+                  {v === 0 ? 'Any' : `₹${v}+ LPA`}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button className="chip" data-on={visaOnly} onClick={() => setVisaOnly((v) => !v)}>
+            Visa sponsorship
+          </button>
+          <button className="chip" data-on={hideApplied} onClick={() => setHideApplied((v) => !v)}>
+            Hide applied
+          </button>
+        </div>
+
+        <div className="row">
+          <input
+            type="text"
+            placeholder="Exclude keywords (comma-separated, stored locally)…"
+            value={exclude}
+            onChange={(e) => setExcludeBoth(e.target.value)}
+          />
+        </div>
       </section>
 
       {error && (
@@ -277,6 +435,18 @@ export default function Page() {
         <>
           <p className="count">
             {shown.length} of {jobs.filter((j) => !j.closedAt).length} open roles
+            {company && (() => {
+              // Lightweight company view (PHASES.md #69): a static-export site
+              // can't cheaply generate a page per company, but the same data
+              // answers the interesting question right here — is this employer
+              // actively hiring, and how much of it is new this month?
+              const all = jobs.filter((j) => j.company === company);
+              const open = all.filter((j) => !j.closedAt).length;
+              const month = all.filter(
+                (j) => Date.now() - new Date(j.firstSeen).getTime() < 30 * 86_400_000,
+              ).length;
+              return ` · ${company}: ${open} open, ${month} first seen in the last 30 days`;
+            })()}
           </p>
 
           {shown.length === 0 ? (
@@ -294,7 +464,10 @@ export default function Page() {
                         job={job}
                         key={job.id}
                         opened={opened.has(job.id)}
+                        saved={savedIds.has(job.id)}
+                        applied={appliedIds.has(job.id)}
                         onOpen={() => markOpened(job.id)}
+                        onMark={(kind) => toggleMark(kind, job.id)}
                       />
                     ))}
                   </ul>
@@ -313,7 +486,10 @@ export default function Page() {
                         job={job}
                         key={job.id}
                         opened={opened.has(job.id)}
+                        saved={savedIds.has(job.id)}
+                        applied={appliedIds.has(job.id)}
                         onOpen={() => markOpened(job.id)}
+                        onMark={(kind) => toggleMark(kind, job.id)}
                       />
                     ))}
                   </ul>

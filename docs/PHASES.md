@@ -41,19 +41,28 @@ quiet rot loud.
    and collapsing them would hide real leads. The real multi-board case is one
    employer under differently-normalized names, which the key now covers.
 
-## Phase C — Web UI depth (client-side only, no backend)
+## Phase C — Web UI depth (client-side only, no backend) — DONE 2026-08-23
 
-Everything over the existing `data/jobs.json`, static-hostable as today.
+7. **Faceted filters** (#64) — SHIPPED: work-mode chips, ₹ LPA salary-band
+   select (reads off the band's top — a 10–14 LPA posting clears a 12 floor),
+   visa-sponsorship chip. Fed by the new catalogue fields.
+8. **URL-state sync** (#65) — SHIPPED: every filter round-trips through
+   URLSearchParams with replaceState; read on mount (build-time safe).
+9. **Exclude keywords + saved/applied marks** (#45/#80 thin) — SHIPPED:
+   localStorage-only personal junk words and per-job ★/✓ marks with a
+   hide-applied toggle. Client-side by design, same carve-out philosophy as
+   HARD_EXCLUDE but personal.
+10. **Company view** (#69) — SHIPPED as an inline stats strip (open count +
+    first-seen-last-30-days when a company is selected) rather than generated
+    pages: a static export can't cheaply produce ~1,000 per-company routes,
+    and the strip answers the actual question (is this employer actively
+    hiring?) without them. Revisit only if traffic ever justifies it.
+11. **Recency sort** (#53) was already client-side (crawledTime desc within
+    groups). **CSV export** (#76) — SHIPPED as `npm run query -- --csv`.
 
-7. **Faceted filters** (#64) — seniority, role family, work mode, salary band
-   (feeds from Phase A fields), experience range.
-8. **URL-state sync + shareable views** (#65) — filter state in query params.
-9. **Exclude-keyword filter + saved/applied localStorage marks** (#45/#80 thin
-   version) — personal junk list without touching server config.
-10. **Company pages** (#69) — active/last-30d counts per company, generated
-    statically at catalogue push time.
-11. **Recency sort within sections** (#53) + CSV export flag on `query.ts`
-    (#76). Small finishers.
+Catalogue change enabling the facets: `CatalogEntry` gained `salaryMin/`
+`salaryMax/workMode/visa` (a few bytes/entry; `isRepost` deliberately excluded
+as alert-time state, not a property of the posting).
 
 ## Phase D — Trend intelligence
 
