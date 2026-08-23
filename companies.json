@@ -113111,5 +113111,54 @@
     "source": "discovered",
     "token": "goody",
     "lastPolledAt": "2026-08-23T10:58:40.982Z"
+  },
+  {
+    "name": "Cofertility",
+    "ats": "greenhouse",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "cofertility"
+  },
+  {
+    "name": "Donorbox",
+    "ats": "greenhouse",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "donorbox"
+  },
+  {
+    "name": "Biofourmis",
+    "ats": "greenhouse",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "biofourmis"
+  },
+  {
+    "name": "KIND",
+    "ats": "lever",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "supportkind"
+  },
+  {
+    "name": "yieldmo",
+    "ats": "greenhouse",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "yieldmo"
+  },
+  {
+    "name": "Zerion",
+    "ats": "lever",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "zerion"
+  },
+  {
+    "name": "Pocket Entertainment Corp",
+    "ats": "lever",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "pocketfm"
   }
 ]

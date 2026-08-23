@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc *)",
+      "Bash(npm test *)",
+      "Bash(DRY_RUN=1 npx tsx src/index.ts)",
+      "Bash(echo \"started PID $!\")",
+      "Read(//tmp/**)",
+      "Bash(git fetch *)",
+      "Bash(git merge *)",
+      "Bash(git add *)",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "Artifact",
+      "Bash(python3 -c ' *)",
+      "Bash(python -c ' *)",
+      "Bash(curl -s -A \"Mozilla/5.0\" \"https://careers.docusign.com/api/jobs?limit=5&page=1\")",
+      "Bash(node -e ' *)",
+      "Bash(git ls-tree *)",
+      "Bash(git show *)",
+      "Bash(curl -s -A \"Mozilla/5.0\" \"https://apply.careers.microsoft.com/api/pcsx/search?domain=microsoft.com&query=&location=India&start=0&num=5\")",
+      "Bash(node --experimental-strip-types -e ' *)",
+      "Bash(npx tsx -e ' *)",
+      "Bash(npx tsx *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(mkdir -p data)",
+      "Bash(cp \"C:/Users/sm/AppData/Local/Temp/claude/C--Users-sm-Desktop-Jobscraper-next/55ed7089-b8d0-48e0-b7ee-58f96491fe57/scratchpad/jobs.json\" data/jobs.json)",
+      "Bash(npm run *)",
+      "Bash(git checkout *)"
+    ]
+  }
+}
