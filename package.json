@@ -21,7 +21,8 @@
     "outreach": "tsx src/outreach.ts",
     "contacts": "tsx src/contacts.ts",
     "verify": "tsx src/verify-email.ts",
-    "contacts-sweep": "tsx src/contacts-sweep.ts"
+    "contacts-sweep": "tsx src/contacts-sweep.ts",
+    "publish-outreach": "tsx src/publish-outreach.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

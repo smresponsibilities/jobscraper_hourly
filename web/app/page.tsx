@@ -142,6 +142,22 @@ function JobRow({
   );
 }
 
+/**
+ * Open the outreach batch page.
+ *
+ * The key is asked for once and kept in localStorage rather than compiled into
+ * this page: the site is public, so anything in the bundle is public too, and
+ * the outreach batch is keyed by real people's addresses. Prompting keeps the
+ * secret on the one device that needs it.
+ */
+function openOutreach() {
+  const stored = window.localStorage.getItem('outreachKey');
+  const key = stored ?? window.prompt('Outreach key (asked once, then remembered on this device)');
+  if (!key) return;
+  if (!stored) window.localStorage.setItem('outreachKey', key);
+  window.open(`/api/outreach/page?k=${encodeURIComponent(key)}`, '_blank', 'noopener');
+}
+
 export default function Page() {
   const [jobs, setJobs] = useState<Job[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -309,7 +325,12 @@ export default function Page() {
   return (
     <main className="wrap">
       <header>
-        <h1>Job Radar</h1>
+        <div className="header-row">
+          <h1>Job Radar</h1>
+          <button className="chip outreach-link" onClick={openOutreach} title="Today's cold-email batch">
+            Outreach batch
+          </button>
+        </div>
         <p>
           Fresher and entry-level roles in India and remote, read straight from company ATS
           boards. Updated hourly.

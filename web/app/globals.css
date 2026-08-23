@@ -176,3 +176,7 @@ footer { margin-top: 40px; font-size: 12px; color: var(--muted); text-align: cen
 .job[data-applied="true"] .title { color: var(--muted); text-decoration: line-through; }
 .facet-group { display: flex; align-items: center; gap: 6px; }
 .facet-label { font-size: 12px; color: var(--muted); margin-right: 2px; }
+
+/* Header now carries the outreach-batch link beside the title. */
+.header-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.outreach-link { flex: none; }

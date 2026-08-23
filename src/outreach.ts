@@ -47,7 +47,15 @@ const PORT = Number(process.env.OUTREACH_PORT ?? 7700);
  * the published page record state exactly like localhost does.
  */
 const LINK_BASE = (process.env.OUTREACH_LINK_BASE ?? '').replace(/\/$/, '');
-const actionUrl = (path: string) => (LINK_BASE ? `${LINK_BASE}/${path}` : `/${path}`);
+/**
+ * Shared secret for the hosted routes. The draft ids are the recipients' own
+ * addresses, so an ungated API plus a published batch would let anyone mark
+ * the whole campaign skipped. Only appended in deployed mode; the localhost
+ * server needs no key.
+ */
+const LINK_KEY = process.env.OUTREACH_KEY ?? '';
+const actionUrl = (path: string) =>
+  LINK_BASE ? `${LINK_BASE}/${path}${LINK_KEY ? `?k=${encodeURIComponent(LINK_KEY)}` : ''}` : `/${path}`;
 
 const STATE_PATH = process.env.OUTREACH_STATE_PATH ?? 'state/contacted.json';
 const SWEEP_PATH = 'state/contact-sweep.json';

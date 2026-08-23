@@ -85,10 +85,33 @@ velocity needs, and Phase A's salary fields feed the medians directly.
 
 ## Phase E — Interfaces — partially SHIPPED 2026-08-23 (deployed cold-emailer)
 
-**Deployed outreach (new, user-requested):** the cold-email batch builder now
+**Deployed outreach — reworked 2026-08-24 after review found four real bugs**
+(none had shipped: the workflow had never been run, so no address was ever
+published). What was wrong, because each is a trap worth not re-entering:
+
+1. The state restore curled the Contents API without an accept header, writing
+   the base64 *envelope* into `state/contacted.json`. That parses as valid JSON
+   of the wrong shape, so dedup silently found no ids and re-offered everyone
+   already mailed — then committed the envelope back over the real state.
+   `src/publish-outreach.ts` now decodes properly.
+2. The page and draft map were written to `web/public/`, which Vercel serves at
+   a guessable URL, in a **public** repo. The draft map is keyed by real
+   engineers' work addresses. Both now live in a private data repo
+   (`OUTREACH_DATA_REPO`); nothing personal is committed here.
+3. The click-API computed follow-up gaps as `GAPS[touch - 1]` while the source
+   of truth uses `GAPS[touch]`, so every follow-up fell due one slot early and
+   the first one was due immediately. Now shares the clamp.
+4. `putJson`'s failure was ignored and the redirect to Gmail happened anyway —
+   a lost write means a follow-up later goes out as a first touch. Writes now
+   retry on a fresh sha and hard-fail the request rather than redirect.
+
+Also added: every route requires `?k=<OUTREACH_KEY>`, since the ids are
+addresses and an ungated API let anyone mark the campaign skipped.
+
+**Deployed outreach:** the cold-email batch builder now
 runs in GitHub Actions via a `workflow_dispatch` button
-(`.github/workflows/outreach.yml`) and publishes the draft page to the Vercel
-site at `/outreach/today.html`. Card buttons point at new serverless routes
+(`.github/workflows/outreach.yml`) and publishes the batch to a private data
+repo, which the Vercel site serves at `/api/outreach/page?k=<key>`. Card buttons point at new serverless routes
 (`/api/outreach/open|mailapp|replied|skip|bounce/[id]`,
 `web/app/api/outreach/...`) which record clicks into `state/contacted.json`
 through the GitHub Contents API — identical bookkeeping to the localhost
