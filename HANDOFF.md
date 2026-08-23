@@ -202,6 +202,26 @@ network round-trip to every `detect.ts` call for a measured 0% hit rate.
 **Don't rebuild this without new evidence it'd actually help** — the
 research that suggested it was reasoning from the *idea* being sound, not
 from testing it against real companies.
+## Detection latency — why a just-posted job isn't caught instantly (measured 2026-08-23)
+
+Four stacked delays, in order of size:
+1. **ATS-side index lag** (outside our control) — Workday/Eightfold/Greenhouse
+   search APIs often list a new req hours after it's visible on the public
+   careers site or LinkedIn. We can only see what the API returns.
+2. **Cold-board rotation** — cold boards are swept oldest-polled-first with
+   ~4,200 slots/run against ~9,200 cold boards, so each cold board is polled
+   every ~2.5h (measured from `lastPolledAt`: p50 2.5h, p90 3.5h). A
+   *first-ever* India role on a cold board waits that long to be discovered.
+   Once found, the board goes hot and is polled every run thereafter.
+3. **Hourly cron** — hot boards (3,963) have up to 60 min latency by design;
+   a real run takes ~26 min so sub-hourly scheduling is technically possible
+   but untested against rate limits (see `BOARDS_PER_RUN` comment first).
+4. **One-alert-per-lifetime dedup** — once an id lands in `seen.json` it never
+   alerts again, and anything already seen before a local test run won't email
+   either. Plus the cold-start skip (`out/` empty on a fresh runner → no email
+   that run even though roles were found). These look like "missed" jobs but
+   are working as designed.
+
 ## In progress — pick up here
 
 **`discover-news.ts` now names which RSS feed died (2026-08-19).** It
