@@ -3,6 +3,7 @@ out/
 *.log
 .DS_Store
 .env
+.env.*
 
 # ~9 MB of job IDs, rewritten every hour. It lives in the Actions cache, never in
 # git — a full copy per commit would add gigabytes a year. If the cache is ever
