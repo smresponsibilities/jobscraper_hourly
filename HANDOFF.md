@@ -266,6 +266,17 @@ leaked) — worth remembering as a class, not just as fixed:
    Writes now retry against a fresh sha and hard-fail the request rather than
    redirect on an unconfirmed save.
 
+**Contact discovery now has three built sources, not one (2026-08-26).** Git
+commits are still primary; npm registry maintainers (`src/contact-sources.ts`)
+are wired into `resolveRecipients()` as the fallback when git finds no
+corporate-domain commits; the website mailto scanner and role-address list are
+CLI-only via `npm run contact-find`. ApplyBolt's public endpoint — written off
+as 502-dead on 2026-08-21 — came back live on 2026-08-26 (3x HTTP 200 at ~1s,
+real verified-person results), making it the highest-upside unbuilt source;
+still no SLA, wire behind a retry adapter if used. Full method ladder with all
+measurements and dates: **`CONTACT-DISCOVERY.md`** — read that before touching
+any contact-discovery code.
+
 **Sending itself is not built.** Contact discovery, verification, and the
 click-recording/follow-up-scheduling infrastructure are done; actually
 composing and sending the first real cold email — plus the domain-age and
