@@ -63,6 +63,25 @@ function bucketLabel(job: Job): string {
   return months <= 1 ? 'Over a month ago' : `${months}+ months ago`;
 }
 
+// Calendar-day key of firstSeen (the UTC date of the ISO stamp). The site's
+// "how new" buckets are relative and scroll away as time passes; these keys
+// give every posting a stable home tab, so days you didn't check stay browsable.
+function dayKey(job: Job): string {
+  return job.firstSeen.slice(0, 10);
+}
+
+// UTC-stable labels: comparing ISO date strings, not local midnights, so a
+// job never shifts tab depending on which timezone you open the page from.
+function dayLabel(key: string): string {
+  if (key === new Date().toISOString().slice(0, 10)) return 'Today';
+  if (key === new Date(Date.now() - 86_400_000).toISOString().slice(0, 10)) return 'Yesterday';
+  return new Date(`${key}T00:00:00Z`).toLocaleDateString('en-IN', {
+    timeZone: 'UTC',
+    day: 'numeric',
+    month: 'short',
+  });
+}
+
 function experience(job: Job): string {
   if (job.isIntern) return 'Internship';
   if (job.minYears === null) return 'Not stated';
@@ -175,6 +194,8 @@ export default function Page() {
   const [visaOnly, setVisaOnly] = useState(false);
   // Personal, localStorage-only: excluded keywords and saved/applied marks.
   const [exclude, setExclude] = useState('');
+  // Per-day browsing: '' is the All tab, otherwise a firstSeen YYYY-MM-DD key.
+  const [day, setDay] = useState('');
   const [hideApplied, setHideApplied] = useState(false);
   const [opened, setOpened] = useState<Set<string>>(new Set());
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
@@ -201,6 +222,7 @@ export default function Page() {
     if (params.get('unstated') === '0') setIncludeUnstated(false);
     if (params.get('hideApplied') === '1') setHideApplied(true);
     if (params.get('exclude')) setExclude(params.get('exclude')!);
+    if (params.get('day')) setDay(params.get('day')!);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -218,9 +240,10 @@ export default function Page() {
     if (!includeUnstated) params.set('unstated', '0');
     if (hideApplied) params.set('hideApplied', '1');
     if (exclude) params.set('exclude', exclude);
+    if (day) params.set('day', day);
     const qs = params.toString();
     window.history.replaceState(null, '', qs ? `?${qs}` : window.location.pathname);
-  }, [query, company, maxYears, industries, workMode, minSalary, internsOnly, visaOnly, showClosed, includeUnstated, hideApplied, exclude]);
+  }, [query, company, maxYears, industries, workMode, minSalary, internsOnly, visaOnly, showClosed, includeUnstated, hideApplied, exclude, day]);
 
   useEffect(() => {
     fetch(DATA_URL, { cache: 'no-store' })
@@ -303,8 +326,24 @@ export default function Page() {
     }).sort((a, b) => crawledTime(b) - crawledTime(a));
   }, [jobs, query, maxYears, includeUnstated, industries, internsOnly, showClosed, company, workMode, minSalary, visaOnly, hideApplied, appliedIds, exclude]);
 
-  const freshJobs = useMemo(() => shown.filter((j) => !isBacklog(j)), [shown]);
-  const backlogJobs = useMemo(() => shown.filter(isBacklog), [shown]);
+  // Tab counts come off `shown` (all other filters applied), the view comes
+  // off `dayShown` — filtering in two steps keeps each tab's count meaningful
+  // while one is selected.
+  const dayCounts = useMemo(() => {
+    const tally = new Map<string, number>();
+    for (const job of shown) {
+      const key = dayKey(job);
+      tally.set(key, (tally.get(key) ?? 0) + 1);
+    }
+    return [...tally.entries()].sort((a, b) => (a[0] < b[0] ? 1 : -1));
+  }, [shown]);
+  const dayShown = useMemo(
+    () => (day ? shown.filter((j) => dayKey(j) === day) : shown),
+    [shown, day],
+  );
+
+  const freshJobs = useMemo(() => dayShown.filter((j) => !isBacklog(j)), [dayShown]);
+  const backlogJobs = useMemo(() => dayShown.filter(isBacklog), [dayShown]);
 
   const groups = useMemo(() => {
     const byLabel = new Map<string, Job[]>();
@@ -455,7 +494,7 @@ export default function Page() {
       {jobs && (
         <>
           <p className="count">
-            {shown.length} of {jobs.filter((j) => !j.closedAt).length} open roles
+            {dayShown.length} of {jobs.filter((j) => !j.closedAt).length} open roles
             {company && (() => {
               // Lightweight company view (PHASES.md #69): a static-export site
               // can't cheaply generate a page per company, but the same data
@@ -469,6 +508,17 @@ export default function Page() {
               return ` · ${company}: ${open} open, ${month} first seen in the last 30 days`;
             })()}
           </p>
+
+          <div className="row">
+            <button className="chip" data-on={day === ''} onClick={() => setDay('')}>
+              All ({dayCounts.reduce((sum, [, n]) => sum + n, 0)})
+            </button>
+            {dayCounts.map(([key, n]) => (
+              <button key={key} className="chip" data-on={day === key} onClick={() => setDay(key)}>
+                {dayLabel(key)} ({n})
+              </button>
+            ))}
+          </div>
 
           {shown.length === 0 ? (
             <p className="empty">Nothing matches those filters.</p>
