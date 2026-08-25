@@ -19,7 +19,7 @@ import {
   factScore,
 } from './contacts.js';
 import { bodySimilarity, bounceGateDecision, displayName, domainRiskTally, postedAgeDays, renderBody, touchGap } from './outreach.js';
-import { extractEmails, roleAddresses } from './contact-sources.js';
+import { extractEmails, parseDmarcRua, roleAddresses } from './contact-sources.js';
 import { controlAddress, mxProvider, rejectionIsMeaningful } from './verify-email.js';
 import type { Company, Industry, RawJob } from './types.js';
 
@@ -883,5 +883,9 @@ check('entry without band skipped from n', st.every((t) => t.n <= 2), true);
 check('extractEmails pulls mailto + plaintext, deduped', JSON.stringify(extractEmails('<a href="mailto:HR@Zerodha.com">mail</a> and hr@zerodha.com')), JSON.stringify(['hr@zerodha.com']));
 check('extractEmails drops freemail', JSON.stringify(extractEmails('contact us at personal@gmail.com')), '[]');
 check('roleAddresses covers the standard boxes', roleAddresses('cred.club').length, 6);
+// DMARC rua parsing — vendor-hosted and multi-record shapes both occur.
+check('parseDmarcRua reads plain rua', parseDmarcRua(['v=DMARC1; p=none; rua=mailto:dmarcreports@meesho.com']), 'dmarcreports@meesho.com');
+check('parseDmarcRua handles vendor host + split records', parseDmarcRua(['v=DMARC1;', 'rua=mailto:g72jrssx@ag.ap.dmarcian.com; p=quarantine']), 'g72jrssx@ag.ap.dmarcian.com');
+check('parseDmarcRua returns null when absent', parseDmarcRua(['v=DMARC1; p=reject']), null);
 console.log(failures === 0 ? '\nall checks pass' : `\n${failures} failing check(s)`);
 process.exit(failures === 0 ? 0 : 1);

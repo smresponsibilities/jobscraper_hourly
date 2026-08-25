@@ -91,17 +91,17 @@ mailto: links and plaintext addresses on the company's own pages.
   Uneven by design; mostly useful for confirming domain + pattern rather than
   finding a person.
 
-### 5. DMARC rua records — probed, cheap win, not built
+### 5. DMARC rua records — built (2026-08-26)
 
 `_dmarc.{domain}` TXT carries `rua=mailto:` aggregate-report addresses. Nobody
 reads those mailboxes — useless as targets, but their *existence* proves the
 domain has live, managed mail infrastructure before any probe or send.
 
-- **Live test (2026-08-26):** meesho.com → `dmarcreports@meesho.com`;
-  stripe.com → `dmarc-reports@stripe.com`; zomato.com → vendor-hosted
-  (`ag.ap.dmarcian.com`); swiggy.in → vendor-hosted (`rep.dmarcanalyzer.com`);
-  razorpay.com publishes none (absence proves nothing).
-- One DNS query per domain; natural pre-flight gate in front of SMTP probing.
+- **Code:** `dmarcRua()` + `parseDmarcRua()` in `src/contact-sources.ts`; runs
+  as a pre-flight warning in `outreach.ts`'s `finalize()` before SMTP probing
+  (one cached DNS query per company domain) and prints status in the CLI.
+- **Live test (2026-08-26):** meesho.com → `managed (rua dmarcreports@meesho.com)`;
+  razorpay.com → `not published — verify extra carefully`. Both paths shown.
 
 ### 6. Gravatar existence check — built
 
@@ -190,17 +190,15 @@ npm run contacts-sweep               # whole-companies.json measurement run
 
 ## Open next steps
 
-1. **DMARC pre-flight** (~15 lines): check `_dmarc.{domain}` before probing a
-   candidate domain; warn when absent.
-2. **PyPI fallback**: mirror `npmContacts()` for companies shipping Python
+1. **PyPI fallback**: mirror `npmContacts()` for companies shipping Python
    SDKs; second fallback behind npm in `resolveRecipients()`.
-3. **ApplyBolt adapter**: retry-with-timeout wrapper, env-flag off by default,
+2. **ApplyBolt adapter**: retry-with-timeout wrapper, env-flag off by default,
    feeding the same Candidate pipeline (it even returns `fullName`, which
    keeps drafts composable). Needs a LinkedIn-URL finder for each target —
    `https://www.linkedin.com/in/{guess}` heuristics or SERP lookup.
-4. **Role-address lane**: verify role boxes with existing `verifyEmail`, own
+3. **Role-address lane**: verify role boxes with existing `verifyEmail`, own
    template in the batch page (no person = different opener), clearly labeled.
-5. **Hunter.io account** (free, no card): 25 searches/month is small but the
+4. **Hunter.io account** (free, no card): 25 searches/month is small but the
    API shape is clean; useful as a cross-check for high-value targets.
-6. **First real send** — sender infra deployed but nothing sent yet; the
+5. **First real send** — sender infra deployed but nothing sent yet; the
    COLDMAIL-PLAN warmup ramp doesn't start until the first message goes out.

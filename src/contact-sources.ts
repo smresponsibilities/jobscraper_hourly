@@ -18,6 +18,7 @@
  * already has gravatarExists() on the verification path.
  */
 import { domainMatchesOrg, isCorporateAddress } from './contacts.js';
+import { resolveTxt } from 'node:dns/promises';
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -162,6 +163,39 @@ export function roleAddresses(domain: string): string[] {
   return ROLE_MAILBOXES.map((box) => `${box}@${domain}`);
 }
 
+// ── 5b. DMARC pre-flight ─────────────────────────────────────────────────────
+
+/** Pull the rua aggregate-report address out of DMARC TXT records, if any.
+ *  Pure so selftest can cover the parsing without network. */
+export function parseDmarcRua(records: string[]): string | null {
+  const joined = records.join(' ');
+  const m = /rua=mailto:([^;\s"]+)/i.exec(joined);
+  return m ? m[1]!.toLowerCase() : null;
+}
+
+const dmarcCache = new Map<string, string | null>();
+
+/**
+ * Does this domain publish live, managed mail infrastructure?
+ *
+ * The rua mailbox itself is useless as a target — nobody reads aggregates —
+ * but its presence is one free DNS query proving the domain runs DMARC before
+ * anything gets probed or sent to it. Absence proves nothing (Razorpay
+ * publishes none); presence is a positive signal worth a warning when missing.
+ */
+export async function dmarcRua(domain: string): Promise<string | null> {
+  if (dmarcCache.has(domain)) return dmarcCache.get(domain)!;
+  let rua: string | null = null;
+  try {
+    const records = await resolveTxt(`_dmarc.${domain}`);
+    rua = parseDmarcRua(records.flat());
+  } catch {
+    // NXDOMAIN / no TXT — absence is a finding, not an error.
+  }
+  dmarcCache.set(domain, rua);
+  return rua;
+}
+
 // ── CLI ──────────────────────────────────────────────────────────────────────
 
 if (process.argv[1]?.endsWith('contact-sources.ts')) {
@@ -195,7 +229,9 @@ if (process.argv[1]?.endsWith('contact-sources.ts')) {
   }
 
   if (domain) {
-    console.log(`\nrole addresses @${domain} (verify before use)`);
+    const rua = await dmarcRua(domain);
+    console.log(`\nDMARC ${domain}: ${rua ? `managed (rua ${rua})` : 'not published — verify extra carefully'}`);
+    console.log(`role addresses @${domain} (verify before use)`);
     for (const addr of roleAddresses(domain)) console.log(`  ${addr}`);
   }
 }

@@ -25,6 +25,7 @@ import { readJson } from './state.js';
 import { mapLimit } from './fetchers/util.js';
 import { githubContacts, splitName, type CommitAuthor } from './contacts.js';
 import { npmContacts } from './contact-sources.js';
+import { dmarcRua } from './contact-sources.js';
 import { verifyEmail, type Verdict } from './verify-email.js';
 
 // ── knobs ────────────────────────────────────────────────────────────────────
@@ -349,6 +350,18 @@ async function resolveRecipients(
 
   /** SMTP verdict + Gravatar tie-break, shared by the git path and the npm path. */
   const finalize = async (candidates: Candidate[]): Promise<Candidate[]> => {
+    // DMARC pre-flight, once per company domain: a published rua record is the
+    // cheapest evidence the mail domain is real and managed before any probe.
+    const firstDomain = candidates[0]?.email.split('@')[1];
+    if (firstDomain) {
+      try {
+        if (!(await dmarcRua(firstDomain))) {
+          console.log(`    ! ${firstDomain}: no DMARC published — extra caution on bounces`);
+        }
+      } catch {
+        // DNS trouble must never block the discovery path.
+      }
+    }
     let probes = 0;
     for (const c of candidates) {
       const prior = state[c.email];
