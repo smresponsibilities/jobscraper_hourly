@@ -19,6 +19,7 @@ import {
   factScore,
 } from './contacts.js';
 import { bodySimilarity, bounceGateDecision, displayName, domainRiskTally, postedAgeDays, renderBody, touchGap } from './outreach.js';
+import { extractEmails, roleAddresses } from './contact-sources.js';
 import { controlAddress, mxProvider, rejectionIsMeaningful } from './verify-email.js';
 import type { Company, Industry, RawJob } from './types.js';
 
@@ -876,5 +877,11 @@ check('salary buckets split by month', st.map((t) => `${t.family}/${t.month}`).j
 check('august median band', JSON.stringify(st.find((t) => t.month === '2026-08')), JSON.stringify({ family: 'data', month: '2026-08', n: 2, medianMin: 11, medianMax: 15 }));
 check('entry without band skipped from n', st.every((t) => t.n <= 2), true);
 
+// Contact-source helpers: email extraction and role-address candidates.
+// The extraction regexes run over arbitrary company HTML, where a wrong match
+// means a mail to a vendor or an agency — hence the corporate-filter checks.
+check('extractEmails pulls mailto + plaintext, deduped', JSON.stringify(extractEmails('<a href="mailto:HR@Zerodha.com">mail</a> and hr@zerodha.com')), JSON.stringify(['hr@zerodha.com']));
+check('extractEmails drops freemail', JSON.stringify(extractEmails('contact us at personal@gmail.com')), '[]');
+check('roleAddresses covers the standard boxes', roleAddresses('cred.club').length, 6);
 console.log(failures === 0 ? '\nall checks pass' : `\n${failures} failing check(s)`);
 process.exit(failures === 0 ? 0 : 1);

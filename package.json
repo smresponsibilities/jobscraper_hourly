@@ -22,6 +22,7 @@
     "contacts": "tsx src/contacts.ts",
     "verify": "tsx src/verify-email.ts",
     "contacts-sweep": "tsx src/contacts-sweep.ts",
+    "contact-find": "tsx src/contact-sources.ts",
     "publish-outreach": "tsx src/publish-outreach.ts"
   },
   "devDependencies": {

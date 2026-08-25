@@ -24,6 +24,7 @@ import { writeFile, mkdir, readFile, rm } from 'node:fs/promises';
 import { readJson } from './state.js';
 import { mapLimit } from './fetchers/util.js';
 import { githubContacts, splitName, type CommitAuthor } from './contacts.js';
+import { npmContacts } from './contact-sources.js';
 import { verifyEmail, type Verdict } from './verify-email.js';
 
 // ── knobs ────────────────────────────────────────────────────────────────────
@@ -346,55 +347,8 @@ async function resolveRecipients(
     ),
   ];
 
-  try {
-    let found: Awaited<ReturnType<typeof githubContacts>> | null = null;
-    let usedOrg: string | null = null;
-    for (const org of orgCandidates.slice(0, 3)) {
-      found = await githubContacts(org);
-      if (found.domain) {
-        usedOrg = org;
-        break;
-      }
-    }
-    if (!found || !found.domain || !usedOrg) {
-      console.log(
-        `    · ${company}: no GitHub org with corporate-domain commits (tried ${orgCandidates.slice(0, 3).join(', ')})`,
-      );
-      return [];
-    }
-    // Wrong-company guard: the domain must either match the org name or have
-    // been accepted as matched by the sweep. Outside contributors fail this.
-    if (!(found.domainMatchesOrg || (entry?.matched ?? false))) {
-      console.log(`    · ${company} (${usedOrg}): domain ${found.domain} does not match org — outside contributors?`);
-      return [];
-    }
-
-    const cutoff = Date.now() - FACT_MAX_AGE_DAYS * 86_400_000;
-    const factual = found.authors.filter((a) => {
-      if (!a.subject || !a.date) return false;
-      const t = new Date(a.date).getTime();
-      return !Number.isNaN(t) && t >= cutoff;
-    });
-    const base = factual.length >= want ? factual : found.authors.filter((a) => a.subject);
-
-    // Rank facts, don't just take them: a "fix: race in order matching"
-    // beats "docs: replace screenshot" as an opener. Strong facts are
-    // preferred; weak ones only backfill when the company is thin.
-    const FACT_MIN_SCORE = Number(process.env.OUTREACH_MIN_FACT_SCORE ?? 3);
-    const ranked = [...base].sort(
-      (a, b) =>
-        (b.score ?? 0) - (a.score ?? 0) ||
-        new Date(b.date ?? 0).getTime() - new Date(a.date ?? 0).getTime(),
-    );
-    const strong = ranked.filter((c) => (c.score ?? 0) >= FACT_MIN_SCORE);
-    const ordered =
-      strong.length >= want
-        ? strong
-        : [...strong, ...ranked.filter((r) => !strong.includes(r))];
-    const candidates: Candidate[] = ordered.slice(0, MAX_PROBES_PER_COMPANY).map((a) => ({ ...a }));
-
-    // SMTP verdict per address, reusing any recent one from state. Probing is
-    // bounded by MAX_PROBES_PER_COMPANY because each probe can cost ~10s.
+  /** SMTP verdict + Gravatar tie-break, shared by the git path and the npm path. */
+  const finalize = async (candidates: Candidate[]): Promise<Candidate[]> => {
     let probes = 0;
     for (const c of candidates) {
       const prior = state[c.email];
@@ -432,6 +386,65 @@ async function resolveRecipients(
       result.push(c);
     }
     return result;
+  };
+
+  try {
+    let found: Awaited<ReturnType<typeof githubContacts>> | null = null;
+    let usedOrg: string | null = null;
+    for (const org of orgCandidates.slice(0, 3)) {
+      found = await githubContacts(org);
+      if (found.domain) {
+        usedOrg = org;
+        break;
+      }
+    }
+    if (!found || !found.domain || !usedOrg) {
+      // Fallback ladder, COLDMAIL-PLAN.md §1b: npm registry maintainers cover
+      // companies whose GitHub org is named nothing like them or who publish
+      // packages without a public org at all. Names exist on npm maintainers,
+      // so these stay draft-composable; facts don't, so they ship un-facted.
+      const reg = await npmContacts(company, want);
+      if (reg.length === 0) {
+        console.log(
+          `    · ${company}: no GitHub org with corporate-domain commits (tried ${orgCandidates.slice(0, 3).join(', ')}), no npm registry contacts either`,
+        );
+        return [];
+      }
+      console.log(`    · ${company}: no GitHub commits; npm registry gave ${reg.length} maintainer address(es)`);
+      return finalize(reg.slice(0, MAX_PROBES_PER_COMPANY).map((r) => ({ name: r.name, email: r.email })));
+    }
+    // Wrong-company guard: the domain must either match the org name or have
+    // been accepted as matched by the sweep. Outside contributors fail this.
+    if (!(found.domainMatchesOrg || (entry?.matched ?? false))) {
+      console.log(`    · ${company} (${usedOrg}): domain ${found.domain} does not match org — outside contributors?`);
+      return [];
+    }
+
+    const cutoff = Date.now() - FACT_MAX_AGE_DAYS * 86_400_000;
+    const factual = found.authors.filter((a) => {
+      if (!a.subject || !a.date) return false;
+      const t = new Date(a.date).getTime();
+      return !Number.isNaN(t) && t >= cutoff;
+    });
+    const base = factual.length >= want ? factual : found.authors.filter((a) => a.subject);
+
+    // Rank facts, don't just take them: a "fix: race in order matching"
+    // beats "docs: replace screenshot" as an opener. Strong facts are
+    // preferred; weak ones only backfill when the company is thin.
+    const FACT_MIN_SCORE = Number(process.env.OUTREACH_MIN_FACT_SCORE ?? 3);
+    const ranked = [...base].sort(
+      (a, b) =>
+        (b.score ?? 0) - (a.score ?? 0) ||
+        new Date(b.date ?? 0).getTime() - new Date(a.date ?? 0).getTime(),
+    );
+    const strong = ranked.filter((c) => (c.score ?? 0) >= FACT_MIN_SCORE);
+    const ordered =
+      strong.length >= want
+        ? strong
+        : [...strong, ...ranked.filter((r) => !strong.includes(r))];
+    const candidates: Candidate[] = ordered.slice(0, MAX_PROBES_PER_COMPANY).map((a) => ({ ...a }));
+
+    return finalize(candidates);
   } catch (error) {
     // Distinguish "no contact" from real trouble — a silent rate-limit death
     // would look exactly like a legitimate miss (the HANDOFF lesson).
