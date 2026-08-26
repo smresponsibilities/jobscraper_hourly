@@ -24,8 +24,7 @@ import { writeFile, mkdir, readFile, rm } from 'node:fs/promises';
 import { readJson } from './state.js';
 import { mapLimit } from './fetchers/util.js';
 import { githubContacts, splitName, type CommitAuthor } from './contacts.js';
-import { npmContacts } from './contact-sources.js';
-import { dmarcRua } from './contact-sources.js';
+import { dmarcRua, npmContacts, pypiContacts } from './contact-sources.js';
 import { verifyEmail, type Verdict } from './verify-email.js';
 
 // ── knobs ────────────────────────────────────────────────────────────────────
@@ -417,14 +416,16 @@ async function resolveRecipients(
       // packages without a public org at all. Names exist on npm maintainers,
       // so these stay draft-composable; facts don't, so they ship un-facted.
       const reg = await npmContacts(company, want);
-      if (reg.length === 0) {
+      const py = reg.length === 0 ? await pypiContacts(company, want).catch(() => []) : [];
+      const alt = [...reg, ...py];
+      if (alt.length === 0) {
         console.log(
-          `    · ${company}: no GitHub org with corporate-domain commits (tried ${orgCandidates.slice(0, 3).join(', ')}), no npm registry contacts either`,
+          `    · ${company}: no GitHub org with corporate-domain commits (tried ${orgCandidates.slice(0, 3).join(', ')}), no npm/PyPI contacts either`,
         );
         return [];
       }
-      console.log(`    · ${company}: no GitHub commits; npm registry gave ${reg.length} maintainer address(es)`);
-      return finalize(reg.slice(0, MAX_PROBES_PER_COMPANY).map((r) => ({ name: r.name, email: r.email })));
+      console.log(`    · ${company}: no GitHub commits; npm/PyPI gave ${alt.length} address(es)`);
+      return finalize(alt.slice(0, MAX_PROBES_PER_COMPANY).map((r) => ({ name: r.name, email: r.email })));
     }
     // Wrong-company guard: the domain must either match the org name or have
     // been accepted as matched by the sweep. Outside contributors fail this.

@@ -55,17 +55,27 @@ nothing like the company, or who ship packages without a public org.
 - Uses `/latest` manifests, not full package documents (some packages are
   megabytes across all versions).
 
-### 2b. PyPI author emails — probed, not built
+### 2b. PyPI author emails — built (2026-08-26)
 
-Same trick against Python packages. `GET https://pypi.org/pypi/{pkg}/json`
-returns `info.author_email`.
+Same trick as npm against Python package manifests.
+`GET https://pypi.org/pypi/{pkg}/json` returns `info.author_email` /
+`maintainer_email` (often `Name <addr>` formatted — parsed out).
 
-- **Live test (2026-08-26):** `kiteconnect` → `talk@zerodha.tech`,
-  author "Zerodha Technology Pvt. Ltd. (India)". Re-confirms the 2026-08-22
-  measurement (`snowflake-connector-python` → Snowflake DL address).
-- Skews toward team aliases rather than named individuals (npm is better for
-  people, PyPI for domain confirmation). Worth building as a second fallback
-  behind npm — same shape, ~40 lines.
+PyPI has no JSON search API and its search page bot-walls plain fetches, so
+the source probes exact name candidates (slug plus `-sdk`/`sdk`/`-python`/`py`
+variants) instead of searching. Coverage is narrower than npm's search but the
+hits are real corporate addresses; freemail and wrong-domain results are
+dropped by the same guards (`paytm` on PyPI belongs to an unrelated developer
+and must never ship). Companies whose package is named nothing like them
+(Zerodha ships `kiteconnect`) stay uncovered here.
+
+- **Code:** `pypiContacts()` in `src/contact-sources.ts`; second fallback in
+  `resolveRecipients()` after npm. Also surfaced by the CLI.
+- **Live test (2026-08-26):** "Snowflake" →
+  `snowflake-python-libraries-dl@snowflake.com` via `snowflake`; re-confirms
+  the 2026-08-22 measurement. "Razorpay"/"Zerodha" → nothing corporate
+  (expected: Razorpay's PyPI entry has no email, Zerodha's package is named
+  `kiteconnect`).
 
 ### 3. Role addresses — built as candidates, verification pending
 
@@ -190,15 +200,13 @@ npm run contacts-sweep               # whole-companies.json measurement run
 
 ## Open next steps
 
-1. **PyPI fallback**: mirror `npmContacts()` for companies shipping Python
-   SDKs; second fallback behind npm in `resolveRecipients()`.
-2. **ApplyBolt adapter**: retry-with-timeout wrapper, env-flag off by default,
+1. **ApplyBolt adapter**: retry-with-timeout wrapper, env-flag off by default,
    feeding the same Candidate pipeline (it even returns `fullName`, which
    keeps drafts composable). Needs a LinkedIn-URL finder for each target —
    `https://www.linkedin.com/in/{guess}` heuristics or SERP lookup.
-3. **Role-address lane**: verify role boxes with existing `verifyEmail`, own
+2. **Role-address lane**: verify role boxes with existing `verifyEmail`, own
    template in the batch page (no person = different opener), clearly labeled.
-4. **Hunter.io account** (free, no card): 25 searches/month is small but the
+3. **Hunter.io account** (free, no card): 25 searches/month is small but the
    API shape is clean; useful as a cross-check for high-value targets.
-5. **First real send** — sender infra deployed but nothing sent yet; the
+4. **First real send** — sender infra deployed but nothing sent yet; the
    COLDMAIL-PLAN warmup ramp doesn't start until the first message goes out.

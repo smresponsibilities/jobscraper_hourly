@@ -196,6 +196,62 @@ export async function dmarcRua(domain: string): Promise<string | null> {
   return rua;
 }
 
+/** Package-name candidates to probe on a registry for a company. Pure. */
+export function packageNameCandidates(company: string): string[] {
+  const slug = company.toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (slug.length < 2) return [];
+  return [...new Set([slug, `${slug}-sdk`, `${slug}sdk`, `${slug}-python`, `${slug}py`])];
+}
+
+// ── 2b. PyPI author emails ───────────────────────────────────────────────────
+
+export interface PypiContact extends RegistryContact {}
+
+/**
+ * Same trick as npmContacts against PyPI manifests.
+ *
+ * PyPI has no JSON search API and its search page bot-walls non-browsers,
+ * so this probes exact package-name candidates instead — the company slug
+ * plus common SDK suffixes. Coverage is narrower than npm's search but the
+ * hits are real: `razorpay`, `kiteconnect`, `snowflake-connector-python` all
+ * publish corporate author addresses. Freemail and wrong-domain results are
+ * dropped by the same guards as everywhere else (`paytm` on PyPI is owned by
+ * an unrelated developer; its address must never ship).
+ */
+export async function pypiContacts(company: string, limit = 10): Promise<PypiContact[]> {
+  const byEmail = new Map<string, PypiContact>();
+  for (const name of packageNameCandidates(company)) {
+    try {
+      const manifest = (await getJson(`https://pypi.org/pypi/${name}/json`)) as {
+        info?: {
+          author_email?: string | null;
+          maintainer_email?: string | null;
+          project_urls?: Record<string, string> | null;
+        };
+      };
+      const info = manifest.info ?? {};
+      const emails = [info.author_email, info.maintainer_email]
+        .flatMap((e) => (e ? e.split(',') : []))
+        // PyPI fields often arrive as 'Name <addr>' or with stray quotes.
+        .map((raw) => {
+          const angled = /<([^>]+)>/.exec(raw);
+          return (angled ? angled[1]! : raw).trim().toLowerCase();
+        })
+        .filter(isCorporateAddress);
+      for (const email of emails) {
+        const domain = email.split('@')[1] ?? '';
+        if (!domain || !domainMatchesOrg(company, domain)) continue;
+        if (!byEmail.has(email)) byEmail.set(email, { name: name, email, viaPackage: name });
+        if (byEmail.size >= limit) return [...byEmail.values()];
+      }
+    } catch {
+      continue; // 404 = no such package, the common case.
+    }
+    await sleep(150);
+  }
+  return [...byEmail.values()];
+}
+
 // ── CLI ──────────────────────────────────────────────────────────────────────
 
 if (process.argv[1]?.endsWith('contact-sources.ts')) {
@@ -215,6 +271,14 @@ if (process.argv[1]?.endsWith('contact-sources.ts')) {
   });
   if (reg.length === 0) console.log('  (nothing corporate)');
   for (const c of reg) console.log(`  ${c.email.padEnd(34)} ${c.name}  (${c.viaPackage})`);
+
+  console.log(`\nPyPI — packages named like "${company}"`);
+  const py = await pypiContacts(company).catch((e: Error) => {
+    console.log(`  ! ${e.message}`);
+    return [];
+  });
+  if (py.length === 0) console.log('  (nothing corporate)');
+  for (const c of py) console.log(`  ${c.email.padEnd(34)} (${c.viaPackage})`);
 
   let domain = domainArg;
   if (site) {
