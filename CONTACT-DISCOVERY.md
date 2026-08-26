@@ -123,23 +123,24 @@ verdicts where SMTP can't decide.
 - **Code:** `gravatarExists()` in `src/outreach.ts`, already on the
   verification path for `unknown` verdicts.
 
-### 7. ApplyBolt public endpoint — probed again 2026-08-26: now live
+### 7. ApplyBolt public endpoint — built as adapter (2026-08-26, off by default)
 
 `POST https://api.applybolt.app/public/findEmailByLinkedIn` with
 `{"linkedinUrl": ...}` does the LinkedIn-scraping step nobody can safely do
 at scale themselves, and returns `{found, email, validation, fullName,
 jobTitle, company}` unauthenticated and free.
 
-- **History:** measured 502 on 2026-08-21, written off as "somebody else's
-  endpoint, no contract." Retested 2026-08-26: three consecutive HTTP 200s at
-  ~1s each, correct real-person results (`satya@[school]` for Nadella,
-  `bill.gates@gatesfoundation.org` for Gates), with a `"cached"` flag
-  suggesting a result cache in front. One timeout also observed the same day
-  — flaky under load but working far more often than not.
-- **Verdict:** worth wiring behind a retry-with-timeout adapter, off by
-  default (env flag), because there is still no SLA and it could vanish or
-  rate-limit without notice. But it is now the highest-upside unbuilt source:
-  it covers exactly the companies with no public code footprint.
+- **Code:** `applyboltLookup()` + `parseApplyBolt()` in
+  `src/contact-sources.ts`. `APPLYBOLT_ENABLED=1` to turn on; one retry then a
+  30-minute cool-down on hard failures so a dead endpoint can't burn timeouts.
+  Single-profile CLI mode: `npm run contact-find -- https://linkedin.com/in/...`
+- **Live test (2026-08-26):** satyanadella profile →
+  `satya@uchicago.edu (Satya Nadella, Member Board Of Trustees)` with the flag
+  set; returns nothing without it.
+- **Remaining gap:** the endpoint takes a LinkedIn *URL*; finding the right
+  profile URL per company is its own unbuilt problem (name+company SERP lookup
+  or `linkedin.com/in/{guess}` heuristics). Until that exists the adapter is a
+  manual tool, not part of `resolveRecipients()`.
 - Input is a LinkedIn URL — finding the right profile is a separate problem
   (see §9).
 
@@ -200,10 +201,7 @@ npm run contacts-sweep               # whole-companies.json measurement run
 
 ## Open next steps
 
-1. **ApplyBolt adapter**: retry-with-timeout wrapper, env-flag off by default,
-   feeding the same Candidate pipeline (it even returns `fullName`, which
-   keeps drafts composable). Needs a LinkedIn-URL finder for each target —
-   `https://www.linkedin.com/in/{guess}` heuristics or SERP lookup.
+1. **LinkedIn-URL finder**: map company → right profile URL so applyboltLookup
 2. **Role-address lane**: verify role boxes with existing `verifyEmail`, own
    template in the batch page (no person = different opener), clearly labeled.
 3. **Hunter.io account** (free, no card): 25 searches/month is small but the

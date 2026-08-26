@@ -252,11 +252,74 @@ export async function pypiContacts(company: string, limit = 10): Promise<PypiCon
   return [...byEmail.values()];
 }
 
+// ── 7. ApplyBolt public endpoint ─────────────────────────────────────────────
+
+export interface ApplyBoltResult {
+  name: string;
+  email: string;
+  title?: string;
+}
+
+/** Pure: normalize the endpoint's response shape into a contact or nothing. */
+export function parseApplyBolt(body: unknown): ApplyBoltResult | null {
+  const r = body as { found?: boolean; email?: string; validation?: string; fullName?: string; jobTitle?: string };
+  if (!r || r.found !== true || typeof r.email !== 'string' || !r.email.includes('@')) return null;
+  return { name: r.fullName?.trim() || r.email.split('@')[0]!, email: r.email.toLowerCase().trim(), title: r.jobTitle };
+}
+
+let applyboltDeadUntil = 0;
+
+/**
+ * Look up one person's work email by their public LinkedIn profile URL, via
+ * ApplyBolt's unauthenticated endpoint.
+ *
+ * Status history: measured 502-dead on 2026-08-21, live again on 2026-08-26
+ * (3x HTTP 200 at ~1s). No SLA and no contract — so this is OFF by default
+ * (APPLYBOLT_ENABLED=1), retries transient failures once, and a hard failure
+ * cools the endpoint down for the rest of the process instead of being
+ * re-tried per call. It does the LinkedIn-scraping step nobody can safely do
+ * themselves; what it cannot do is find the right profile URL — callers must
+ * already have one.
+ */
+export async function applyboltLookup(linkedinUrl: string): Promise<ApplyBoltResult | null> {
+  if (process.env.APPLYBOLT_ENABLED !== '1') return null;
+  if (Date.now() < applyboltDeadUntil) return null;
+  const body = JSON.stringify({ linkedinUrl });
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await fetch('https://api.applybolt.app/public/findEmailByLinkedIn', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body,
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return parseApplyBolt(await res.json());
+    } catch (error) {
+      // A second failure (or an explicit 5xx) means the endpoint is down:
+      // cool it off rather than burning 15s timeouts on every later call.
+      const message = (error as Error).message;
+      if (attempt === 1 || /^HTTP 5/.test(message)) {
+        applyboltDeadUntil = Date.now() + 30 * 60_000;
+        return null;
+      }
+      await sleep(2_000);
+    }
+  }
+  return null;
+}
+
 // ── CLI ──────────────────────────────────────────────────────────────────────
 
 if (process.argv[1]?.endsWith('contact-sources.ts')) {
   const args = process.argv.slice(2);
   const [company, site, domainArg] = args;
+  if (company && company.startsWith('http') && company.includes('linkedin.com')) {
+    // Single-profile lookup mode: npm run contact-find -- https://linkedin.com/in/...
+    const hit = await applyboltLookup(company);
+    console.log(hit ? `${hit.email}  (${hit.name}${hit.title ? `, ${hit.title}` : ''})` : 'no result (disabled? down? not found)');
+    process.exit(0);
+  }
   if (!company) {
     console.log('usage: npm run contact-find -- "Company Name" https://company.com [mail-domain]');
     console.log('  runs npm registry + website scans and lists role-address candidates.');

@@ -19,7 +19,7 @@ import {
   factScore,
 } from './contacts.js';
 import { bodySimilarity, bounceGateDecision, displayName, domainRiskTally, postedAgeDays, renderBody, touchGap } from './outreach.js';
-import { extractEmails, packageNameCandidates, parseDmarcRua, roleAddresses } from './contact-sources.js';
+import { applyboltLookup, extractEmails, packageNameCandidates, parseApplyBolt, parseDmarcRua, roleAddresses } from './contact-sources.js';
 import { controlAddress, mxProvider, rejectionIsMeaningful } from './verify-email.js';
 import type { Company, Industry, RawJob } from './types.js';
 
@@ -890,5 +890,8 @@ check('parseDmarcRua returns null when absent', parseDmarcRua(['v=DMARC1; p=reje
 // PyPI candidate names — slug variants, deduped, junk slugs rejected.
 check('packageNameCandidates expands + dedupes', JSON.stringify(packageNameCandidates('Razorpay')), JSON.stringify(['razorpay', 'razorpay-sdk', 'razorpaysdk', 'razorpay-python', 'razorpaypy']));
 check('packageNameCandidates rejects tiny slugs', JSON.stringify(packageNameCandidates('a')), '[]');
+// ApplyBolt response parsing — found:false, junk, and missing-name shapes.
+check('parseApplyBolt reads a hit', JSON.stringify(parseApplyBolt({ found: true, email: 'Bill.Gates@GatesFoundation.org', fullName: 'Bill Gates', jobTitle: 'Co-chair' })), JSON.stringify({ name: 'Bill Gates', email: 'bill.gates@gatesfoundation.org', title: 'Co-chair' }));
+check('parseApplyBolt rejects not-found and malformed', [parseApplyBolt({ found: false }), parseApplyBolt(null), parseApplyBolt({ found: true })].every((r) => r === null), true);
 console.log(failures === 0 ? '\nall checks pass' : `\n${failures} failing check(s)`);
 process.exit(failures === 0 ? 0 : 1);
