@@ -113289,5 +113289,12 @@
     "source": "discovered",
     "token": "AustroHolding",
     "lastPolledAt": "2026-09-02T19:30:13.173Z"
+  },
+  {
+    "name": "Wonderful",
+    "ats": "ashby",
+    "token": "wonderful",
+    "industry": "tech",
+    "source": "discovered"
   }
 ]
