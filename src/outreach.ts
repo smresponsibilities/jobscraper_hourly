@@ -504,7 +504,7 @@ async function resolveRecipients(
      * registries, so it only runs when both of those came up empty.
      */
     const alternates = async (why: string): Promise<Candidate[]> => {
-      const reg = await npmContacts(company, want);
+      const reg = await npmContacts(company, want).catch(() => []);
       const py = reg.length === 0 ? await pypiContacts(company, want).catch(() => []) : [];
       const mvn = reg.length === 0 && py.length === 0 ? await mavenContacts(company, want).catch(() => []) : [];
       const alt = [...reg, ...py, ...mvn];
@@ -517,14 +517,14 @@ async function resolveRecipients(
     };
 
     if (!found || !found.domain || !usedOrg) {
-      return alternates(
+      return await alternates(
         `no GitHub org with corporate-domain commits (tried ${orgCandidates.slice(0, 3).join(', ')})`,
       );
     }
     // Wrong-company guard: the domain must either match the org name or have
     // been accepted as matched by the sweep. Outside contributors fail this.
     if (!(found.domainMatchesOrg || (entry?.matched ?? false))) {
-      return alternates(`GitHub domain ${found.domain} does not match org ${usedOrg} — outside contributors?`);
+      return await alternates(`GitHub domain ${found.domain} does not match org ${usedOrg} — outside contributors?`);
     }
 
     const cutoff = Date.now() - FACT_MAX_AGE_DAYS * 86_400_000;
@@ -551,7 +551,7 @@ async function resolveRecipients(
         : [...strong, ...ranked.filter((r) => !strong.includes(r))];
     const candidates: Candidate[] = ordered.slice(0, MAX_PROBES_PER_COMPANY).map((a) => ({ ...a }));
 
-    return finalize(candidates);
+    return await finalize(candidates);
   } catch (error) {
     // Distinguish "no contact" from real trouble — a silent rate-limit death
     // would look exactly like a legitimate miss (the HANDOFF lesson).

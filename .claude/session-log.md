@@ -66,3 +66,8 @@
 - 2026-09-01T18:54:01Z session ended, HEAD: 4b9548b feat(contacts): ApplyBolt adapter, off by default
 - 2026-09-01T19:18:54Z session ended, HEAD: 4b9548b feat(contacts): ApplyBolt adapter, off by default
 - 2026-09-02T06:30:24Z session ended, HEAD: 4b9548b feat(contacts): ApplyBolt adapter, off by default
+- 2026-09-02T11:59:38Z session ended, HEAD: e8ac558 fix(outreach+hunt): stale-catalogue merge bug, contact-ladder gaps, GraphQL migration
+- 2026-09-02T13:03:05Z session ended, HEAD: 6f64a50 Merge remote-tracking branch 'origin/main'
+- 2026-09-02T14:17:59Z session ended, HEAD: 6f64a50 Merge remote-tracking branch 'origin/main'
+- 2026-09-02T14:33:14Z session ended, HEAD: 6f64a50 Merge remote-tracking branch 'origin/main'
+- 2026-09-02T14:40:41Z session ended, HEAD: 6f64a50 Merge remote-tracking branch 'origin/main'
