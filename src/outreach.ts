@@ -24,17 +24,55 @@ import { writeFile, mkdir, readFile, rm } from 'node:fs/promises';
 import { readJson } from './state.js';
 import { mapLimit } from './fetchers/util.js';
 import { githubContacts, splitName, type CommitAuthor } from './contacts.js';
-import { dmarcRua, npmContacts, pypiContacts } from './contact-sources.js';
+import { dmarcRua, npmContacts, pypiContacts, mavenContacts } from './contact-sources.js';
 import { verifyEmail, type Verdict } from './verify-email.js';
 
 // ── knobs ────────────────────────────────────────────────────────────────────
 
-const RANDOM_BUDGET = Number(process.env.OUTREACH_RANDOM ?? 50);
-const TRIGGERED_BUDGET = Number(process.env.OUTREACH_TRIGGERED ?? 50);
-/** Hard ceiling on total cards (follow-ups count toward this). */
-const DAILY_BUDGET = Number(process.env.OUTREACH_DAILY ?? 100);
-/** A role younger than this puts its company in the triggered lane. */
-const TRIGGER_WINDOW_DAYS = 7;
+/**
+ * These three caps double as the ATTEMPT pool size, not just the output
+ * ceiling — `buildBatch()` selects exactly `min(laneBudget, budget)`
+ * companies per lane before resolving any contact, so a low cap starves
+ * resolution of candidates rather than merely trimming a longer result.
+ *
+ * First raised 50→100 on 2026-09-02 off a real local measurement (one build
+ * attempted 50/50 and resolved 38/29 — both well under cap, so the cap itself
+ * was the binding constraint, not a lack of real contacts; the triggered
+ * lane's real pool measured 139 companies with a posting inside
+ * TRIGGER_WINDOW_DAYS that day). Raised again to 500 the same day on direct
+ * request — more cards to manually pick from, independent of what the
+ * measured pool needs. The triggered lane still can't exceed its real
+ * same-day pool regardless of this number (139 that day; it moves daily), so
+ * 500 there is harmless headroom, not 500 real triggered contacts — the
+ * random lane's pool is large enough that 500 there is a real target. This is
+ * no longer sized off the "measure before raising" ceiling that governed the
+ * first bump; if a build starts taking noticeably longer than the hourly
+ * cadence can absorb, that is the next thing to measure.
+ */
+const RANDOM_BUDGET = Number(process.env.OUTREACH_RANDOM ?? 500);
+const TRIGGERED_BUDGET = Number(process.env.OUTREACH_TRIGGERED ?? 500);
+/**
+ * Hard ceiling on total cards per build (follow-ups count toward this). Not a
+ * literal per-24h counter despite the name — `buildBatch()` recomputes a
+ * fresh `DAILY_BUDGET` allowance on every invocation with no cross-run
+ * persistence, so moving `outreach.yml` to hourly means this is really "per
+ * build" now, not "per day". Must stay >= the two caps above combined or it
+ * silently becomes the binding constraint instead of them.
+ */
+const DAILY_BUDGET = Number(process.env.OUTREACH_DAILY ?? 1000);
+/**
+ * A role younger than this puts its company in the triggered lane. Widened
+ * 7→21 on 2026-09-02 after measuring the real pool directly against the live
+ * catalogue: 105 unique companies at 7 days, 130 at 21 — a real ~24% lift.
+ * Stopped at 21, not pushed further: many ATS platforms report age as the
+ * bucket string "Posted 30+ Days Ago" rather than a real number, which
+ * `postedAgeDays()` parses as literally 30 — so the pool jumps to 201 the
+ * instant the window reaches 30, not from genuinely fresher roles but from
+ * swallowing that entire "who knows how old, could be years" bucket as if it
+ * meant exactly 30 days. Widening past 21 would trade lead quality for a
+ * fake volume number, which is the opposite of what this knob is for.
+ */
+export const TRIGGER_WINDOW_DAYS = 21;
 const TOUCH_GAPS = [0, 4, 9, 16];
 const FACT_MAX_AGE_DAYS = 90;
 /** Bound the wall-clock cost of SMTP probing per company per build. */
@@ -60,6 +98,7 @@ const actionUrl = (path: string) =>
 
 const STATE_PATH = process.env.OUTREACH_STATE_PATH ?? 'state/contacted.json';
 const SWEEP_PATH = 'state/contact-sweep.json';
+const SWEEP_INDEX_PATH = 'state/contact-sweep-index.json';
 const CATALOG_PATH = 'data/jobs.json';
 const PID_PATH = 'state/outreach.pid';
 const PAGE_PATH = 'out/outbox/today.html';
@@ -101,9 +140,29 @@ interface CatalogJob {
   location?: string;
   url: string;
   postedAt?: string;
+  /** When catalog.ts first recorded this exact job id — always a real ISO
+   *  timestamp, unlike postedAt which some ATS platforms only report as a
+   *  vague bucket ("Posted 30+ Days Ago"). */
+  firstSeen?: string;
   minYears?: number | null;
   maxYears?: number | null;
   closedAt?: string;
+}
+
+/**
+ * Triggered by either signal, not just the ATS's self-reported postedAt:
+ * a role this tracker only just started seeing is exactly what "triggered"
+ * means, even when the ATS itself won't say how old the posting really is.
+ * Shared by loadCompanyPool() (selection) and buildFirstDraft() (the
+ * rendered card's own lane label) so the two can never disagree about which
+ * lane a company landed in.
+ */
+export function isTriggered(job: CatalogJob): boolean {
+  const byPostedAt = (postedAgeDays(job.postedAt) ?? Infinity) <= TRIGGER_WINDOW_DAYS;
+  if (byPostedAt) return true;
+  if (!job.firstSeen) return false;
+  const firstSeenDays = (Date.now() - new Date(job.firstSeen).getTime()) / 86_400_000;
+  return Number.isFinite(firstSeenDays) && firstSeenDays <= TRIGGER_WINDOW_DAYS;
 }
 
 async function saveState(state: OutreachState): Promise<void> {
@@ -167,10 +226,15 @@ export function nextDueAt(fromIso: string, touchJustSent: number): string {
  */
 export function postedAgeDays(postedAt?: string): number | null {
   if (!postedAt) return null;
-  const rel = /^posted\s+(today|(?<n>\d+)\+?\s+days?\s+ago)/i.exec(postedAt.trim());
+  // 'Yesterday' is its own word on Workday and iCIMS boards — not a number,
+  // not 'today'. Without it those postings fall through to the Date parse,
+  // come back NaN, and are treated as age-unknown: the single freshest slice
+  // of the catalogue (71 of 2,367 entries when this was found) was landing in
+  // the random lane instead of the triggered one.
+  const rel = /^posted\s+(?<today>today)|^posted\s+(?<yday>yesterday)|^posted\s+(?<n>\d+)\+?\s+days?\s+ago/i.exec(postedAt.trim());
   if (rel) {
     if (rel.groups?.n != null) return Number(rel.groups.n);
-    return 0;
+    return rel.groups?.yday ? 1 : 0;
   }
   const t = new Date(postedAt).getTime();
   return Number.isNaN(t) ? null : Math.max(0, Math.floor((Date.now() - t) / 86_400_000));
@@ -280,7 +344,7 @@ function loadCompanyPool(catalog: CatalogJob[], state: OutreachState): CompanyTa
     .map(({ job }) => ({
       company: displayName(job.company),
       job,
-      lane: (postedAgeDays(job.postedAt) ?? Infinity) <= TRIGGER_WINDOW_DAYS ? 'triggered' : 'random',
+      lane: isTriggered(job) ? 'triggered' : 'random',
     }));
 }
 
@@ -315,9 +379,19 @@ async function buildCompanyIndex(): Promise<{
   return { byName };
 }
 
-/** Sweep entries are keyed by exact display name; lowercase both sides. */
+/**
+ * Sweep entries are keyed by exact display name; lowercase both sides.
+ *
+ * Prefers the full local sweep, falls back to the committed index. The full
+ * file is gitignored (1.6 MB, rewritten wholesale), so on a runner it is
+ * simply absent — and without the fallback every hosted build resolves orgs
+ * by guessing at ATS tokens and ignores everything the sweep already
+ * established. See the comment on save() in src/contacts-sweep.ts.
+ */
 async function loadSweepLower(): Promise<Map<string, SweepEntry>> {
-  const sweep = await readJson<Record<string, SweepEntry>>(SWEEP_PATH, {});
+  const full = await readJson<Record<string, SweepEntry>>(SWEEP_PATH, {});
+  const sweep =
+    Object.keys(full).length > 0 ? full : await readJson<Record<string, SweepEntry>>(SWEEP_INDEX_PATH, {});
   return new Map(Object.entries(sweep).map(([k, v]) => [k.toLowerCase(), v]));
 }
 
@@ -410,28 +484,47 @@ async function resolveRecipients(
         break;
       }
     }
-    if (!found || !found.domain || !usedOrg) {
-      // Fallback ladder, COLDMAIL-PLAN.md §1b: npm registry maintainers cover
-      // companies whose GitHub org is named nothing like them or who publish
-      // packages without a public org at all. Names exist on npm maintainers,
-      // so these stay draft-composable; facts don't, so they ship un-facted.
+    /**
+     * Fallback ladder, COLDMAIL-PLAN.md §1b: npm registry maintainers cover
+     * companies whose GitHub org is named nothing like them or who publish
+     * packages without a public org at all. Names exist on npm maintainers,
+     * so these stay draft-composable; facts don't, so they ship un-facted.
+     *
+     * Both git misses reach this, not just the empty-handed one. The
+     * wrong-company branch below used to `return []` outright, which meant a
+     * company whose public repos are dominated by outside contributors got no
+     * shot at npm or PyPI at all — Citi, Sprinklr, Logitech, LSEG and Unisys
+     * all died there in one real run while their npm packages went unqueried.
+     * Nothing is loosened by this: npmContacts/pypiContacts/mavenContacts all
+     * apply the same domainMatchesOrg guard themselves, so a wrong-company
+     * address still cannot ship.
+     *
+     * Maven Central is third, not second: it covers corporate Java/Android
+     * SDKs specifically, a narrower slice than npm/PyPI's general-purpose
+     * registries, so it only runs when both of those came up empty.
+     */
+    const alternates = async (why: string): Promise<Candidate[]> => {
       const reg = await npmContacts(company, want);
       const py = reg.length === 0 ? await pypiContacts(company, want).catch(() => []) : [];
-      const alt = [...reg, ...py];
+      const mvn = reg.length === 0 && py.length === 0 ? await mavenContacts(company, want).catch(() => []) : [];
+      const alt = [...reg, ...py, ...mvn];
       if (alt.length === 0) {
-        console.log(
-          `    · ${company}: no GitHub org with corporate-domain commits (tried ${orgCandidates.slice(0, 3).join(', ')}), no npm/PyPI contacts either`,
-        );
+        console.log(`    · ${company}: ${why}, no npm/PyPI/Maven contacts either`);
         return [];
       }
-      console.log(`    · ${company}: no GitHub commits; npm/PyPI gave ${alt.length} address(es)`);
+      console.log(`    · ${company}: ${why}; npm/PyPI/Maven gave ${alt.length} address(es)`);
       return finalize(alt.slice(0, MAX_PROBES_PER_COMPANY).map((r) => ({ name: r.name, email: r.email })));
+    };
+
+    if (!found || !found.domain || !usedOrg) {
+      return alternates(
+        `no GitHub org with corporate-domain commits (tried ${orgCandidates.slice(0, 3).join(', ')})`,
+      );
     }
     // Wrong-company guard: the domain must either match the org name or have
     // been accepted as matched by the sweep. Outside contributors fail this.
     if (!(found.domainMatchesOrg || (entry?.matched ?? false))) {
-      console.log(`    · ${company} (${usedOrg}): domain ${found.domain} does not match org — outside contributors?`);
-      return [];
+      return alternates(`GitHub domain ${found.domain} does not match org ${usedOrg} — outside contributors?`);
     }
 
     const cutoff = Date.now() - FACT_MAX_AGE_DAYS * 86_400_000;
@@ -544,7 +637,7 @@ function buildFirstDraft(job: CatalogJob, author: Candidate, domainRiskBounces =
     role: job.title,
     location: job.location,
     jobUrl: job.url,
-    lane: (postedAgeDays(job.postedAt) ?? Infinity) <= TRIGGER_WINDOW_DAYS ? 'triggered' : 'random',
+    lane: isTriggered(job) ? 'triggered' : 'random',
     kind: 'first',
     touch: 0,
     overdueDays: 0,

@@ -82,15 +82,27 @@ export interface CompanyContacts {
  */
 export function domainMatchesOrg(org: string, domain: string): boolean {
   const slug = org.toLowerCase().replace(/[^a-z0-9]/g, '');
-  if (slug.length < 3) return false;
+  if (slug.length < 2) return false;
   // Compare per label, not against the flattened whole domain: "cred" appears
   // inside "accredited.com" but is not that company, while "aurora-solar.com"
   // is the same company as "Aurora Solar" once punctuation is dropped.
   const labels = domain.toLowerCase().split('.').map((label) => label.replace(/[^a-z0-9]/g, ''));
+  // Exact label match is safe at any length — "bp" as its own label is BP,
+  // not a false positive, because dot-splitting already rules out "bp"
+  // matching inside "shop.com". The old 3-char floor sat in front of this
+  // check too and rejected BP/GE/HP outright before it ever got here — a
+  // real run logged "BP (bp): domain bp.com does not match org".
   if (labels.includes(slug)) return true;
   // Longer names are distinctive enough that appearing inside a label is
   // evidence — "razorpaycorp", "swiggyindia". Short ones are not.
-  return slug.length >= 5 && labels.some((label) => label.includes(slug));
+  if (slug.length >= 5 && labels.some((label) => label.includes(slug))) return true;
+  // Reverse direction: a short, distinctive domain label that is itself
+  // contained in the flattened org name — "rockwell" inside
+  // "rockwellautomation" (domain ra.rockwell.com). The same run logged this
+  // as a false "outside contributors?" reject. Floored at 5 chars for the
+  // same reason as above, so generic short labels ("tech", "corp", "labs")
+  // can't spuriously match a long, unrelated company name.
+  return labels.some((label) => label.length >= 5 && slug.includes(label));
 }
 
 /**
@@ -260,31 +272,68 @@ export function dominantPattern(authors: CommitAuthor[], domain: string): Patter
  * sweep nearly exhausts. With a token it is 5,000 — and `hunt.yml` already has
  * `GITHUB_TOKEN` — so this is effectively free at the scale needed.
  */
-export class NotFound extends Error {}
-
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * Rate limiting has to be waited out, not treated as a miss. A sweep over the
- * whole board list makes tens of thousands of calls, and conflating "429, come
- * back in twelve minutes" with "this org does not exist" would silently blank
- * out every company after the budget ran dry — the failure would look exactly
- * like a legitimate result.
- *
- * 404 is the genuinely common outcome (most companies have no GitHub org) and
- * gets its own type so callers can tell the two apart.
+ * One repository's commit history, shaped to match what the REST path used
+ * to fetch in a separate call per repo.
  */
-const gh = async (path: string, attempt = 0): Promise<unknown> => {
+const ORG_COMMITS_QUERY = `
+query($org: String!, $repoLimit: Int!, $commitLimit: Int!) {
+  organization(login: $org) {
+    repositories(first: $repoLimit, orderBy: {field: PUSHED_AT, direction: DESC}) {
+      nodes {
+        defaultBranchRef {
+          target {
+            ... on Commit {
+              history(first: $commitLimit) {
+                nodes { messageHeadline committedDate author { name email } }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}`;
+
+interface OrgCommitsResponse {
+  data: {
+    organization: {
+      repositories: {
+        nodes: {
+          defaultBranchRef: {
+            target: {
+              history: {
+                nodes: { messageHeadline: string; committedDate: string; author: { name: string; email: string } }[];
+              };
+            } | null;
+          } | null;
+        }[];
+      } | null;
+    } | null;
+  };
+  errors?: { type?: string }[];
+}
+
+/**
+ * Rate limiting has to be waited out, not treated as a miss. A sweep over the
+ * whole board list makes tens of thousands of calls, and conflating "429,
+ * come back in twelve minutes" with "this org does not exist" would silently
+ * blank out every company after the budget ran dry.
+ */
+const ghGraphQL = async (variables: Record<string, unknown>, attempt = 0): Promise<OrgCommitsResponse> => {
   const token = process.env.GITHUB_TOKEN;
-  const response = await fetch(`https://api.github.com${path}`, {
+  const response = await fetch('https://api.github.com/graphql', {
+    method: 'POST',
     headers: {
-      accept: 'application/vnd.github+json',
+      'content-type': 'application/json',
       'user-agent': 'jobscraper-next',
       ...(token ? { authorization: `Bearer ${token}` } : {}),
     },
+    body: JSON.stringify({ query: ORG_COMMITS_QUERY, variables }),
   });
-  if (response.ok) return response.json();
-  if (response.status === 404) throw new NotFound(path);
+  if (response.ok) return response.json() as Promise<OrgCommitsResponse>;
 
   // 403 and 429 both carry rate-limit information; primary exhaustion sets
   // x-ratelimit-remaining to 0 and names the reset, secondary limits send
@@ -297,54 +346,66 @@ const gh = async (path: string, attempt = 0): Promise<unknown> => {
     const waitMs = retryAfter > 0 ? retryAfter * 1000 : Math.max(1_000, reset * 1000 - Date.now() + 1_000);
     console.log(`  rate limited, waiting ${Math.round(waitMs / 1000)}s`);
     await sleep(waitMs);
-    return gh(path, attempt + 1);
+    return ghGraphQL(variables, attempt + 1);
   }
   if (response.status >= 500 && attempt < 3) {
     await sleep(2_000 * (attempt + 1));
-    return gh(path, attempt + 1);
+    return ghGraphQL(variables, attempt + 1);
   }
-  throw new Error(`GitHub ${response.status} on ${path}`);
+  throw new Error(`GitHub GraphQL ${response.status}`);
 };
 
-export async function githubContacts(org: string, repoLimit = 3): Promise<CompanyContacts> {
-  let repos: { full_name: string }[];
-  try {
-    repos = (await gh(`/orgs/${org}/repos?sort=pushed&per_page=${repoLimit}`)) as { full_name: string }[];
-  } catch (error) {
-    // No such org is the common case, not an error worth propagating — most
-    // companies in companies.json have no GitHub presence at all. Anything
-    // else (rate limits that outlasted their retries, network trouble) has to
-    // surface, or a sweep quietly records thousands of false misses.
-    if (error instanceof NotFound) return { org, domain: null, domainMatchesOrg: false, pattern: null, authors: [] };
-    throw error;
+/**
+ * Same data as the old REST path (top `repoLimit` most-recently-pushed repos
+ * in an org, up to `commitLimit` commits each) in one HTTP call instead of
+ * `1 + repoLimit`. GitHub's org-repos + per-repo-commits REST sequence was
+ * costing up to 4 calls per company against the same 5000/hr token budget
+ * that a GraphQL query also draws from — but GraphQL bills by query
+ * complexity, not call count, and this shape costs 1 point regardless of
+ * `commitLimit` (measured live: repoLimit=3/commitLimit=100 against a real
+ * org came back `cost: 1`). That only matters once volume is high enough to
+ * approach the 5000/hr ceiling — outreach.yml moving from once a day to
+ * hourly, and its per-company probe count only going up from there, is
+ * exactly that shift.
+ *
+ * A missing org isn't a REST 404 here — GraphQL returns HTTP 200 with
+ * `organization: null` and an `errors` entry, so NotFound has to be
+ * synthesized from the body rather than the status code.
+ */
+export async function githubContacts(org: string, repoLimit = 3, commitLimit = 100): Promise<CompanyContacts> {
+  // Unlike the old REST path, ghGraphQL() never throws NotFound — a missing
+  // org comes back as HTTP 200 with `organization: null`, handled below —
+  // so any error that DOES reach here (rate-limit exhaustion, network
+  // trouble, a genuine 5xx) is real trouble and must propagate, not be
+  // swallowed as a plausible-looking miss.
+  const body = await ghGraphQL({ org, repoLimit, commitLimit });
+  if (!body.data.organization) {
+    if (body.errors?.some((e) => e.type === 'NOT_FOUND')) {
+      return { org, domain: null, domainMatchesOrg: false, pattern: null, authors: [] };
+    }
+    throw new Error(`GitHub GraphQL: ${JSON.stringify(body.errors ?? 'no organization in response')}`);
   }
 
   const seen = new Set<string>();
   const authors: CommitAuthor[] = [];
   const latestByAuthor = new Map<string, { subject: string; date?: string; score: number }>();
-  for (const repo of repos) {
-    let commits: {
-      commit: { author: { name: string; email: string; date?: string }; message: string };
-    }[];
-    try {
-      commits = (await gh(`/repos/${repo.full_name}/commits?per_page=100`)) as typeof commits;
-    } catch {
-      continue; // Empty or disabled repos 409; nothing to do but move on.
-    }
+  for (const repo of body.data.organization.repositories?.nodes ?? []) {
+    const commits = repo.defaultBranchRef?.target?.history.nodes ?? [];
     for (const entry of commits) {
-      const email = entry.commit?.author?.email?.toLowerCase();
-      const name = entry.commit?.author?.name;
+      const email = entry.author?.email?.toLowerCase();
+      const name = entry.author?.name;
       if (!email || !name) continue;
 
       // Fact capture runs before the corporate filter so a personal-address
       // author's work still informs the tally below. Only the first line
-      // counts, trivial housekeeping never qualifies, and the best-scoring
-      // commit wins rather than merely the first-seen one.
-      if (!isTrivialCommit(entry.commit.message)) {
-        const subject = entry.commit.message.split('\n')[0]!.slice(0, 120);
+      // counts (GraphQL's `messageHeadline` already is that, unlike REST's
+      // full message), trivial housekeeping never qualifies, and the
+      // best-scoring commit wins rather than merely the first-seen one.
+      if (!isTrivialCommit(entry.messageHeadline)) {
+        const subject = entry.messageHeadline.slice(0, 120);
         const cand = {
           subject,
-          date: entry.commit.author?.date,
+          date: entry.committedDate,
           score: factScore(subject),
         };
         if (betterFact(cand, latestByAuthor.get(email))) latestByAuthor.set(email, cand);

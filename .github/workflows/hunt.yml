@@ -76,6 +76,29 @@ jobs:
 
       - run: npm install --no-audit --no-fund
 
+      # catalog.ts merges this run's matches against whatever is at local
+      # data/jobs.json to decide `firstSeen`/`closedAt`/`reopened` — but this
+      # checkout only has main's COMMITTED snapshot, never the live one that
+      # the "Publish catalog" step below actually publishes, because nothing
+      # ever pulled it back before now. That committed snapshot's last real
+      # update was 2026-08-23 (checked via `git log -- data/jobs.json`), so
+      # every run since was merging against a growing-more-stale baseline:
+      # almost no live job id matched it, so almost every entry got
+      # `firstSeen` reset to "now" on every single run — found 2026-09-02
+      # when a live catalogue fetch showed 2,440 of 2,444 entries sharing
+      # the exact same firstSeen timestamp, down to the millisecond.
+      # `firstSeen` was consequently useless everywhere it's read (the web
+      # UI's per-day tabs, and outreach.ts's triggered-lane detection added
+      # the same day). Pull the real one first, same fetch this fix already
+      # uses in outreach.yml.
+      # `|| true`: a failed fetch must degrade to today's prior behavior
+      # (compare against the stale commit, reset firstSeen for everything
+      # that doesn't match), not fail the run — the hunt itself doesn't
+      # depend on this file being current, only the bookkeeping does.
+      - name: Restore live catalogue from the data branch
+        run: |
+          curl -fsSL --retry 2 -o data/jobs.json "https://raw.githubusercontent.com/$GITHUB_REPOSITORY/data/jobs.json" || true
+
       # Only Google and Meta need a real browser; everything else is a JSON call.
       # The download is ~115 MB, so it's cached — otherwise it would dominate the
       # runtime of an otherwise six-minute job.
@@ -149,7 +172,7 @@ jobs:
       # to take the real pipeline down with it again.
       - name: Report suspected ATS outage
         continue-on-error: true
-        if: "!inputs.test_email && (steps.hunt.outputs.outage_started != '' || steps.hunt.outputs.outage_recovered == '1')"
+        if: "!inputs.test_email && (steps.hunt.outputs.outage_started != '' || steps.hunt.outputs.outage_recovered != '')"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           STARTED: ${{ steps.hunt.outputs.outage_started }}
@@ -166,9 +189,18 @@ jobs:
               fi
             done
           fi
-          if [ "$RECOVERED" = "1" ]; then
-            for number in $(gh issue list --repo "$GITHUB_REPOSITORY" --label outage --state open --json number --jq '.[].number'); do
-              gh issue close "$number" --repo "$GITHUB_REPOSITORY" --comment "Cleared — the run no longer sees most of this platform's boards failing."
+          # Close per platform, matching the volume-drop step below. Closing every
+          # open outage issue on any recovery was wrong in both directions: it
+          # shut tickets for platforms still failing, and — because recovery
+          # only fired when the ENTIRE suspected set emptied — it never fired at
+          # all while Darwinbox stayed bot-walled, so eight issues sat open for a
+          # week. See outageChanges() in src/outage.ts.
+          if [ -n "$RECOVERED" ]; then
+            for ats in ${RECOVERED//,/ }; do
+              for number in $(gh issue list --repo "$GITHUB_REPOSITORY" --label outage --state open \
+                --search "in:title $ats" --json number --jq '.[].number'); do
+                gh issue close "$number" --repo "$GITHUB_REPOSITORY" --comment "Cleared — the run no longer sees most of this platform's boards failing."
+              done
             done
           fi
 

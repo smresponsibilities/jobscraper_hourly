@@ -12,3 +12,10 @@ out/
 # Common Crawl sweep needs it to know which block to scan next.
 state/seen.json
 state/contact-sweep.json
+
+# Real people's work addresses plus send/touch history. Lives in the PRIVATE
+# outreach-data repo via publish-outreach.ts, never here — see that file's
+# header. This entry exists because a local `npm run outreach` run writes it
+# unconditionally; without the ignore, one `git add -A` on a dev machine would
+# be enough to leak it into this public repo's history.
+state/contacted.json

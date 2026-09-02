@@ -417,7 +417,7 @@ async function main(): Promise<void> {
       `new_count=${wroteEmail ? deduped.length : 0}\nsubject=${subject(freshForEmail, staleForEmail)}\n` +
         `hour=${new Date().getUTCHours()}\n` +
         `outage_started=${outageDelta.started.join(',')}\n` +
-        `outage_recovered=${outageDelta.recovered ? '1' : ''}\n` +
+        `outage_recovered=${outageDelta.recovered.join(',')}\n` +
         `volume_dropped=${volumeDelta.started.join(',')}\n` +
         `volume_recovered=${volumeDelta.recovered.join(',')}\n`,
     );

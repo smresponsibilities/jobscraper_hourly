@@ -124,9 +124,32 @@ function report(sweep: Sweep): void {
   }
 }
 
+/**
+ * The full sweep is gitignored, which means GitHub Actions has never had any of
+ * it: `outreach.yml` builds its batch on a runner where `loadSweepLower()`
+ * reads an empty object, so every company falls back to guessing its GitHub org
+ * from an ATS token. That discards the 3,238 companies whose real org this
+ * sweep had already resolved — including the 1,637 whose domain it verified —
+ * and it is why a hosted batch finds contacts for a fraction of the companies a
+ * local run does.
+ *
+ * So write a second, committed file alongside it. It carries only the three
+ * fields resolveRecipients() actually reads, and only for companies that
+ * resolved to something, which is 154 KB rather than 1.6 MB. Nothing personal
+ * is in it — no addresses, no names, only org/domain/matched — so unlike the
+ * batch itself it is safe in this public repo.
+ */
+const INDEX_PATH = 'state/contact-sweep-index.json';
+
 const save = async (sweep: Sweep): Promise<void> => {
   await mkdir('state', { recursive: true });
   await writeFile(SWEEP_PATH, `${JSON.stringify(sweep, null, 2)}\n`, 'utf8');
+  const index = Object.fromEntries(
+    Object.entries(sweep)
+      .filter(([, r]) => r.org)
+      .map(([name, r]) => [name, { org: r.org, domain: r.domain, matched: r.matched }]),
+  );
+  await writeFile(INDEX_PATH, `${JSON.stringify(index)}\n`, 'utf8');
 };
 
 const args = process.argv.slice(2);

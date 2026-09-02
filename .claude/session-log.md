@@ -59,3 +59,10 @@
 - 2026-08-23T21:34:38Z session ended, HEAD: 085e728 feat: deploy the cold-emailer — Actions button builds batch, Vercel serves it, clicks record via GitHub API
 - 2026-08-23T22:24:07Z session ended, HEAD: 1dbb71d feat: fix and secure the deployed cold-emailer, add outreach button + daily 9am IST run
 - 2026-08-23T22:25:31Z session ended, HEAD: 1dbb71d feat: fix and secure the deployed cold-emailer, add outreach button + daily 9am IST run
+- 2026-09-01T13:50:46Z session ended, HEAD: 4b9548b feat(contacts): ApplyBolt adapter, off by default
+- 2026-09-01T14:06:00Z session ended, HEAD: 4b9548b feat(contacts): ApplyBolt adapter, off by default
+- 2026-09-01T14:27:05Z session ended, HEAD: 4b9548b feat(contacts): ApplyBolt adapter, off by default
+- 2026-09-01T18:39:04Z session ended, HEAD: 4b9548b feat(contacts): ApplyBolt adapter, off by default
+- 2026-09-01T18:54:01Z session ended, HEAD: 4b9548b feat(contacts): ApplyBolt adapter, off by default
+- 2026-09-01T19:18:54Z session ended, HEAD: 4b9548b feat(contacts): ApplyBolt adapter, off by default
+- 2026-09-02T06:30:24Z session ended, HEAD: 4b9548b feat(contacts): ApplyBolt adapter, off by default

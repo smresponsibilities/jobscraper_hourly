@@ -39,6 +39,28 @@ guess (`swiggy.in`, `juspay.in`, `cred.club` all defeat name-guessing).
 - Also exports pattern inference: the eight standard corporate shapes
   (`first.last`, `firstlast`, …) inferred from name/address pairs, so one
   confirmed address yields every colleague's.
+- **Transport switched from REST to GraphQL (2026-09-02)**, same data, same
+  guards, no yield change — this is an efficiency fix, not a new source. The
+  REST path cost `1 + repoLimit` calls per company (list repos, then commits
+  per repo) against the 5000/hr token budget; GraphQL batches the same shape
+  into one query. Live-measured: `organization(repoLimit: 3, commitLimit:
+  100)` against a real org came back `cost: 1`. Only matters once call volume
+  is high enough to approach the ceiling — `outreach.yml` moving from once a
+  day to hourly is exactly that shift, so this shipped alongside it rather
+  than waiting for a rate-limit incident to force it.
+- **The full sweep (`state/contact-sweep.json`) is gitignored — deliberately,
+  it's 1.6MB and rewritten wholesale — which meant every hosted run on a
+  GitHub Actions runner started with zero of it**, re-guessing every company's
+  org from an ATS token instead of using the 3,238 already-resolved orgs this
+  sweep found locally. Found 2026-09-01 from a live run's logs, where
+  companies the sweep had already matched were still logging "no GitHub org."
+  Fixed with a second, committed file: `state/contact-sweep-index.json`
+  (233KB — org/domain/matched only, no addresses, so it's safe in this public
+  repo unlike the full sweep). `loadSweepLower()` in `outreach.ts` prefers the
+  full local sweep and falls back to this index when the full file is absent
+  (i.e. every hosted run). Regenerate it after any local `contacts-sweep` run
+  via the sweep's own `save()` — no separate command needed, it writes both
+  files together.
 
 ### 2. npm registry maintainers — built (2026-08-26)
 
@@ -47,8 +69,12 @@ for the same reason commits are. Covers companies whose GitHub org is named
 nothing like the company, or who ship packages without a public org.
 
 - **Code:** `npmContacts()` in `src/contact-sources.ts`; wired into
-  `resolveRecipients()` in `src/outreach.ts` as the fallback when git finds
-  no corporate-domain commits. Same `domainMatchesOrg` guard applies.
+  `resolveRecipients()` in `src/outreach.ts`'s `alternates()` as the fallback
+  when git finds no corporate-domain commits *or* the commits it found belong
+  to outside contributors. That second case used to `return []` outright
+  instead of falling through — fixed 2026-09-02 after a live run showed Citi,
+  Sprinklr, Logitech, LSEG and Unisys all dying there while their npm/PyPI
+  packages went unqueried. Same `domainMatchesOrg` guard applies regardless.
 - **Live test (2026-08-26):** "Razorpay" → 5 real addresses on the first run,
   including `vivek.shindhe@razorpay.com` — independently re-confirming the
   `first.last` pattern the 2026-08-22 hand probe found.
@@ -76,6 +102,34 @@ and must never ship). Companies whose package is named nothing like them
   the 2026-08-22 measurement. "Razorpay"/"Zerodha" → nothing corporate
   (expected: Razorpay's PyPI entry has no email, Zerodha's package is named
   `kiteconnect`).
+
+### 2c. Maven Central developer emails — built (2026-09-02)
+
+Third registry-metadata source, third fallback after npm/PyPI, and a
+different mechanism than either: Maven Central's search API returns no
+author/email fields at all, so the address comes from the artifact's own POM
+file, which corporate Java/Android SDKs commonly publish a `<developers>`
+block into.
+
+- **Code:** `mavenContacts()` in `src/contact-sources.ts`; third fallback in
+  `outreach.ts`'s `alternates()`, after npm and PyPI both come up empty.
+  `groupId` is guessed under the reverse-domain prefixes real corporate
+  packages use (`com.`, `io.`, `org.`, `in.` + slug) and searched via Maven
+  Central's Solr API; the first few matching artifacts' POMs are fetched and
+  scanned for a `<developers><developer><email>` block, paired per-developer
+  so a multi-author POM can't cross-wire a name to the wrong email. Same
+  `domainMatchesOrg`/`isCorporateAddress` guards as everywhere else.
+- **Live test (2026-09-02):** "Razorpay" → `developers@razorpay.com` via
+  `com.razorpay:standard-core`'s POM, matching what a manual fetch of
+  `com.razorpay:razorpay-java`'s POM showed independently.
+- **crates.io and RubyGems checked for the same trick and rejected — both are
+  real dead ends, not just narrow.** crates.io's public API never exposes an
+  email anywhere; `/api/v1/crates/{name}/owners` returns only a linked GitHub
+  username. RubyGems' `email` field came back `null` on every real gem probed
+  (`stripe`, `twilio`, `sendgrid-ruby`, `razorpay`, `rails`) — the field
+  exists in the API shape but the registry doesn't populate it from gemspecs
+  anymore. Both confirmed live, not from documentation, before writing any
+  code against them.
 
 ### 3. Role addresses — built as candidates, verification pending
 
@@ -186,7 +240,7 @@ never fetching linkedin.com. With ApplyBolt live again, this recedes further.
 | File | Contents |
 | --- | --- |
 | `src/contacts.ts` | Git-commit source, `domainMatchesOrg`, pattern inference/factory, freemail & machine filters |
-| `src/contact-sources.ts` | npm registry, website scanner, role addresses, `contact-find` CLI |
+| `src/contact-sources.ts` | npm/PyPI/Maven registries, website scanner, role addresses, `contact-find` CLI |
 | `src/outreach.ts` | `resolveRecipients()` ladder wiring, SMTP verify + Gravatar path |
 | `src/contacts-sweep.ts` | Whole-corpus measurement sweep (`npm run contacts-sweep`) |
 | `src/verify-email.ts` | Raw SMTP RCPT probing with catch-all control (local-only: port 25 blocked on Actions runners) |

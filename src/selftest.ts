@@ -1,6 +1,6 @@
 import { classify } from './classify.js';
 import { isFreshEnough, locationMatches, normalizeForDedup, roleFamily } from './filter.js';
-import { extractNames, FUNDING, INVESTORS, LONE_ONLY, TRAILING_ONLY } from './news-extract.js';
+import { extractNames, headlineItems, FUNDING, INVESTORS, LONE_ONLY, TRAILING_ONLY } from './news-extract.js';
 import { detectOutage, outageChanges } from './outage.js';
 import { selectBoards } from './select-boards.js';
 import { epochToIso } from './fetchers/eightfold.js';
@@ -18,7 +18,7 @@ import {
   isTrivialCommit,
   factScore,
 } from './contacts.js';
-import { bodySimilarity, bounceGateDecision, displayName, domainRiskTally, postedAgeDays, renderBody, touchGap } from './outreach.js';
+import { bodySimilarity, bounceGateDecision, displayName, domainRiskTally, isTriggered, postedAgeDays, renderBody, touchGap, TRIGGER_WINDOW_DAYS } from './outreach.js';
 import { applyboltLookup, extractEmails, packageNameCandidates, parseApplyBolt, parseDmarcRua, roleAddresses } from './contact-sources.js';
 import { controlAddress, mxProvider, rejectionIsMeaningful } from './verify-email.js';
 import type { Company, Industry, RawJob } from './types.js';
@@ -254,14 +254,21 @@ check(
   '',
 );
 check(
-  'clearing the entire suspected set is reported as recovered',
-  outageChanges({ darwinbox: true }, new Set()).recovered,
-  true,
+  'a platform leaving the suspected set is reported as recovered',
+  outageChanges({ darwinbox: true }, new Set()).recovered.join(','),
+  'darwinbox',
 );
 check(
   'no prior outage and none now is not a recovery',
-  outageChanges({}, new Set()).recovered,
-  false,
+  outageChanges({}, new Set()).recovered.join(','),
+  '',
+);
+// The bug this replaced: recovery keyed on the whole set emptying, so one
+// permanently-suspected platform pinned every other platform's issue open.
+check(
+  'one platform recovering is reported even while another stays suspected',
+  outageChanges({ darwinbox: true, phenom: true }, new Set(['darwinbox'])).recovered.join(','),
+  'phenom',
 );
 
 // Bot-wall classification (ported from fastCRW's antibot signals). The Darwinbox
@@ -414,6 +421,23 @@ check('hot boards are never sacrificed to the ceiling', allHot.polling.length, 3
 check('no cold slots remain when hot overflows', allHot.cold, 0);
 
 console.log('news extraction (discover-news.ts)');
+// headlineItems() pairs each title with its own <item>'s <link> — the digest
+// this feeds used to ship bare names with no way to verify them against the
+// actual article, which is exactly the gap that prompted adding it.
+const rssSample = `<rss><channel>
+<item><title>Zypp Electric raises Series B</title><link>https://example.com/zypp</link></item>
+<item><title><![CDATA[NewTap Finance bags seed round]]></title><link>https://example.com/newtap</link></item>
+<item><title>No link on this one somehow</title></item>
+</channel></rss>`;
+check(
+  'title paired with its own item link',
+  JSON.stringify(headlineItems(rssSample)),
+  JSON.stringify([
+    { title: 'Zypp Electric raises Series B', link: 'https://example.com/zypp' },
+    { title: 'NewTap Finance bags seed round', link: 'https://example.com/newtap' },
+    { title: 'No link on this one somehow', link: '' },
+  ]),
+);
 // All cases below are real headlines pulled from the six live RSS feeds
 // during an audit — each one was a genuine extraction bug, not a
 // hypothetical. "Series B/C" leaking as a fake candidate, "FY27" surviving
@@ -639,6 +663,17 @@ check('unrelated big-company domain', domainMatchesOrg('augusthealth', 'intuit.c
 check('unrelated vendor domain', domainMatchesOrg('authentic8', 'thinstuff.at'), false);
 // Short names are prefix-matched, or "cred" would match "credentials.io".
 check('short name must prefix, not merely appear', domainMatchesOrg('cred', 'accredited.com'), false);
+// Real misses from a live outreach run (2026-09-01): a 2-letter org whose
+// domain is exactly that slug used to die on the old 3-char floor before the
+// exact-label check ever ran.
+check('two-letter org, exact-label domain', domainMatchesOrg('bp', 'bp.com'), true);
+// A distinctive short domain label contained in a longer flattened org name —
+// the reverse of the "razorpaycorp" case above.
+check('short domain label inside long org name', domainMatchesOrg('rockwellautomation', 'ra.rockwell.com'), true);
+// The reverse direction still needs its own length floor, or a generic short
+// label ("tech", "labs") would spuriously match any long org name containing
+// that substring.
+check('reverse match rejects generic short labels', domainMatchesOrg('technovasolutions', 'unrelated.tech.io'), false);
 
 console.log('regional freemail is not a corporate address');
 // qq.com reached the first sweep as a "company domain" — Chinese and Korean
@@ -714,12 +749,26 @@ console.log('outreach lane gating');
 // Workday's relative strings must land in the triggered lane, not parse as null.
 check('posted today is fresh', postedAgeDays('Posted Today'), 0);
 check('posted N days ago parses', postedAgeDays('Posted 30+ Days Ago'), 30);
+check('posted yesterday is one day, not unknown', postedAgeDays('Posted Yesterday'), 1);
 const isoAge = postedAgeDays(new Date(Date.now() - 5 * 86_400_000).toISOString())!;
 check('iso date age ~5d', isoAge >= 4 && isoAge <= 6, true);
 check('garbage date is unknown, never fresh', postedAgeDays('whenever'), null);
 check('missing date is unknown', postedAgeDays(undefined), null);
 check('lowercase catalogue name displays capitalized', displayName('valtech'), 'Valtech');
 check('mixed-case names pass through', displayName('WorldQuant'), 'WorldQuant');
+
+// isTriggered() — fresh by EITHER signal, since firstSeen only became
+// trustworthy once catalog.ts started merging against the live catalogue
+// (hunt.yml fix, 2026-09-02); before that almost every entry's firstSeen
+// read as "now" regardless of how old the posting actually was.
+const catalogJob = (postedAt?: string, firstSeen?: string) => ({
+  id: 'x', title: 't', company: 'c', url: '', postedAt, firstSeen,
+});
+check('fresh postedAt alone triggers', isTriggered(catalogJob('Posted Today', undefined)), true);
+check('fresh firstSeen alone triggers, even with a stale postedAt', isTriggered(catalogJob('Posted 30+ Days Ago', daysAgo(1))), true);
+check('stale on both signals does not trigger', isTriggered(catalogJob('Posted 30+ Days Ago', daysAgo(90))), false);
+check('neither signal present does not trigger', isTriggered(catalogJob(undefined, undefined)), false);
+check('firstSeen just outside the window does not trigger', isTriggered(catalogJob(undefined, daysAgo(TRIGGER_WINDOW_DAYS + 1))), false);
 
 console.log('outreach risk memory');
 const tally = domainRiskTally({
@@ -772,6 +821,7 @@ check('sparse window stays quiet', bounceGateDecision([mk([1], 1), mk([2]), mk([
 // --- Phase A: salary extraction, work-mode/visa classification, repost state.
 import { extractSalary } from './salary.js';
 import { updateReposts } from './state.js';
+import { REPOST_WINDOW_DAYS } from './config.js';
 import type { RepostState } from './types.js';
 
 console.log('salary extraction');
@@ -800,9 +850,15 @@ check('visa sponsorship detected', classify({ externalId: 'x', title: 'Engineer'
 check('visa absent stays false', classify({ externalId: 'x', title: 'Engineer', location: 'Pune', url: '' }, 'tech').visa, false);
 
 console.log('repost tracking (board-scoped)');
-const T0 = '2026-08-01T00:00:00Z';
-const T1 = '2026-08-02T00:00:00Z';
-const T3 = '2026-08-04T00:00:00Z';
+// Relative to now, not fixed dates: updateReposts() prunes anything older than
+// REPOST_WINDOW_DAYS against the real clock, so hardcoded timestamps quietly
+// become "expired" once the wall clock passes them and the suite starts
+// failing on a date rather than on a bug. It did: these were 2026-08-01/02/04
+// and went red on 2026-09-01, thirty-one days later. Reuses the daysAgo
+// helper already defined above.
+const T0 = daysAgo(3);
+const T1 = daysAgo(2);
+const T3 = daysAgo(1);
 let rs: RepostState = updateReposts({}, ['a:1:x'], 'a:1:', T0);
 check('live id tracked clean', rs['a:1:x']?.gone, undefined);
 rs = updateReposts(rs, [], 'a:1:', T1);
@@ -816,9 +872,9 @@ rs = updateReposts(rs, [], 'a:1:', T1);
 check('foreign board entry untouched by this poll', rs['b:2:y']?.gone, undefined);
 check('own board entry got gone stamp', Boolean(rs['a:1:x']?.gone), true);
 // Window expiry: an entry last seen long ago is pruned even while absent.
-const OLD = '2026-06-01T00:00:00Z';
+const OLD = daysAgo(REPOST_WINDOW_DAYS + 1);
 rs = { 'stale:x': { last: OLD } };
-rs = updateReposts(rs, [], 'stale:', '2026-08-04T00:00:00Z');
+rs = updateReposts(rs, [], 'stale:', T3);
 check('expired absent entry pruned', rs['stale:x'], undefined);
 
 console.log('board volume anomaly detection');

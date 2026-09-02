@@ -252,6 +252,81 @@ export async function pypiContacts(company: string, limit = 10): Promise<PypiCon
   return [...byEmail.values()];
 }
 
+// ── 2c. Maven Central developer emails ──────────────────────────────────────
+
+export interface MavenContact extends RegistryContact {}
+
+/**
+ * Same idea as npm/PyPI against a third registry, but a different mechanism:
+ * Maven Central's search API returns no author/email fields at all, so the
+ * address has to come from the artifact's own POM file, which corporate Java/
+ * Android libraries commonly publish a `<developers>` block into.
+ *
+ * Checked crates.io and RubyGems for the same trick first and both are dead
+ * ends — crates.io's public API only ever returns a linked GitHub username via
+ * `/owners`, never an email, and RubyGems' `email` field came back null on
+ * every real gem probed (stripe, twilio, sendgrid-ruby, razorpay, rails).
+ * Maven Central's POM path is real: `com.razorpay:razorpay-java`'s POM
+ * live-verified `developers@razorpay.com` in a `<developers>` block.
+ *
+ * `groupId` is guessed from the company slug under the handful of prefixes
+ * corporate Java packages actually use (reverse-domain convention), not
+ * searched freely — Maven Central's search API has no free-text "packages
+ * roughly named X" mode like npm's.
+ */
+const MAVEN_GROUP_PREFIXES = ['com', 'io', 'org', 'in'];
+
+export async function mavenContacts(company: string, limit = 10): Promise<MavenContact[]> {
+  const slug = company.toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (slug.length < 2) return [];
+
+  const byEmail = new Map<string, MavenContact>();
+  for (const prefix of MAVEN_GROUP_PREFIXES) {
+    const groupId = `${prefix}.${slug}`;
+    let hits: { g: string; a: string; latestVersion: string }[];
+    try {
+      const search = (await getJson(
+        `https://search.maven.org/solrsearch/select?q=${encodeURIComponent(`g:${groupId}`)}&rows=5&wt=json`,
+      )) as { response?: { docs?: { g: string; a: string; latestVersion: string }[] } };
+      hits = search.response?.docs ?? [];
+    } catch {
+      continue;
+    }
+    for (const hit of hits.slice(0, 3)) {
+      const groupPath = hit.g.replace(/\./g, '/');
+      const pomUrl = `https://repo1.maven.org/maven2/${groupPath}/${hit.a}/${hit.latestVersion}/${hit.a}-${hit.latestVersion}.pom`;
+      let xml: string;
+      try {
+        const res = await fetch(pomUrl, { headers: { 'user-agent': 'jobscraper-next' }, signal: AbortSignal.timeout(10_000) });
+        if (!res.ok) continue;
+        xml = await res.text();
+      } catch {
+        continue;
+      }
+      // Scoped to the <developers> block, and to one <developer> entry at a
+      // time — a POM's <organization>/<scm> tags can carry unrelated
+      // addresses (a parent-POM contact, a CI bot), and pairing name to
+      // email by position rather than by shared <developer> block would
+      // mismatch them the moment an artifact lists more than one person.
+      const block = /<developers>([\s\S]*?)<\/developers>/.exec(xml)?.[1] ?? '';
+      for (const devMatch of block.matchAll(/<developer>([\s\S]*?)<\/developer>/g)) {
+        const dev = devMatch[1]!;
+        const email = /<email>\s*([^<\s]+@[^<\s]+)\s*<\/email>/.exec(dev)?.[1]?.toLowerCase().trim();
+        if (!email || !isCorporateAddress(email)) continue;
+        const domain = email.split('@')[1] ?? '';
+        if (!domain || !domainMatchesOrg(company, domain)) continue;
+        if (!byEmail.has(email)) {
+          const name = /<name>\s*([^<]+?)\s*<\/name>/.exec(dev)?.[1] ?? email.split('@')[0]!;
+          byEmail.set(email, { name, email, viaPackage: hit.a });
+        }
+        if (byEmail.size >= limit) return [...byEmail.values()];
+      }
+      await sleep(150);
+    }
+  }
+  return [...byEmail.values()];
+}
+
 // ── 7. ApplyBolt public endpoint ─────────────────────────────────────────────
 
 export interface ApplyBoltResult {
