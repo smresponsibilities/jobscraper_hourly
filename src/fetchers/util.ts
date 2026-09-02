@@ -65,11 +65,22 @@ export async function getJson<T>(url: string, init?: RequestInit): Promise<T> {
   let lastError: Error | undefined;
 
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    const res = await fetch(url, {
-      ...init,
-      headers: { 'user-agent': UA, accept: 'application/json', ...(init?.headers ?? {}) },
-      signal: AbortSignal.timeout(30_000),
-    });
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        ...init,
+        headers: { 'user-agent': UA, accept: 'application/json', ...(init?.headers ?? {}) },
+        signal: AbortSignal.timeout(30_000),
+      });
+    } catch (error) {
+      // A thrown fetch (socket reset, DNS blip, timeout) is not classifiable by
+      // status code but is exactly as transient as a 503 — retry it the same
+      // way instead of failing the whole run on one flaky connection.
+      lastError = error instanceof Error ? error : new Error(String(error));
+      if (attempt === MAX_ATTEMPTS - 1) throw lastError;
+      await sleep(1000 * 2 ** attempt);
+      continue;
+    }
 
     // The body is read once and kept as text so a failure can be classified
     // before parsing — a Cloudflare challenge served with a 200 status would
