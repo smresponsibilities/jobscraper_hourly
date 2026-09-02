@@ -113217,5 +113217,53 @@
     "token": "adswerveinc",
     "industry": "tech",
     "source": "discovered"
+  },
+  {
+    "name": "AbhiBus",
+    "ats": "smartrecruiters",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "AbhiBus"
+  },
+  {
+    "name": "Build AI",
+    "ats": "ashby",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "build-ai"
+  },
+  {
+    "name": "Cbcrc",
+    "ats": "workday",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "cbcrc",
+    "host": "wd3",
+    "site": "CBC_Radio-Canada_Jobs"
+  },
+  {
+    "name": "North America",
+    "ats": "workday",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "cengage",
+    "host": "wd5",
+    "site": "cengagenorthamericacareers"
+  },
+  {
+    "name": "Thekineticgroup",
+    "ats": "workday",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "thekineticgroup",
+    "host": "wd1",
+    "site": "external_tkg"
+  },
+  {
+    "name": "Toro TMS",
+    "ats": "greenhouse",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "torotms"
   }
 ]
