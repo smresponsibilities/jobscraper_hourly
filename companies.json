@@ -113210,5 +113210,12 @@
     "host": "wd3",
     "site": "advario",
     "lastPolledAt": "2026-09-02T12:16:04.257Z"
+  },
+  {
+    "name": "adswerveinc",
+    "ats": "greenhouse",
+    "token": "adswerveinc",
+    "industry": "tech",
+    "source": "discovered"
   }
 ]
