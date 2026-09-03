@@ -304,23 +304,24 @@ Four stacked delays, in order of size:
    that run even though roles were found). These look like "missed" jobs but
    are working as designed.
 
-## Open-jobs absorption — in progress, pick up here (2026-09-03)
+## Open-jobs absorption — complete (2026-09-03)
 
-Multi-session task: absorbing everything worth taking from
+Multi-session task, now done: absorbing everything worth taking from
 `github.com/elliottdehn/open-jobs` (CC0 1.0 Universal — public domain, no
 attribution owed), a free daily crawler over ~65,000 job boards. User's
 instruction was "take everything." Full 9-phase plan, ordered by value per
-effort, is at `C:\Users\sm\.claude\plans\tranquil-noodling-whistle.md` — **read
-that file before continuing this work**, it has the reasoning behind every
-phase, not just the checklist below. The clone is at
-`C:\Users\sm\AppData\Local\Temp\claude\D--Jobscraper-next\3dce1f2b-7ecf-45d9-a9be-47aa48299f8a\scratchpad\open-jobs`
-(session-specific temp path — may not exist next session; re-clone if Phase
-6/7/8 need to read its source again).
+effort, is at `C:\Users\sm\.claude\plans\tranquil-noodling-whistle.md` — the
+reasoning behind every phase lives there, not just the summary below. The
+open-jobs clone was at a session-specific temp path that no longer exists;
+re-clone (`git clone github.com/elliottdehn/open-jobs`) if a future session
+needs to read its source again (e.g. for Phase 7's remaining tranches).
 
-**Done and committed: Phases 1-5** (`e92804f`, `066f0cf`, `3085ef5`, `271cfb2`,
-`aca08f9` — one commit per phase, not yet pushed as of this edit; fetch/merge
-against `origin/main` first, per this file's own git-workflow section, since
-the hourly bot commits `companies.json` constantly). Every phase was verified
+**Done and committed: all 9 phases** (`e92804f`, `066f0cf`, `3085ef5`,
+`271cfb2`, `aca08f9` for 1-5; `55f8c9b`, `ffb2106`, `3ffb56b`, `0969384`,
+`b6348f1`, `a5893de`, `05d6ae2` for 6-9 — not yet pushed as of this edit;
+fetch/merge against `origin/main` first, per this file's own git-workflow
+section, since the hourly bot commits `companies.json` constantly). Every
+phase was verified
 against the live corpus or a live board, not just typechecked. Splitting five
 phases of already-interleaved working-tree changes into one commit per phase
 after the fact (git hunks alone weren't enough — several files needed manual
@@ -395,74 +396,88 @@ instead of batching multiple phases uncommitted, so this doesn't repeat.
   13,175-board corpus: seeded selection identical to pre-split ordering, empty
   board-state degrades to a full clean sweep rather than freezing.
 
-**Still open: Phases 6-9. Phase 5 done (2026-09-03), not yet run for real.**
+**All 9 phases done and committed (2026-09-03).** `companies.json` went from
+13,175 (start of this multi-session task) to 13,679 — every phase measured
+against the real corpus or a live board, not just typechecked, per this
+project's own standing rule.
 
-- **Phase 5 — Workday site rediscovery on existing tenants. Code done,
-  tested, not yet executed against the full corpus.** Ported
-  `discoverSites`/`parseRobotsSites` into `src/fetchers/workday.ts` from
-  open-jobs' `backend/src/ats/workday.ts:29-51` (GET `/robots.txt`, parse
-  `Allow: /<site>/` + `Sitemap: .../<site>/siteMap.xml`, exclude
-  `refreshFacet`/`events`/`wday`) — `parseRobotsSites` is pure and unit-tested
-  in `selftest.ts` (5 fixture cases: Allow-wins, Disallow-fallback,
-  Sitemap-only, `NOT_SITES` exclusion, empty). `discoverSites(company)` is the
-  fetch wrapper, 404/422/500 -> `'gone'`. Live-verified directly against the
-  three cases already confirmed pre-port: `broadcom.wd1` -> `External_Career`
-  (382 jobs, real Bangalore/Hyderabad roles — the "Known gaps" section above
-  is now corrected), `cibc.wd3` -> `search` + `campus` (the second one not
-  previously tracked), `walmart.wd5` -> `'gone'` (consistent with it being
-  genuinely unreachable). Wired as `bulk-import.ts --rediscover`: walks every
-  existing `ats === 'workday'` row (deduped by tenant, i.e. `token:host`),
-  calls `discoverSites` once per tenant through the same
-  `HOST_CONCURRENCY.workday`-capped `mapLimitByKey`, and any site not already
-  in `boardKey`'s known set becomes a candidate through the **existing**
-  validate-live + checkpoint pipeline (`rediscoverCandidates()` in
-  `bulk-import.ts`) — no new CLI, no new validation path. Did not port
-  open-jobs' in-adapter `CONCURRENCY = 6` fan-out, deliberately — this repo
-  already rate-limits Workday per-pod via `HOST_CONCURRENCY.workday = 3`,
-  sized after a real 429 incident; a second parallelism layer would silently
-  multiply it by 6. **Not yet run against the real ~1,353-tenant corpus** —
-  `npm run bulk-import -- --rediscover --bar india` is the next step, ideally
-  with `--limit` first to sanity-check yield before the full pass, per the
-  plan's own verify step (eyeball actual job titles on the first 20 discovered
-  sites — a resolved site is not proof of a useful board; watch for the
-  `Private_Posting_No_TMP` class and add to `NOT_SITES` if more surface).
+- **Phase 5 — Workday site rediscovery, run for real.** Code as described
+  below, then actually executed against the full ~1,351-tenant corpus:
+  3,011 untracked sites found, 1,623 live, **198 cleared the India bar**.
+  `discoverSites`/`parseRobotsSites` ported into `src/fetchers/workday.ts`
+  from open-jobs' `backend/src/ats/workday.ts:29-51` (GET `/robots.txt`,
+  parse `Allow: /<site>/` + `Sitemap: .../<site>/siteMap.xml`, exclude
+  `refreshFacet`/`events`/`wday`) — `parseRobotsSites` is pure and
+  unit-tested in `selftest.ts`. Live-verified against the three cases already
+  confirmed pre-port: `broadcom.wd1` -> `External_Career` (382 jobs, real
+  Bangalore/Hyderabad roles — the "Known gaps" section above is corrected),
+  `cibc.wd3` -> `search` + `campus`, `walmart.wd5` -> `'gone'`. Wired as
+  `bulk-import.ts --rediscover`, feeding the existing validate-live +
+  checkpoint pipeline — no new CLI. Spot-checked the alarming-looking site
+  names that surfaced (`SPGI_Internal`, `X_GhostSite_TheEdgeinAsiaRecruitment
+  PrivateLimited`, `hidden-private-pawn-temp-gateway-...`) against real job
+  titles: all genuine, distinct India roles, not junk or duplicates — the
+  plan's own "distrust this class" caution didn't end up firing.
 
-- **Phase 6 — Workday hostname import (3,830 slugs from open-jobs'
-  `slugs.json`).** Needs Phase 5's `discoverSites` for boards with no `site`
-  yet. Slowest tranche in the whole plan — budget hours, run `--limit 300`
-  first and extrapolate India-yield before the full pass.
+- **Phase 6 — Workday hostname import, run for real.** `bulk-import.ts`
+  gained `--file <path>`, generalizing Phase 5's site-discovery step to a
+  second tenant source (a local hostname list instead of companies.json's own
+  Workday rows) — `discoverCandidateSites()` (renamed from
+  `rediscoverCandidates`) is shared by both. Run against all 3,830 hostnames
+  from open-jobs' `slugs.json`: 7,835 untracked sites, 1,673 live, **176
+  cleared the India bar** (126 + 50 across two runs — the first was
+  interrupted mid-validation by a session teardown and resumed cleanly from
+  its own checkpoint, zero data loss, exactly as designed).
 
-- **Phase 7 — Drop-in slug import (15,168 slugs on ATS already supported).**
-  Start with `workable` alone (6,891 slugs) — it is in `FETCHERS` but missing
-  from `bulk-import.ts`'s `IMPORTABLE` array, a one-line fix, and all 11
-  existing workable boards are already hot. Then greenhouse (4,162) -> lever
-  (1,956) -> ashby (1,416) -> smartrecruiters (743), one tranche at a time.
-  Keep `--bar india`, not `--bar live` — the math in the plan file shows why.
+- **Phase 7 — Drop-in slug import, first tranche done.** `workable` added to
+  `IMPORTABLE` (one line) and given `HOST_CONCURRENCY.workable = 6`. Run
+  against kalil0321's full workable CSV: 4,618 untracked candidates, 1,233
+  live, **122 cleared the India bar** after removing one service-company
+  false-keep (see below). **Remaining tranches not run**: greenhouse (4,162),
+  lever (1,956), ashby (1,416), smartrecruiters (743) — same mechanism, just
+  `--platform <name> --bar india`, one at a time per the plan (each platform's
+  yield is separately measurable that way, and a failure only loses one
+  tranche). Worth doing in a future session, not urgent.
 
-- **Phase 8 — New ATS adapters, gated.** Build only `recruitee` -> `breezy`
-  -> `personio` (in that order, stopping if either of the first two fails);
-  skip the other 11 platforms (paylocity/paycom/dayforce/etc.) — reasoning
-  for each is in the plan file. The 2% rule: if a live-validated sample comes
-  back under 2% India-yield, delete the adapter rather than keep dead code.
+- **Phase 8 — New ATS adapter, gated — failed, correctly deleted.** Built
+  `recruitee` (GET `https://<token>.recruitee.com/api/offers/`, unpaginated,
+  full description inline, no `enrich()` needed — same shape as Ashby).
+  `bulk-import.ts --file <path> --platform X` generalized again for
+  non-Workday platforms: bare subdomain slugs, no site to resolve. Live gate
+  sample (`--limit 400` of open-jobs' 3,287 recruitee slugs): **6/400 = 1.5%,
+  under the 2% bar.** Deleted the adapter, its `Ats` entry, and the 6 company
+  rows the sample had already kept (a row with no matching `FETCHERS` entry
+  would crash the next hourly poll) — same discipline as the reverted
+  sitemap-detection experiment. Per the plan's own sequencing (stop if either
+  of the first two adapters fails), `breezy` and `personio` were never built.
 
-- **Phase 9 — Contacts: wire one function, skip the rest.** `websiteContacts()`
-  in `src/contact-sources.ts:130` is written, tested, and never called from
-  `resolveRecipients()` — three lines to wire into `alternates()` in
-  `src/outreach.ts`. Explicitly skip porting open-jobs' `candidate_domains`
-  technique (job-URL hostname minus ATS domain) — measured against the live
-  catalogue at only 4.9% coverage, worse than the 145 real hostnames
-  `companies.json` already carries as `token` for several ATSes.
+- **Phase 9 — Contacts: `websiteContacts()` wired.** `alternates()` in
+  `src/outreach.ts` now tries a mailto/plain-text scan of the company's own
+  site as a fourth rung (after npm/PyPI/Maven), gated to the four ATSes whose
+  `token` is a real company hostname rather than an ATS subdomain (`phenom`,
+  `icims`, `zohorecruit`, `successfactors`) via the new `HOSTNAME_ATS` set.
+  Skipped porting open-jobs' `candidate_domains` technique as planned (4.9%
+  measured coverage, worse than what's already free).
 
-**Before starting Phase 6**: Phases 1-5 are committed locally (see above) but
-not yet pushed — `git fetch origin && git merge origin/main` first, per this
-file's own git-workflow section, since the hourly bot commits
-`companies.json` constantly and local has been sitting for a full session.
-Also still uncommitted, deliberately left alone this session as out of scope
-for the open-jobs plan: `src/outreach.ts`, `src/contact-sources.ts`,
+**A real bug found and fixed along the way**: `bulk-import.ts` was the only
+importer (`detect`/`discover`/`discover-news`/`import-urls` all already had
+it) missing the `isServiceCompany` guard — caught live when the Phase 7
+workable run kept "Capgemini". Its jobs could never have alerted
+(`preScreen`/`shouldAlert` both already reject service companies at run
+time), so this was wasted poll budget forever, not a false alert, but still
+wrong to keep. Fixed before the row could linger; swept the rest of
+`companies.json` for the same pattern and found only pre-existing,
+already-documented rows (Accenture, Genpact, TCS, etc.), left alone.
+
+**Still uncommitted, deliberately left alone all session as out of scope for
+this plan**: `src/outreach.ts`, `src/contact-sources.ts`,
 `src/outreach-send.ts`, `CONTACT-DISCOVERY.md`, `state/outreach.pid`, and
-`.agents/skills/wonder-pill/` — ask the user before touching those, they're a
-separate strand of work. `npx tsc --noEmit` and `npm test` both pass clean as
-of this handoff.
+`.agents/skills/wonder-pill/` — a separate strand of cold-outreach work; ask
+the user before touching those. **Before pushing**: `git fetch origin &&
+git merge origin/main` first, per this file's own git-workflow section — the
+hourly bot commits `companies.json` constantly and local has been sitting
+for a full session (11 commits, one per phase). `npx tsc --noEmit` and
+`npm test` both pass clean as of this handoff.
 
 ## In progress — pick up here
 
