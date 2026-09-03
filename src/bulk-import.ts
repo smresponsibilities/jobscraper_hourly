@@ -40,7 +40,7 @@ import { discoverSites } from './fetchers/workday.js';
 const RAW = 'https://raw.githubusercontent.com/kalil0321/ats-scrapers/main/ats-companies';
 
 /** Platforms whose CSV row carries everything the fetcher needs. */
-const IMPORTABLE: Ats[] = ['greenhouse', 'lever', 'ashby', 'smartrecruiters', 'workday', 'oracle'];
+const IMPORTABLE: Ats[] = ['greenhouse', 'lever', 'ashby', 'smartrecruiters', 'workday', 'oracle', 'workable'];
 
 const ORACLE_URL =
   /https?:\/\/([a-z0-9-]+)\.(fa\.[a-z0-9]+)\.oraclecloud\.com\/.*?\/sites\/([A-Za-z0-9_]+)/i;

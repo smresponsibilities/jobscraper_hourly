@@ -117,6 +117,7 @@ export const HOST_CONCURRENCY: Record<string, number> = {
   lever: 6,
   smartrecruiters: 6,
   oracle: 4,
+  workable: 6,
   successfactors: 2, // its XML feeds take 30-170s each; parallelism here buys nothing
   default: 4,
 };
