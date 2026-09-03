@@ -8,6 +8,8 @@
   --accent-soft: #eef2fe;
   --intern: #0a7c53;
   --closed: #b4232b;
+  /* Staleness warnings: not an error like --closed, but not neutral either. */
+  --stale: #9a6206;
   --radius: 10px;
 }
 
@@ -22,6 +24,7 @@
     --accent-soft: #1c2340;
     --intern: #4fd39c;
     --closed: #ff8087;
+    --stale: #e0a53f;
   }
 }
 
@@ -131,6 +134,7 @@ li.job[data-opened='true'] a.title { font-size: 13px; font-weight: 400; color: v
 .tag { border: 1px solid var(--border); border-radius: 5px; padding: 1px 6px; }
 .tag.intern { color: var(--intern); border-color: currentColor; }
 .tag.closed { color: var(--closed); border-color: currentColor; }
+.tag.stale { color: var(--stale); border-color: currentColor; }
 
 .empty { text-align: center; color: var(--muted); padding: 48px 20px; }
 

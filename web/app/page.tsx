@@ -40,6 +40,46 @@ function isBacklog(job: Job): boolean {
   return (Date.now() - posted) / 86_400_000 > BACKLOG_DAYS;
 }
 
+const ms = (iso: string | undefined): number => new Date(iso ?? '').getTime();
+
+/**
+ * How old a posting really is: the OLDER of what the board claims and when we
+ * first saw it, never the newer. Each date alone is defeatable — the board's
+ * can be re-stamped, and ours only goes back as far as the catalogue does — but
+ * a posting is at least as old as whichever says it is older.
+ */
+function effectiveAgeDays(job: Job): number | null {
+  const ages = [ms(job.postedAt), ms(job.firstSeen)]
+    .filter((t) => !Number.isNaN(t))
+    .map((t) => (Date.now() - t) / 86_400_000);
+  return ages.length ? Math.max(...ages) : null;
+}
+
+// A role still open a year on is very likely not a real vacancy: an evergreen
+// "talent pool" post, a requisition nobody closed, or a listing kept up to
+// collect applications. Fires on ~15% of open postings today.
+const GHOST_DAYS = 365;
+
+function isGhost(job: Job): boolean {
+  if (job.closedAt) return false;
+  const age = effectiveAgeDays(job);
+  return age !== null && age > GHOST_DAYS;
+}
+
+// The posting claims to have been published well after the day we first saw it
+// on the board, which is only possible if the date was re-stamped to look
+// fresh. Our firstSeen cannot be forged by the employer, which is the whole
+// reason this is detectable. The gap absorbs ordinary skew — timezones, or a
+// board indexing a requisition a day or two after it was published.
+const BUMP_DAYS = 7;
+
+function isBumped(job: Job): boolean {
+  const posted = ms(job.postedAt);
+  const seen = ms(job.firstSeen);
+  if (Number.isNaN(posted) || Number.isNaN(seen)) return false;
+  return (posted - seen) / 86_400_000 > BUMP_DAYS;
+}
+
 // 2-hour bins for the first day. The first six are labeled "Last N hours"
 // (Last 2, Last 4, ... Last 12); after that the same bins read as ranges
 // ("12–14 hours ago") since "Last 14 hours" stops meaning anything.
@@ -155,6 +195,22 @@ function JobRow({
         {job.workMode === 'remote' && <span className="tag">remote</span>}
         {job.workMode === 'hybrid' && <span className="tag">hybrid</span>}
         {job.visa && <span className="tag">visa sponsorship</span>}
+        {isBumped(job) && (
+          <span
+            className="tag stale"
+            title={`Posting claims ${job.postedAt?.slice(0, 10)}, but we first saw it on ${job.firstSeen.slice(0, 10)} — the date was re-stamped to look new.`}
+          >
+            date bumped
+          </span>
+        )}
+        {isGhost(job) && (
+          <span
+            className="tag stale"
+            title={`Open for about ${Math.round((effectiveAgeDays(job) ?? 0) / 30)} months. A role listed this long is often never filled.`}
+          >
+            ghost risk
+          </span>
+        )}
         {job.closedAt && <span className="tag closed">closed</span>}
       </div>
     </li>

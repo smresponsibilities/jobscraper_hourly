@@ -6,6 +6,7 @@ import { selectBoards } from './select-boards.js';
 import { epochToIso } from './fetchers/eightfold.js';
 import { safeIso } from './fetchers/darwinbox.js';
 import { parsePostedOn } from './fetchers/workday.js';
+import { refreshedPostedAt } from './catalog.js';
 import { BlockError, classifyFailure, classifyOkBody } from './fetchers/block.js';
 import { summarizeHostStats, updateHistory, persistentlySlow } from './host-stats.js';
 import {
@@ -402,6 +403,20 @@ check('"Posted 30+ Days Ago" stays undefined', parsePostedOn('Posted 30+ Days Ag
 check('an unrecognised label is dropped', parsePostedOn('Posted a while back'), undefined);
 check('undefined stays undefined', parsePostedOn(undefined), undefined);
 check('an absurd day count is dropped, not thrown', parsePostedOn('Posted 999999 Days Ago'), undefined);
+
+console.log('posting date refresh (date-bump capture)');
+// A posting already in `seen` short-circuits out of the run loop, so its
+// catalogue entry's postedAt used to be written once and frozen. That is what
+// made an employer re-stamping a stale requisition invisible. Only forward
+// moves count: Workday's relative labels only ever age, and taking a backwards
+// move would manufacture a bump on the next run when it moved forward again.
+check('a newer date replaces the stored one', refreshedPostedAt('2026-01-01', '2026-06-01'), true);
+check('an older date is ignored', refreshedPostedAt('2026-06-01', '2026-01-01'), false);
+check('the same date is not a change', refreshedPostedAt('2026-06-01', '2026-06-01'), false);
+check('a first date fills an empty slot', refreshedPostedAt(undefined, '2026-06-01'), true);
+check('a board dropping its date leaves the stored one alone', refreshedPostedAt('2026-06-01', undefined), false);
+check('an unparseable incoming date is ignored', refreshedPostedAt('2026-06-01', 'Posted 30+ Days Ago'), false);
+check('an unparseable stored date is replaced', refreshedPostedAt('Posted Today', '2026-06-01'), true);
 
 console.log('board selection');
 // Rotation is what lets the corpus hold ~21,000 boards without the run time

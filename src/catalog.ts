@@ -71,8 +71,14 @@ function slim(job: Job): Omit<CatalogEntry, 'firstSeen' | 'lastSeen'> {
 export interface CatalogUpdate {
   /** Matches discovered this run. */
   fresh: Job[];
-  /** Every job ID currently live, across boards that responded. */
-  liveIds: Set<string>;
+  /**
+   * Every job ID currently live, across boards that responded, mapped to the
+   * posting date the board reports *right now*. The date matters because an
+   * entry's `postedAt` is otherwise written once and frozen: a posting already
+   * in `seen` never reaches `fresh` again, so a board re-stamping an old
+   * requisition with today's date would be invisible.
+   */
+  liveIds: Map<string, string | undefined>;
   /** `ats:token` of boards polled successfully — a failed board must not close its jobs. */
   polledBoards: Set<string>;
   now: string;
@@ -81,6 +87,34 @@ export interface CatalogUpdate {
 function boardKey(id: string): string {
   const [ats, token] = id.split(':');
   return `${ats}:${token}`;
+}
+
+const time = (iso: string | undefined): number | null => {
+  if (!iso) return null;
+  const t = new Date(iso).getTime();
+  return Number.isNaN(t) ? null : t;
+};
+
+/**
+ * Should a live posting's stored `postedAt` be replaced by what the board says
+ * now? Only when the board moved the date *forward*.
+ *
+ * Dates normally never move: Greenhouse's `first_published` is fixed, and a
+ * Workday relative label only ever ages ("5 Days Ago" becomes "6 Days Ago"), so
+ * this is quiet in the ordinary case. It fires when an employer re-stamps a
+ * stale requisition to make it look new — which is the whole signal. Comparing
+ * the refreshed date against our own `firstSeen` is what exposes it, because
+ * `firstSeen` is our own observation and cannot be re-stamped by anyone.
+ *
+ * Backwards moves are ignored on purpose. They mean a board corrected itself or
+ * changed date semantics, and taking the older value would manufacture a bump
+ * on the next run when it moved forward again.
+ */
+export function refreshedPostedAt(stored: string | undefined, incoming: string | undefined): boolean {
+  const next = time(incoming);
+  if (next === null) return false;
+  const current = time(stored);
+  return current === null || next > current;
 }
 
 /**
@@ -95,18 +129,24 @@ export async function updateCatalog(update: CatalogUpdate): Promise<{
   closed: number;
   reopened: number;
   pruned: number;
+  bumped: number;
 }> {
   const existing = await readJson<CatalogEntry[]>(CATALOG_PATH, []);
   const byId = new Map(existing.map((entry) => [entry.id, entry]));
 
   let closed = 0;
   let reopened = 0;
+  let bumped = 0;
 
   for (const entry of byId.values()) {
     if (!update.polledBoards.has(boardKey(entry.id))) continue;
 
     if (update.liveIds.has(entry.id)) {
       entry.lastSeen = update.now;
+      if (refreshedPostedAt(entry.postedAt, update.liveIds.get(entry.id))) {
+        entry.postedAt = update.liveIds.get(entry.id);
+        bumped++;
+      }
       if (entry.closedAt) {
         delete entry.closedAt;
         reopened++;
@@ -141,5 +181,6 @@ export async function updateCatalog(update: CatalogUpdate): Promise<{
     closed,
     reopened,
     pruned: byId.size - kept.length,
+    bumped,
   };
 }

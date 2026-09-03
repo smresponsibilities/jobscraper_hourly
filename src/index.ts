@@ -197,7 +197,15 @@ async function main(): Promise<void> {
   );
   const dropped: string[] = [];
   const fresh: { company: Company; job: RawJob }[] = [];
-  const liveIds = new Set<string>();
+  /**
+   * Id -> the board's currently-reported posting date. A Set would be enough to
+   * decide "is this still open", but the date is what lets the catalogue notice
+   * an employer re-stamping an old requisition to look new. It has to be
+   * collected here, before the screening gate below, because a posting already
+   * in `seen` short-circuits out of the loop long before its refreshed date
+   * would otherwise be read.
+   */
+  const liveIds = new Map<string, string | undefined>();
   const polledBoards = new Set<string>();
   let totalSeen = 0;
   let screened = 0;
@@ -263,7 +271,7 @@ async function main(): Promise<void> {
 
     for (const job of jobs) {
       const id = `${company.ats}:${company.token}:${job.externalId}`;
-      liveIds.add(id);
+      liveIds.set(id, job.postedAt);
 
       /**
        * Screen BEFORE recording, not after. A posting that fails location or
@@ -368,7 +376,8 @@ async function main(): Promise<void> {
     const catalog = await updateCatalog({ fresh: deduped, liveIds, polledBoards, now: nowIso });
     console.log(
       `catalog: ${catalog.open} open, ${catalog.closed} newly closed, ` +
-        `${catalog.reopened} reopened, ${catalog.pruned} pruned`,
+        `${catalog.reopened} reopened, ${catalog.pruned} pruned, ` +
+        `${catalog.bumped} date-bumped`,
     );
   }
 
