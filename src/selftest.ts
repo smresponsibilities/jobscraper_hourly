@@ -5,6 +5,7 @@ import { detectOutage, outageChanges } from './outage.js';
 import { selectBoards } from './select-boards.js';
 import { epochToIso } from './fetchers/eightfold.js';
 import { safeIso } from './fetchers/darwinbox.js';
+import { toIso as recruiteeToIso } from './fetchers/recruitee.js';
 import { parsePostedOn, parseRobotsSites } from './fetchers/workday.js';
 import { refreshedPostedAt } from './catalog.js';
 import { boardKey } from './board-url.js';
@@ -385,6 +386,14 @@ check('a real epoch-ms number parses', safeIso(1_700_000_000_000) !== undefined,
 check('a garbled string is dropped, not thrown', safeIso('not a date'), undefined);
 check('an out-of-range number is dropped, not thrown', safeIso(-9_223_372_036_854_776_000), undefined);
 check('undefined stays undefined', safeIso(undefined), undefined);
+
+console.log('date parsing (recruitee)');
+// "2026-08-19 13:16:05 UTC" — not standard ISO, just close enough that
+// `new Date()` happens to parse it; guarded anyway, same rule as every ATS.
+check('a real recruitee timestamp parses', recruiteeToIso('2026-08-19 13:16:05 UTC'), '2026-08-19T13:16:05.000Z');
+check('a garbled string is dropped, not thrown', recruiteeToIso('not a date'), undefined);
+check('null is dropped', recruiteeToIso(null), undefined);
+check('undefined stays undefined', recruiteeToIso(undefined), undefined);
 
 console.log('date parsing (workday relative labels)');
 // Workday dates postings with an English phrase, not a timestamp. Storing the

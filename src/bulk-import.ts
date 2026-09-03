@@ -15,17 +15,20 @@ import { discoverSites } from './fetchers/workday.js';
  *   npm run bulk-import -- [--bar india|fresher|live] [--limit N] [--platform X]
  *   npm run bulk-import -- --rediscover [--bar india|fresher|live] [--limit N]
  *   npm run bulk-import -- --file <path> [--bar india|fresher|live] [--limit N]
+ *   npm run bulk-import -- --file <path> --platform X [--bar ...] [--limit N]
  *
  * `--rediscover` skips the CSV import entirely and instead walks every
  * existing Workday tenant's robots.txt for career-site names we don't already
  * track (see `discoverCandidateSites` below) — a different candidate source,
  * same validate+checkpoint pipeline.
  *
- * `--file <path>` is the same site-discovery step, but the tenants come from a
- * local text file of Workday hostnames (one per line, e.g.
+ * `--file <path>` alone is the same site-discovery step, but the tenants come
+ * from a local text file of Workday hostnames (one per line, e.g.
  * `3m.wd1.myworkdayjobs.com`) instead of our own companies.json — for a
  * published hostname list, like open-jobs' `slugs.json`, that carries no site
- * at all.
+ * at all. `--file <path> --platform X` (X other than workday) is simpler:
+ * every line is a bare subdomain slug for that one ATS, no site concept to
+ * resolve, straight into the validate+checkpoint loop below.
  *
  * That project crawls ~77,000 ATS tenants, ~21,000 of them on platforms this
  * codebase already reads. `detect` and `probe` cannot reach these: detect needs
@@ -107,6 +110,24 @@ async function loadSlugFile(path: string): Promise<{ token: string; host: string
   return [...tenants.values()];
 }
 
+/**
+ * `--file` for a non-Workday platform: open-jobs' `slugs.json` lists these as
+ * bare subdomains (`"11bitstudios"`, one per line), not hostnames — the ATS
+ * itself has no multi-site concept, so unlike Workday there's no site to
+ * resolve. Each line becomes a candidate directly.
+ */
+async function loadPlainSlugFile(path: string, platform: Ats): Promise<Company[]> {
+  const lines = (await readFile(path, 'utf8')).split(/\r?\n/);
+  const tokens = new Set(lines.map((l) => l.trim()).filter(Boolean));
+  return [...tokens].map((token) => ({
+    name: prettify(token),
+    ats: platform,
+    token,
+    industry: 'tech' as Industry,
+    source: 'discovered' as const,
+  }));
+}
+
 /** Same shape as the hourly run's scheduler, so imports respect the same host caps. */
 const rateLimitKey = (c: Company) => (c.ats === 'workday' ? `workday:${c.host}` : c.ats);
 const limitForHost = (key: string) =>
@@ -161,6 +182,11 @@ async function main(): Promise<void> {
     const tenants = new Map(workdayRows.map((c) => [`${c.token}:${c.host}`, c]));
     console.log(`rediscovering sites on ${tenants.size} workday tenants\n`);
     candidates = await discoverCandidateSites([...tenants.values()], known);
+  } else if (filePath && onlyPlatform && onlyPlatform !== 'workday') {
+    const rows = await loadPlainSlugFile(filePath, onlyPlatform);
+    const fresh = rows.filter((c) => !known.has(boardKey(c)));
+    console.log(`${filePath}: ${rows.length} listed, ${fresh.length} untracked`);
+    candidates = fresh;
   } else if (filePath) {
     const tenants = await loadSlugFile(filePath);
     console.log(`${filePath}: ${tenants.length} workday tenants\n`);
