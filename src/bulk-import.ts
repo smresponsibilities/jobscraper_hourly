@@ -6,11 +6,18 @@ import { locationMatches, roleFamily } from './filter.js';
 import { classify } from './classify.js';
 import { loadCompanies, saveCompanies } from './state.js';
 import { boardKey, WORKDAY } from './board-url.js';
+import { discoverSites } from './fetchers/workday.js';
 
 /**
  * Bulk-imports boards from kalil0321/ats-scrapers' published tenant lists.
  *
  *   npm run bulk-import -- [--bar india|fresher|live] [--limit N] [--platform X]
+ *   npm run bulk-import -- --rediscover [--bar india|fresher|live] [--limit N]
+ *
+ * `--rediscover` skips the CSV import entirely and instead walks every
+ * existing Workday tenant's robots.txt for career-site names we don't already
+ * track (see `rediscoverCandidates` below) — a different candidate source,
+ * same validate+checkpoint pipeline.
  *
  * That project crawls ~77,000 ATS tenants, ~21,000 of them on platforms this
  * codebase already reads. `detect` and `probe` cannot reach these: detect needs
@@ -40,6 +47,7 @@ const flag = (name: string): string | undefined => {
 const bar = (flag('bar') ?? 'india') as Bar;
 const limit = Number(flag('limit') ?? 0);
 const onlyPlatform = flag('platform') as Ats | undefined;
+const rediscover = args.includes('--rediscover');
 
 /** Naive CSV split is enough here: only the trailing url field can contain commas. */
 function parseRow(platform: Ats, line: string): Company | null {
@@ -76,21 +84,65 @@ const rateLimitKey = (c: Company) => (c.ats === 'workday' ? `workday:${c.host}` 
 const limitForHost = (key: string) =>
   HOST_CONCURRENCY[key.split(':')[0]!] ?? HOST_CONCURRENCY.default!;
 
+/**
+ * `--rediscover`: every existing Workday tenant carries exactly one `site`,
+ * whichever URL happened to be observed when it was added. Hits each tenant's
+ * robots.txt once and turns any site not already tracked into a candidate row,
+ * reusing the tenant's own name/industry — it's the same company, a board we
+ * just couldn't see before. Feeds into the same validate+checkpoint loop as a
+ * CSV import; a resolved site is not proof of a useful board on its own.
+ */
+async function rediscoverCandidates(existing: Company[], known: Set<string>): Promise<Company[]> {
+  const workdayRows = existing.filter((c) => c.ats === 'workday' && c.host);
+  const tenants = new Map(workdayRows.map((c) => [`${c.token}:${c.host}`, c]));
+  console.log(`rediscovering sites on ${tenants.size} workday tenants\n`);
+
+  const found: Company[] = [];
+  let checked = 0;
+  await mapLimitByKey(
+    [...tenants.values()],
+    (c) => `workday:${c.host}`,
+    limitForHost,
+    async (tenant) => {
+      if (++checked % 100 === 0) console.log(`  ...${checked}/${tenants.size} tenants`);
+      let sites: string[] | 'gone';
+      try {
+        sites = await discoverSites(tenant);
+      } catch {
+        return;
+      }
+      if (sites === 'gone') return;
+      for (const site of sites) {
+        const candidate: Company = { ...tenant, site, source: 'discovered' };
+        if (!known.has(boardKey(candidate))) found.push(candidate);
+      }
+    },
+  );
+
+  const deduped = new Map(found.map((c) => [boardKey(c), c]));
+  console.log(`${tenants.size} tenants checked, ${deduped.size} untracked sites found`);
+  return [...deduped.values()];
+}
+
 async function main(): Promise<void> {
   const existing = await loadCompanies();
   const known = new Set(existing.map(boardKey));
 
-  const platforms = onlyPlatform ? [onlyPlatform] : IMPORTABLE;
   let candidates: Company[] = [];
-  for (const platform of platforms) {
-    const rows = await loadCsv(platform);
-    const fresh = rows.filter((c) => !known.has(boardKey(c)));
-    // One tenant can appear under several names in a crawled list. Keyed by
-    // board, not tenant, so a Workday tenant's second career site is a genuine
-    // new candidate rather than a duplicate of the site we already track.
-    const deduped = new Map(fresh.map((c) => [boardKey(c), c]));
-    console.log(`${platform.padEnd(16)} ${rows.length} listed, ${deduped.size} untracked`);
-    candidates.push(...deduped.values());
+  if (rediscover) {
+    candidates = await rediscoverCandidates(existing, known);
+  } else {
+    const platforms = onlyPlatform ? [onlyPlatform] : IMPORTABLE;
+    for (const platform of platforms) {
+      const rows = await loadCsv(platform);
+      const fresh = rows.filter((c) => !known.has(boardKey(c)));
+      // One tenant can appear under several names in a crawled list. Keyed by
+      // board, not tenant, so a Workday tenant's second career site is a genuine
+      // new candidate rather than a duplicate of the site we already track.
+      const deduped = new Map(fresh.map((c) => [boardKey(c), c]));
+      console.log(`${platform.padEnd(16)} ${rows.length} listed, ${deduped.size} untracked`);
+      candidates.push(...deduped.values());
+    }
   }
 
   if (limit > 0) {

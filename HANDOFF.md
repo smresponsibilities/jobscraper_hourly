@@ -304,6 +304,154 @@ Four stacked delays, in order of size:
    that run even though roles were found). These look like "missed" jobs but
    are working as designed.
 
+## Open-jobs absorption — in progress, pick up here (2026-09-03)
+
+Multi-session task: absorbing everything worth taking from
+`github.com/elliottdehn/open-jobs` (CC0 1.0 Universal — public domain, no
+attribution owed), a free daily crawler over ~65,000 job boards. User's
+instruction was "take everything." Full 9-phase plan, ordered by value per
+effort, is at `C:\Users\sm\.claude\plans\tranquil-noodling-whistle.md` — **read
+that file before continuing this work**, it has the reasoning behind every
+phase, not just the checklist below. The clone is at
+`C:\Users\sm\AppData\Local\Temp\claude\D--Jobscraper-next\3dce1f2b-7ecf-45d9-a9be-47aa48299f8a\scratchpad\open-jobs`
+(session-specific temp path — may not exist next session; re-clone if Phase
+6/7/8 need to read its source again).
+
+**Done: Phases 1-4. Nothing committed yet** — this is uncommitted working-tree
+state, needs a commit (or several) before it is safe to lose. Every phase was
+verified against the live corpus or a live board, not just typechecked.
+
+- **Phase 1 (free correctness).** `src/fetchers/workday.ts` gained
+  `parsePostedOn`, an exported pure helper — Workday's list view returns a
+  relative English label ("Posted 5 Days Ago"), which was being stored raw and
+  silently failing to parse. Measured impact: 38% of the catalogue (3,561 of
+  9,300 entries) was exempt from the freshness gate because of this — verified
+  live against NVIDIA's board, 0 unparseable dates after the fix. Also:
+  measured Greenhouse `first_published` coverage at 98.3% across 200 live
+  boards before dropping the `?? j.updated_at` fallback (it was reporting a
+  requisition edit as the posting date, median 23 days off); added a
+  foreign-currency guard to `src/salary.ts` (a "$120,000-$180,000" US posting
+  was matching the INR-absolute regex and reporting Rs.1.2-1.8 LPA); deleted a
+  byte-identical duplicate American Express row from `companies.json`; synced
+  the hand-maintained `Job` type in `web/lib/types.ts` with `CatalogEntry`
+  (was missing `postedBy`).
+
+- **Phase 2 (ghost / date-bump badges).** `src/index.ts`'s `liveIds` widened
+  from `Set` to `Map<id, postedAt>`, populated before the `seen` screening gate
+  (index.ts around line 266) — that is what makes a re-stamped date visible at
+  all; previously an already-seen posting's fresh date was discarded before
+  reaching the catalogue. `refreshedPostedAt()` in `src/catalog.ts` only
+  accepts forward date moves. Web-only (`web/app/page.tsx`): `isGhost` uses
+  effective age = the older of postedAt-age and firstSeen-age, not firstSeen
+  alone — firstSeen-only would have been dormant for months since the
+  catalogue's own history only goes back to 2026-08-11. Measured live: fires
+  on 15.2% of open postings (1,262/8,318), rendered and screenshotted in both
+  light/dark themes. Deliberately not surfaced in the email — a bumped
+  posting cannot reach it structurally, and a ghost is already shown as
+  "412d ago" there.
+
+- **Phase 3 (board-identity key).** `boardKey()` in `src/board-url.ts` is now
+  `${ats}:${token}:${site ?? siteNumber ?? ''}` — was `${ats}:${token}` only,
+  which meant a Workday tenant with two career sites (RTX has
+  `Private_Posting_No_TMP` + `REC_RTX_Ext_Gateway`, Deutsche Bank has
+  `DBWebsite` + DWS's `dwswebsite`) collapsed to one key. Routed through all 9
+  roster call sites (bulk-import, detect, discover, discover-news, probe,
+  board-probe, index.ts's `polledTokens`). Job identity is untouched — still
+  `${ats}:${token}:${externalId}`, deliberately, because re-keying it would
+  invalidate every id in `state/seen.json` and `data/jobs.json` and re-alert
+  the whole corpus. `catalog.ts`'s job-id parser renamed `tenantKey` so the two
+  can never be confused. Two latent bugs fixed as part of this (both would
+  have gone live the moment Phase 5 creates real multi-site tenants):
+  catalogue closure now requires every row of a tenant to succeed before
+  marking its postings closed (else polling one site would close the other's
+  jobs); `updateReposts()` moved out of the per-board loop to run once per run
+  over the union of all polled boards' ids (else judging one sibling site's
+  poll in isolation would stamp the other's ids `gone`, and this also fixed
+  real inefficiency — it was rebuilding the whole ~30k-entry repost state up
+  to 8,000 times a run). Verified: 0 new key collisions (2 old ones resolved),
+  full `DRY_RUN=1 npm run hunt` came back clean — no RECONCILIATION warning,
+  one legitimately-dead board dropped (17-day failure streak vs 3-day
+  threshold, not a false eviction).
+
+- **Phase 4 (companies.json git growth).** `lastPolledAt`/`failingSince` moved
+  off the `Company` row into `state/board-state.json` (new `BoardState` type
+  in `src/types.ts`, gitignored — see the entry with the comment explaining
+  why committing it would defeat the point). `lastIndiaAt` stays on the row —
+  it is the irreplaceable bit, changes rarely. `seedBoardState()` in
+  `src/state.ts` backfills from the legacy row fields for the first run after
+  the split and for any future cache eviction. `.github/workflows/hunt.yml`
+  gained restore/save cache steps mirroring `seen.json`'s pattern. Measured:
+  2.73 MB -> 2.10 MB, one-time diff removing 13,209 lines, then near-zero
+  churn afterward (was rewriting up to 8,000 rows every 20 minutes; 448 of the
+  repo's first 547 commits touched this file). Verified against the real
+  13,175-board corpus: seeded selection identical to pre-split ordering, empty
+  board-state degrades to a full clean sweep rather than freezing.
+
+**Still open: Phases 6-9. Phase 5 done (2026-09-03), not yet run for real.**
+
+- **Phase 5 — Workday site rediscovery on existing tenants. Code done,
+  tested, not yet executed against the full corpus.** Ported
+  `discoverSites`/`parseRobotsSites` into `src/fetchers/workday.ts` from
+  open-jobs' `backend/src/ats/workday.ts:29-51` (GET `/robots.txt`, parse
+  `Allow: /<site>/` + `Sitemap: .../<site>/siteMap.xml`, exclude
+  `refreshFacet`/`events`/`wday`) — `parseRobotsSites` is pure and unit-tested
+  in `selftest.ts` (5 fixture cases: Allow-wins, Disallow-fallback,
+  Sitemap-only, `NOT_SITES` exclusion, empty). `discoverSites(company)` is the
+  fetch wrapper, 404/422/500 -> `'gone'`. Live-verified directly against the
+  three cases already confirmed pre-port: `broadcom.wd1` -> `External_Career`
+  (382 jobs, real Bangalore/Hyderabad roles — the "Known gaps" section above
+  is now corrected), `cibc.wd3` -> `search` + `campus` (the second one not
+  previously tracked), `walmart.wd5` -> `'gone'` (consistent with it being
+  genuinely unreachable). Wired as `bulk-import.ts --rediscover`: walks every
+  existing `ats === 'workday'` row (deduped by tenant, i.e. `token:host`),
+  calls `discoverSites` once per tenant through the same
+  `HOST_CONCURRENCY.workday`-capped `mapLimitByKey`, and any site not already
+  in `boardKey`'s known set becomes a candidate through the **existing**
+  validate-live + checkpoint pipeline (`rediscoverCandidates()` in
+  `bulk-import.ts`) — no new CLI, no new validation path. Did not port
+  open-jobs' in-adapter `CONCURRENCY = 6` fan-out, deliberately — this repo
+  already rate-limits Workday per-pod via `HOST_CONCURRENCY.workday = 3`,
+  sized after a real 429 incident; a second parallelism layer would silently
+  multiply it by 6. **Not yet run against the real ~1,353-tenant corpus** —
+  `npm run bulk-import -- --rediscover --bar india` is the next step, ideally
+  with `--limit` first to sanity-check yield before the full pass, per the
+  plan's own verify step (eyeball actual job titles on the first 20 discovered
+  sites — a resolved site is not proof of a useful board; watch for the
+  `Private_Posting_No_TMP` class and add to `NOT_SITES` if more surface).
+
+- **Phase 6 — Workday hostname import (3,830 slugs from open-jobs'
+  `slugs.json`).** Needs Phase 5's `discoverSites` for boards with no `site`
+  yet. Slowest tranche in the whole plan — budget hours, run `--limit 300`
+  first and extrapolate India-yield before the full pass.
+
+- **Phase 7 — Drop-in slug import (15,168 slugs on ATS already supported).**
+  Start with `workable` alone (6,891 slugs) — it is in `FETCHERS` but missing
+  from `bulk-import.ts`'s `IMPORTABLE` array, a one-line fix, and all 11
+  existing workable boards are already hot. Then greenhouse (4,162) -> lever
+  (1,956) -> ashby (1,416) -> smartrecruiters (743), one tranche at a time.
+  Keep `--bar india`, not `--bar live` — the math in the plan file shows why.
+
+- **Phase 8 — New ATS adapters, gated.** Build only `recruitee` -> `breezy`
+  -> `personio` (in that order, stopping if either of the first two fails);
+  skip the other 11 platforms (paylocity/paycom/dayforce/etc.) — reasoning
+  for each is in the plan file. The 2% rule: if a live-validated sample comes
+  back under 2% India-yield, delete the adapter rather than keep dead code.
+
+- **Phase 9 — Contacts: wire one function, skip the rest.** `websiteContacts()`
+  in `src/contact-sources.ts:130` is written, tested, and never called from
+  `resolveRecipients()` — three lines to wire into `alternates()` in
+  `src/outreach.ts`. Explicitly skip porting open-jobs' `candidate_domains`
+  technique (job-URL hostname minus ATS domain) — measured against the live
+  catalogue at only 4.9% coverage, worse than the 145 real hostnames
+  `companies.json` already carries as `token` for several ATSes.
+
+**Before starting Phase 5**: `git status` first — there are 4 phases of
+uncommitted work across ~30 files plus new `state/*.json` files. Decide with
+the user whether to commit per-phase or as one batch before touching more
+code; the standard git workflow below (fetch/merge before push — the hourly
+bot commits `companies.json` constantly) applies as always. `npx tsc --noEmit`
+and `npm test` both pass clean as of this handoff.
+
 ## In progress — pick up here
 
 **`discover-news.ts` now names which RSS feed died (2026-08-19).** It
@@ -425,11 +573,13 @@ certainly the same underlying job set — skipped, not added.
   earlier add; don't re-add.
 - **VMware's own board is gone, not unreachable** — `vmware.wd1.myworkdayjobs.com`
   now serves Workday's maintenance/decommission redirect (post-Broadcom
-  acquisition); hiring merged into Broadcom. **Broadcom is the new wall**: its
-  careers page is a fully client-rendered CMS app whose JS bundles contain no
-  ATS endpoint at all, and every guessed `broadcom.wd1` site slug 404s
-  (`Job_Posting_Site_ID=…not found`). Needs a real browser Network tab, same
-  class as Zwayam — don't guess more slugs blind.
+  acquisition); hiring merged into Broadcom. **Broadcom is reachable after
+  all — the wall was guessing site slugs by hand, not the board itself.**
+  `broadcom.wd1.myworkdayjobs.com/robots.txt` resolves to site
+  `External_Career` (Phase 5's `discoverSites`, below) — 382 jobs, including
+  real Bangalore/Hyderabad roles. The client-rendered CMS careers page and its
+  slug-blind 404s were real, just not the only way in; robots.txt sidesteps
+  the guessing entirely.
 - **Albertsons CX_1001 confirmed 0 India roles** against the real tenant
   (`eofd.fa.us6.oraclecloud.com` — the site slug IS `CX_1001`, linked from
   Albertsons Market's own careers page; the tenant guess was what was wrong).

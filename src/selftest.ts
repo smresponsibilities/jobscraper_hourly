@@ -5,7 +5,7 @@ import { detectOutage, outageChanges } from './outage.js';
 import { selectBoards } from './select-boards.js';
 import { epochToIso } from './fetchers/eightfold.js';
 import { safeIso } from './fetchers/darwinbox.js';
-import { parsePostedOn } from './fetchers/workday.js';
+import { parsePostedOn, parseRobotsSites } from './fetchers/workday.js';
 import { refreshedPostedAt } from './catalog.js';
 import { boardKey } from './board-url.js';
 import { BlockError, classifyFailure, classifyOkBody } from './fetchers/block.js';
@@ -404,6 +404,34 @@ check('"Posted 30+ Days Ago" stays undefined', parsePostedOn('Posted 30+ Days Ag
 check('an unrecognised label is dropped', parsePostedOn('Posted a while back'), undefined);
 check('undefined stays undefined', parsePostedOn(undefined), undefined);
 check('an absurd day count is dropped, not thrown', parsePostedOn('Posted 999999 Days Ago'), undefined);
+
+console.log('workday robots.txt site discovery');
+// Every existing Workday entry carries exactly one `site`, whichever URL
+// happened to be observed when it was added — CIBC's tenant actually hosts
+// both `search` and `campus`, and there was no way to see the second one.
+// Ported from open-jobs' `discoverSites` (CC0), fixture-tested here since it's
+// pure text parsing with no network.
+check(
+  'Allow lines win, one site per line',
+  parseRobotsSites('User-agent: *\nAllow: /search/\nAllow: /campus/\n').join(','),
+  'search,campus',
+);
+check(
+  'Disallow is the fallback when nothing is Allow\'d',
+  parseRobotsSites('User-agent: *\nDisallow: /External_Career/\n').join(','),
+  'External_Career',
+);
+check(
+  'Sitemap lines also name a site',
+  parseRobotsSites('Sitemap: https://x.wd1.myworkdayjobs.com/en-US/External_Career/siteMap.xml\n').join(','),
+  'External_Career',
+);
+check(
+  'refreshFacet/events/wday are plumbing, not sites',
+  parseRobotsSites('Allow: /refreshFacet/\nAllow: /events/\nAllow: /wday/\nAllow: /search/\n').join(','),
+  'search',
+);
+check('no Allow or Disallow lines yields nothing', parseRobotsSites('User-agent: *\n').join(','), '');
 
 console.log('posting date refresh (date-bump capture)');
 // A posting already in `seen` short-circuits out of the run loop, so its
