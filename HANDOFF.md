@@ -317,9 +317,17 @@ phase, not just the checklist below. The clone is at
 (session-specific temp path — may not exist next session; re-clone if Phase
 6/7/8 need to read its source again).
 
-**Done: Phases 1-4. Nothing committed yet** — this is uncommitted working-tree
-state, needs a commit (or several) before it is safe to lose. Every phase was
-verified against the live corpus or a live board, not just typechecked.
+**Done and committed: Phases 1-5** (`e92804f`, `066f0cf`, `3085ef5`, `271cfb2`,
+`aca08f9` — one commit per phase, not yet pushed as of this edit; fetch/merge
+against `origin/main` first, per this file's own git-workflow section, since
+the hourly bot commits `companies.json` constantly). Every phase was verified
+against the live corpus or a live board, not just typechecked. Splitting five
+phases of already-interleaved working-tree changes into one commit per phase
+after the fact (git hunks alone weren't enough — several files needed manual
+per-phase reconstruction, checked at each step with `tsc`+`npm test`, then
+diffed against the final state to confirm nothing was lost) took real,
+deliberate effort this session; land commits per-phase as you go next time
+instead of batching multiple phases uncommitted, so this doesn't repeat.
 
 - **Phase 1 (free correctness).** `src/fetchers/workday.ts` gained
   `parsePostedOn`, an exported pure helper — Workday's list view returns a
@@ -445,12 +453,16 @@ verified against the live corpus or a live board, not just typechecked.
   catalogue at only 4.9% coverage, worse than the 145 real hostnames
   `companies.json` already carries as `token` for several ATSes.
 
-**Before starting Phase 5**: `git status` first — there are 4 phases of
-uncommitted work across ~30 files plus new `state/*.json` files. Decide with
-the user whether to commit per-phase or as one batch before touching more
-code; the standard git workflow below (fetch/merge before push — the hourly
-bot commits `companies.json` constantly) applies as always. `npx tsc --noEmit`
-and `npm test` both pass clean as of this handoff.
+**Before starting Phase 6**: Phases 1-5 are committed locally (see above) but
+not yet pushed — `git fetch origin && git merge origin/main` first, per this
+file's own git-workflow section, since the hourly bot commits
+`companies.json` constantly and local has been sitting for a full session.
+Also still uncommitted, deliberately left alone this session as out of scope
+for the open-jobs plan: `src/outreach.ts`, `src/contact-sources.ts`,
+`src/outreach-send.ts`, `CONTACT-DISCOVERY.md`, `state/outreach.pid`, and
+`.agents/skills/wonder-pill/` — ask the user before touching those, they're a
+separate strand of work. `npx tsc --noEmit` and `npm test` both pass clean as
+of this handoff.
 
 ## In progress — pick up here
 
