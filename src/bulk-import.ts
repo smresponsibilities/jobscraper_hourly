@@ -3,7 +3,7 @@ import type { Ats, Company, Industry } from './types.js';
 import { FETCHERS } from './fetchers/index.js';
 import { mapLimitByKey, UA } from './fetchers/util.js';
 import { HOST_CONCURRENCY } from './config.js';
-import { locationMatches, roleFamily } from './filter.js';
+import { isServiceCompany, locationMatches, roleFamily } from './filter.js';
 import { classify } from './classify.js';
 import { loadCompanies, saveCompanies } from './state.js';
 import { boardKey, prettify, WORKDAY } from './board-url.js';
@@ -206,6 +206,16 @@ async function main(): Promise<void> {
       console.log(`${platform.padEnd(16)} ${rows.length} listed, ${deduped.size} untracked`);
       candidates.push(...deduped.values());
     }
+  }
+
+  // Same guard every other importer (detect/discover/probe/import-urls) already
+  // applies. Missing it here let Capgemini through a real workable run — its
+  // jobs can never alert (preScreen rejects it too), so a kept row here is
+  // pure wasted poll budget forever, not a false alert, but still wrong to keep.
+  const before = candidates.length;
+  candidates = candidates.filter((c) => !isServiceCompany(c.name));
+  if (candidates.length < before) {
+    console.log(`excluded ${before - candidates.length} service-company candidate(s)`);
   }
 
   if (limit > 0) {
