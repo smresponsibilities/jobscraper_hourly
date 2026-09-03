@@ -56,7 +56,11 @@ export interface Company {
   /** Oracle only: the CX_xxxx site number. */
   siteNumber?: string;
   source?: 'curated' | 'discovered';
-  /** ISO date of the first failure in the current streak; cleared on success. */
+  /**
+   * Legacy. The live value now lives in `state/board-state.json`; this is only
+   * still read to seed that file the first time, or after a cache eviction.
+   * `saveCompanies` strips it on write — see `BoardState` below.
+   */
   failingSince?: string;
   /**
    * ISO date this board last returned at least one India/remote role. Its
@@ -66,7 +70,7 @@ export interface Company {
    * time growing with it.
    */
   lastIndiaAt?: string;
-  /** ISO date this board was last polled at all. Drives the cold rotation. */
+  /** Legacy, same as `failingSince` above — the live value is in `BoardState`. */
   lastPolledAt?: string;
 }
 
@@ -105,6 +109,29 @@ export interface Job extends RawJob {
 }
 
 export type SeenState = Record<string, string>;
+
+/**
+ * Per-board polling bookkeeping, keyed by `boardKey` from board-url.ts.
+ *
+ * These two fields used to live on the `Company` row, which meant every run
+ * rewrote up to `BOARDS_PER_RUN` of them in `companies.json` — a file that is
+ * committed on almost every run. 448 of the repo's first 547 commits touched
+ * it. Splitting the volatile half out into the Actions cache, exactly as
+ * `seen.json` already does, leaves `companies.json` changing only when a board
+ * is added, dropped, or first goes hot.
+ *
+ * Losing this file is safe by construction: every board then reads as
+ * never-polled, which `selectBoards` already sorts first (a clean full sweep),
+ * and a reset `failingSince` only ever delays an eviction, never causes one.
+ */
+export interface BoardStatus {
+  /** ISO date this board was last polled at all. Drives the cold rotation. */
+  lastPolledAt?: string;
+  /** ISO date of the first failure in the current streak; cleared on success. */
+  failingSince?: string;
+}
+
+export type BoardState = Record<string, BoardStatus>;
 
 /**
  * Repost tracking. `last` is the last run the id was live; `gone` is set when

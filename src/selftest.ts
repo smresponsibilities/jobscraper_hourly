@@ -24,7 +24,7 @@ import {
 import { bodySimilarity, bounceGateDecision, displayName, domainRiskTally, isTriggered, postedAgeDays, renderBody, touchGap, TRIGGER_WINDOW_DAYS } from './outreach.js';
 import { applyboltLookup, extractEmails, packageNameCandidates, parseApplyBolt, parseDmarcRua, roleAddresses } from './contact-sources.js';
 import { controlAddress, mxProvider, rejectionIsMeaningful } from './verify-email.js';
-import type { Company, Industry, RawJob } from './types.js';
+import type { BoardState, Company, Industry, RawJob } from './types.js';
 
 /**
  * Regression tests for the two regex layers that decide everything.
@@ -449,14 +449,23 @@ const board = (token: string, extra: Partial<Company> = {}): Company => ({
 });
 
 const mixed = [
-  board('hot1', { lastIndiaAt: '2026-08-01T00:00:00Z', lastPolledAt: '2026-08-17T00:00:00Z' }),
-  board('hot2', { lastIndiaAt: '2026-07-01T00:00:00Z', lastPolledAt: '2026-08-17T00:00:00Z' }),
+  board('hot1', { lastIndiaAt: '2026-08-01T00:00:00Z' }),
+  board('hot2', { lastIndiaAt: '2026-07-01T00:00:00Z' }),
   board('coldNew'),                                          // never polled
-  board('coldOld', { lastPolledAt: '2026-08-01T00:00:00Z' }),
-  board('coldRecent', { lastPolledAt: '2026-08-16T00:00:00Z' }),
+  board('coldOld'),
+  board('coldRecent'),
 ];
 
-const picked = selectBoards(mixed, 4);
+// Poll times come from the board state now, not the Company row, so rotation
+// keeps working while companies.json stops being rewritten every run.
+const mixedState: BoardState = {
+  'greenhouse:hot1:': { lastPolledAt: '2026-08-17T00:00:00Z' },
+  'greenhouse:hot2:': { lastPolledAt: '2026-08-17T00:00:00Z' },
+  'greenhouse:coldold:': { lastPolledAt: '2026-08-01T00:00:00Z' },
+  'greenhouse:coldrecent:': { lastPolledAt: '2026-08-16T00:00:00Z' },
+};
+
+const picked = selectBoards(mixed, mixedState, 4);
 check('every hot board is polled', picked.hot, 2);
 check('cold boards fill the remaining slots only', picked.cold, 2);
 check('overflow cold boards are deferred, not dropped', picked.skipped, 1);
@@ -471,10 +480,41 @@ check(
 // alone blow past the ceiling.
 const allHot = selectBoards(
   [board('a', { lastIndiaAt: 'x' }), board('b', { lastIndiaAt: 'x' }), board('c', { lastIndiaAt: 'x' })],
+  {},
   1,
 );
 check('hot boards are never sacrificed to the ceiling', allHot.polling.length, 3);
 check('no cold slots remain when hot overflows', allHot.cold, 0);
+
+// An evicted cache must degrade into a clean full sweep, not a frozen slice:
+// with no state at all every cold board reads as never-polled, and all of them
+// are eligible rather than none.
+const noState = selectBoards(mixed, {}, 5);
+check('an empty board state polls every board, not zero', noState.polling.length, 5);
+check('nothing is stranded when the cache is gone', noState.skipped, 0);
+
+// Seeding covers the first run after the split and any later eviction: the
+// legacy fields still on the committed rows are a better starting point than
+// declaring the whole corpus never-polled.
+const legacy = [board('x', { lastPolledAt: '2026-08-05T00:00:00Z', failingSince: '2026-08-04T00:00:00Z' })];
+const seeded = seedBoardState({}, legacy);
+check('legacy poll time is seeded from the company row', seeded['greenhouse:x:']?.lastPolledAt, '2026-08-05T00:00:00Z');
+check('legacy failure streak is seeded too', seeded['greenhouse:x:']?.failingSince, '2026-08-04T00:00:00Z');
+// The state file always wins — it is the live copy, the row is the stale backup.
+const already: BoardState = { 'greenhouse:x:': { lastPolledAt: '2026-08-20T00:00:00Z' } };
+check('an existing state entry is not overwritten by the legacy row',
+  seedBoardState(already, legacy)['greenhouse:x:']?.lastPolledAt, '2026-08-20T00:00:00Z');
+
+// A failed poll keeps its old poll time, so it sorts early and is retried soon
+// instead of going to the back of a five-figure queue.
+check('a failure preserves the previous poll time',
+  recordFailure({ lastPolledAt: '2026-08-05T00:00:00Z' }, '2026-08-06T00:00:00Z').lastPolledAt,
+  '2026-08-05T00:00:00Z');
+check('a failure starts the streak', recordFailure(undefined, '2026-08-06T00:00:00Z').failingSince, '2026-08-06T00:00:00Z');
+check('an ongoing streak keeps its original start',
+  recordFailure({ failingSince: '2026-08-01T00:00:00Z' }, '2026-08-06T00:00:00Z').failingSince,
+  '2026-08-01T00:00:00Z');
+check('success clears the streak', recordSuccess('2026-08-06T00:00:00Z').failingSince, undefined);
 
 console.log('news extraction (discover-news.ts)');
 // headlineItems() pairs each title with its own <item>'s <link> — the digest
@@ -876,7 +916,7 @@ check('sparse window stays quiet', bounceGateDecision([mk([1], 1), mk([2]), mk([
 
 // --- Phase A: salary extraction, work-mode/visa classification, repost state.
 import { extractSalary } from './salary.js';
-import { updateReposts } from './state.js';
+import { recordFailure, recordSuccess, seedBoardState, updateReposts } from './state.js';
 import { REPOST_WINDOW_DAYS } from './config.js';
 import type { RepostState } from './types.js';
 

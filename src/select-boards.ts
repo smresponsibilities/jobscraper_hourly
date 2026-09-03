@@ -1,5 +1,6 @@
-import type { Company } from './types.js';
+import type { BoardState, Company } from './types.js';
 import { BOARDS_PER_RUN } from './config.js';
+import { boardKey } from './board-url.js';
 
 /**
  * Chooses which boards this run polls.
@@ -28,6 +29,7 @@ export interface Selection {
 
 export function selectBoards(
   companies: readonly Company[],
+  boardState: BoardState = {},
   limit: number = BOARDS_PER_RUN,
 ): Selection {
   const hot = companies.filter((c) => c.lastIndiaAt);
@@ -37,8 +39,13 @@ export function selectBoards(
   // ceiling yields — a board that can alert must not wait on rotation.
   const slots = Math.max(0, limit - hot.length);
 
+  // Poll times come from the board state now, not the Company row. A board the
+  // state has never heard of reads as never-polled and sorts first, which is
+  // also what makes an evicted cache degrade into a clean full sweep.
+  const polledAt = (c: Company) => boardState[boardKey(c)]?.lastPolledAt ?? '';
+
   const rotated = [...cold]
-    .sort((a, b) => (a.lastPolledAt ?? '').localeCompare(b.lastPolledAt ?? ''))
+    .sort((a, b) => polledAt(a).localeCompare(polledAt(b)))
     .slice(0, slots);
 
   return {

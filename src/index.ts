@@ -1,5 +1,5 @@
 import { appendFile, mkdir, writeFile } from 'node:fs/promises';
-import type { Company, Job, RawJob } from './types.js';
+import type { BoardState, Company, Job, RawJob } from './types.js';
 import { FETCHERS } from './fetchers/index.js';
 import { mapLimit, mapLimitByKey } from './fetchers/util.js';
 import { classify } from './classify.js';
@@ -12,6 +12,7 @@ import { BlockError, type BlockKind } from './fetchers/block.js';
 import { boardKey } from './board-url.js';
 import {
   loadCompanies,
+  loadBoardState,
   loadBoardVolumes,
   loadHostHistory,
   loadOutageState,
@@ -21,6 +22,7 @@ import {
   readJson,
   recordFailure,
   recordSuccess,
+  saveBoardState,
   saveBoardVolumes,
   saveCompanies,
   saveHostHistory,
@@ -28,6 +30,7 @@ import {
   saveReposts,
   saveVolumeDrops,
   saveSeen,
+  seedBoardState,
   updateReposts,
 } from './state.js';
 import { extractSalary } from './salary.js';
@@ -114,6 +117,14 @@ async function enrich(company: Company, job: RawJob): Promise<RawJob> {
 
 async function main(): Promise<void> {
   const companies = await loadCompanies();
+  /**
+   * Poll times and failure streaks live here rather than on the Company rows,
+   * so `companies.json` stops being rewritten every run. Seeded from the legacy
+   * fields for any board the state file doesn't know — the first run after the
+   * split, and any run after a cache eviction.
+   */
+  const boardState = seedBoardState(await loadBoardState(), companies);
+  const nextBoardState: BoardState = { ...boardState };
   const seen = await loadSeen();
   const previousOutage = await loadOutageState();
   const previousHostHistory = await loadHostHistory();
@@ -138,7 +149,7 @@ async function main(): Promise<void> {
     }
   }
 
-  const selection = selectBoards(companies);
+  const selection = selectBoards(companies, boardState);
   console.log(
     `polling ${selection.polling.length} of ${companies.length} boards ` +
       `(${selection.hot} hot, ${selection.cold} cold on rotation, ${selection.skipped} waiting)`,
@@ -238,7 +249,8 @@ async function main(): Promise<void> {
     // what `polledPrefixes` records.
     const tenant = `${company.ats}:${company.token}`;
     if (error) {
-      const failed = recordFailure(company, nowIso);
+      const key = boardKey(company);
+      const failed = recordFailure(boardState[key], nowIso);
       const days = (Date.now() - new Date(failed.failingSince!).getTime()) / 86_400_000;
       console.warn(`  ! ${company.name}: ${error}`);
       /**
@@ -253,6 +265,7 @@ async function main(): Promise<void> {
       const heldByWall = blockKind !== undefined && days < BLOCK_HOLD_DAYS;
       if (days >= DROP_AFTER_FAILING_DAYS && !suspectedOutage.has(company.ats) && !heldByWall) {
         dropped.push(company.name);
+        delete nextBoardState[key];
       } else {
         if (heldByWall) {
           console.warn(
@@ -260,7 +273,8 @@ async function main(): Promise<void> {
               `eviction until day-${BLOCK_HOLD_DAYS}`,
           );
         }
-        updatedCompanies.push(failed);
+        nextBoardState[key] = failed;
+        updatedCompanies.push(company);
       }
       continue;
     }
@@ -272,9 +286,9 @@ async function main(): Promise<void> {
      * the gap between one req closing and the next opening.
      */
     const hasIndia = jobs.some((job) => locationMatches(job.location));
+    nextBoardState[boardKey(company)] = recordSuccess(nowIso);
     updatedCompanies.push({
-      ...recordSuccess(company),
-      lastPolledAt: nowIso,
+      ...company,
       ...(hasIndia || company.lastIndiaAt ? { lastIndiaAt: hasIndia ? nowIso : company.lastIndiaAt } : {}),
     });
     totalSeen += jobs.length;
@@ -391,6 +405,7 @@ async function main(): Promise<void> {
   // one of these postings as already-seen and stay silent.
   if (!dryRun && !testEmail) {
     await saveCompanies(updatedCompanies);
+    await saveBoardState(nextBoardState);
     const prunedCount = await saveSeen(seen);
     if (prunedCount) console.log(`pruned ${prunedCount} expired IDs`);
     await saveOutageState(outageStateFrom(suspectedOutage));
