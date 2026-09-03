@@ -24,7 +24,16 @@ export async function list(company: Company): Promise<RawJob[]> {
     title: j.title,
     location: j.location?.name ?? '',
     url: j.absolute_url,
-    postedAt: j.first_published ?? j.updated_at,
+    // No `?? j.updated_at` fallback. `updated_at` is a mutation timestamp, not a
+    // posting date: it moves on every trivial edit to the requisition. Measured
+    // 2026-09-03 across 200 live hot boards / 10,402 postings — `first_published`
+    // is present on 98.3%, and where both exist they sit a median 23 days apart
+    // (p90 223, max 2,704). So the fallback only ever fired for 1.7% of postings,
+    // and when it did it reported an edit as the posting date — inflating
+    // freshness and, once date-bump detection lands, reading as a permanent bump
+    // because the value keeps moving. An absent date already means "always
+    // fresh" (see EMAIL_FRESHNESS_DAYS), which is the safe direction for 1.7%.
+    postedAt: j.first_published,
   }));
 }
 

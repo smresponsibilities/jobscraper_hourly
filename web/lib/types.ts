@@ -1,5 +1,11 @@
 export type Industry = 'tech' | 'fintech' | 'quant' | 'banking' | 'consulting';
 
+/**
+ * Hand-maintained mirror of `CatalogEntry` in `src/catalog.ts`. The web app is a
+ * separate package and does not import from `src/`, so the two declarations can
+ * drift silently — `postedBy` was missing here for a while, which is exactly how
+ * that failure looks. Add a field there, add it here in the same commit.
+ */
 export interface Job {
   id: string;
   title: string;
@@ -19,6 +25,7 @@ export interface Job {
   firstSeen: string;
   lastSeen: string;
   closedAt?: string;
+  postedBy?: string;
 }
 
 export interface Company {

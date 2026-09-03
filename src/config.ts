@@ -49,9 +49,16 @@ export const EMAIL_DETAIL_LIMIT = 25;
  * has no early-mover advantage left. So the email only surfaces roles posted
  * within this window; older "new to us" discoveries still land in the
  * catalogue (nothing is dropped), they just don't masquerade as urgent.
- * Roles with no parseable posting date are always included — many ATSes
- * (Workday chief among them) never expose one at all, so absence of a date
- * cannot be treated as evidence of staleness.
+ * Roles with no parseable posting date are always included — some ATSes never
+ * expose one at all, so absence of a date cannot be treated as evidence of
+ * staleness.
+ *
+ * This used to name Workday as the chief offender. That was wrong, and it cost
+ * us: Workday does expose a date, as a relative label ("Posted 5 Days Ago"),
+ * and `workday.ts` was storing it raw so it never parsed. Every Workday role —
+ * 38% of the catalogue — took the benefit of the doubt this comment describes.
+ * Fixed by `parsePostedOn` in `fetchers/workday.ts`. Before assuming an ATS
+ * "has no dates", check whether we are simply failing to read the one it sends.
  */
 export const EMAIL_FRESHNESS_DAYS = 21;
 

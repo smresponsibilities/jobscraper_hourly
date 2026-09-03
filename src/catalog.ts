@@ -13,6 +13,10 @@ const CLOSED_RETENTION_DAYS = 30;
  * committed every hour, so git would gain tens of gigabytes a year storing a
  * fresh copy each time. Nothing downstream reads the description: the years are
  * already extracted into `minYears`, and the email and UI show neither.
+ *
+ * Mirrored by hand as `Job` in `web/lib/types.ts` — the web app is a separate
+ * package and cannot import from here. Any field added below has to be added
+ * there in the same commit or the UI silently cannot see it.
  */
 export interface CatalogEntry {
   id: string;
@@ -35,6 +39,9 @@ export interface CatalogEntry {
   lastSeen: string;
   /** Set once the posting stops appearing on a board we polled successfully. */
   closedAt?: string;
+  /** Requisition creator's name, when the ATS exposes it (SmartRecruiters
+   *  today). A few bytes, unlike `text` — worth keeping unconditionally. */
+  postedBy?: string;
 }
 
 function slim(job: Job): Omit<CatalogEntry, 'firstSeen' | 'lastSeen'> {
@@ -57,6 +64,7 @@ function slim(job: Job): Omit<CatalogEntry, 'firstSeen' | 'lastSeen'> {
     minYears: job.minYears,
     maxYears: job.maxYears,
     isIntern: job.isIntern,
+    postedBy: job.postedBy,
   };
 }
 

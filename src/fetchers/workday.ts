@@ -30,10 +30,47 @@ function base(company: Company): string {
 }
 
 /**
- * Workday's list view returns relative dates ("Posted Today") and no absolute
- * timestamp — which is fine, because we detect new roles by requisition ID, not
- * by date. Results come back newest-first, so capping pages is safe for alerting
- * even though it means we never enumerate the full back catalogue.
+ * Workday dates a posting with a relative English label, not a timestamp:
+ * "Posted Today", "Posted Yesterday", "Posted 5 Days Ago", "Posted 30+ Days Ago".
+ *
+ * Those strings used to be stored raw, so `new Date(...)` produced NaN and
+ * `isFreshEnough` waved every Workday role through as urgent-fresh. Measured
+ * 2026-09-03: 3,561 of the catalogue's 9,300 entries are Workday — 38% — and
+ * 1,377 of them openly said they were over a month old while still being
+ * treated as brand new. `EMAIL_FRESHNESS_DAYS`'s comment blamed Workday for
+ * exposing no date at all; it exposes one, we just never parsed it.
+ *
+ * "30+ Days Ago" deliberately stays `undefined`. It is a floor, not a date, and
+ * the only way to express it is `now - 30d` — which moves forward a day every
+ * day, so the posting would report a newer date on every run and read as
+ * permanently date-bumped once bump detection lands. An absent date already
+ * means "always fresh", which is exactly the behaviour those postings have
+ * today, so nothing regresses; the other ~61% get real dates.
+ */
+export function parsePostedOn(label: string | undefined): string | undefined {
+  if (!label) return undefined;
+  const t = label.toLowerCase();
+  if (t.includes('+')) return undefined; // "30+ Days Ago" — a floor, not a date.
+
+  let days: number;
+  if (t.includes('today')) days = 0;
+  else if (t.includes('yesterday')) days = 1;
+  else {
+    const m = /(\d+)\s*days?\s*ago/.exec(t);
+    if (!m) return undefined;
+    days = Number(m[1]);
+  }
+
+  // Guard the Date construction rather than trusting a field the ATS controls —
+  // same rule as `safeIso`/`epochToIso`, after an out-of-range value in
+  // zappyhire.ts threw RangeError and evicted every board on that platform.
+  if (!Number.isFinite(days) || days < 0 || days > 3650) return undefined;
+  return new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+}
+
+/**
+ * Results come back newest-first, so capping pages is safe for alerting even
+ * though it means we never enumerate the full back catalogue.
  */
 export async function list(company: Company): Promise<RawJob[]> {
   // Results come back newest-first across the whole company, so at a large US
@@ -77,7 +114,7 @@ async function search(company: Company, searchText: string, maxPages: number): P
         title: p.title,
         location: p.locationsText ?? '',
         url: `${base(company)}/en-US/${company.site}${p.externalPath}`,
-        postedAt: p.postedOn,
+        postedAt: parsePostedOn(p.postedOn),
       });
     }
 

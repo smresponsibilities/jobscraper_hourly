@@ -5,6 +5,7 @@ import { detectOutage, outageChanges } from './outage.js';
 import { selectBoards } from './select-boards.js';
 import { epochToIso } from './fetchers/eightfold.js';
 import { safeIso } from './fetchers/darwinbox.js';
+import { parsePostedOn } from './fetchers/workday.js';
 import { BlockError, classifyFailure, classifyOkBody } from './fetchers/block.js';
 import { summarizeHostStats, updateHistory, persistentlySlow } from './host-stats.js';
 import {
@@ -382,6 +383,25 @@ check('a real epoch-ms number parses', safeIso(1_700_000_000_000) !== undefined,
 check('a garbled string is dropped, not thrown', safeIso('not a date'), undefined);
 check('an out-of-range number is dropped, not thrown', safeIso(-9_223_372_036_854_776_000), undefined);
 check('undefined stays undefined', safeIso(undefined), undefined);
+
+console.log('date parsing (workday relative labels)');
+// Workday dates postings with an English phrase, not a timestamp. Storing the
+// phrase raw made `new Date()` return NaN, and `isFreshEnough` treats an
+// unparseable date as fresh — so all 3,561 Workday entries in the catalogue
+// (38% of it) were exempt from the freshness gate, 1,377 of them while openly
+// saying they were over a month old.
+const dayOf = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
+check('"Posted Today" is today', parsePostedOn('Posted Today'), dayOf(0));
+check('"Posted Yesterday" is one day back', parsePostedOn('Posted Yesterday'), dayOf(1));
+check('"Posted 5 Days Ago" is five days back', parsePostedOn('Posted 5 Days Ago'), dayOf(5));
+check('"Posted 1 Day Ago" (singular) parses', parsePostedOn('Posted 1 Day Ago'), dayOf(1));
+// A floor, not a date: the only expression of it is `now - 30d`, which moves
+// forward every day and would read as a permanent date-bump. Undefined keeps
+// these exactly as they behave today rather than inventing a moving timestamp.
+check('"Posted 30+ Days Ago" stays undefined', parsePostedOn('Posted 30+ Days Ago'), undefined);
+check('an unrecognised label is dropped', parsePostedOn('Posted a while back'), undefined);
+check('undefined stays undefined', parsePostedOn(undefined), undefined);
+check('an absurd day count is dropped, not thrown', parsePostedOn('Posted 999999 Days Ago'), undefined);
 
 console.log('board selection');
 // Rotation is what lets the corpus hold ~21,000 boards without the run time
@@ -839,6 +859,21 @@ check('monthly stipend converts', JSON.stringify(sal(undefined, 'Stipend: ₹30,
 check('garbage is null not wrong', sal(undefined, 'salary negotiable, 500 employees'), null);
 check('absurd range rejected', sal(undefined, '0.5-99 LPA'), null);
 check('ats field beats body noise', JSON.stringify(sal('10-14 LPA', 'we once paid someone 2 LPA')), JSON.stringify({ minLpa: 10, maxLpa: 14 }));
+// Commas are stripped before matching, so a US range reaches the absolute-INR
+// branch (the ₹ is optional in every pattern), clears the bounds, and used to be
+// reported as a confident ₹1.2–1.8 LPA on a $120k-$180k posting.
+check('usd range is not read as rupees', sal(undefined, 'Base pay: $120,000 - $180,000 per annum'), null);
+check('usd code spelled out is caught too', sal(undefined, 'Salary USD 120,000 to 180,000 per annum'), null);
+check('gbp range rejected', sal(undefined, 'Salary £70,000 - £90,000 per annum'), null);
+check('usd monthly is not read as a rupee stipend', sal(undefined, 'Stipend: $5,000 per month'), null);
+// The guard is scoped to the match, not the whole source — an Indian posting
+// that happens to mention a dollar figure elsewhere still parses.
+check(
+  'a stray dollar elsewhere does not block a real inr range',
+  JSON.stringify(sal(undefined, 'We raised $50M last year. Compensation: ₹8,00,000 - 12,00,000 per annum')),
+  JSON.stringify({ minLpa: 8, maxLpa: 12 }),
+);
+check('lpa wording is unambiguous and unaffected', JSON.stringify(sal('$ figures aside, 12-18 LPA')), JSON.stringify({ minLpa: 12, maxLpa: 18 }));
 
 console.log('work mode + visa');
 const wm = (location: string, text?: string) => classify({ externalId: 'x', title: 'Engineer', location, url: '', text }, 'tech').workMode;

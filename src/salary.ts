@@ -28,6 +28,27 @@ const MAX_LPA = 100;
 
 const RANGE_SEP = /\s*(?:[-–—]|to)\s*/;
 
+/**
+ * Every regex below treats the `₹` as optional, which is right for Indian
+ * postings that write bare numbers — but it also means a foreign-currency range
+ * matches the same shapes. Commas are stripped before matching, so
+ * "$120,000 - $180,000 per annum" becomes "$120000 - $180000 per annum", clears
+ * the absolute-INR bounds, and is reported as ₹1.2–1.8 LPA: a confident, wrong
+ * number on a US posting.
+ *
+ * Only the two branches that match bare digits need this — the LPA branches
+ * already require the literal token "lpa"/"lakh"/"lac", which no other currency
+ * uses. The check looks at the match itself plus a short lookback rather than
+ * the whole source, so an Indian posting that mentions a dollar figure in an
+ * unrelated benefits line still parses its real LPA range.
+ */
+const FOREIGN_CURRENCY = /[$€£¥]|\b(?:USD|EUR|GBP|CAD|AUD|SGD|JPY|CHF|AED)\b/i;
+
+function foreignNear(source: string, m: RegExpMatchArray): boolean {
+  const start = m.index ?? 0;
+  return FOREIGN_CURRENCY.test(source.slice(Math.max(0, start - 12), start + m[0].length));
+}
+
 export function extractSalary(salaryField: string | undefined, text?: string): Salary | null {
   // The ATS's own salary field is far more reliable than the description body,
   // so it's searched alone first; the body is scanned only as a fallback.
@@ -59,7 +80,7 @@ export function extractSalary(salaryField: string | undefined, text?: string): S
 
     // Absolute annual rupees: "800000-1200000 per annum" (commas pre-stripped)
     m = s.match(new RegExp(`₹?\\s*(\\d{6,7})${RANGE_SEP.source}₹?\\s*(\\d{6,7})`, 'i'));
-    if (m) {
+    if (m && !foreignNear(s, m)) {
       const min = Number(m[1]);
       const max = Number(m[2]);
       if (
@@ -75,7 +96,7 @@ export function extractSalary(salaryField: string | undefined, text?: string): S
     // Monthly stipend: "Stipend: ₹30,000/month", "25000 per month"
     m = s.match(/(?:stipend|salary|pay)[^\n.]{0,30}?(?:₹\s*)?(\d{3,6})\s*(?:\/-)?\s*(?:per\s*month|\/\s*month|monthly|p\.?m\.?\b)/i) ??
       s.match(/(?:₹\s*)?(\d{3,6})\s*(?:\/-)?\s*(?:per\s*month|\/\s*month|monthly)[^\n.]{0,30}?(?:stipend|intern)/i);
-    if (m) {
+    if (m && !foreignNear(s, m)) {
       const monthly = Number(m[1]);
       if (monthly >= 5_000 && monthly <= 200_000) {
         const lpa = round1((monthly * 12) / 100_000);

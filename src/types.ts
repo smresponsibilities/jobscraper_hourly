@@ -79,6 +79,12 @@ export interface RawJob {
   salary?: string;
   /** Description text, used for years-of-experience extraction. */
   text?: string;
+  /** Name of the person who created this requisition, when the ATS's own
+   *  public API exposes it (currently only SmartRecruiters does, via its
+   *  `creator` field). Job-specific, not company-wide — a much stronger
+   *  outreach signal than "some engineer at this company" once combined
+   *  with a known domain/pattern. */
+  postedBy?: string;
 }
 
 export interface Job extends RawJob {
