@@ -50,17 +50,43 @@ export const loadBoardVolumes = () => readJson<VolumeHistory>(BOARD_VOLUMES_PATH
 export const saveBoardVolumes = (history: VolumeHistory) => writeJson(BOARD_VOLUMES_PATH, history);
 
 /**
- * Repost bookkeeping for one board (see the function comment below for why
- * scoping to a single polled board matters).
+ * Is this job id under one of the tenant prefixes polled this run?
+ *
+ * Prefixes are `${ats}:${token}:`, but the token itself can contain colons —
+ * Zoho Recruit stores a whole board URL there — so the prefix boundary cannot
+ * be found by splitting. Instead every colon position in the id is offered to
+ * the set, which is a handful of lookups per id rather than a scan over every
+ * polled prefix.
+ *
+ * This trusts the set to hold only whole `ats:token:` prefixes built from real
+ * rows. A bare `ats:` in there would match every id on that platform; nothing
+ * constructs one, because no row has an empty token.
  */
-export function updateReposts(state: RepostState, presentIds: Iterable<string>, prefix: string, nowIso: string): RepostState {
+function underPolledBoard(id: string, prefixes: Set<string>): boolean {
+  for (let i = id.indexOf(':'); i !== -1; i = id.indexOf(':', i + 1)) {
+    if (prefixes.has(id.slice(0, i + 1))) return true;
+  }
+  return false;
+}
+
+/**
+ * Repost bookkeeping for every board polled this run, in one pass.
+ *
+ * Takes the whole run's ids and prefixes together rather than one board at a
+ * time. A tenant's sites are separate rows but share a single job-id space, so
+ * judging one site in isolation makes its siblings' ids look absent and stamps
+ * them `gone` — they then return flagged as reposts when the sibling is polled.
+ * One call over the union cannot make that mistake, and it rebuilds the state
+ * object once instead of once per board.
+ */
+export function updateReposts(state: RepostState, presentIds: Iterable<string>, prefixes: Set<string>, nowIso: string): RepostState {
   const next: RepostState = {};
   const cutoff = Date.now() - REPOST_WINDOW_DAYS * 86_400_000;
   const seenPresent = new Set(presentIds);
   for (const [id, entry] of Object.entries(state)) {
     // Boards not polled this run carry no evidence either way — only entries
-    // under this board's prefix may be stamped, refreshed, or pruned.
-    if (!id.startsWith(prefix)) {
+    // under a polled board's prefix may be stamped, refreshed, or pruned.
+    if (!underPolledBoard(id, prefixes)) {
       next[id] = entry;
       continue;
     }

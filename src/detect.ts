@@ -4,7 +4,7 @@ import { FETCHERS } from './fetchers/index.js';
 import { mapLimit } from './fetchers/util.js';
 import { locationMatches } from './filter.js';
 import { loadCompanies, saveCompanies } from './state.js';
-import { HOSTED as SUPPORTED, WORKDAY } from './board-url.js';
+import { boardKey, HOSTED as SUPPORTED, WORKDAY } from './board-url.js';
 
 /**
  * Resolves a company's careers page to its actual ATS board.
@@ -128,7 +128,7 @@ async function main(): Promise<void> {
   const found = await mapLimit(targets, 8, (t) => detect(t.domain, t.industry));
 
   const existing = await loadCompanies();
-  const known = new Set(existing.map((c) => `${c.ats}:${c.token.toLowerCase()}`));
+  const known = new Set(existing.map(boardKey));
   const additions: Company[] = [];
 
   for (const result of found) {
@@ -141,7 +141,7 @@ async function main(): Promise<void> {
       continue;
     }
     const { company } = result;
-    const key = `${company.ats}:${company.token.toLowerCase()}`;
+    const key = boardKey(company);
     if (known.has(key)) {
       console.log(`  = ${result.domain.padEnd(24)} ${company.ats}:${company.token} (already have it)`);
       continue;

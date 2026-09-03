@@ -7,6 +7,7 @@ import { epochToIso } from './fetchers/eightfold.js';
 import { safeIso } from './fetchers/darwinbox.js';
 import { parsePostedOn } from './fetchers/workday.js';
 import { refreshedPostedAt } from './catalog.js';
+import { boardKey } from './board-url.js';
 import { BlockError, classifyFailure, classifyOkBody } from './fetchers/block.js';
 import { summarizeHostStats, updateHistory, persistentlySlow } from './host-stats.js';
 import {
@@ -417,6 +418,26 @@ check('a first date fills an empty slot', refreshedPostedAt(undefined, '2026-06-
 check('a board dropping its date leaves the stored one alone', refreshedPostedAt('2026-06-01', undefined), false);
 check('an unparseable incoming date is ignored', refreshedPostedAt('2026-06-01', 'Posted 30+ Days Ago'), false);
 check('an unparseable stored date is replaced', refreshedPostedAt('Posted Today', '2026-06-01'), true);
+
+console.log('board identity key');
+// Roster identity, not job identity. One tenant can host several genuinely
+// different boards: RTX's `Private_Posting_No_TMP` and `REC_RTX_Ext_Gateway`
+// share a token and return non-overlapping listings. Keyed on ats+token alone
+// they collapse to one key, which silently dropped the second on import and let
+// `polledTokens` delete whichever site rotation had not selected that run.
+const bk = (p: Partial<Company>): string =>
+  boardKey({ name: 'x', ats: 'workday', token: 'globalhr', industry: 'tech', ...p } as Company);
+check('site is part of the key', bk({ site: 'REC_RTX_Ext_Gateway' }), 'workday:globalhr:rec_rtx_ext_gateway');
+check('two sites on one tenant are different boards',
+  bk({ site: 'REC_RTX_Ext_Gateway' }) !== bk({ site: 'Private_Posting_No_TMP' }), true);
+check('oracle falls back to siteNumber',
+  boardKey({ name: 'x', ats: 'oracle', token: 'EGUG', industry: 'tech', siteNumber: 'CX_1' } as Company),
+  'oracle:egug:cx_1');
+check('a site-less board still keys cleanly',
+  boardKey({ name: 'x', ats: 'greenhouse', token: 'Stripe', industry: 'tech' } as Company),
+  'greenhouse:stripe:');
+check('case does not create a second board',
+  bk({ site: 'External_Career' }), bk({ site: 'EXTERNAL_CAREER' }));
 
 console.log('board selection');
 // Rotation is what lets the corpus hold ~21,000 boards without the run time
@@ -909,23 +930,48 @@ console.log('repost tracking (board-scoped)');
 const T0 = daysAgo(3);
 const T1 = daysAgo(2);
 const T3 = daysAgo(1);
-let rs: RepostState = updateReposts({}, ['a:1:x'], 'a:1:', T0);
+const P = (...p: string[]) => new Set(p);
+let rs: RepostState = updateReposts({}, ['a:1:x'], P('a:1:'), T0);
 check('live id tracked clean', rs['a:1:x']?.gone, undefined);
-rs = updateReposts(rs, [], 'a:1:', T1);
+rs = updateReposts(rs, [], P('a:1:'), T1);
 check('absent id stamped gone', Boolean(rs['a:1:x']?.gone), true);
-rs = updateReposts(rs, ['a:1:x'], 'a:1:', T3);
+rs = updateReposts(rs, ['a:1:x'], P('a:1:'), T3);
 check('return clears gone', rs['a:1:x']?.gone, undefined);
 // Other-board entries are never touched by another board's poll — cold
 // rotation must not stamp absence on boards nobody looked at.
 rs['b:2:y'] = { last: T0 };
-rs = updateReposts(rs, [], 'a:1:', T1);
+rs = updateReposts(rs, [], P('a:1:'), T1);
 check('foreign board entry untouched by this poll', rs['b:2:y']?.gone, undefined);
 check('own board entry got gone stamp', Boolean(rs['a:1:x']?.gone), true);
 // Window expiry: an entry last seen long ago is pruned even while absent.
 const OLD = daysAgo(REPOST_WINDOW_DAYS + 1);
 rs = { 'stale:x': { last: OLD } };
-rs = updateReposts(rs, [], 'stale:', T3);
+rs = updateReposts(rs, [], P('stale:'), T3);
 check('expired absent entry pruned', rs['stale:x'], undefined);
+
+// Multi-site tenants: RTX runs two Workday sites that are separate rows in
+// companies.json but share one job-id space, because an id carries no site.
+// Judging one site's poll alone made the other's ids look absent and stamped
+// them gone; they then came back flagged as reposts. The run now passes every
+// polled board's ids in a single call, so the union is what gets judged.
+rs = updateReposts({}, ['workday:globalhr:req-A', 'workday:globalhr:req-B'], P('workday:globalhr:'), T0);
+rs = updateReposts(rs, ['workday:globalhr:req-A', 'workday:globalhr:req-B'], P('workday:globalhr:'), T1);
+check('sibling site ids survive a combined poll', rs['workday:globalhr:req-B']?.gone, undefined);
+check('and so does the first site', rs['workday:globalhr:req-A']?.gone, undefined);
+// A genuinely closed requisition on a polled tenant is still stamped.
+rs = updateReposts(rs, ['workday:globalhr:req-A'], P('workday:globalhr:'), T3);
+check('a truly absent id is still stamped gone', Boolean(rs['workday:globalhr:req-B']?.gone), true);
+
+// A token can itself contain colons — Zoho Recruit stores a whole board URL
+// there — so the prefix boundary cannot be found by splitting on ':'.
+const zoho = 'zohorecruit:https://careers.zohocorp.com/jobs/careers:9001';
+rs = updateReposts({ [zoho]: { last: T0 } }, [], P('zohorecruit:https://careers.zohocorp.com/jobs/careers:'), T1);
+check('a colon-bearing token still matches its own prefix', Boolean(rs[zoho]?.gone), true);
+// A different Zoho board's prefix must not claim it. (A bare `zohorecruit:`
+// would match, but the set only ever holds whole `ats:token:` prefixes built
+// from real rows, and no row has an empty token.)
+rs = updateReposts({ [zoho]: { last: T0 } }, [], P('zohorecruit:https://careers.bbinsight.com/jobs/Careers:'), T1);
+check('a sibling zoho board does not claim it', rs[zoho]?.gone, undefined);
 
 console.log('board volume anomaly detection');
 import { detectVolumeDrops, updateVolumeHistory, volumeDropChanges } from './volume-stats.js';

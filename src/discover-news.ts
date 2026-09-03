@@ -1,6 +1,7 @@
 import { appendFile, mkdir, writeFile } from 'node:fs/promises';
 import type { Candidate, Hit } from './board-probe.js';
 import { probeSlug } from './board-probe.js';
+import { boardKey } from './board-url.js';
 import { mapLimit, UA } from './fetchers/util.js';
 import { isServiceCompany } from './filter.js';
 import { extractNames, headlineItems, FUNDING, INDIA_EXPANSION } from './news-extract.js';
@@ -72,7 +73,7 @@ function renderDigest(entries: { name: string; source?: string }[]): string {
 
 async function main(): Promise<void> {
   const existing = await loadCompanies();
-  const known = new Set(existing.map((c) => `${c.ats}:${c.token.toLowerCase()}`));
+  const known = new Set(existing.map(boardKey));
   const knownNames = new Set(existing.map((c) => c.name.toLowerCase().replace(/[^a-z0-9]/g, '')));
 
   const feeds = await mapLimit(FEEDS, 6, fetchFeed);

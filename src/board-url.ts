@@ -77,6 +77,22 @@ export function parseBoardUrl(url: string, industry: Industry = 'tech'): Company
   return null;
 }
 
+/**
+ * Roster identity: which row in `companies.json` this is.
+ *
+ * Site-aware, because one tenant can host several genuinely different boards.
+ * RTX runs `Private_Posting_No_TMP` and `REC_RTX_Ext_Gateway` with no overlap
+ * between their listings, and Deutsche Bank's tenant carries both `DBWebsite`
+ * and DWS's `dwswebsite`. Keyed on ats+token alone those collapse into a single
+ * key, so an importer silently drops the second one and the run loop cannot
+ * tell them apart — which is also how `polledTokens` in index.ts could delete a
+ * sibling site that simply wasn't selected for polling this run.
+ *
+ * NOT job identity. A job id stays `${ats}:${token}:${externalId}` and its
+ * tenant prefix stays site-blind: requisition ids are already unique across a
+ * tenant's sites, and re-keying them would invalidate every id in seen.json and
+ * every entry in the catalogue, re-alerting the whole corpus on the next run.
+ */
 export function boardKey(company: Company): string {
-  return `${company.ats}:${company.token.toLowerCase()}`;
+  return `${company.ats}:${company.token}:${company.site ?? company.siteNumber ?? ''}`.toLowerCase();
 }

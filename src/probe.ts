@@ -3,6 +3,7 @@ import type { Industry } from './types.js';
 import { mapLimit } from './fetchers/util.js';
 import { isServiceCompany } from './filter.js';
 import { loadCompanies, saveCompanies } from './state.js';
+import { boardKey } from './board-url.js';
 import { HOSTED, probeSlug, type Candidate, type Hit } from './board-probe.js';
 
 /**
@@ -32,7 +33,7 @@ async function main(): Promise<void> {
   const keepAll = flags.includes('--all');
 
   const existing = await loadCompanies();
-  const known = new Set(existing.map((c) => `${c.ats}:${c.token.toLowerCase()}`));
+  const known = new Set(existing.map(boardKey));
   const candidates = parseCandidates(path);
 
   console.log(`probing ${candidates.length} candidates across ${HOSTED.join(', ')}`);

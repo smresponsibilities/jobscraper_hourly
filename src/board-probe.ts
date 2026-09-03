@@ -1,7 +1,7 @@
 import type { Ats, Company, Industry } from './types.js';
 import { FETCHERS } from './fetchers/index.js';
 import { locationMatches } from './filter.js';
-import { prettify } from './board-url.js';
+import { boardKey, prettify } from './board-url.js';
 
 /**
  * Shared slug-probing used by both `npm run probe` (a file of candidates) and
@@ -43,7 +43,6 @@ export async function probeSlug(
 ): Promise<Hit | null> {
   for (const token of variants(candidate.slug)) {
     for (const ats of HOSTED) {
-      if (known.has(`${ats}:${token}`)) return null;
       const company: Company = {
         name: candidate.name ?? prettify(candidate.slug),
         ats,
@@ -51,6 +50,10 @@ export async function probeSlug(
         industry: candidate.industry,
         source,
       };
+      // Compared via the shared roster key so this and the caller that built
+      // `known` cannot drift apart. Every HOSTED platform is site-less, so the
+      // key's site component is empty on both sides.
+      if (known.has(boardKey(company))) return null;
       try {
         const jobs = await FETCHERS[ats].list(company);
         if (jobs.length === 0) continue;

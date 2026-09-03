@@ -5,7 +5,7 @@ import { HOST_CONCURRENCY } from './config.js';
 import { locationMatches, roleFamily } from './filter.js';
 import { classify } from './classify.js';
 import { loadCompanies, saveCompanies } from './state.js';
-import { WORKDAY } from './board-url.js';
+import { boardKey, WORKDAY } from './board-url.js';
 
 /**
  * Bulk-imports boards from kalil0321/ats-scrapers' published tenant lists.
@@ -78,15 +78,17 @@ const limitForHost = (key: string) =>
 
 async function main(): Promise<void> {
   const existing = await loadCompanies();
-  const known = new Set(existing.map((c) => `${c.ats}:${c.token.toLowerCase()}`));
+  const known = new Set(existing.map(boardKey));
 
   const platforms = onlyPlatform ? [onlyPlatform] : IMPORTABLE;
   let candidates: Company[] = [];
   for (const platform of platforms) {
     const rows = await loadCsv(platform);
-    const fresh = rows.filter((c) => !known.has(`${c.ats}:${c.token.toLowerCase()}`));
-    // One tenant can appear under several names in a crawled list.
-    const deduped = new Map(fresh.map((c) => [`${c.ats}:${c.token.toLowerCase()}`, c]));
+    const fresh = rows.filter((c) => !known.has(boardKey(c)));
+    // One tenant can appear under several names in a crawled list. Keyed by
+    // board, not tenant, so a Workday tenant's second career site is a genuine
+    // new candidate rather than a duplicate of the site we already track.
+    const deduped = new Map(fresh.map((c) => [boardKey(c), c]));
     console.log(`${platform.padEnd(16)} ${rows.length} listed, ${deduped.size} untracked`);
     candidates.push(...deduped.values());
   }

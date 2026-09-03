@@ -4,6 +4,7 @@ import { FETCHERS } from './fetchers/index.js';
 import { getJson, mapLimit, UA } from './fetchers/util.js';
 import { isServiceCompany, locationMatches } from './filter.js';
 import { loadCompanies, readJson, saveCompanies } from './state.js';
+import { boardKey } from './board-url.js';
 import { CONCURRENCY } from './config.js';
 
 /** Safety cap on rows parsed from one block, to bound memory. */
@@ -106,7 +107,7 @@ async function isWorthKeeping(company: Company): Promise<boolean> {
 
 async function main(): Promise<void> {
   const existing = await loadCompanies();
-  const known = new Set(existing.map((c) => `${c.ats}:${c.token.toLowerCase()}`));
+  const known = new Set(existing.map(boardKey));
 
   const indexUrl = await latestIndex();
   console.log(`harvesting from ${indexUrl}`);
@@ -124,7 +125,7 @@ async function main(): Promise<void> {
       const candidate = parseCandidate(row.url, ats);
       if (!candidate) continue;
       if (isServiceCompany(candidate.name)) continue;
-      const key = `${candidate.ats}:${candidate.token.toLowerCase()}`;
+      const key = boardKey(candidate);
       if (known.has(key) || candidates.has(key)) continue;
       candidates.set(key, candidate);
     }

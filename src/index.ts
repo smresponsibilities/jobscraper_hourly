@@ -9,6 +9,7 @@ import { rampingCompanies } from './trends.js';
 import { updateCatalog, type CatalogEntry } from './catalog.js';
 import { CONCURRENCY, BLOCK_HOLD_DAYS, DROP_AFTER_FAILING_DAYS, HOST_CONCURRENCY } from './config.js';
 import { BlockError, type BlockKind } from './fetchers/block.js';
+import { boardKey } from './board-url.js';
 import {
   loadCompanies,
   loadBoardVolumes,
@@ -162,10 +163,9 @@ async function main(): Promise<void> {
 
   // Silent partial-loss detection (see volume-stats.ts): only successful polls
   // carry evidence, and only boards polled this run are judged.
-  const volumeKey = (c: Company) => `${c.ats}:${c.token}:${c.site ?? ''}`;
   const volumeSamples = results
     .filter((r) => !r.error)
-    .map((r) => ({ key: volumeKey(r.company), count: r.jobs.length }));
+    .map((r) => ({ key: boardKey(r.company), count: r.jobs.length }));
   const polledVolumeKeys = new Set(volumeSamples.map((s) => s.key));
   const boardVolumes = updateVolumeHistory(previousBoardVolumes, volumeSamples);
   const volumeDrops = detectVolumeDrops(boardVolumes, polledVolumeKeys);
@@ -191,10 +191,8 @@ async function main(): Promise<void> {
    * silently deleted — and with rotation most of the corpus is missing from
    * any single run.
    */
-  const polledTokens = new Set(selection.polling.map((c) => `${c.ats}:${c.token}`));
-  const updatedCompanies: Company[] = companies.filter(
-    (c) => !polledTokens.has(`${c.ats}:${c.token}`),
-  );
+  const polledTokens = new Set(selection.polling.map(boardKey));
+  const updatedCompanies: Company[] = companies.filter((c) => !polledTokens.has(boardKey(c)));
   const dropped: string[] = [];
   const fresh: { company: Company; job: RawJob }[] = [];
   /**
@@ -207,6 +205,20 @@ async function main(): Promise<void> {
    */
   const liveIds = new Map<string, string | undefined>();
   const polledBoards = new Set<string>();
+  /**
+   * Repost evidence, accumulated across every board and applied once after the
+   * loop. It used to be applied per board, which rebuilt the whole ~30k-entry
+   * repost state up to `BOARDS_PER_RUN` times a run — but the reason it had to
+   * move is correctness, not speed: a tenant's sites share one job-id space, so
+   * polling RTX's `search` site alone made `campus`'s ids look absent and
+   * stamped them `gone`, and they then came back flagged as reposts the moment
+   * `campus` was polled. Batching every polled board into one call means a
+   * tenant is only ever judged on the union of its sites' ids.
+   */
+  const polledPrefixes = new Set<string>();
+  const presentIds: string[] = [];
+  /** Successful polls per `ats:token`, for the closure guard below. */
+  const tenantPolls = new Map<string, number>();
   let totalSeen = 0;
   let screened = 0;
 
@@ -221,11 +233,10 @@ async function main(): Promise<void> {
   if (outageDelta.recovered) console.log('previously suspected outage has cleared');
 
   for (const { company, jobs, error, blockKind } of results) {
-    // Repost tracking is per-board: only a board we just polled gives evidence
-    // about which of its ids are still live (cold rotation means the others
-    // carry none). Collected across the inner loop, applied once after it.
-    const boardPrefix = `${company.ats}:${company.token}:`;
-    const boardIds: string[] = [];
+    // Only a board polled this run carries evidence about which of its ids are
+    // still live; cold rotation means every other board carries none. That is
+    // what `polledPrefixes` records.
+    const tenant = `${company.ats}:${company.token}`;
     if (error) {
       const failed = recordFailure(company, nowIso);
       const days = (Date.now() - new Date(failed.failingSince!).getTime()) / 86_400_000;
@@ -267,7 +278,8 @@ async function main(): Promise<void> {
       ...(hasIndia || company.lastIndiaAt ? { lastIndiaAt: hasIndia ? nowIso : company.lastIndiaAt } : {}),
     });
     totalSeen += jobs.length;
-    polledBoards.add(`${company.ats}:${company.token}`);
+    tenantPolls.set(tenant, (tenantPolls.get(tenant) ?? 0) + 1);
+    polledPrefixes.add(`${tenant}:`);
 
     for (const job of jobs) {
       const id = `${company.ats}:${company.token}:${job.externalId}`;
@@ -285,7 +297,7 @@ async function main(): Promise<void> {
        */
       if (!preScreen(job, company)) continue;
       screened++;
-      boardIds.push(id);
+      presentIds.push(id);
       if (seen[id] && !testEmail) continue;
       // A previously-live id alerting again while stamped `gone` is a reopened
       // requisition — flagged on the job, not silently treated as brand-new.
@@ -293,7 +305,26 @@ async function main(): Promise<void> {
       seen[id] = nowIso;
       fresh.push({ company, job });
     }
-    reposts = updateReposts(reposts, boardIds, boardPrefix, nowIso);
+  }
+
+  reposts = updateReposts(reposts, presentIds, polledPrefixes, nowIso);
+
+  /**
+   * A tenant's postings may be spread across several sites that are separate
+   * rows in companies.json, and catalogue closure is decided per tenant because
+   * a job id carries no site. So a tenant only counts as polled when *every*
+   * row it has succeeded this run — otherwise polling RTX's `search` site while
+   * `REC_RTX_Ext_Gateway` sat out on cold rotation would mark every posting
+   * from the other site closed. Missing a closure for a run is recoverable;
+   * inventing one is not.
+   */
+  const tenantRows = new Map<string, number>();
+  for (const c of companies) {
+    const t = `${c.ats}:${c.token}`;
+    tenantRows.set(t, (tenantRows.get(t) ?? 0) + 1);
+  }
+  for (const [tenant, polls] of tenantPolls) {
+    if (polls === tenantRows.get(tenant)) polledBoards.add(tenant);
   }
 
   // Already screened above, so every fresh job is a candidate worth enriching —

@@ -84,7 +84,14 @@ export interface CatalogUpdate {
   now: string;
 }
 
-function boardKey(id: string): string {
+/**
+ * Tenant identity, parsed back out of a job id. Deliberately site-blind and
+ * deliberately NOT `boardKey` from board-url.ts, which identifies a roster row
+ * and includes the site. A job id carries no site, so this is the only shape
+ * available here — and closure has to be decided per tenant anyway, since a
+ * tenant's sites share one id space.
+ */
+function tenantKey(id: string): string {
   const [ats, token] = id.split(':');
   return `${ats}:${token}`;
 }
@@ -139,7 +146,7 @@ export async function updateCatalog(update: CatalogUpdate): Promise<{
   let bumped = 0;
 
   for (const entry of byId.values()) {
-    if (!update.polledBoards.has(boardKey(entry.id))) continue;
+    if (!update.polledBoards.has(tenantKey(entry.id))) continue;
 
     if (update.liveIds.has(entry.id)) {
       entry.lastSeen = update.now;
