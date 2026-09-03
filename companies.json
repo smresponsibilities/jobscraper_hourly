@@ -102006,5 +102006,1661 @@
     "industry": "tech",
     "source": "discovered",
     "lastIndiaAt": "2026-08-17T00:00:00.000Z"
+  },
+  {
+    "token": "equisoft",
+    "host": "wd10",
+    "name": "Equisoft",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "External"
+  },
+  {
+    "token": "ffd",
+    "host": "wd1",
+    "name": "Ffd",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "EmploymentOpportunities"
+  },
+  {
+    "token": "hbfuller",
+    "host": "wd1",
+    "name": "Hbfuller",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Careers"
+  },
+  {
+    "token": "manningnapier",
+    "host": "wd1",
+    "name": "Manningnapier",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Manning-Napier"
+  },
+  {
+    "token": "phcgroup",
+    "host": "wd3",
+    "name": "Phcgroup",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "scimed_careers"
+  },
+  {
+    "token": "riministreet",
+    "host": "wd1",
+    "name": "Riministreet",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "RiminiStreet"
+  },
+  {
+    "token": "sorren",
+    "host": "wd12",
+    "name": "Sorren",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "India"
+  },
+  {
+    "token": "vishay",
+    "host": "wd3",
+    "name": "Vishay",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "VishayCareers"
+  },
+  {
+    "token": "cotality",
+    "host": "wd115",
+    "name": "Cotality",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Global"
+  },
+  {
+    "token": "elemica",
+    "host": "wd501",
+    "name": "Elemica",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Elemica_Careers"
+  },
+  {
+    "token": "bci",
+    "host": "wd10",
+    "name": "Bci",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "BCI_Careers"
+  },
+  {
+    "token": "aampower",
+    "host": "wd1",
+    "name": "Aampower",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Interim-Dauch-Career-Site"
+  },
+  {
+    "token": "travelex",
+    "host": "wd107",
+    "name": "Travelex",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "TravelexCareers"
+  },
+  {
+    "token": "aviareps",
+    "host": "wd103",
+    "name": "Aviareps",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "AVIAREPS_Careers"
+  },
+  {
+    "token": "atsg",
+    "host": "wd108",
+    "name": "Atsg",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "XTIUMCareers"
+  },
+  {
+    "token": "schreiberfoods",
+    "host": "wd115",
+    "name": "Schreiberfoods",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "SchreiberLogistics"
+  },
+  {
+    "token": "huntelec",
+    "host": "wd501",
+    "name": "Huntelec",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "HuntElectric_Careers"
+  },
+  {
+    "token": "qiagen",
+    "host": "wd502",
+    "name": "Qiagen",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "QIAGEN"
+  },
+  {
+    "token": "aampower",
+    "host": "wd1",
+    "name": "Aampower",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "AAM-Career-Site"
+  },
+  {
+    "token": "schreiberfoods",
+    "host": "wd115",
+    "name": "Schreiberfoods",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Schreiber_Careers"
+  },
+  {
+    "token": "piramalpharma",
+    "host": "wd102",
+    "name": "Piramalpharma",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "PIRAMAL_EXTERNAL_CAREERS"
+  },
+  {
+    "token": "innocap",
+    "host": "wd10",
+    "name": "Innocap",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Innocap-External-Career-Site"
+  },
+  {
+    "token": "mobility",
+    "host": "wd503",
+    "name": "Mobility",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Mobility"
+  },
+  {
+    "token": "regis",
+    "host": "wd501",
+    "name": "Regis",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "studentjobsdeptfunded"
+  },
+  {
+    "token": "nortekinc",
+    "host": "wd503",
+    "name": "Nortekinc",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "NortekDCC"
+  },
+  {
+    "token": "nortekinc",
+    "host": "wd503",
+    "name": "Nortekinc",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "NortekAirSolutions"
+  },
+  {
+    "token": "exclusivenetworks",
+    "host": "wd103",
+    "name": "Exclusivenetworks",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Exclusive-Networks-Career"
+  },
+  {
+    "token": "crinetics",
+    "host": "wd12",
+    "name": "Crinetics",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "CrineticsCareers"
+  },
+  {
+    "token": "commonpointqueens",
+    "host": "wd12",
+    "name": "Commonpointqueens",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "cpq"
+  },
+  {
+    "token": "exclusivenetworks",
+    "host": "wd103",
+    "name": "Exclusivenetworks",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "broadbean_external"
+  },
+  {
+    "token": "teladoc",
+    "host": "wd503",
+    "name": "Teladoc",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "teladochealth_is_hiring"
+  },
+  {
+    "token": "lilly",
+    "host": "wd115",
+    "name": "Lilly",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "LLY"
+  },
+  {
+    "token": "ankura",
+    "host": "wd5",
+    "name": "Ankura",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Ankura"
+  },
+  {
+    "token": "confluentmedical",
+    "host": "wd503",
+    "name": "Confluentmedical",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Confluent_Medical"
+  },
+  {
+    "token": "centricsoftware",
+    "host": "wd501",
+    "name": "Centricsoftware",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Centric"
+  },
+  {
+    "token": "consertus",
+    "host": "wd501",
+    "name": "Consertus",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "consertuscareers"
+  },
+  {
+    "token": "barclays",
+    "host": "wd3",
+    "name": "Barclays",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Private"
+  },
+  {
+    "token": "crownholdings",
+    "host": "wd501",
+    "name": "Crownholdings",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "CrownHoldings"
+  },
+  {
+    "token": "armaninollp",
+    "host": "wd1",
+    "name": "Armaninollp",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Armanino_India"
+  },
+  {
+    "token": "exos",
+    "host": "wd501",
+    "name": "Exos",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "EXOSCAREERS"
+  },
+  {
+    "token": "phigroup",
+    "host": "wd12",
+    "name": "Phigroup",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "phihealthcareers"
+  },
+  {
+    "token": "ascendperformancematerials",
+    "host": "wd1",
+    "name": "Ascendperformancematerials",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Ascend"
+  },
+  {
+    "token": "lummustechnology",
+    "host": "wd501",
+    "name": "Lummustechnology",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "LummusTechnology"
+  },
+  {
+    "token": "redfcu",
+    "host": "wd503",
+    "name": "Redfcu",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "RFCU"
+  },
+  {
+    "token": "mdtkangaroo",
+    "host": "wd108",
+    "name": "Mdtkangaroo",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "MiniMedCareers"
+  },
+  {
+    "token": "streamlinehealthcare",
+    "host": "wd501",
+    "name": "Streamlinehealthcare",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Streamline_Healthcare_External_Careers"
+  },
+  {
+    "token": "altaishealthsolutions",
+    "host": "wd108",
+    "name": "Altaishealthsolutions",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "External"
+  },
+  {
+    "token": "cabotcorp",
+    "host": "wd12",
+    "name": "Cabotcorp",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Careers"
+  },
+  {
+    "token": "enovix",
+    "host": "wd12",
+    "name": "Enovix",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "External"
+  },
+  {
+    "token": "sorren",
+    "host": "wd12",
+    "name": "Sorren",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "US"
+  },
+  {
+    "token": "trintech",
+    "host": "wd501",
+    "name": "Trintech",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Trintech"
+  },
+  {
+    "token": "ashland",
+    "host": "wd12",
+    "name": "Ashland",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "AshlandCareers1"
+  },
+  {
+    "token": "theaccessgroup",
+    "host": "wd103",
+    "name": "Theaccessgroup",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Access_Group_External_Careers"
+  },
+  {
+    "token": "citicclsa",
+    "host": "wd3",
+    "name": "Citicclsa",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "External"
+  },
+  {
+    "token": "bcone",
+    "host": "wd1",
+    "name": "Bcone",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Bristlecone"
+  },
+  {
+    "token": "erpa",
+    "host": "wd12",
+    "name": "Erpa",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "ERPA"
+  },
+  {
+    "token": "prodege",
+    "host": "wd108",
+    "name": "Prodege",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Prodege_Careers"
+  },
+  {
+    "token": "repligen",
+    "host": "wd108",
+    "name": "Repligen",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Repligen_Careers"
+  },
+  {
+    "token": "flsmidthcement",
+    "host": "wd103",
+    "name": "Flsmidthcement",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Fuller_Global"
+  },
+  {
+    "token": "curriculumassociates",
+    "host": "wd5",
+    "name": "Curriculumassociates",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "External"
+  },
+  {
+    "token": "gmh",
+    "host": "wd12",
+    "name": "Gmh",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "External_Careers"
+  },
+  {
+    "token": "kardex",
+    "host": "wd103",
+    "name": "Kardex",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Kardex"
+  },
+  {
+    "token": "roechling",
+    "host": "wd103",
+    "name": "Roechling",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "roechling-medical"
+  },
+  {
+    "token": "selectlinegroup",
+    "host": "wd103",
+    "name": "Selectlinegroup",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Careers"
+  },
+  {
+    "token": "ohmium",
+    "host": "wd12",
+    "name": "Ohmium",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Naukri"
+  },
+  {
+    "token": "ohmium",
+    "host": "wd12",
+    "name": "Ohmium",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Ohmium_Careers"
+  },
+  {
+    "token": "royalihc",
+    "host": "wd103",
+    "name": "Royalihc",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "External_Career"
+  },
+  {
+    "token": "vantiva",
+    "host": "wd103",
+    "name": "Vantiva",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "vantiva"
+  },
+  {
+    "token": "velsera",
+    "host": "wd103",
+    "name": "Velsera",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Velsera"
+  },
+  {
+    "token": "redaptive",
+    "host": "wd12",
+    "name": "Redaptive",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Redaptive-Careers"
+  },
+  {
+    "token": "veripark",
+    "host": "wd103",
+    "name": "Veripark",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "veripark"
+  },
+  {
+    "token": "enovis",
+    "host": "wd5",
+    "name": "Enovis",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "enovis"
+  },
+  {
+    "token": "thegroove",
+    "host": "wd12",
+    "name": "Thegroove",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "thegroovecareers"
+  },
+  {
+    "token": "kbi",
+    "host": "wd5",
+    "name": "Kbi",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Kontoor"
+  },
+  {
+    "token": "kindercare",
+    "host": "wd5",
+    "name": "Kindercare",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "ExternalCareerSite"
+  },
+  {
+    "token": "internationalschools",
+    "host": "wd3",
+    "name": "Internationalschools",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "ISPCareers"
+  },
+  {
+    "token": "calix",
+    "host": "wd1",
+    "name": "Calix",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "ExternalInternational"
+  },
+  {
+    "token": "mlp",
+    "host": "wd5",
+    "name": "Mlp",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "indiainviteonly"
+  },
+  {
+    "token": "childrensplace",
+    "host": "wd1",
+    "name": "Childrensplace",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "TCP03"
+  },
+  {
+    "token": "luminegrp",
+    "host": "wd3",
+    "name": "Luminegrp",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Tarantula"
+  },
+  {
+    "token": "luminegrp",
+    "host": "wd3",
+    "name": "Luminegrp",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "TOMIA"
+  },
+  {
+    "token": "nrel",
+    "host": "wd5",
+    "name": "Nrel",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "NLR"
+  },
+  {
+    "token": "communitybrands",
+    "host": "wd1",
+    "name": "Communitybrands",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Momentive_External_Careers"
+  },
+  {
+    "token": "phinia",
+    "host": "wd5",
+    "name": "Phinia",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "PHINIA_Careers"
+  },
+  {
+    "token": "quickenloans",
+    "host": "wd5",
+    "name": "Quickenloans",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "rocket_india"
+  },
+  {
+    "token": "phcgroup",
+    "host": "wd3",
+    "name": "Phcgroup",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Ascensia_Careers"
+  },
+  {
+    "token": "phcgroup",
+    "host": "wd3",
+    "name": "Phcgroup",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "LIRC"
+  },
+  {
+    "token": "cyrusone",
+    "host": "wd1",
+    "name": "Cyrusone",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "CyrusOneCareerPortal"
+  },
+  {
+    "token": "sandvik",
+    "host": "wd3",
+    "name": "Sandvik",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "dormerpramet-jobs"
+  },
+  {
+    "token": "sandvik",
+    "host": "wd3",
+    "name": "Sandvik",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "seco-jobs"
+  },
+  {
+    "token": "sandvik",
+    "host": "wd3",
+    "name": "Sandvik",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "coromant-jobs"
+  },
+  {
+    "token": "sandvik",
+    "host": "wd3",
+    "name": "Sandvik",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Sandvik_Internal_for_nonWD_employees"
+  },
+  {
+    "token": "svb",
+    "host": "wd5",
+    "name": "Svb",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "firstcitizensindia"
+  },
+  {
+    "token": "volarisgroup",
+    "host": "wd3",
+    "name": "Volarisgroup",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Incadea"
+  },
+  {
+    "token": "exelixis",
+    "host": "wd1",
+    "name": "Exelixis",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Exel"
+  },
+  {
+    "token": "vishay",
+    "host": "wd3",
+    "name": "Vishay",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "broadbean_external"
+  },
+  {
+    "token": "richemont",
+    "host": "wd3",
+    "name": "Richemont",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "broadbean_external"
+  },
+  {
+    "token": "aptiagroup",
+    "host": "wd3",
+    "name": "Aptiagroup",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "broadbean_external"
+  },
+  {
+    "token": "aptiagroup",
+    "host": "wd3",
+    "name": "Aptiagroup",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "opportunities"
+  },
+  {
+    "token": "armacell",
+    "host": "wd3",
+    "name": "Armacell",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "career-armacell"
+  },
+  {
+    "token": "nextracker",
+    "host": "wd5",
+    "name": "Nextracker",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "nextpower_careers"
+  },
+  {
+    "token": "gh",
+    "host": "wd1",
+    "name": "Gh",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "gh"
+  },
+  {
+    "token": "ghc",
+    "host": "wd1",
+    "name": "Ghc",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Kaplan_Careers"
+  },
+  {
+    "token": "diconium",
+    "host": "wd3",
+    "name": "Diconium",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Embitel_Technologies_LinkedIn"
+  },
+  {
+    "token": "diconium",
+    "host": "wd3",
+    "name": "Diconium",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Embitel_Technologies"
+  },
+  {
+    "token": "appliedis",
+    "host": "wd5",
+    "name": "Appliedis",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "AIS_Careers_India"
+  },
+  {
+    "token": "flender",
+    "host": "wd3",
+    "name": "Flender",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Flender_Global"
+  },
+  {
+    "token": "gxs",
+    "host": "wd3",
+    "name": "Gxs",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "GRXST"
+  },
+  {
+    "token": "ccc",
+    "host": "wd5",
+    "name": "Ccc",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "ccc_External"
+  },
+  {
+    "token": "nab",
+    "host": "wd3",
+    "name": "Nab",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "nab_careers"
+  },
+  {
+    "token": "hysteryale",
+    "host": "wd1",
+    "name": "Hysteryale",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Hyster-YaleCareers"
+  },
+  {
+    "token": "deluxe",
+    "host": "wd5",
+    "name": "Deluxe",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "USA_CAN"
+  },
+  {
+    "token": "rbs",
+    "host": "wd3",
+    "name": "Rbs",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "RBS"
+  },
+  {
+    "token": "group1001wd",
+    "host": "wd5",
+    "name": "Group1001wd",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Careers"
+  },
+  {
+    "token": "hilbgroup",
+    "host": "wd5",
+    "name": "Hilbgroup",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "HG-Careers"
+  },
+  {
+    "token": "interfacesystems",
+    "host": "wd5",
+    "name": "Interfacesystems",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "InterfaceSystemsCareers"
+  },
+  {
+    "token": "jll",
+    "host": "wd1",
+    "name": "Jll",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "brightstonecareers"
+  },
+  {
+    "token": "itw",
+    "host": "wd5",
+    "name": "Itw",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "External"
+  },
+  {
+    "token": "jll",
+    "host": "wd1",
+    "name": "Jll",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "jllcareers"
+  },
+  {
+    "token": "wlt",
+    "host": "wd3",
+    "name": "Wlt",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "WLT_Careers_DNU"
+  },
+  {
+    "token": "wlt",
+    "host": "wd3",
+    "name": "Wlt",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "WL_Careers"
+  },
+  {
+    "token": "lplfinancial",
+    "host": "wd1",
+    "name": "Lplfinancial",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "India_Ext"
+  },
+  {
+    "token": "magnitudesoftware",
+    "host": "wd1",
+    "name": "Magnitudesoftware",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "External"
+  },
+  {
+    "token": "onemagnify",
+    "host": "wd5",
+    "name": "Onemagnify",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "OneMagnify_Careers"
+  },
+  {
+    "token": "sleepnumber",
+    "host": "wd5",
+    "name": "Sleepnumber",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "sleepnumber"
+  },
+  {
+    "token": "toppanmerrill",
+    "host": "wd5",
+    "name": "Toppanmerrill",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Toppan_Merrill"
+  },
+  {
+    "token": "ochsner",
+    "host": "wd1",
+    "name": "Ochsner",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Ochsner"
+  },
+  {
+    "token": "whoi",
+    "host": "wd5",
+    "name": "Whoi",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "WHOI-External"
+  },
+  {
+    "token": "pretiumenterpriseservices",
+    "host": "wd1",
+    "name": "Pretiumenterpriseservices",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Pretium-Enterprise-Services"
+  },
+  {
+    "token": "priceline",
+    "host": "wd1",
+    "name": "Priceline",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Priceline"
+  },
+  {
+    "token": "revantage",
+    "host": "wd1",
+    "name": "Revantage",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Revantage"
+  },
+  {
+    "token": "snapchat",
+    "host": "wd1",
+    "name": "Snapchat",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "snap"
+  },
+  {
+    "token": "snapchat",
+    "host": "wd1",
+    "name": "Snapchat",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "sourced"
+  },
+  {
+    "token": "speedcast",
+    "host": "wd1",
+    "name": "Speedcast",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "speedcastcareers"
+  },
+  {
+    "token": "abinbev",
+    "host": "wd1",
+    "name": "Abinbev",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "IND"
+  },
+  {
+    "token": "aegistherapies",
+    "host": "wd1",
+    "name": "Aegistherapies",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "AegisCareers"
+  },
+  {
+    "token": "allisontransmission",
+    "host": "wd1",
+    "name": "Allisontransmission",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "ATI-External"
+  },
+  {
+    "token": "altapm",
+    "host": "wd1",
+    "name": "Altapm",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "ALTACareers"
+  },
+  {
+    "token": "areteir",
+    "host": "wd1",
+    "name": "Areteir",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Arete-Careers"
+  },
+  {
+    "token": "bestfriends",
+    "host": "wd1",
+    "name": "Bestfriends",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "bestfriendscareers"
+  },
+  {
+    "token": "catalight",
+    "host": "wd1",
+    "name": "Catalight",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Catalight"
+  },
+  {
+    "token": "catalight",
+    "host": "wd1",
+    "name": "Catalight",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Catalight-Careers"
+  },
+  {
+    "token": "corespecialtyinsurance",
+    "host": "wd1",
+    "name": "Corespecialtyinsurance",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Core_Specialty"
+  },
+  {
+    "token": "docgo",
+    "host": "wd1",
+    "name": "Docgo",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "DocGo"
+  },
+  {
+    "token": "drivenbrands",
+    "host": "wd1",
+    "name": "Drivenbrands",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "DrivenBrandsCareerSite"
+  },
+  {
+    "token": "encore",
+    "host": "wd1",
+    "name": "Encore",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "900362"
+  },
+  {
+    "token": "encore",
+    "host": "wd1",
+    "name": "Encore",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "734611"
+  },
+  {
+    "token": "encore",
+    "host": "wd1",
+    "name": "Encore",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "externalnew"
+  },
+  {
+    "token": "encore",
+    "host": "wd1",
+    "name": "Encore",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "603023"
+  },
+  {
+    "token": "gia",
+    "host": "wd1",
+    "name": "Gia",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "GIA-India"
+  },
+  {
+    "token": "gia",
+    "host": "wd1",
+    "name": "Gia",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "GIAServices"
+  },
+  {
+    "token": "ich",
+    "host": "wd1",
+    "name": "Ich",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "ICS_admin_pros"
+  },
+  {
+    "token": "itoinc",
+    "host": "wd1",
+    "name": "Itoinc",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Ensono_India_Agency"
+  },
+  {
+    "token": "itoinc",
+    "host": "wd1",
+    "name": "Itoinc",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "EnsonoIN"
+  },
+  {
+    "token": "ivlglobaliod",
+    "host": "wd1",
+    "name": "Ivlglobaliod",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Indovinya"
+  },
+  {
+    "token": "kmkp",
+    "host": "wd1",
+    "name": "Kmkp",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "KACECareers"
+  },
+  {
+    "token": "kognitivinc",
+    "host": "wd1",
+    "name": "Kognitivinc",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "kognitiv-careers"
+  },
+  {
+    "token": "looprecruiting",
+    "host": "wd1",
+    "name": "Looprecruiting",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "LCExternal"
+  },
+  {
+    "token": "massmutual",
+    "host": "wd1",
+    "name": "Massmutual",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "MMINDCareersite"
+  },
+  {
+    "token": "mavenir",
+    "host": "wd1",
+    "name": "Mavenir",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Mavenir_Careers"
+  },
+  {
+    "token": "mavenir",
+    "host": "wd1",
+    "name": "Mavenir",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Mavenir_Careers_1"
+  },
+  {
+    "token": "mercy",
+    "host": "wd1",
+    "name": "Mercy",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "mercycareers"
+  },
+  {
+    "token": "mywdhr",
+    "host": "wd1",
+    "name": "Mywdhr",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "HudsonsBayIndia_Careers"
+  },
+  {
+    "token": "mywdhr",
+    "host": "wd1",
+    "name": "Mywdhr",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Saks_OffFifth_Careers"
+  },
+  {
+    "token": "nas",
+    "host": "wd1",
+    "name": "Nas",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "NAS_Careers"
+  },
+  {
+    "token": "ncratleos",
+    "host": "wd1",
+    "name": "Ncratleos",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "ext_apacatleos"
+  },
+  {
+    "token": "pacificlife",
+    "host": "wd1",
+    "name": "Pacificlife",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "PacificLifeCareers"
+  },
+  {
+    "token": "panduit",
+    "host": "wd1",
+    "name": "Panduit",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "International"
+  },
+  {
+    "token": "park",
+    "host": "wd1",
+    "name": "Park",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "ParkUniversityCareersGhost"
+  },
+  {
+    "token": "pinnaclegroup",
+    "host": "wd1",
+    "name": "Pinnaclegroup",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "PinnacleGroup"
+  },
+  {
+    "token": "situsamc",
+    "host": "wd1",
+    "name": "Situsamc",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "SitusAMC"
+  },
+  {
+    "token": "sralab",
+    "host": "wd1",
+    "name": "Sralab",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "SRAlabCareers"
+  },
+  {
+    "token": "srsdistribution",
+    "host": "wd1",
+    "name": "Srsdistribution",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "SRSEvergreenCareers"
+  },
+  {
+    "token": "strayer",
+    "host": "wd1",
+    "name": "Strayer",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "CAREERS"
+  },
+  {
+    "token": "strayer",
+    "host": "wd1",
+    "name": "Strayer",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "CU_Careers"
+  },
+  {
+    "token": "strayer",
+    "host": "wd1",
+    "name": "Strayer",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "SEI"
+  },
+  {
+    "token": "strayer",
+    "host": "wd1",
+    "name": "Strayer",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Sophia"
+  },
+  {
+    "token": "swa",
+    "host": "wd1",
+    "name": "Swa",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "external"
+  },
+  {
+    "token": "tdwilliamson",
+    "host": "wd1",
+    "name": "Tdwilliamson",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "TDWCareers"
+  },
+  {
+    "token": "wasatchproperty",
+    "host": "wd1",
+    "name": "Wasatchproperty",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "MarketStarCareers"
+  },
+  {
+    "token": "wasatchproperty",
+    "host": "wd1",
+    "name": "Wasatchproperty",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "MarketStarCareersAPAC"
+  },
+  {
+    "token": "wealthenhancement",
+    "host": "wd1",
+    "name": "Wealthenhancement",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "WEG_Careers"
+  },
+  {
+    "token": "welocalize",
+    "host": "wd1",
+    "name": "Welocalize",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "Welocalize"
+  },
+  {
+    "token": "worldvision",
+    "host": "wd1",
+    "name": "Worldvision",
+    "industry": "tech",
+    "ats": "workday",
+    "source": "discovered",
+    "site": "WorldVisionInternational"
   }
 ]
