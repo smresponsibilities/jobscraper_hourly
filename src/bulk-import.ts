@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import type { Ats, Company, Industry } from './types.js';
 import { FETCHERS } from './fetchers/index.js';
 import { mapLimitByKey, UA } from './fetchers/util.js';
@@ -5,7 +6,7 @@ import { HOST_CONCURRENCY } from './config.js';
 import { locationMatches, roleFamily } from './filter.js';
 import { classify } from './classify.js';
 import { loadCompanies, saveCompanies } from './state.js';
-import { boardKey, WORKDAY } from './board-url.js';
+import { boardKey, prettify, WORKDAY } from './board-url.js';
 import { discoverSites } from './fetchers/workday.js';
 
 /**
@@ -13,11 +14,18 @@ import { discoverSites } from './fetchers/workday.js';
  *
  *   npm run bulk-import -- [--bar india|fresher|live] [--limit N] [--platform X]
  *   npm run bulk-import -- --rediscover [--bar india|fresher|live] [--limit N]
+ *   npm run bulk-import -- --file <path> [--bar india|fresher|live] [--limit N]
  *
  * `--rediscover` skips the CSV import entirely and instead walks every
  * existing Workday tenant's robots.txt for career-site names we don't already
- * track (see `rediscoverCandidates` below) — a different candidate source,
+ * track (see `discoverCandidateSites` below) — a different candidate source,
  * same validate+checkpoint pipeline.
+ *
+ * `--file <path>` is the same site-discovery step, but the tenants come from a
+ * local text file of Workday hostnames (one per line, e.g.
+ * `3m.wd1.myworkdayjobs.com`) instead of our own companies.json — for a
+ * published hostname list, like open-jobs' `slugs.json`, that carries no site
+ * at all.
  *
  * That project crawls ~77,000 ATS tenants, ~21,000 of them on platforms this
  * codebase already reads. `detect` and `probe` cannot reach these: detect needs
@@ -48,6 +56,7 @@ const bar = (flag('bar') ?? 'india') as Bar;
 const limit = Number(flag('limit') ?? 0);
 const onlyPlatform = flag('platform') as Ats | undefined;
 const rediscover = args.includes('--rediscover');
+const filePath = flag('file');
 
 /** Naive CSV split is enough here: only the trailing url field can contain commas. */
 function parseRow(platform: Ats, line: string): Company | null {
@@ -79,48 +88,64 @@ async function loadCsv(platform: Ats): Promise<Company[]> {
   return lines.map((l) => parseRow(platform, l)).filter((c): c is Company => c !== null);
 }
 
+const WORKDAY_HOSTNAME = /^([a-z0-9-]+)\.(wd\d+)\.myworkdayjobs\.com$/i;
+
+/**
+ * `--file`: a plain-text hostname list carries no `site`, unlike the CSVs
+ * above — open-jobs' `slugs.json` crawled the tenant, not any one career
+ * page, so `discoverCandidateSites` below has to resolve the site the same
+ * way `--rediscover` does for our own tenants.
+ */
+async function loadSlugFile(path: string): Promise<{ token: string; host: string }[]> {
+  const lines = (await readFile(path, 'utf8')).split(/\r?\n/);
+  const tenants = new Map<string, { token: string; host: string }>();
+  for (const line of lines) {
+    const m = WORKDAY_HOSTNAME.exec(line.trim());
+    if (!m) continue;
+    tenants.set(`${m[1]}:${m[2]}`, { token: m[1]!, host: m[2]! });
+  }
+  return [...tenants.values()];
+}
+
 /** Same shape as the hourly run's scheduler, so imports respect the same host caps. */
 const rateLimitKey = (c: Company) => (c.ats === 'workday' ? `workday:${c.host}` : c.ats);
 const limitForHost = (key: string) =>
   HOST_CONCURRENCY[key.split(':')[0]!] ?? HOST_CONCURRENCY.default!;
 
 /**
- * `--rediscover`: every existing Workday tenant carries exactly one `site`,
- * whichever URL happened to be observed when it was added. Hits each tenant's
- * robots.txt once and turns any site not already tracked into a candidate row,
- * reusing the tenant's own name/industry — it's the same company, a board we
- * just couldn't see before. Feeds into the same validate+checkpoint loop as a
- * CSV import; a resolved site is not proof of a useful board on its own.
+ * Shared by `--rediscover` and `--file`: neither source carries a `site`, so
+ * both resolve it the same way — one robots.txt hit per tenant, one candidate
+ * row per site it lists. A resolved site is not proof of a useful board on
+ * its own; that's what the validate+checkpoint loop below is for.
  */
-async function rediscoverCandidates(existing: Company[], known: Set<string>): Promise<Company[]> {
-  const workdayRows = existing.filter((c) => c.ats === 'workday' && c.host);
-  const tenants = new Map(workdayRows.map((c) => [`${c.token}:${c.host}`, c]));
-  console.log(`rediscovering sites on ${tenants.size} workday tenants\n`);
-
+async function discoverCandidateSites(
+  tenants: { name: string; token: string; host: string; industry: Industry }[],
+  known: Set<string>,
+): Promise<Company[]> {
   const found: Company[] = [];
   let checked = 0;
   await mapLimitByKey(
-    [...tenants.values()],
+    tenants,
     (c) => `workday:${c.host}`,
     limitForHost,
     async (tenant) => {
-      if (++checked % 100 === 0) console.log(`  ...${checked}/${tenants.size} tenants`);
+      if (++checked % 100 === 0) console.log(`  ...${checked}/${tenants.length} tenants`);
       let sites: string[] | 'gone';
       try {
-        sites = await discoverSites(tenant);
+        sites = await discoverSites({ ...tenant, ats: 'workday', source: 'discovered' });
       } catch {
         return;
       }
       if (sites === 'gone') return;
       for (const site of sites) {
-        const candidate: Company = { ...tenant, site, source: 'discovered' };
+        const candidate: Company = { ...tenant, ats: 'workday', source: 'discovered', site };
         if (!known.has(boardKey(candidate))) found.push(candidate);
       }
     },
   );
 
   const deduped = new Map(found.map((c) => [boardKey(c), c]));
-  console.log(`${tenants.size} tenants checked, ${deduped.size} untracked sites found`);
+  console.log(`${tenants.length} tenants checked, ${deduped.size} untracked sites found`);
   return [...deduped.values()];
 }
 
@@ -130,7 +155,19 @@ async function main(): Promise<void> {
 
   let candidates: Company[] = [];
   if (rediscover) {
-    candidates = await rediscoverCandidates(existing, known);
+    const workdayRows = existing.filter(
+      (c): c is Company & { host: string } => c.ats === 'workday' && Boolean(c.host),
+    );
+    const tenants = new Map(workdayRows.map((c) => [`${c.token}:${c.host}`, c]));
+    console.log(`rediscovering sites on ${tenants.size} workday tenants\n`);
+    candidates = await discoverCandidateSites([...tenants.values()], known);
+  } else if (filePath) {
+    const tenants = await loadSlugFile(filePath);
+    console.log(`${filePath}: ${tenants.length} workday tenants\n`);
+    candidates = await discoverCandidateSites(
+      tenants.map((t) => ({ ...t, name: prettify(t.token), industry: 'tech' as Industry })),
+      known,
+    );
   } else {
     const platforms = onlyPlatform ? [onlyPlatform] : IMPORTABLE;
     for (const platform of platforms) {
