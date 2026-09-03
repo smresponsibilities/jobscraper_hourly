@@ -24,7 +24,7 @@ import { writeFile, mkdir, readFile, rm } from 'node:fs/promises';
 import { readJson } from './state.js';
 import { mapLimit } from './fetchers/util.js';
 import { githubContacts, splitName, type CommitAuthor } from './contacts.js';
-import { dmarcRua, npmContacts, pypiContacts, mavenContacts } from './contact-sources.js';
+import { dmarcRua, npmContacts, pypiContacts, mavenContacts, websiteContacts } from './contact-sources.js';
 import { verifyEmail, type Verdict } from './verify-email.js';
 
 // ── knobs ────────────────────────────────────────────────────────────────────
@@ -77,6 +77,8 @@ const TOUCH_GAPS = [0, 4, 9, 16];
 const FACT_MAX_AGE_DAYS = 90;
 /** Bound the wall-clock cost of SMTP probing per company per build. */
 const MAX_PROBES_PER_COMPANY = Number(process.env.OUTREACH_PROBES ?? 4);
+/** ATSes whose `token` is the company's own hostname, not an ATS subdomain — see `alternates()`. */
+const HOSTNAME_ATS = new Set(['phenom', 'icims', 'zohorecruit', 'successfactors']);
 const VERDICT_TTL_DAYS = 14;
 const SIGNATURE = process.env.OUTREACH_NAME ?? 'SM';
 const PORT = Number(process.env.OUTREACH_PORT ?? 7700);
@@ -507,12 +509,25 @@ async function resolveRecipients(
       const reg = await npmContacts(company, want).catch(() => []);
       const py = reg.length === 0 ? await pypiContacts(company, want).catch(() => []) : [];
       const mvn = reg.length === 0 && py.length === 0 ? await mavenContacts(company, want).catch(() => []) : [];
-      const alt = [...reg, ...py, ...mvn];
+      // `token` is a real company hostname (not an ATS-hosted subdomain) only
+      // for the ATSes that store the full board URL — phenom, icims,
+      // zohorecruit, successfactors — so this is the one case where scanning
+      // the company's own site for a mailto/plain-text address is worth trying.
+      const web =
+        reg.length === 0 && py.length === 0 && mvn.length === 0 && known && HOSTNAME_ATS.has(known.ats)
+          ? await websiteContacts(known.token, company).catch(() => [])
+          : [];
+      const alt = [
+        ...reg,
+        ...py,
+        ...mvn,
+        ...web.map((w) => ({ name: displayName(w.email.split('@')[0] ?? ''), email: w.email })),
+      ];
       if (alt.length === 0) {
-        console.log(`    · ${company}: ${why}, no npm/PyPI/Maven contacts either`);
+        console.log(`    · ${company}: ${why}, no npm/PyPI/Maven/website contacts either`);
         return [];
       }
-      console.log(`    · ${company}: ${why}; npm/PyPI/Maven gave ${alt.length} address(es)`);
+      console.log(`    · ${company}: ${why}; npm/PyPI/Maven/website gave ${alt.length} address(es)`);
       return finalize(alt.slice(0, MAX_PROBES_PER_COMPANY).map((r) => ({ name: r.name, email: r.email })));
     };
 
