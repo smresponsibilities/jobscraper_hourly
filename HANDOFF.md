@@ -396,10 +396,12 @@ instead of batching multiple phases uncommitted, so this doesn't repeat.
   13,175-board corpus: seeded selection identical to pre-split ordering, empty
   board-state degrades to a full clean sweep rather than freezing.
 
-**All 9 phases done and committed (2026-09-03).** `companies.json` went from
-13,175 (start of this multi-session task) to 13,679 — every phase measured
-against the real corpus or a live board, not just typechecked, per this
-project's own standing rule.
+**All 9 phases done and committed (2026-09-03), with follow-up tranches and
+a revised recruitee bar the next day (2026-09-04, see below).**
+`companies.json` went from 13,175 (start of this multi-session task) to
+13,679 by the end of the 9-phase plan — every phase measured against the
+real corpus or a live board, not just typechecked, per this project's own
+standing rule.
 
 - **Phase 5 — Workday site rediscovery, run for real.** Code as described
   below, then actually executed against the full ~1,351-tenant corpus:
@@ -429,27 +431,52 @@ project's own standing rule.
   interrupted mid-validation by a session teardown and resumed cleanly from
   its own checkpoint, zero data loss, exactly as designed).
 
-- **Phase 7 — Drop-in slug import, first tranche done.** `workable` added to
-  `IMPORTABLE` (one line) and given `HOST_CONCURRENCY.workable = 6`. Run
-  against kalil0321's full workable CSV: 4,618 untracked candidates, 1,233
-  live, **122 cleared the India bar** after removing one service-company
-  false-keep (see below). **Remaining tranches not run**: greenhouse (4,162),
-  lever (1,956), ashby (1,416), smartrecruiters (743) — same mechanism, just
-  `--platform <name> --bar india`, one at a time per the plan (each platform's
-  yield is separately measurable that way, and a failure only loses one
-  tranche). Worth doing in a future session, not urgent.
+- **Phase 7 — Drop-in slug import, all five tranches run.** `workable`
+  added to `IMPORTABLE` (one line) and given `HOST_CONCURRENCY.workable = 6`.
+  Against kalil0321's CSVs, `--bar india` each: workable 4,618 untracked,
+  **122 cleared** (after removing one service-company false-keep, see
+  below); greenhouse 1,042 untracked, **2 cleared**; lever 432 untracked
+  (2 service companies auto-excluded), **0 cleared**; ashby 490 untracked,
+  **0 cleared**; smartrecruiters 1,287 untracked (3 auto-excluded), **0
+  cleared**. Greenhouse/lever/ashby/smartrecruiters' low untracked counts
+  (hundreds, not thousands, unlike the plan's open-jobs-based estimates)
+  reflect kalil0321's CSV overlapping this corpus more than open-jobs'
+  `slugs.json` did — not a sign anything is broken.
 
-- **Phase 8 — New ATS adapter, gated — failed, correctly deleted.** Built
-  `recruitee` (GET `https://<token>.recruitee.com/api/offers/`, unpaginated,
-  full description inline, no `enrich()` needed — same shape as Ashby).
-  `bulk-import.ts --file <path> --platform X` generalized again for
-  non-Workday platforms: bare subdomain slugs, no site to resolve. Live gate
-  sample (`--limit 400` of open-jobs' 3,287 recruitee slugs): **6/400 = 1.5%,
-  under the 2% bar.** Deleted the adapter, its `Ats` entry, and the 6 company
-  rows the sample had already kept (a row with no matching `FETCHERS` entry
-  would crash the next hourly poll) — same discipline as the reverted
-  sitemap-detection experiment. Per the plan's own sequencing (stop if either
-  of the first two adapters fails), `breezy` and `personio` were never built.
+- **Phase 8 — New ATS adapter: failed the 2% bar, deleted, then rebuilt at
+  a revised 1% bar.** Built `recruitee` (GET
+  `https://<token>.recruitee.com/api/offers/`, unpaginated, full description
+  inline, no `enrich()` needed — same shape as Ashby). `bulk-import.ts
+  --file <path> --platform X` generalized again for non-Workday platforms:
+  bare subdomain slugs, no site to resolve. First live gate sample
+  (`--limit 400` of open-jobs' 3,287 recruitee slugs): 6/400 = 1.5%, under
+  the plan's 2% bar — deleted the adapter, its `Ats` entry, and the 6 company
+  rows the sample had kept (a row with no matching `FETCHERS` entry would
+  crash the next hourly poll). **User then set the real acceptance bar at
+  1%, which the same 1.5% measurement already clears** — no re-sampling
+  needed, adapter restored exactly as before deletion, then run against the
+  full 3,287 slugs: **37 cleared the India bar** (39 minus 2 more
+  service-company excludes caught by hand — see below). `breezy`/`personio`
+  still not built; nothing in this session's outcome argues for reopening
+  that per the plan's own stop-if-first-fails sequencing, but the bar itself
+  is now a live parameter, not a fixed plan default — ask before assuming 2%
+  applies to a future adapter.
+
+**Two service companies the automated guard didn't catch, found by reading
+real job listings, not by name pattern alone.** Both surfaced from the
+recruitee batch: **Hudson Manpower** (recruitee) — its board lists SAP
+consulting, Ethiopian transmission-line engineering, and capital-markets
+data engineering roles simultaneously, the unmistakable shape of a staffing
+agency's client portfolio, not one company's hiring. **Delta Capita**
+(recruitee) — KYC-onboarding-analyst and regulatory-operations roles for
+banks, i.e. BPO, same category as the already-excluded Randstad/Adecco.
+Added `manpower` and `delta capita` to `SERVICE_COMPANIES` in `config.ts`
+and removed both rows. **`SERVICE_COMPANIES` is a name-pattern blocklist,
+not a live judgment** — it only catches what's already been seen and added;
+a new staffing/BPO brand still needs a human to notice, same as these two.
+Spot-checked the batch's other consultancy-sounding names (dss+, Metyis AG,
+Infopro Learning, KC Overseas Education) against real job titles — all have
+genuine product/engineering roles for their own business, kept.
 
 - **Phase 9 — Contacts: `websiteContacts()` wired.** `alternates()` in
   `src/outreach.ts` now tries a mailto/plain-text scan of the company's own
@@ -469,6 +496,34 @@ wrong to keep. Fixed before the row could linger; swept the rest of
 `companies.json` for the same pattern and found only pre-existing,
 already-documented rows (Accenture, Genpact, TCS, etc.), left alone.
 
+## Workday multi-location fix (2026-09-04, built after the plan's own "not attached to a phase" measurement)
+
+The open-jobs plan flagged one unscoped item: Workday's list view collapses
+a multi-office posting's location to a bare count ("6 Locations"), and
+`locationMatches` has nothing to match against — a Bangalore role posted
+alongside five other offices was structurally invisible. Live-measured
+before building anything: **13.6% of Workday jobs (22,398 of 164,389 across
+907 hot boards) carry this placeholder** — clearly worth fixing, not noise.
+
+Built: `isPlaceholderLocation()` (pure, tested) and
+`resolvePlaceholderLocations()` in `src/fetchers/workday.ts`, the latter
+fetching the same job-detail endpoint `enrich()` already uses and joining
+`jobPostingInfo.location` + `additionalLocations` into the real list. Wired
+into `index.ts`'s `pollBoard()`, running before results reach
+`preScreen`/`locationMatches`. Cached permanently by requisition id in
+`state/multiloc.json` (same pattern as `seen.json`/`board-state.json`, added
+to `.gitignore` and `hunt.yml`'s cache restore/save steps) — a posting's
+location list doesn't change over its lifetime, so this is a one-time cost
+per id. `MULTILOC_MAX_PER_BOARD = 20` caps new resolutions per board per
+run, so a large multi-site employer with hundreds of placeholders can't hog
+its shared per-pod concurrency slot; the backfill spreads over several runs
+instead of one spike. Verified with a full `DRY_RUN=1` sweep against the
+real 13,718-board corpus — clean, no crash, no RECONCILIATION warning.
+**Not yet measured on a real (non-dry) run** — the first live run will show
+actual `resolved N new workday multi-location postings` counts and real
+added wall-clock; watch that before assuming the 20-per-board cap is sized
+right, same "measure before raising" rule as everything else here.
+
 **Still uncommitted, deliberately left alone all session as out of scope for
 this plan**: `src/outreach.ts`, `src/contact-sources.ts`,
 `src/outreach-send.ts`, `CONTACT-DISCOVERY.md`, `state/outreach.pid`, and
@@ -476,8 +531,10 @@ this plan**: `src/outreach.ts`, `src/contact-sources.ts`,
 the user before touching those. **Before pushing**: `git fetch origin &&
 git merge origin/main` first, per this file's own git-workflow section — the
 hourly bot commits `companies.json` constantly and local has been sitting
-for a full session (11 commits, one per phase). `npx tsc --noEmit` and
-`npm test` both pass clean as of this handoff.
+for a full session (16 commits: 12 for the open-jobs plan, 4 for the
+follow-up tranches/recruitee-bar-change/multi-location work). `npx tsc
+--noEmit` and `npm test` both pass clean as of this handoff. `companies.json`
+is at 13,718 (started this multi-session task at 13,175).
 
 ## In progress — pick up here
 
