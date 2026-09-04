@@ -180,6 +180,62 @@ mailto: links and plaintext addresses on the company's own pages.
   Uneven by design; mostly useful for confirming domain + pattern rather than
   finding a person.
 
+### 4b. Leadership page — CEO/founder + engineering-management tier, built (2026-09-04)
+
+A named senior contact off the company's own "about"/"leadership" page, for
+when the whole ladder above (git, npm, PyPI, Maven, website scan) finds
+nobody at all. Ranked so engineering-tier titles (CTO, VP Engineering,
+Head/Director of Engineering, Engineering Manager) beat CEO/Founder/
+President — a fresher's cold email reads as a natural peer-adjacent ask to
+a CTO and as a seniority mismatch to a CEO, which is real job-search-advice
+territory, not just an engineering call. Both tiers live on the same page
+in practice, so one scrape covers both; only the final ranking decides
+which name ships.
+
+- **Code:** `extractLeadership()` (pure, tested) + `leadershipContacts()`
+  (the fetch wrapper) in `src/contact-sources.ts`. Wired into
+  `alternates()` in `src/outreach.ts` as the final rung, gated to
+  `HOSTNAME_ATS` (phenom/icims/zohorecruit/successfactors — the ATSes whose
+  token is a real company hostname, the one case a verified domain exists
+  without needing to guess one). No observed address exists at this rung,
+  so there's no inferred pattern either — defaults to `'first.last'`, the
+  single most common corporate convention, shipped as an explicit guess
+  through the same SMTP-verify + DMARC + bounce-gate funnel every other
+  candidate goes through.
+- **The extraction problem, and why it needed real testing before writing
+  any regex**: a name and its title almost always sit in *separate* DOM
+  elements (`<h3>Name</h3><p>Title</p>`), so `toPlainText()`-style
+  collapsing-to-one-line loses the pairing entirely. `blockAwareLines()`
+  converts block-element boundaries to newlines first, keeping name and
+  title on adjacent lines. Live-checked against 5 real leadership pages
+  before writing the extraction logic: only 1/5 was extractable from
+  collapsed text, all 2/5 that had server-rendered content at all extracted
+  cleanly once line-boundaries were preserved. A 60-char cap on the title
+  line is what rejects flowing prose — an earlier version matched "The
+  Government of India has bestowed the prestigious Padma Shri... on our
+  CEO, Sridhar Vembu" as a title line on Zoho's about page.
+- **Real scope, measured**: only 2/5 spot-checked sites had server-rendered
+  content to extract at all — Razorpay, Postman and CRED render their team
+  pages client-side (React/Next.js SPAs), same "client-rendered, no API"
+  wall this project already documents elsewhere for career pages. No
+  Playwright fallback built for this pass — same "measure before
+  escalating" rule as `curlJson`'s doc comment states for Workday's curl
+  fallback in `fetchers/util.ts`.
+- **`npm run leadership-sweep`** (`src/leadership-sweep.ts`) runs this
+  across the whole board list, same resumable/checkpointed shape as
+  `contacts-sweep.ts`. Three confidence tiers per company: `verified`
+  (`HOSTNAME_ATS`, as above), `swept` (the domain `contacts-sweep.ts`
+  already name-matched from real GitHub commit authors — a different
+  source, still real evidence), `guessed` (`{slug-of-name}.com`, no
+  evidence either way — only used by the sweep for broader research
+  coverage, never by the live `outreach.ts` pipeline). A 100-company sample
+  measured a real ~20% hit rate but also caught a genuine false positive:
+  scraping `4flow.com` returned a HelloFresh VP and an Adient VP, both from
+  a client-testimonial mention on 4flow's own page, not 4flow's own
+  people — a `guessed`-tier result is a lead to eyeball, not a fact, and
+  the sweep's own output tags every hit by tier specifically so that
+  distinction survives into whatever reads the file next.
+
 ### 5. DMARC rua records — built (2026-08-26)
 
 `_dmarc.{domain}` TXT carries `rua=mailto:` aggregate-report addresses. Nobody
@@ -289,9 +345,11 @@ never fetching linkedin.com. With ApplyBolt live again, this recedes further.
 | File | Contents |
 | --- | --- |
 | `src/contacts.ts` | Git-commit source, `domainMatchesOrg`, pattern inference/factory, freemail & machine filters |
-| `src/contact-sources.ts` | npm/PyPI/Maven registries, SmartRecruiters creators, website scanner, role addresses, `contact-find` CLI |
-| `src/outreach.ts` | `resolveRecipients()` ladder wiring, SMTP verify + Gravatar path |
-| `src/contacts-sweep.ts` | Whole-corpus measurement sweep (`npm run contacts-sweep`) |
+| `src/contact-sources.ts` | npm/PyPI/Maven registries, SmartRecruiters creators, website scanner, leadership-page scanner, role addresses, `contact-find` CLI |
+| `src/outreach.ts` | `resolveRecipients()` ladder wiring (incl. `HOSTNAME_ATS`), SMTP verify + Gravatar path |
+| `src/contacts-sweep.ts` | Whole-corpus git-contact measurement sweep (`npm run contacts-sweep`) |
+| `src/leadership-sweep.ts` | Whole-corpus leadership-page measurement sweep (`npm run leadership-sweep`) |
+| `src/outreach-send.ts` | Sends a reviewed `--mbox` batch via `git send-email` (`npm run outreach:send`) |
 | `src/verify-email.ts` | Raw SMTP RCPT probing with catch-all control (local-only: port 25 blocked on Actions runners) |
 
 CLIs:
@@ -299,7 +357,8 @@ CLIs:
 ```
 npm run contacts -- <org>            # git commits for one GitHub org
 npm run contact-find -- "Name" https://site.com [domain]   # npm + website + roles
-npm run contacts-sweep               # whole-companies.json measurement run
+npm run contacts-sweep               # whole-companies.json git-contact measurement run
+npm run leadership-sweep             # whole-companies.json leadership-page measurement run
 ```
 
 ## Open next steps
@@ -320,5 +379,18 @@ npm run contacts-sweep               # whole-companies.json measurement run
    Low priority — diminishing returns given the top 9 platforms by volume
    are now covered — but flagged so nobody assumes it was exhaustive.
 7. **Source-level reply measurement** — `ContactState.source` (git/npm/
-   pypi/maven/smartrecruiters) is wired end to end as of 2026-09-02 but has
-   nothing to measure yet; becomes real the moment #4 happens.
+   pypi/maven/smartrecruiters/website/leadership) is wired end to end but
+   has nothing to measure yet; becomes real the moment #4 happens.
+8. **`npm run leadership-sweep` full run, kicked off 2026-09-04, handed to
+   the user to run in their own terminal** (checkpointed, resumes on its
+   own — doesn't need this session alive for ~3.5-4 hours). Once it
+   finishes, review `state/leadership-sweep.json`'s `guessed`-tier hits by
+   hand before trusting any of them — the 4flow/HelloFresh false positive
+   found in the 100-company sample is real, not a hypothetical risk.
+9. **A tighter extraction heuristic**, if the full sweep's false-positive
+   rate turns out too high on review — e.g. only trust a name/title pair
+   found near a "leadership"/"our team" heading, or reject a pair if a
+   different company's name appears in the same block. Not built yet;
+   the current version ships the honest, simpler thing and lets a human
+   catch what it gets wrong, same tradeoff as everywhere else on this
+   ladder.

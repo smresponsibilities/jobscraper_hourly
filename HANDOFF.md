@@ -544,17 +544,64 @@ actual `resolved N new workday multi-location postings` counts and real
 added wall-clock; watch that before assuming the 20-per-board cap is sized
 right, same "measure before raising" rule as everything else here.
 
-**Still uncommitted, deliberately left alone all session as out of scope for
-this plan**: `src/outreach.ts`, `src/contact-sources.ts`,
-`src/outreach-send.ts`, `CONTACT-DISCOVERY.md`, `state/outreach.pid`, and
-`.agents/skills/wonder-pill/` — a separate strand of cold-outreach work; ask
-the user before touching those. **Before pushing**: `git fetch origin &&
-git merge origin/main` first, per this file's own git-workflow section — the
-hourly bot commits `companies.json` constantly and local has been sitting
-for a full session (16 commits: 12 for the open-jobs plan, 4 for the
-follow-up tranches/recruitee-bar-change/multi-location work). `npx tsc
---noEmit` and `npm test` both pass clean as of this handoff. `companies.json`
-is at 13,718 (started this multi-session task at 13,175).
+## Merged, pushed, and the cold-outreach strand landed (2026-09-04)
+
+Everything above is now on `origin/main` — pushed, not just committed
+locally. The merge itself is worth recording because it broke the standing
+assumption in this file's own git-workflow section:
+
+**"`companies.json` merge conflicts are almost always trivial" stopped being
+true the moment Phase 4 shipped.** A plain `git merge origin/main` produced
+**4,564 conflicts**, not the usual clean auto-merge — because Phase 4
+stripped `lastPolledAt`/`failingSince` off every row while origin's bot kept
+writing those same two fields for ~140 runs during this session (the two
+`companies.json`s differ in **schema**, not just content, and git's
+line-based diff3 has no way to reconcile that). Resolved with a semantic
+merge instead of a textual one: a small script joined both sides by
+`boardKey`, kept this session's schema and its 551 additions, pulled in the
+1 new board the bot found while diverged, and took the bot's `lastIndiaAt`
+wherever it was newer (3,688 boards it kept polling for real the whole
+time). **If a future session hits a `companies.json` merge conflict with
+more than a handful of hunks, don't trust the old "just merge, it resolves
+itself" assumption — check whether the two sides' schemas still match
+first.** The script lived in the session scratchpad, not the repo; worth
+promoting to a real `scripts/` file if this happens again.
+
+**The cold-outreach strand that sat uncommitted all session is now
+committed too** (SmartRecruiters requisition-creator capture,
+`outreach-send.ts`'s `git send-email` batch sender) — it turned out to be
+finished, documented work from 2026-09-02, not an abandoned experiment, so
+there was nothing to decide beyond verifying it still compiled and shipping
+it. See `CONTACT-DISCOVERY.md` for the full detail.
+
+**New this session, on top of that**: a leadership-page contact extractor
+(`leadershipContacts()`/`extractLeadership()` in `contact-sources.ts`) that
+finds a named CEO/founder or engineering-manager-tier contact when the rest
+of the ladder (git/npm/PyPI/Maven/website) finds nobody — ranked so
+engineering titles beat CEO, since a fresher's cold email to a CTO reads as
+peer-adjacent and to a CEO reads as a seniority mismatch. Gated to
+`HOSTNAME_ATS` in the live `outreach.ts` pipeline (the one case a verified
+domain exists without guessing). A separate, resumable
+`npm run leadership-sweep` (mirrors `contacts-sweep.ts`'s shape exactly)
+runs the same extractor across the whole corpus with three confidence
+tiers — `verified`/`swept`/`guessed` — for research purposes; a 100-company
+sample measured a real ~20% hit rate but also caught a genuine false
+positive (a HelloFresh exec's name pulled from a client testimonial on
+4flow.com), so `guessed`-tier hits are unverified leads, not facts, by
+design. **The user kicked off the full ~13,650-company sweep in their own
+terminal** (checkpointed, ~3.5-4 hours, doesn't need a session alive) —
+check `state/leadership-sweep.json` for results in a future session; it's
+gitignored, so it won't show up in a fresh clone.
+
+**A real (non-`DRY_RUN`) hunt was also kicked off this session** specifically
+to measure the multi-location fix's actual behavior on a live run (the dry
+run above only proved it didn't crash) — check whether it completed and
+what `resolved N new workday multi-location postings` actually reported;
+if it's still running or was interrupted, `npm run hunt` is safe to
+re-trigger, same checkpoint-safety guarantees as everything else in this
+pipeline.
+
+`npx tsc --noEmit` and `npm test` both pass clean as of this handoff.
 
 ## In progress — pick up here
 
