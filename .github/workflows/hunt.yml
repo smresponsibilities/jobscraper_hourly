@@ -68,6 +68,17 @@ jobs:
           key: board-state-${{ github.run_id }}
           restore-keys: board-state-
 
+      # Workday requisition id -> resolved real location, for postings whose
+      # list view only shows a placeholder count ("6 Locations"). Permanent
+      # per-id cache; losing it just means re-resolving from scratch over the
+      # following runs' MULTILOC_MAX_PER_BOARD cap, nothing is lost.
+      - name: Restore multi-location cache
+        uses: actions/cache/restore@v4
+        with:
+          path: state/multiloc.json
+          key: multiloc-${{ github.run_id }}
+          restore-keys: multiloc-
+
       # Tiny (one boolean per ATS) — only exists so outage_started/outage_recovered
       # below fire on transitions, not on every run of an ongoing outage.
       - name: Restore outage state
@@ -161,6 +172,13 @@ jobs:
         with:
           path: state/board-state.json
           key: board-state-${{ github.run_id }}
+
+      - name: Save multi-location cache
+        uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: state/multiloc.json
+          key: multiloc-${{ github.run_id }}
 
       - name: Save outage state
         uses: actions/cache/save@v4

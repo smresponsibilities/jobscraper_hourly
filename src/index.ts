@@ -7,14 +7,16 @@ import { isFreshEnough, locationMatches, normalizeForDedup, preScreen, shouldAle
 import { renderEmail, subject } from './email.js';
 import { rampingCompanies } from './trends.js';
 import { updateCatalog, type CatalogEntry } from './catalog.js';
-import { CONCURRENCY, BLOCK_HOLD_DAYS, DROP_AFTER_FAILING_DAYS, HOST_CONCURRENCY } from './config.js';
+import { CONCURRENCY, BLOCK_HOLD_DAYS, DROP_AFTER_FAILING_DAYS, HOST_CONCURRENCY, MULTILOC_MAX_PER_BOARD } from './config.js';
 import { BlockError, type BlockKind } from './fetchers/block.js';
 import { boardKey } from './board-url.js';
+import { resolvePlaceholderLocations } from './fetchers/workday.js';
 import {
   loadCompanies,
   loadBoardState,
   loadBoardVolumes,
   loadHostHistory,
+  loadMultiLocations,
   loadOutageState,
   loadReposts,
   loadSeen,
@@ -26,6 +28,7 @@ import {
   saveBoardVolumes,
   saveCompanies,
   saveHostHistory,
+  saveMultiLocations,
   saveOutageState,
   saveReposts,
   saveVolumeDrops,
@@ -84,10 +87,13 @@ function rateLimitKey(company: Company): string {
 const limitForHost = (key: string): number =>
   HOST_CONCURRENCY[key.split(':')[0]!] ?? HOST_CONCURRENCY.default!;
 
-async function pollBoard(company: Company): Promise<BoardResult> {
+async function pollBoard(company: Company, multiLocations: Record<string, string>): Promise<BoardResult> {
   const started = Date.now();
   try {
     const jobs = await FETCHERS[company.ats].list(company);
+    if (company.ats === 'workday') {
+      await resolvePlaceholderLocations(company, jobs, multiLocations, MULTILOC_MAX_PER_BOARD);
+    }
     return { company, jobs, durationMs: Date.now() - started };
   } catch (error) {
     const err = error as Error;
@@ -132,6 +138,7 @@ async function main(): Promise<void> {
   const repostIds = new Set<string>();
   const previousVolumeDrops: VolumeDropState = await loadVolumeDrops();
   const previousBoardVolumes = await loadBoardVolumes();
+  const multiLocations = await loadMultiLocations();
 
   /**
    * The seen state lives in the Actions cache, not in git — at ~150,000 live
@@ -154,7 +161,14 @@ async function main(): Promise<void> {
     `polling ${selection.polling.length} of ${companies.length} boards ` +
       `(${selection.hot} hot, ${selection.cold} cold on rotation, ${selection.skipped} waiting)`,
   );
-  const results = await mapLimitByKey(selection.polling, rateLimitKey, limitForHost, pollBoard);
+  const multiLocBefore = Object.keys(multiLocations).length;
+  const results = await mapLimitByKey(selection.polling, rateLimitKey, limitForHost, (c) =>
+    pollBoard(c, multiLocations),
+  );
+  const multiLocResolved = Object.keys(multiLocations).length - multiLocBefore;
+  if (multiLocResolved > 0) {
+    console.log(`resolved ${multiLocResolved} new workday multi-location postings (${multiLocBefore + multiLocResolved} cached total)`);
+  }
 
   const hostStats = summarizeHostStats(
     results.map((r): PollTiming => ({ key: rateLimitKey(r.company), durationMs: r.durationMs, error: r.error })),
@@ -413,6 +427,7 @@ async function main(): Promise<void> {
     await saveReposts(reposts);
     await saveBoardVolumes(boardVolumes);
     await saveVolumeDrops(volumeDropStateFrom(volumeDrops));
+    await saveMultiLocations(multiLocations);
   }
 
   await mkdir('out', { recursive: true });

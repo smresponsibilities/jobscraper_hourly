@@ -20,6 +20,12 @@ state/contact-sweep.json
 # one degraded rotation and nothing else.
 state/board-state.json
 
+# Workday requisition id -> resolved real location, for postings whose list
+# view only shows a placeholder count ("6 Locations"). Permanent per-id cache,
+# not a rolling window — cheap to rebuild (one degraded run re-resolving
+# everything from scratch) if the cache is ever evicted.
+state/multiloc.json
+
 # Real people's work addresses plus send/touch history. Lives in the PRIVATE
 # outreach-data repo via publish-outreach.ts, never here — see that file's
 # header. This entry exists because a local `npm run outreach` run writes it

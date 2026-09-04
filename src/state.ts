@@ -84,6 +84,16 @@ export const loadBoardVolumes = () => readJson<VolumeHistory>(BOARD_VOLUMES_PATH
 export const saveBoardVolumes = (history: VolumeHistory) => writeJson(BOARD_VOLUMES_PATH, history);
 
 /**
+ * Workday requisition id -> its resolved real location, for postings whose
+ * list view only ever shows a placeholder ("6 Locations"). A requisition's
+ * location list doesn't change over its lifetime, so this is a permanent
+ * cache, not a rolling window like seen.json — resolved once, reused forever.
+ */
+const MULTILOC_PATH = 'state/multiloc.json';
+export const loadMultiLocations = () => readJson<Record<string, string>>(MULTILOC_PATH, {});
+export const saveMultiLocations = (m: Record<string, string>) => writeJson(MULTILOC_PATH, m);
+
+/**
  * Is this job id under one of the tenant prefixes polled this run?
  *
  * Prefixes are `${ats}:${token}:`, but the token itself can contain colons —

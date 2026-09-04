@@ -6,7 +6,7 @@ import { selectBoards } from './select-boards.js';
 import { epochToIso } from './fetchers/eightfold.js';
 import { safeIso } from './fetchers/darwinbox.js';
 import { toIso as recruiteeToIso } from './fetchers/recruitee.js';
-import { parsePostedOn, parseRobotsSites } from './fetchers/workday.js';
+import { isPlaceholderLocation, parsePostedOn, parseRobotsSites } from './fetchers/workday.js';
 import { refreshedPostedAt } from './catalog.js';
 import { boardKey } from './board-url.js';
 import { BlockError, classifyFailure, classifyOkBody } from './fetchers/block.js';
@@ -394,6 +394,17 @@ check('a real recruitee timestamp parses', recruiteeToIso('2026-08-19 13:16:05 U
 check('a garbled string is dropped, not thrown', recruiteeToIso('not a date'), undefined);
 check('null is dropped', recruiteeToIso(null), undefined);
 check('undefined stays undefined', recruiteeToIso(undefined), undefined);
+
+console.log('workday multi-location placeholder detection');
+// Measured 2026-09-04: 13.6% of live Workday jobs across 907 hot boards carry
+// a bare count instead of real place names — a Bangalore role posted
+// alongside five other offices is invisible to locationMatches otherwise.
+check('a bare count is a placeholder', isPlaceholderLocation('6 Locations'), true);
+check('singular form still matches', isPlaceholderLocation('1 Location'), true);
+check('lowercase still matches', isPlaceholderLocation('2 locations'), true);
+check('a real single location is not a placeholder', isPlaceholderLocation('Bengaluru, India'), false);
+check('remote is not a placeholder', isPlaceholderLocation('Remote'), false);
+check('empty string is not a placeholder', isPlaceholderLocation(''), false);
 
 console.log('date parsing (workday relative labels)');
 // Workday dates postings with an English phrase, not a timestamp. Storing the

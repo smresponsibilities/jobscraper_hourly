@@ -100,6 +100,21 @@ export const CONCURRENCY = 9;
 export const BOARDS_PER_RUN = 8000;
 
 /**
+ * Cap on newly-resolved (uncached) placeholder-location Workday postings per
+ * board per run. Measured 2026-09-04: 13.6% of Workday jobs (22,398 of
+ * 164,389 across 907 hot boards) carry a placeholder like "6 Locations"
+ * instead of real place names, averaging ~24.7 per board — but that hides a
+ * long tail (a large multi-site employer can carry hundreds). Each
+ * resolution is one extra detail request inside that board's own poll turn,
+ * so an uncapped board with hundreds of them would hog its shared per-pod
+ * concurrency slot (HOST_CONCURRENCY.workday) far longer than every other
+ * board sharing that pod. The rest catch up over following runs — the cache
+ * is permanent, so nothing is lost, just deferred. Re-measure actual added
+ * wall-clock before raising.
+ */
+export const MULTILOC_MAX_PER_BOARD = 20;
+
+/**
  * Per-rate-limit-domain concurrency. Total throughput is now the sum across
  * domains rather than one global number, so this is much faster than the old
  * flat CONCURRENCY while being *gentler* on any single host.

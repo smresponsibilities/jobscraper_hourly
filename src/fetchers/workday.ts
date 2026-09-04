@@ -180,7 +180,14 @@ async function search(company: Company, searchText: string, maxPages: number): P
   return jobs;
 }
 
-export async function enrich(company: Company, job: RawJob): Promise<string | undefined> {
+interface JobPostingInfo {
+  jobDescription?: string;
+  location?: string;
+  additionalLocations?: string[];
+}
+
+/** Shared by `enrich()` and `resolvePlaceholderLocations()` — same endpoint, different fields. */
+async function fetchDetail(company: Company, job: { url: string }): Promise<JobPostingInfo | undefined> {
   const path = job.url.split(`/${company.site}`)[1];
   if (!path) return undefined;
   const res = await fetch(
@@ -188,7 +195,67 @@ export async function enrich(company: Company, job: RawJob): Promise<string | un
     { headers: { 'user-agent': UA, accept: 'application/json' }, signal: AbortSignal.timeout(30_000) },
   );
   if (!res.ok) return undefined;
-  const data = (await res.json()) as { jobPostingInfo?: { jobDescription?: string } };
-  const html = data.jobPostingInfo?.jobDescription;
+  const data = (await res.json()) as { jobPostingInfo?: JobPostingInfo };
+  return data.jobPostingInfo;
+}
+
+export async function enrich(company: Company, job: RawJob): Promise<string | undefined> {
+  const html = (await fetchDetail(company, job))?.jobDescription;
   return html ? toPlainText(html) : undefined;
+}
+
+/**
+ * Workday renders a multi-location posting's list view as a bare count —
+ * "6 Locations" — with no place names at all. Measured 2026-09-04 across 907
+ * hot boards: 22,398 of 164,389 live jobs (13.6%) carry this placeholder, so a
+ * Bangalore role posted alongside five other offices is silently invisible to
+ * `locationMatches`, which has nothing to match against.
+ */
+export function isPlaceholderLocation(location: string): boolean {
+  return /\d+\s+locations?/i.test(location);
+}
+
+/**
+ * Resolves placeholder locations to the real list (`location` +
+ * `additionalLocations`, same shape open-jobs' detail fetch uses), one
+ * detail request per unresolved posting.
+ *
+ * Not a runtime fallback baked into `list()` — a requisition's location list
+ * doesn't change over its lifetime, so `cache` (id -> resolved location,
+ * persisted by the caller across runs) makes this a one-time cost per
+ * posting rather than paid on every poll. `maxNew` bounds how many
+ * previously-unseen placeholders one call resolves, so a board with hundreds
+ * of them (large multi-site employers are the common case) can't balloon its
+ * own turn inside the shared per-pod concurrency slot; the rest catch up over
+ * following runs. Failures are silent and permanent-cache-free by design —
+ * the placeholder text stays, and the next run tries again.
+ */
+export async function resolvePlaceholderLocations(
+  company: Company,
+  jobs: RawJob[],
+  cache: Record<string, string>,
+  maxNew: number,
+): Promise<void> {
+  let resolved = 0;
+  for (const job of jobs) {
+    if (!isPlaceholderLocation(job.location)) continue;
+    const key = `${company.token}:${job.externalId}`;
+    const cached = cache[key];
+    if (cached !== undefined) {
+      job.location = cached;
+      continue;
+    }
+    if (resolved >= maxNew) continue;
+    resolved++;
+    try {
+      const info = await fetchDetail(company, job);
+      const real = info?.location ? [info.location, ...(info.additionalLocations ?? [])].join(', ') : undefined;
+      if (real) {
+        job.location = real;
+        cache[key] = real;
+      }
+    } catch {
+      /* leave the placeholder text; try again next run */
+    }
+  }
 }
