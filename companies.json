@@ -104516,5 +104516,19 @@
     "industry": "tech",
     "source": "discovered",
     "token": "zyte"
+  },
+  {
+    "name": "Neighborhoods.com",
+    "ats": "greenhouse",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "neighborhoodscom"
+  },
+  {
+    "name": "NewsBreak",
+    "ats": "greenhouse",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "newsbreak"
   }
 ]
