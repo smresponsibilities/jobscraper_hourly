@@ -496,6 +496,26 @@ wrong to keep. Fixed before the row could linger; swept the rest of
 `companies.json` for the same pattern and found only pre-existing,
 already-documented rows (Accenture, Genpact, TCS, etc.), left alone.
 
+**What's left from open-jobs, for a future session**: the 9-phase absorption
+plan itself has nothing outstanding. But `docs/FEATURE-SURVEY.md` (a
+separate, earlier 130-repo survey, §E "Matching & ranking") flags three more
+open-jobs techniques the 9-phase plan never evaluated, all marked `PARKED`
+(noted, not actively rejected — unlike the plan's own "Explicitly not
+taking" section, which gives a reason for each thing it turned down):
+`hull.py` (convex-hull recall filter before LLM judgment), `btrank.py`
+(pairwise Bradley-Terry ranking distilled to a linear model), `rank.py`
+(embedding-only recall ranker — overlaps with the plan's already-rejected
+"embeddings/semantic-search pipeline": cosine distance flattens
+`classify.ts`'s per-industry seniority vocabulary). None have been looked at
+closely enough to have a real verdict yet.
+
+**Not from open-jobs, and not built here on purpose**: `FEATURE-SURVEY.md`
+item 51, "Resume-vs-JD match scoring," cites GPT-Jobhunter/AutoApply — two
+unrelated repos, not open-jobs. Marked `PARKED (resume-side product)`, and
+`ROADMAP.md` says the same in its own words ("resume tailoring... different
+product"). This tool finds and filters job postings; it has never read or
+matched against anyone's resume, and nothing in this session built that.
+
 ## Workday multi-location fix (2026-09-04, built after the plan's own "not attached to a phase" measurement)
 
 The open-jobs plan flagged one unscoped item: Workday's list view collapses
