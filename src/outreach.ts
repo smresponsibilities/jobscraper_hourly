@@ -27,7 +27,7 @@ import { writeFile, mkdir, readFile, rm } from 'node:fs/promises';
 import { readJson } from './state.js';
 import { mapLimit } from './fetchers/util.js';
 import { githubContacts, splitName, applyPattern, type CommitAuthor } from './contacts.js';
-import { dmarcRua, npmContacts, pypiContacts, mavenContacts, smartRecruitersCreators, websiteContacts } from './contact-sources.js';
+import { dmarcRua, npmContacts, pypiContacts, mavenContacts, smartRecruitersCreators, websiteContacts, leadershipContacts } from './contact-sources.js';
 import { verifyEmail, type Verdict } from './verify-email.js';
 
 // ── knobs ────────────────────────────────────────────────────────────────────
@@ -540,18 +540,35 @@ async function resolveRecipients(
         reg.length === 0 && py.length === 0 && mvn.length === 0 && known && HOSTNAME_ATS.has(known.ats)
           ? await websiteContacts(known.token, company).catch(() => [])
           : [];
-      const source = reg.length > 0 ? 'npm' : py.length > 0 ? 'pypi' : mvn.length > 0 ? 'maven' : 'website';
+      /**
+       * Last rung: a named senior contact off the company's own "about"/
+       * "leadership" page, only when every real-address source above found
+       * nothing. No observed address exists yet at this point, so there is no
+       * inferred pattern to apply — 'first.last' is the single most common
+       * corporate convention, used as a stated default guess, not a verified
+       * fact. It ships through the exact same SMTP-verify + DMARC + bounce-gate
+       * funnel as every other candidate, so an unverifiable guess degrades to
+       * an `unknown`-tagged card rather than a false claim.
+       */
+      const lead =
+        reg.length === 0 && py.length === 0 && mvn.length === 0 && web.length === 0 && known && HOSTNAME_ATS.has(known.ats)
+          ? await leadershipContacts(known.token).catch(() => [])
+          : [];
+      const source = reg.length > 0 ? 'npm' : py.length > 0 ? 'pypi' : mvn.length > 0 ? 'maven' : web.length > 0 ? 'website' : 'leadership';
       const alt = [
         ...reg,
         ...py,
         ...mvn,
         ...web.map((w) => ({ name: displayName(w.email.split('@')[0] ?? ''), email: w.email })),
+        ...lead
+          .map((l) => ({ name: l.name, email: applyPattern('first.last', l.name, known!.token) }))
+          .filter((c): c is { name: string; email: string } => c.email !== null),
       ];
       if (alt.length === 0) {
-        console.log(`    · ${company}: ${why}, no npm/PyPI/Maven/website contacts either`);
+        console.log(`    · ${company}: ${why}, no npm/PyPI/Maven/website/leadership contacts either`);
         return [];
       }
-      console.log(`    · ${company}: ${why}; npm/PyPI/Maven/website gave ${alt.length} address(es)`);
+      console.log(`    · ${company}: ${why}; npm/PyPI/Maven/website/leadership gave ${alt.length} address(es)`);
       return finalize(alt.slice(0, MAX_PROBES_PER_COMPANY).map((r) => ({ name: r.name, email: r.email, source })));
     };
 

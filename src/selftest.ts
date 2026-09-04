@@ -23,7 +23,7 @@ import {
   factScore,
 } from './contacts.js';
 import { bodySimilarity, bounceGateDecision, displayName, domainRiskTally, isTriggered, postedAgeDays, renderBody, touchGap, TRIGGER_WINDOW_DAYS } from './outreach.js';
-import { applyboltLookup, extractEmails, packageNameCandidates, parseApplyBolt, parseDmarcRua, roleAddresses } from './contact-sources.js';
+import { applyboltLookup, extractEmails, extractLeadership, packageNameCandidates, parseApplyBolt, parseDmarcRua, roleAddresses } from './contact-sources.js';
 import { controlAddress, mxProvider, rejectionIsMeaningful } from './verify-email.js';
 import type { BoardState, Company, Industry, RawJob } from './types.js';
 
@@ -1123,6 +1123,32 @@ check('entry without band skipped from n', st.every((t) => t.n <= 2), true);
 check('extractEmails pulls mailto + plaintext, deduped', JSON.stringify(extractEmails('<a href="mailto:HR@Zerodha.com">mail</a> and hr@zerodha.com')), JSON.stringify(['hr@zerodha.com']));
 check('extractEmails drops freemail', JSON.stringify(extractEmails('contact us at personal@gmail.com')), '[]');
 check('roleAddresses covers the standard boxes', roleAddresses('cred.club').length, 6);
+// extractLeadership — fixtures modeled directly on real leadership pages
+// checked live 2026-09-04. Freshworks' card layout (name/title in separate
+// block elements) is the shape this is built for; Zoho's flowing-prose
+// sentence about "our CEO, Sridhar Vembu" is the false positive an earlier,
+// text-collapsing version of this actually produced and had to be guarded
+// against — the 60-char title-line cap is what rejects it.
+const freshworksLike =
+  '<div class="card"><h3>Dennis Woodside</h3><p>CEO and President</p></div>' +
+  '<div class="card"><h3>Murali Swaminathan</h3><p>Chief Technology Officer</p></div>';
+check(
+  'name+title pairs extracted from a card layout',
+  JSON.stringify(extractLeadership(freshworksLike)),
+  JSON.stringify([
+    { name: 'Murali Swaminathan', title: 'Chief Technology Officer' },
+    { name: 'Dennis Woodside', title: 'CEO and President' },
+  ]),
+);
+check(
+  'engineering-tier title ranks above CEO',
+  extractLeadership(freshworksLike)[0]?.title,
+  'Chief Technology Officer',
+);
+const zohoLike =
+  '<p>The Government of India has bestowed the prestigious Padma Shri on our CEO, Sridhar Vembu! It is a moment of great honor.</p>';
+check('a long prose sentence is not read as a title line', extractLeadership(zohoLike).length, 0);
+check('a bare "CEO" with no name-shaped neighbour yields nothing', extractLeadership('<p>Leadership</p><p>CEO</p><p>Reports</p>').length, 0);
 // DMARC rua parsing — vendor-hosted and multi-record shapes both occur.
 check('parseDmarcRua reads plain rua', parseDmarcRua(['v=DMARC1; p=none; rua=mailto:dmarcreports@meesho.com']), 'dmarcreports@meesho.com');
 check('parseDmarcRua handles vendor host + split records', parseDmarcRua(['v=DMARC1;', 'rua=mailto:g72jrssx@ag.ap.dmarcian.com; p=quarantine']), 'g72jrssx@ag.ap.dmarcian.com');
