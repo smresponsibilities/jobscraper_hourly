@@ -186,12 +186,26 @@ interface JobPostingInfo {
   additionalLocations?: string[];
 }
 
-/** Shared by `enrich()` and `resolvePlaceholderLocations()` — same endpoint, different fields. */
+/**
+ * Shared by `enrich()` and `resolvePlaceholderLocations()` — same endpoint,
+ * different fields.
+ *
+ * `path` already starts with `/job/...` (that's how `externalPath` comes
+ * back from the list endpoint, and `job.url` is built by concatenating it
+ * onto the site path in `search()` below) — a long-standing bug here
+ * appended a second literal `/job`, producing `.../job/job/{location}/{req}`
+ * and a 422 from Workday on every single detail call. Invisible until now:
+ * `enrich()` swallows a failed fetch into `undefined` and a missing
+ * description just ships silently, so nothing ever errored loudly. Found
+ * only because `resolvePlaceholderLocations` actually needs the call to
+ * succeed to do anything at all — confirmed live against a real posting
+ * (200 with the fix, 422 without) before trusting the diagnosis.
+ */
 async function fetchDetail(company: Company, job: { url: string }): Promise<JobPostingInfo | undefined> {
   const path = job.url.split(`/${company.site}`)[1];
   if (!path) return undefined;
   const res = await fetch(
-    `${base(company)}/wday/cxs/${company.token}/${company.site}/job${path}`,
+    `${base(company)}/wday/cxs/${company.token}/${company.site}${path}`,
     { headers: { 'user-agent': UA, accept: 'application/json' }, signal: AbortSignal.timeout(30_000) },
   );
   if (!res.ok) return undefined;
