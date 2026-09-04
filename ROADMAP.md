@@ -27,7 +27,7 @@ it done.
 | 0 | Ship what's already built (deploy `web/` to Vercel) | now |
 | 1 | Cheap reach & observability (Telegram, outage surfacing, Discord/Slack) | now |
 | 2 | Coverage expansion — freebuff-heavy research rounds | next |
-| 3 | New adapters (iCIMS, Uber/Walmart) | later |
+| 3 | New adapters (iCIMS done for legacy tenants — see stage 10; modern Talent Cloud portals and Walmart remain unreachable) | later |
 | 4 | Query surface over the catalogue (CLI) | later |
 | 5 | Parked trade-offs (LLM enrichment, multi-user filtering) | parked, revisit only if priorities shift |
 | — | Explicitly rejected: LinkedIn/Indeed scraping, browser-extension tracking | not on the roadmap |

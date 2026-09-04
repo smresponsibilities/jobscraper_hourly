@@ -38,6 +38,12 @@ the URL — identifying it is my job.
 | **TurboHire** | **`acme`**`.turbohire.co/careerpage/`**`4d757ba0-3d57-448a-b82c-238ed87ac90f`** | subdomain + org GUID |
 | **SuccessFactors (modern)** | just the hostname: **`jobs.acme.com`** | the hostname *is* the tenant, same as Phenom |
 | **SuccessFactors (legacy)** | **`career2.successfactors.eu`**`/career?company=`**`acmecorp`** | legacy career host + company code — send both |
+| **Workable** | `apply.workable.com/`**`acme`** | token |
+| **Trakstar** | **`acme`**`.hire.trakstar.com` | token |
+| **Recruitee** | **`acme`**`.recruitee.com` | token |
+| **iCIMS (legacy tenants only)** | the full board hostname, e.g. `careers.`**`acme`**`.com` or **`region`**`careers-`**`acme`**`.icims.com` | whole hostname as `token` — no predictable subdomain pattern. **Modern "Talent Cloud" portals don't work** — they serve JS-rendered results with no `/api/jobs` JSON endpoint at all; only legacy tenants (DocuSign's `careers.docusign.com` is one) have it |
+| **Zoho Recruit** | the full board URL, e.g. `careers.`**`acme`**`.com/jobs/careers` | whole URL as `token`, same reason as iCIMS |
+| **Keka, Freshteam, Recruiterflow, GreytHR, PeopleStrong, PyjamaHR, ZappyHire, Zimyo** | **`acme`**`.{platform-domain}` (e.g. `acme.keka.com/careers`, `acme.freshteam.com`) | token; India-specific ATS suites, each with a real subdomain-per-tenant pattern like Greenhouse/Lever |
 
 Workday and Oracle are the ones people truncate. `acme.wd5.myworkdayjobs.com`
 alone is not enough — without the site path (`Acme_Careers`) there's nothing to
@@ -182,11 +188,28 @@ India or remote role.
 npm run bulk-import -- --bar india          # default; also: fresher, live
 npm run bulk-import -- --limit 200          # sample first, to sanity-check
 npm run bulk-import -- --platform greenhouse
+
+# Every existing Workday tenant carries exactly one career site, whichever URL
+# happened to be observed when it was added — some host several (CIBC's
+# tenant has both `search` and `campus`). This finds the ones we can't see yet.
+npm run bulk-import -- --rediscover --bar india
+
+# Import from a local slug/hostname list instead of kalil0321's CSVs — for a
+# published tenant list from any other crawler. Workday hostnames
+# (`3m.wd1.myworkdayjobs.com`, one per line, no site) auto-discover their
+# sites the same way --rediscover does:
+npm run bulk-import -- --file workday-hosts.txt --bar india
+# A bare-subdomain list for a platform that has no multi-site concept just
+# needs --platform too — every line becomes a candidate token directly:
+npm run bulk-import -- --file slugs.txt --platform recruitee --bar india
 ```
 
 Imports from [kalil0321/ats-scrapers](https://github.com/kalil0321/ats-scrapers)'
-published tenant lists — ~77,000 crawled ATS tenants, ~21,000 of them on
-platforms this codebase already reads, against ~16,600 we don't yet track.
+published tenant lists (the default, no `--file`) — tens of thousands of
+crawled ATS tenants, most on platforms this codebase already reads.
+`--file` accepts the same shape of list from any other source, including
+[open-jobs](https://github.com/elliottdehn/open-jobs)' `slugs.json`, which is
+how the corpus grew past 13,700 boards.
 
 **This reaches boards `detect` and `probe` structurally cannot.** `detect` needs
 a careers page that links its own board, and most large employers don't link it
@@ -198,19 +221,33 @@ brand name. A published tenant list sidesteps both — which is how KPMG India
 Every candidate is polled before it's kept, because **a tenant slug that
 resolves is not evidence of a real company** — three plausible-looking "IBM"
 Oracle tenants turned out to be a Guatemalan retailer, an Iowa college and a
-Syracuse school district.
+Syracuse school district; a staffing agency's own board (Hudson Manpower) and
+a bank-compliance BPO (Delta Capita) both slipped through on a real India
+match before being caught by hand and added to `SERVICE_COMPANIES`. The
+guard only excludes names it already knows — a new staffing/BPO brand still
+needs a human glance at its actual job titles, not just its HTTP status.
 
 The `--bar` picks how much evidence a board needs:
 
-| bar | keeps | measured yield | use when |
-|---|---|---|---|
-| `live` | returns any jobs at all | ~81% (~13,400) | almost never — most have never shown an India role |
-| `india` | has ≥1 India/remote role | ~14% (~2,300) | **default.** A company with an India office will post junior roles eventually |
-| `fresher` | has ≥1 role passing the full filter | ~6.5% (~1,080) | strictest; misses companies whose India office is currently senior-only |
+| bar | keeps | use when |
+|---|---|---|
+| `live` | returns any jobs at all | almost never — most have never shown an India role |
+| `india` | has ≥1 India/remote role | **default.** A company with an India office will post junior roles eventually |
+| `fresher` | has ≥1 role passing the full filter | strictest; misses companies whose India office is currently senior-only |
 
-It runs weekly in `discover.yml`, and the **re-check is the point**: a board with
-zero India roles last week and India roles today gets promoted the week the
-office opens. That is the "Target is coming to India" case, handled without
+Measured yield varies enormously by platform and source list — recent runs
+against kalil0321's CSVs for already-well-covered platforms (greenhouse,
+lever, ashby, smartrecruiters) cleared the India bar on well under 1% of
+untracked candidates, while a first pass against a platform this project had
+never touched (Workday hostnames from open-jobs) cleared it on ~2.5%. **Run a
+`--limit` sample and look at the real number before committing to a full
+pass** — don't assume a percentage from a different platform or source list
+carries over.
+
+It runs weekly (default platforms, no `--file`) in `discover.yml`, and the
+**re-check is the point**: a board with zero India roles last week and India
+roles today gets promoted the week the office opens. That is the "Target is
+coming to India" case, handled without
 scraping any funding or expansion announcements. New tenants appearing in the
 crawl are also a reasonable proxy for fresh funding — adopting an ATS is what a
 company does right after it raises — with the advantage that it only ever
@@ -241,8 +278,13 @@ costs nothing.
 
 # What's still missing
 
-~5 companies sit behind three walls. Each needs a different fix, and none yields
-to the techniques that got the other 317 boards.
+This section is a research journal, not a live count — the specific company
+counts and board totals below are from whenever each investigation happened,
+and the corpus has grown by two orders of magnitude since the earliest of
+them (13,700+ boards as of 2026-09-04, not the 317 some entries reference).
+Read it for *why a given wall exists and what was tried*, not as a current
+inventory of what's covered — `companies.json` is the source of truth for
+that.
 
 ## 1. ~~Google and Meta~~ — SOLVED, Uber and Walmart still open
 
@@ -313,13 +355,22 @@ wrong.** `0` returns a fixed 10-row teaser, `1` returns 6,862 rows (the full
 historical corpus), and `2` returns the genuinely-open roles. Every pagination
 parameter is ignored.
 
-## 4. iCIMS — HTML only
+## 4. iCIMS — SOLVED for legacy tenants, still a wall on modern ones
 
 **DocuSign** (and it fronts Atlassian, though they publish JSON separately)
 
-Serves HTML with no JSON or RSS feed. DocuSign's APJ portal is
-`apjcareers-docusign.icims.com`, so India roles exist — reading them needs an
-HTML parser, which is a real adapter rather than a quick add.
+Legacy iCIMS tenants (like DocuSign's) turned out to serve real JSON at
+`GET {host}/api/jobs?limit=…&page=…` — `src/fetchers/icims.ts` reads it
+directly, no HTML parsing needed after all. `token` is the whole hostname
+since iCIMS has no predictable subdomain pattern.
+
+**Modern "Talent Cloud" portals are a different, still-unsolved wall.**
+StoneX's `careers-stonex.icims.com` resolves but serves JS-rendered results
+with no `/api/jobs` endpoint at all — confirmed by checking the network tab
+directly, not just guessing from the URL shape. Not buildable with the
+current adapter; would need the rendered-DOM treatment `rendered.ts` uses for
+Google/Meta/Uber, if it's ever worth it for the volume of companies still on
+the legacy platform.
 
 ## 4b. SuccessFactors — SOLVED
 
