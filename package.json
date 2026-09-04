@@ -19,6 +19,7 @@
     "query": "tsx src/query.ts",
     "trends": "tsx src/trends.ts",
     "outreach": "tsx src/outreach.ts",
+    "outreach:send": "tsx src/outreach-send.ts",
     "contacts": "tsx src/contacts.ts",
     "verify": "tsx src/verify-email.ts",
     "contacts-sweep": "tsx src/contacts-sweep.ts",

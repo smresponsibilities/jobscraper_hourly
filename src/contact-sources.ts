@@ -327,6 +327,46 @@ export async function mavenContacts(company: string, limit = 10): Promise<MavenC
   return [...byEmail.values()];
 }
 
+// ── 2d. SmartRecruiters requisition creators ─────────────────────────────────
+
+export interface SmartRecruitersCreator {
+  name: string;
+  jobTitle: string;
+  postingUrl: string;
+}
+
+/**
+ * Every SmartRecruiters posting publicly names the person who created the
+ * requisition (`creator.name`) — live-verified 2026-09-02 against a real
+ * board (Werner & Mertz GmbH → "Carolin Reichert"), no auth, same list call
+ * the fetcher already makes for job data itself.
+ *
+ * This is a name, never an address — unlike npm/PyPI/Maven, SmartRecruiters
+ * has nothing resembling an email field anywhere in the public API. A name
+ * alone is useless without a domain and address pattern to attach it to, so
+ * callers must already know both (from the git source) before this is worth
+ * calling; `resolveRecipients()` does exactly that, applying `applyPattern()`
+ * to turn each name here into a candidate address.
+ */
+export async function smartRecruitersCreators(token: string, limit = 10): Promise<SmartRecruitersCreator[]> {
+  const data = (await getJson(
+    `https://api.smartrecruiters.com/v1/companies/${encodeURIComponent(token)}/postings?limit=100`,
+  )) as { content?: { name?: string; id?: string; creator?: { name?: string } }[] };
+
+  const byName = new Map<string, SmartRecruitersCreator>();
+  for (const p of data.content ?? []) {
+    const name = p.creator?.name?.trim();
+    if (!name || byName.has(name)) continue;
+    byName.set(name, {
+      name,
+      jobTitle: p.name ?? '',
+      postingUrl: p.id ? `https://jobs.smartrecruiters.com/${token}/${p.id}` : '',
+    });
+    if (byName.size >= limit) break;
+  }
+  return [...byName.values()];
+}
+
 // ── 7. ApplyBolt public endpoint ─────────────────────────────────────────────
 
 export interface ApplyBoltResult {

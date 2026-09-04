@@ -4,6 +4,9 @@
  *   npm run outreach              # build today's batch, serve localhost:7700
  *   npm run outreach -- --print   # text-only plan, no server
  *   npm run outreach -- --static  # write out/outbox/today.html, no server
+ *   npm run outreach -- --mbox    # write out/outbox/<date>/*.txt for git
+ *                                 # send-email; review, then npm run
+ *                                 # outreach:send -- out/outbox/<date>
  *
  * Two independent first-touch lanes plus shared follow-ups:
  *
@@ -23,8 +26,8 @@ import { createHash } from 'node:crypto';
 import { writeFile, mkdir, readFile, rm } from 'node:fs/promises';
 import { readJson } from './state.js';
 import { mapLimit } from './fetchers/util.js';
-import { githubContacts, splitName, type CommitAuthor } from './contacts.js';
-import { dmarcRua, npmContacts, pypiContacts, mavenContacts, websiteContacts } from './contact-sources.js';
+import { githubContacts, splitName, applyPattern, type CommitAuthor } from './contacts.js';
+import { dmarcRua, npmContacts, pypiContacts, mavenContacts, smartRecruitersCreators, websiteContacts } from './contact-sources.js';
 import { verifyEmail, type Verdict } from './verify-email.js';
 
 // ── knobs ────────────────────────────────────────────────────────────────────
@@ -80,6 +83,17 @@ const MAX_PROBES_PER_COMPANY = Number(process.env.OUTREACH_PROBES ?? 4);
 /** ATSes whose `token` is the company's own hostname, not an ATS subdomain — see `alternates()`. */
 const HOSTNAME_ATS = new Set(['phenom', 'icims', 'zohorecruit', 'successfactors']);
 const VERDICT_TTL_DAYS = 14;
+/**
+ * A bounce is evidence about the guessed pattern at a domain, not just about
+ * the one address that bounced — a second independent bounce at the same
+ * domain means the pattern itself is probably wrong, not that two people in
+ * a row happened to have typo'd inboxes. 1 stays silent (could be noise, a
+ * fat-fingered hiccup); 2+ stops drafting new candidates at that domain
+ * until a human clears it by fixing the pattern or the guard.
+ * `domainRiskTally()`/`domainRiskBounces` already computed this per company
+ * build — it only reached the card as a warning badge until now.
+ */
+const DOMAIN_RISK_MAX_BOUNCES = Number(process.env.OUTREACH_DOMAIN_RISK_MAX ?? 2);
 const SIGNATURE = process.env.OUTREACH_NAME ?? 'SM';
 const PORT = Number(process.env.OUTREACH_PORT ?? 7700);
 /**
@@ -98,7 +112,7 @@ const LINK_KEY = process.env.OUTREACH_KEY ?? '';
 const actionUrl = (path: string) =>
   LINK_BASE ? `${LINK_BASE}/${path}${LINK_KEY ? `?k=${encodeURIComponent(LINK_KEY)}` : ''}` : `/${path}`;
 
-const STATE_PATH = process.env.OUTREACH_STATE_PATH ?? 'state/contacted.json';
+export const STATE_PATH = process.env.OUTREACH_STATE_PATH ?? 'state/contacted.json';
 const SWEEP_PATH = 'state/contact-sweep.json';
 const SWEEP_INDEX_PATH = 'state/contact-sweep-index.json';
 const CATALOG_PATH = 'data/jobs.json';
@@ -111,7 +125,7 @@ const daySeed = () => process.env.OUTREACH_SEED ?? new Date().toISOString().slic
 
 // ── state ────────────────────────────────────────────────────────────────────
 
-interface ContactState {
+export interface ContactState {
   company: string;
   role: string;
   location?: string;
@@ -131,8 +145,13 @@ interface ContactState {
   skipped?: boolean;
   bounced?: boolean;
   bouncedAt?: string;
+  /** Which rung of the ladder found this contact — git/npm/pypi/maven. Lets
+   *  reply/bounce outcomes eventually be measured per source, not just per
+   *  address; CONTACT-DISCOVERY.md's hit-rate numbers have never had a reply
+   *  signal to check them against. */
+  source?: string;
 }
-type OutreachState = Record<string, ContactState>;
+export type OutreachState = Record<string, ContactState>;
 
 interface CatalogJob {
   id: string;
@@ -149,6 +168,7 @@ interface CatalogJob {
   minYears?: number | null;
   maxYears?: number | null;
   closedAt?: string;
+  postedBy?: string;
 }
 
 /**
@@ -288,6 +308,7 @@ function hash(s: string): number {
 }
 const GREETINGS = ['Hi', 'Hello', 'Hey'];
 const FACT_VERBS = ['Saw your recent commit', 'Came across your commit', 'Noticed your push'];
+const SR_FACT_VERBS = ['Saw you posted', 'Noticed you opened', "Saw you're listed as the creator of"];
 const ASK_T1 = [
   'Is this req open to my experience band? y/n works.',
   'Should I apply through the portal, or is there someone better to send this to?',
@@ -361,6 +382,7 @@ interface SweepEntry {
 interface Candidate extends CommitAuthor {
   verdict?: Verdict;
   gravatar?: boolean;
+  source?: string;
 }
 
 /**
@@ -405,6 +427,7 @@ async function resolveRecipients(
   tokenHint: string,
   want: number,
   state: OutreachState,
+  postedByHint?: string,
 ): Promise<Candidate[]> {
   companyIndex ??= await buildCompanyIndex();
   sweepLower ??= await loadSweepLower();
@@ -517,6 +540,7 @@ async function resolveRecipients(
         reg.length === 0 && py.length === 0 && mvn.length === 0 && known && HOSTNAME_ATS.has(known.ats)
           ? await websiteContacts(known.token, company).catch(() => [])
           : [];
+      const source = reg.length > 0 ? 'npm' : py.length > 0 ? 'pypi' : mvn.length > 0 ? 'maven' : 'website';
       const alt = [
         ...reg,
         ...py,
@@ -528,7 +552,7 @@ async function resolveRecipients(
         return [];
       }
       console.log(`    · ${company}: ${why}; npm/PyPI/Maven/website gave ${alt.length} address(es)`);
-      return finalize(alt.slice(0, MAX_PROBES_PER_COMPANY).map((r) => ({ name: r.name, email: r.email })));
+      return finalize(alt.slice(0, MAX_PROBES_PER_COMPANY).map((r) => ({ name: r.name, email: r.email, source })));
     };
 
     if (!found || !found.domain || !usedOrg) {
@@ -564,7 +588,37 @@ async function resolveRecipients(
       strong.length >= want
         ? strong
         : [...strong, ...ranked.filter((r) => !strong.includes(r))];
-    const candidates: Candidate[] = ordered.slice(0, MAX_PROBES_PER_COMPANY).map((a) => ({ ...a }));
+
+    /**
+     * SmartRecruiters names a real person on every posting (`creator.name`,
+     * live-verified 2026-09-02), but never an address — useless without the
+     * domain+pattern git just resolved above, which is exactly what's known
+     * at this point. `postedByHint` (this exact job's creator, free — the
+     * fetcher already captures it) goes first: "you posted this role" beats
+     * any git commit as a fact. The company-wide sweep is a second, weaker
+     * pass for when that hint is absent, only spent when the company is
+     * actually confirmed to be on SmartRecruiters.
+     */
+    const srCandidates: Candidate[] = [];
+    if (found.pattern) {
+      const seen = new Set<string>();
+      const addSr = (name: string) => {
+        const email = applyPattern(found!.pattern!, name, found!.domain!);
+        if (!email || seen.has(email)) return;
+        seen.add(email);
+        srCandidates.push({ name, email, source: 'smartrecruiters' });
+      };
+      if (postedByHint) addSr(postedByHint);
+      if (known?.ats === 'smartrecruiters' && known.token) {
+        const creators = await smartRecruitersCreators(known.token, want).catch(() => []);
+        for (const c of creators) addSr(c.name);
+      }
+    }
+
+    const candidates: Candidate[] = [...srCandidates, ...ordered.map((a) => ({ ...a, source: 'git' }))].slice(
+      0,
+      MAX_PROBES_PER_COMPANY,
+    );
 
     return await finalize(candidates);
   } catch (error) {
@@ -619,6 +673,8 @@ export interface Draft {
   /** Prior async bounces recorded at this address's domain — risk memory. */
   domainRiskBounces?: number;
   fact?: string;
+  /** Which rung of the ladder found this contact — git/npm/pypi/maven. */
+  source?: string;
 }
 
 function composeLinks(addr: string, subject: string, body: string) {
@@ -633,7 +689,10 @@ function buildFirstDraft(job: CatalogJob, author: Candidate, domainRiskBounces =
   const company = displayName(job.company);
   const first = splitName(author.name)?.first ?? author.name.split(/\s+/)[0]!;
   const greet = pick(GREETINGS, author.email);
-  const fact = `${pick(FACT_VERBS, author.name)} — “${author.subject}”.`;
+  const fact =
+    author.source === 'smartrecruiters'
+      ? `${pick(SR_FACT_VERBS, author.name)} this req on SmartRecruiters — figured you'd know if it's still open.`
+      : `${pick(FACT_VERBS, author.name)} — “${author.subject}”.`;
   const loc = job.location ? ` in ${job.location}` : '';
   const exp = experienceLabel(job.minYears ?? null, job.maxYears ?? null);
   const ask = pick(ASK_T1, author.email + job.id);
@@ -662,7 +721,8 @@ function buildFirstDraft(job: CatalogJob, author: Candidate, domainRiskBounces =
     verdict: author.verdict,
     gravatar: author.gravatar,
     domainRiskBounces,
-    fact: author.subject,
+    fact: author.source === 'smartrecruiters' ? 'posted this exact role' : author.subject,
+    source: author.source,
   };
 }
 
@@ -701,6 +761,7 @@ function buildFollowUps(state: OutreachState): Draft[] {
       body,
       ...composeLinks(addr, subject, body),
       verdict: c.verdict,
+      source: c.source,
     });
   }
   return drafts.sort((a, b) => b.overdueDays - a.overdueDays);
@@ -862,7 +923,7 @@ async function buildBatch(): Promise<Batch> {
     const concurrency = Number(process.env.OUTREACH_RESOLVE_CONCURRENCY ?? 6);
     const resolved = await mapLimit(selected, concurrency, async (target) => ({
       target,
-      recipients: await resolveRecipients(target.company, target.job.id.split(':')[1] ?? '', 2, state),
+      recipients: await resolveRecipients(target.company, target.job.id.split(':')[1] ?? '', 2, state, target.job.postedBy),
     }));
 
     for (const { target, recipients } of resolved) {
@@ -876,13 +937,13 @@ async function buildBatch(): Promise<Batch> {
       for (const author of recipients) {
         if (budget <= 0 || laneArr.length >= cap) break;
         if (state[author.email]) continue;
-        laneArr.push(
-          buildFirstDraft(
-            target.job,
-            author,
-            riskTally.get(author.email.split('@')[1]?.toLowerCase() ?? '') ?? 0,
-          ),
-        );
+        const domain = author.email.split('@')[1]?.toLowerCase() ?? '';
+        const priorBounces = riskTally.get(domain) ?? 0;
+        if (priorBounces >= DOMAIN_RISK_MAX_BOUNCES) {
+          console.log(`  · ${target.company}: skipping ${author.email} — ${priorBounces} prior bounces at ${domain}, pattern looks wrong`);
+          continue;
+        }
+        laneArr.push(buildFirstDraft(target.job, author, priorBounces));
         budget--;
       }
     }
@@ -981,6 +1042,66 @@ a.refresh{color:#569;font-size:12px}</style></head><body>
 </body></html>`;
 }
 
+/**
+ * buildBatch() computed a fresh SMTP verdict (and gravatar check, for
+ * catch-all/unknown addresses) per candidate, but only held it on the
+ * in-memory Draft — nothing persisted it. Every static/mbox build was
+ * therefore re-probing every address from scratch, silently defeating the
+ * 14-day verdict cache this same file documents elsewhere. Fold the results
+ * back into state before writing anything out, merging rather than
+ * overwriting so an address that already has send history keeps it.
+ */
+async function syncVerdicts(batch: Batch): Promise<OutreachState> {
+  const freshState = await readJson<OutreachState>(STATE_PATH, {});
+  const now = new Date().toISOString();
+  for (const d of [...batch.followups, ...batch.triggered, ...batch.random]) {
+    const prev = freshState[d.addr];
+    freshState[d.addr] = {
+      company: prev?.company ?? d.company,
+      role: prev?.role ?? d.role,
+      location: prev?.location ?? d.location,
+      jobUrl: prev?.jobUrl ?? d.jobUrl,
+      firstName: prev?.firstName ?? d.firstName,
+      touch: prev?.touch ?? 0,
+      sentAt: prev?.sentAt ?? [],
+      nextDueAt: prev?.nextDueAt ?? now,
+      fact: prev?.fact ?? d.fact,
+      subject: prev?.subject ?? d.subject,
+      verdict: d.verdict,
+      gravatar: d.gravatar ?? prev?.gravatar,
+      verifiedAt: now,
+      replied: prev?.replied,
+      skipped: prev?.skipped,
+      bounced: prev?.bounced,
+      bouncedAt: prev?.bouncedAt,
+      source: prev?.source ?? d.source,
+    };
+  }
+  await saveState(freshState);
+  return freshState;
+}
+
+/**
+ * `git send-email`-ready plan: one plain message file per candidate (a
+ * Subject line, a blank line, the body — the same cover-letter shape
+ * `git format-patch` produces) plus a manifest pairing each file with its
+ * recipient. Nothing here calls SMTP; `npm run outreach:send` is the
+ * separate, explicit step that shells out to `git send-email` per file,
+ * after a human has reviewed the directory.
+ */
+async function writeMbox(batch: Batch): Promise<void> {
+  const dir = `out/outbox/${daySeed()}`;
+  await mkdir(dir, { recursive: true });
+  const drafts = [...batch.followups, ...batch.triggered, ...batch.random];
+  const manifest = drafts.map((d) => ({ addr: d.addr, file: `${d.addr}.txt`, company: d.company, role: d.role, source: d.source }));
+  await Promise.all(
+    drafts.map((d) => writeFile(`${dir}/${d.addr}.txt`, `Subject: ${d.subject}\n\n${d.body}\n`, 'utf8')),
+  );
+  await writeFile(`${dir}/manifest.json`, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+  console.log(`${drafts.length} message file(s) written → ${dir}`);
+  console.log(`review them, then: npm run outreach:send -- ${dir}`);
+}
+
 async function markSent(state: OutreachState, d: Draft): Promise<void> {
   const now = new Date().toISOString();
   const prev = state[d.addr];
@@ -1001,6 +1122,7 @@ async function markSent(state: OutreachState, d: Draft): Promise<void> {
     replied: prev?.replied,
     skipped: prev?.skipped,
     bounced: prev?.bounced,
+    source: prev?.source ?? d.source,
   };
   await saveState(state);
 }
@@ -1104,39 +1226,11 @@ if (process.argv[1]?.endsWith('outreach.ts')) {
 
   if (args.includes('--serve')) {
     await serve(batch);
+  } else if (args.includes('--mbox')) {
+    await syncVerdicts(batch);
+    await writeMbox(batch);
   } else if (!args.includes('--print')) {
-    // buildBatch() computed a fresh SMTP verdict (and gravatar check, for
-    // catch-all/unknown addresses) per candidate, but only held it on the
-    // in-memory Draft — nothing persisted it. Every static build was
-    // therefore re-probing every address from scratch, silently defeating the
-    // 14-day verdict cache this same file documents elsewhere. Fold the
-    // results back into state before writing the page, merging rather than
-    // overwriting so an address that already has send history keeps it.
-    const freshState = await readJson<OutreachState>(STATE_PATH, {});
-    const now = new Date().toISOString();
-    for (const d of [...batch.followups, ...batch.triggered, ...batch.random]) {
-      const prev = freshState[d.addr];
-      freshState[d.addr] = {
-        company: prev?.company ?? d.company,
-        role: prev?.role ?? d.role,
-        location: prev?.location ?? d.location,
-        jobUrl: prev?.jobUrl ?? d.jobUrl,
-        firstName: prev?.firstName ?? d.firstName,
-        touch: prev?.touch ?? 0,
-        sentAt: prev?.sentAt ?? [],
-        nextDueAt: prev?.nextDueAt ?? now,
-        fact: prev?.fact ?? d.fact,
-        subject: prev?.subject ?? d.subject,
-        verdict: d.verdict,
-        gravatar: d.gravatar ?? prev?.gravatar,
-        verifiedAt: now,
-        replied: prev?.replied,
-        skipped: prev?.skipped,
-        bounced: prev?.bounced,
-        bouncedAt: prev?.bouncedAt,
-      };
-    }
-    await saveState(freshState);
+    const freshState = await syncVerdicts(batch);
 
     await mkdir('out/outbox', { recursive: true });
     await writeFile(PAGE_PATH, page(batch, recentlySent(freshState)), 'utf8');

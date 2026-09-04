@@ -131,6 +131,31 @@ block into.
   anymore. Both confirmed live, not from documentation, before writing any
   code against them.
 
+### 2d. SmartRecruiters requisition creators — built (2026-09-02)
+
+Every SmartRecruiters posting publicly names the person who created the
+requisition (`creator.name`) — a real, individual name, no auth, on the same
+list call the fetcher already makes for job data itself. Unlike every other
+source above, this is a **name, never an address** — SmartRecruiters has
+nothing resembling an email field anywhere in its public API — so it is only
+usable once a domain and pattern are already known from source 1 (git).
+
+- **Code:** `smartRecruitersCreators()` in `src/contact-sources.ts`. Wired
+  into `resolveRecipients()` in two places: (a) job-specific — the fetcher
+  (`src/fetchers/smartrecruiters.ts`) now captures `creator.name` as
+  `postedBy` on the job itself (free, same response, no extra call), threaded
+  through `RawJob`/`CatalogEntry` unconditionally (a few bytes, unlike
+  `text`), and used first — "you posted this exact role" beats any git
+  commit as a fact; (b) company-wide fallback — a full `smartRecruitersCreators()`
+  sweep of the company's open postings when the specific job's creator wasn't
+  captured. Both apply `applyPattern()` (the same tested function git-derived
+  names use) against the domain/pattern git already resolved. `buildFirstDraft()`
+  renders a source-aware fact line so the mail never claims a commit that
+  doesn't exist.
+- **Live test (2026-09-02):** Werner & Mertz GmbH's SmartRecruiters board →
+  5 distinct real names across 5 postings (e.g. "Carolin Reichert"), each
+  tied to its own requisition.
+
 ### 3. Role addresses — built as candidates, verification pending
 
 `careers@ / jobs@ / hiring@ / talent@ / hr@ / recruit@` at a known domain.
@@ -229,6 +254,30 @@ never fetching linkedin.com. With ApplyBolt live again, this recedes further.
   (`optiverus`, 50-job sample): metadata fields are only Workflow /
   Website Level Mapping / Requisition Type / Leadership Owner, the last typed
   as a user id but null throughout. Still thin; still not worth a sweep.
+- **Oracle Cloud HCM's `ExternalContactName`/`ExternalContactEmail`/`HiringManager`
+  fields — same shape of finding as Greenhouse above, checked 2026-09-02.**
+  Only visible on the per-requisition *detail* endpoint
+  (`recruitingCEJobRequisitionDetails`), not the list one — a real schema, and
+  `ExternalContactEmail` would be a genuine address field, better than
+  SmartRecruiters' name-only leak. Checked 9 real requisitions across 4
+  different tenants (Wesco, Hillside, Hilton Grand Vacations, Hologic
+  Careers): every field came back `null` on every one. Present in the
+  schema, unpopulated in practice — not worth building on with this
+  evidence. Oracle covers 515 tracked companies, so if this ever becomes a
+  priority, a wider sample (20-30 tenants) is the next step before writing
+  it off completely, not more code against 4 data points.
+- **Eightfold, Workable, Darwinbox — audited 2026-09-02, no contact-shaped
+  fields found.** Eightfold's position object (checked against Microsoft's
+  board) carries nothing person-shaped. Workable structurally can't have
+  this: no per-job JSON endpoint exists at all, confirmed in the fetcher's
+  own code comment — description only lives on the rendered HTML page.
+  Darwinbox (checked against Udaan's board, needed a real browser
+  User-Agent to clear Cloudflare — header-only fix, same class as the CIBC
+  precedent, not a true TLS-fingerprint wall) returns only internal IDs and
+  location metadata. Together with SmartRecruiters/Greenhouse/Lever/Ashby/
+  Workday (source 2d above and elsewhere in this doc), that's 8 of the top 9
+  platforms by tracked-company volume now audited for this specific
+  leak-shaped signal.
 - **Sitemap-based board detection** — different problem (board *finding*, not
   contacts), tried and reverted for a measured 0% hit rate; see HANDOFF.md.
   Listed here so nobody re-proposes it as a contact source either.
@@ -240,7 +289,7 @@ never fetching linkedin.com. With ApplyBolt live again, this recedes further.
 | File | Contents |
 | --- | --- |
 | `src/contacts.ts` | Git-commit source, `domainMatchesOrg`, pattern inference/factory, freemail & machine filters |
-| `src/contact-sources.ts` | npm/PyPI/Maven registries, website scanner, role addresses, `contact-find` CLI |
+| `src/contact-sources.ts` | npm/PyPI/Maven registries, SmartRecruiters creators, website scanner, role addresses, `contact-find` CLI |
 | `src/outreach.ts` | `resolveRecipients()` ladder wiring, SMTP verify + Gravatar path |
 | `src/contacts-sweep.ts` | Whole-corpus measurement sweep (`npm run contacts-sweep`) |
 | `src/verify-email.ts` | Raw SMTP RCPT probing with catch-all control (local-only: port 25 blocked on Actions runners) |
@@ -262,3 +311,14 @@ npm run contacts-sweep               # whole-companies.json measurement run
    API shape is clean; useful as a cross-check for high-value targets.
 4. **First real send** — sender infra deployed but nothing sent yet; the
    COLDMAIL-PLAN warmup ramp doesn't start until the first message goes out.
+5. **Oracle wider sample** (20-30 tenants, not 4) before fully writing off
+   `ExternalContactEmail` — real field, real value if even a handful of the
+   515 tracked Oracle companies populate it, no evidence yet either way.
+6. **Remaining small-volume platforms** (SuccessFactors, Phenom, TurboHire,
+   PeopleStrong, and the rest under ~20 companies each) never got the same
+   raw-field audit sources 2d/Oracle/Eightfold/Workable/Darwinbox above did.
+   Low priority — diminishing returns given the top 9 platforms by volume
+   are now covered — but flagged so nobody assumes it was exhaustive.
+7. **Source-level reply measurement** — `ContactState.source` (git/npm/
+   pypi/maven/smartrecruiters) is wired end to end as of 2026-09-02 but has
+   nothing to measure yet; becomes real the moment #4 happens.
