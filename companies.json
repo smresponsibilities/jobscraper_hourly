@@ -104530,5 +104530,264 @@
     "industry": "tech",
     "source": "discovered",
     "token": "newsbreak"
+  },
+  {
+    "name": "Aidence",
+    "ats": "recruitee",
+    "token": "aidence",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Beinguser",
+    "ats": "recruitee",
+    "token": "beinguser",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Bernardgruppe",
+    "ats": "recruitee",
+    "token": "bernardgruppe",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Box8",
+    "ats": "recruitee",
+    "token": "box8",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Brain",
+    "ats": "recruitee",
+    "token": "brain",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Brainsquare",
+    "ats": "recruitee",
+    "token": "brainsquare",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Castolin",
+    "ats": "recruitee",
+    "token": "castolin",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Cbsapac",
+    "ats": "recruitee",
+    "token": "cbsapac",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Clanx",
+    "ats": "recruitee",
+    "token": "clanx",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Consultdss",
+    "ats": "recruitee",
+    "token": "consultdss",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Deephealth",
+    "ats": "recruitee",
+    "token": "deephealth",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Flextrade",
+    "ats": "recruitee",
+    "token": "flextrade",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Framestore",
+    "ats": "recruitee",
+    "token": "framestore",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Fullcreative",
+    "ats": "recruitee",
+    "token": "fullcreative",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Futureworks",
+    "ats": "recruitee",
+    "token": "futureworks",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Gain",
+    "ats": "recruitee",
+    "token": "gain",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Gsbsolutions1",
+    "ats": "recruitee",
+    "token": "gsbsolutions1",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Gustileder",
+    "ats": "recruitee",
+    "token": "gustileder",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Hyand",
+    "ats": "recruitee",
+    "token": "hyand",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Infoprolearning",
+    "ats": "recruitee",
+    "token": "infoprolearning",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Jobsdeerns",
+    "ats": "recruitee",
+    "token": "jobsdeerns",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Kcoverseaseducation",
+    "ats": "recruitee",
+    "token": "kcoverseaseducation",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Kinly",
+    "ats": "recruitee",
+    "token": "kinly",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Lenskartcareers",
+    "ats": "recruitee",
+    "token": "lenskartcareers",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Metyisag",
+    "ats": "recruitee",
+    "token": "metyisag",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Mgid",
+    "ats": "recruitee",
+    "token": "mgid",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Mrmarinegroup",
+    "ats": "recruitee",
+    "token": "mrmarinegroup",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "O2h",
+    "ats": "recruitee",
+    "token": "o2h",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Onemobility",
+    "ats": "recruitee",
+    "token": "onemobility",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Scioteq",
+    "ats": "recruitee",
+    "token": "scioteq",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Signode",
+    "ats": "recruitee",
+    "token": "signode",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Sioux",
+    "ats": "recruitee",
+    "token": "sioux",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Techbizglobal",
+    "ats": "recruitee",
+    "token": "techbizglobal",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Tgs",
+    "ats": "recruitee",
+    "token": "tgs",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Transperfect",
+    "ats": "recruitee",
+    "token": "transperfect",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Voltaira",
+    "ats": "recruitee",
+    "token": "voltaira",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Xogene",
+    "ats": "recruitee",
+    "token": "xogene",
+    "industry": "tech",
+    "source": "discovered"
   }
 ]
