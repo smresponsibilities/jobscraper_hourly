@@ -593,13 +593,28 @@ terminal** (checkpointed, ~3.5-4 hours, doesn't need a session alive) —
 check `state/leadership-sweep.json` for results in a future session; it's
 gitignored, so it won't show up in a fresh clone.
 
-**A real (non-`DRY_RUN`) hunt was also kicked off this session** specifically
-to measure the multi-location fix's actual behavior on a live run (the dry
-run above only proved it didn't crash) — check whether it completed and
-what `resolved N new workday multi-location postings` actually reported;
-if it's still running or was interrupted, `npm run hunt` is safe to
-re-trigger, same checkpoint-safety guarantees as everything else in this
-pipeline.
+**A real (non-`DRY_RUN`) hunt ran this session, and it caught a real,
+long-standing bug the dry run structurally could not have found.** The
+multi-location resolver reported **0 resolved**, not the expected fraction
+of 22,398 — `resolvePlaceholderLocations()` needs its detail-endpoint fetch
+to actually succeed to do anything, and it wasn't. Traced to
+`fetchDetail()` in `workday.ts`: it appended a literal `/job` before the
+path pulled off `job.url`, but that path already starts with `/job/...`
+(that's the shape `externalPath` comes back in) — producing
+`.../job/job/{location}/{reqId}` and a 422 from Workday on **every single
+detail call**, confirmed live (422 with the old URL, 200 with the fix, same
+real posting). This bug **predates this entire multi-session task** — it's
+been there since the first commit — and was completely invisible until now
+because `enrich()` (which shares the same endpoint) swallows a failed fetch
+into `undefined`, and a missing description just ships silently. **Every
+Workday posting has gone out with no description this whole time.** Fixed
+in `677b311`; re-verified against NVIDIA's board (20/20 placeholders
+resolved post-fix, matching the per-board cap). The completed hunt run's
+results (`d6b3f4c`: 613,216 live postings, 1,106 matches, 10,406 catalog
+entries) predate the fix and still show 0 multi-location resolutions — a
+future run will show the real number, and will also start attaching real
+descriptions to Workday jobs for the first time, which may shift years/
+seniority classification results for that platform in ways worth watching.
 
 `npx tsc --noEmit` and `npm test` both pass clean as of this handoff.
 
