@@ -12,6 +12,7 @@ out/
 # Common Crawl sweep needs it to know which block to scan next.
 state/seen.json
 state/contact-sweep.json
+state/leadership-sweep.json
 
 # Per-board poll times and failure streaks — one entry per board, rewritten for
 # up to BOARDS_PER_RUN of them every run. It exists precisely so companies.json

@@ -81,7 +81,7 @@ const FACT_MAX_AGE_DAYS = 90;
 /** Bound the wall-clock cost of SMTP probing per company per build. */
 const MAX_PROBES_PER_COMPANY = Number(process.env.OUTREACH_PROBES ?? 4);
 /** ATSes whose `token` is the company's own hostname, not an ATS subdomain — see `alternates()`. */
-const HOSTNAME_ATS = new Set(['phenom', 'icims', 'zohorecruit', 'successfactors']);
+export const HOSTNAME_ATS = new Set(['phenom', 'icims', 'zohorecruit', 'successfactors']);
 const VERDICT_TTL_DAYS = 14;
 /**
  * A bounce is evidence about the guessed pattern at a domain, not just about
