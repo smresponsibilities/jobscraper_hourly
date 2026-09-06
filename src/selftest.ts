@@ -12,7 +12,7 @@ import { parsePositions, place as personioPlace } from './fetchers/personio.js';
 import { isPlaceholderLocation, parsePostedOn, parseRobotsSites } from './fetchers/workday.js';
 import { refreshedPostedAt } from './catalog.js';
 import { boardKey, NO_ADAPTER, parseBoardUrl } from './board-url.js';
-import { csvFields } from './bulk-import.js';
+import { csvFields, unfedPlatforms } from './bulk-import.js';
 import { place as ukgPlace } from './fetchers/ukg.js';
 import { FETCHERS } from './fetchers/index.js';
 import { BlockError, classifyFailure, classifyOkBody } from './fetchers/block.js';
@@ -1335,6 +1335,35 @@ check(
 check('several sites are joined', ukgPlace([{ Address: { City: 'Pune' } }, { Address: { City: 'Chennai' } }]), 'Pune / Chennai');
 check('a location with no address at all yields empty, not the site code', ukgPlace([{ LocalizedName: 'NM - KAFB' }]), '');
 check('no locations at all yields empty', ukgPlace(undefined), '');
+
+console.log('IMPORTABLE staleness guard')
+// The check that would have caught this file's own worst bug: IMPORTABLE sat
+// at seven platforms while the source published forty-eight, so Keka tracked 7
+// boards against 185 published tenants with a working adapter the whole time.
+// Pure function so this needs no network call.
+check(
+  'a published list for an adapter nobody feeds is reported',
+  unfedPlatforms(['keka.csv', 'greenhouse.csv'], ['greenhouse'], ['keka', 'greenhouse']).join(','),
+  'keka',
+);
+check(
+  'a platform already in IMPORTABLE is not reported',
+  unfedPlatforms(['keka.csv'], ['keka'], ['keka']).length,
+  0,
+);
+check(
+  'a published list with no adapter is not reported — that is a build decision, not staleness',
+  unfedPlatforms(['taleo.csv', 'bamboohr.csv'], [], ['keka']).length,
+  0,
+);
+// iCIMS is excluded by name: its list is published and its adapter exists, but
+// a live sample came back 0/12. Without the exemption this would warn on every
+// run and become a line everyone scrolls past.
+check(
+  'a deliberately-skipped platform stays quiet',
+  unfedPlatforms(['icims.csv'], [], ['icims']).length,
+  0,
+);
 
 console.log(failures === 0 ? '\nall checks pass' : `\n${failures} failing check(s)`);
 process.exit(failures === 0 ? 0 : 1);

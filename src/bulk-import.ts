@@ -90,6 +90,65 @@ const IMPORTABLE: Ats[] = [
   'ukg',
 ];
 
+/**
+ * Platforms with a published tenant list that this file deliberately does not
+ * import, and why. Anything named here is excluded from the staleness warning
+ * below, so the warning stays a real signal rather than a line everyone learns
+ * to scroll past.
+ */
+const NOT_WORTH_IMPORTING: Partial<Record<Ats, string>> = {
+  icims:
+    'a 12-row live sample came back 0/12 — every tenant a modern Talent Cloud portal with no /api/jobs endpoint',
+};
+
+/**
+ * The check that would have caught this file's own worst bug.
+ *
+ * `IMPORTABLE` sat at seven platforms while the source published forty-eight,
+ * so Keka, Recruitee and Darwinbox each had a working fetcher and nothing
+ * feeding it — Keka was tracking 7 boards against 185 published tenants, and
+ * one import took it to 170. Nothing anywhere said so; it relied on somebody
+ * remembering to cross-check two hand-maintained lists.
+ *
+ * Kept as a pure function so the regression suite can cover it without a
+ * network call. The caller does the fetching and treats any failure as
+ * silence: this is advisory, and a GitHub rate limit must never fail a run.
+ */
+export function unfedPlatforms(
+  published: readonly string[],
+  importable: readonly string[],
+  adapters: readonly string[],
+): string[] {
+  const have = new Set(published.map((name) => name.replace(/\.csv$/i, '')));
+  return adapters
+    .filter((ats) => have.has(ats))
+    .filter((ats) => !importable.includes(ats))
+    .filter((ats) => !(ats in NOT_WORTH_IMPORTING))
+    .sort();
+}
+
+const LISTING_URL = 'https://api.github.com/repos/kalil0321/ats-scrapers/contents/ats-companies';
+
+async function warnAboutUnfedPlatforms(): Promise<void> {
+  let names: string[];
+  try {
+    const res = await fetch(LISTING_URL, {
+      headers: { 'user-agent': UA, accept: 'application/vnd.github+json' },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!res.ok) return;
+    names = ((await res.json()) as { name?: string }[]).map((f) => f.name ?? '');
+  } catch {
+    return; // Advisory only — never fail a real import over the listing call.
+  }
+
+  const unfed = unfedPlatforms(names, IMPORTABLE, Object.keys(FETCHERS));
+  if (unfed.length === 0) return;
+
+  console.warn(`\n  ! tenant lists are published for platforms with a working adapter that IMPORTABLE does not list: ${unfed.join(', ')}`);
+  console.warn('    a working fetcher that nothing feeds is the same as no fetcher — check these before writing a new adapter\n');
+}
+
 const ORACLE_URL =
   /https?:\/\/([a-z0-9-]+)\.(fa\.[a-z0-9]+)\.oraclecloud\.com\/.*?\/sites\/([A-Za-z0-9_]+)/i;
 
@@ -291,6 +350,7 @@ async function discoverCandidateSites(
 }
 
 async function main(): Promise<void> {
+  await warnAboutUnfedPlatforms();
   const existing = await loadCompanies();
   const known = new Set(existing.map(boardKey));
 
