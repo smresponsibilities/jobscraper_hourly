@@ -6,7 +6,7 @@ import { HOST_CONCURRENCY } from './config.js';
 import { isServiceCompany, locationMatches, roleFamily } from './filter.js';
 import { classify } from './classify.js';
 import { loadCompanies, saveCompanies } from './state.js';
-import { boardKey, prettify, WORKDAY } from './board-url.js';
+import { boardKey, parseBoardUrl, prettify, WORKDAY } from './board-url.js';
 import { discoverSites } from './fetchers/workday.js';
 
 /**
@@ -42,11 +42,61 @@ import { discoverSites } from './fetchers/workday.js';
  */
 const RAW = 'https://raw.githubusercontent.com/kalil0321/ats-scrapers/main/ats-companies';
 
-/** Platforms whose CSV row carries everything the fetcher needs. */
-const IMPORTABLE: Ats[] = ['greenhouse', 'lever', 'ashby', 'smartrecruiters', 'workday', 'oracle', 'workable'];
+/**
+ * Platforms whose CSV row carries everything the fetcher needs.
+ *
+ * Keka, Teamtailor, Breezy, Personio, Recruitee and Darwinbox joined on
+ * 2026-09-06 — a platform can only be listed here if a bare slug (or a URL,
+ * via `parseRow`'s fallback) is enough to build a fetchable board. Row counts
+ * in that source at the time: personio 2,463, teamtailor 1,464, breezy 1,384,
+ * recruitee 1,164, keka 185, darwinbox ~170.
+ *
+ * Recruitee and Darwinbox are the cautionary ones: both adapters had existed
+ * for months while this list stayed at seven platforms, so the corpus held 37
+ * Recruitee and 40 Darwinbox boards against four-figure published tenant
+ * lists. Keka was the same story and one import took it from 7 boards to 170.
+ * **Before adding an adapter, check whether this list is why a platform looks
+ * small** — a working fetcher that nothing feeds is the same as no fetcher.
+ * Darwinbox is listed with only its tenant slug on purpose: the CSV carries
+ * the older `/ms/candidate/careers` URL form, which needs no companyId hash
+ * (verified live against Airtel and BigBasket before adding).
+ *
+ * SuccessFactors (1,392 rows), Phenom (98) and Eightfold (83) joined the same
+ * day, all three as hostname-token platforms. **iCIMS deliberately did not**,
+ * despite having 2,498 published tenants against 2 tracked: a 12-row live
+ * sample came back 0/12, every one a modern Talent Cloud portal with no
+ * `/api/jobs` endpoint, which is the same wall `ADDING-COMPANIES.md` §4
+ * already documents. Importing it would spend ~2,500 requests to add
+ * essentially nothing. Revisit only if the modern portal's JSON-LD path gets
+ * built — that is a new adapter, not a list entry.
+ */
+const IMPORTABLE: Ats[] = [
+  'greenhouse',
+  'lever',
+  'ashby',
+  'smartrecruiters',
+  'workday',
+  'oracle',
+  'workable',
+  'keka',
+  'teamtailor',
+  'breezy',
+  'personio',
+  'recruitee',
+  'darwinbox',
+  'successfactors',
+  'phenom',
+  'eightfold',
+  'ukg',
+];
 
 const ORACLE_URL =
   /https?:\/\/([a-z0-9-]+)\.(fa\.[a-z0-9]+)\.oraclecloud\.com\/.*?\/sites\/([A-Za-z0-9_]+)/i;
+
+/** UKG needs both halves of its board path: neither the tenant code nor the
+ *  board GUID is derivable from the other, which is what defeated an earlier
+ *  blind probe of this platform. */
+const UKG_URL = /recruiting\.ultipro\.com\/([A-Za-z0-9]+)\/JobBoard\/([0-9a-f-]{36})/i;
 
 type Bar = 'india' | 'fresher' | 'live';
 
@@ -61,12 +111,72 @@ const onlyPlatform = flag('platform') as Ats | undefined;
 const rediscover = args.includes('--rediscover');
 const filePath = flag('file');
 
-/** Naive CSV split is enough here: only the trailing url field can contain commas. */
+/**
+ * Split one CSV line, honouring double-quoted fields.
+ *
+ * This used to be a bare `line.split(',')`, on the stated assumption that only
+ * the trailing url field could contain a comma. That is false, and measurably
+ * so: 896 rows across the six original lists carry a quoted company name with
+ * a comma in it — `"80,000 Hours"`, `"Apex Technology, Inc."`, `"48Forty
+ * Solutions, LLC"`. Splitting those naively pushes the tail of the name into
+ * the slug field, so the row resolves to a nonsense token and is dropped at
+ * validation. 331 of iCIMS's 2,498 rows are this shape.
+ */
+export function csvFields(line: string): string[] {
+  const fields: string[] = [];
+  let field = '';
+  let quoted = false;
+
+  for (const ch of line) {
+    if (ch === '"') quoted = !quoted;
+    else if (ch === ',' && !quoted) {
+      fields.push(field.trim());
+      field = '';
+    } else field += ch;
+  }
+  fields.push(field.trim());
+  return fields;
+}
+
+/** Hostname-as-token platforms: the board has no derivable slug, so the whole
+ *  host is the token (`careers.gehealthcare.com`, `ace1950.jobs2web.com`). */
+const HOSTNAME_TOKEN = new Set<Ats>(['successfactors', 'phenom', 'eightfold']);
+
+const hostOf = (url: string): string | undefined =>
+  url.replace(/^https?:\/\//i, '').split('/')[0]?.trim() || undefined;
+
 function parseRow(platform: Ats, line: string): Company | null {
-  const [rawName, slug, url] = line.split(',');
-  const name = (rawName ?? '').trim().replace(/^"|"$/g, '');
-  if (!name || !slug) return null;
+  const fields = csvFields(line);
+  // phenom.csv is the one list whose columns are `url,name,...` instead of
+  // `name,slug,url`; every other list this file reads leads with the name.
+  const [rawName, slug, url] =
+    platform === 'phenom'
+      ? [fields[1], undefined, fields[0]]
+      : [fields[0], fields[1], fields[2]];
+  const name = (rawName ?? '').trim();
+  if (!name) return null;
   const base = { name, ats: platform, industry: 'tech' as Industry, source: 'discovered' as const };
+
+  if (platform === 'ukg') {
+    const m = UKG_URL.exec(url ?? '');
+    return m ? { ...base, token: m[1]!, site: m[2]! } : null;
+  }
+
+  if (HOSTNAME_TOKEN.has(platform)) {
+    const host = hostOf(url ?? '');
+    if (!host) return null;
+    // Eightfold additionally needs the tenant's own mail domain — it is the
+    // `domain=` query parameter its search API requires, not decoration. Rows
+    // that leave that column blank cannot be fetched, so they are dropped
+    // rather than guessed at.
+    if (platform === 'eightfold') {
+      const domain = fields[3]?.trim();
+      return domain ? { ...base, token: host, site: domain } : null;
+    }
+    return { ...base, token: host };
+  }
+
+  if (!slug) return null;
 
   if (platform === 'workday') {
     const m = WORKDAY.exec(url ?? '');
@@ -77,7 +187,17 @@ function parseRow(platform: Ats, line: string): Company | null {
     return m ? { ...base, token: m[1]!, host: m[2]!, siteNumber: m[3]! } : null;
   }
   const token = slug.trim();
-  if (!token || token.includes('/') || token.startsWith('http')) return null;
+  if (!token || token.includes('/') || token.startsWith('http')) {
+    // Not every list ships a slug column — keka.csv is `name,url` only, so the
+    // second field is the board URL itself. That URL is authoritative anyway,
+    // and `board-url.ts` already knows how to read every platform we can
+    // auto-derive, so fall back to it rather than dropping the row. The
+    // platform check matters: a list can carry a stray URL for some other ATS,
+    // and importing it under this platform's name would create a board that
+    // can never be fetched.
+    const parsed = parseBoardUrl(url ?? slug ?? '');
+    return parsed?.ats === platform ? { ...parsed, ...base, token: parsed.token } : null;
+  }
   return { ...base, token };
 }
 
@@ -284,7 +404,15 @@ async function main(): Promise<void> {
   console.log(`\ncompanies.json: ${existing.length} -> ${existing.length + keep.length}`);
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+// Guarded the same way `contacts.ts` and `contact-sources.ts` guard theirs.
+// Without this, importing anything from this file — the regression suite now
+// imports `csvFields` — starts a real bulk import as a side effect: live
+// requests against thousands of boards, and a `saveCompanies` write at the
+// end. `detect.ts` still has the unguarded shape and is deliberately not
+// imported anywhere for that reason.
+if (process.argv[1]?.endsWith('bulk-import.ts')) {
+  main().catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
+}

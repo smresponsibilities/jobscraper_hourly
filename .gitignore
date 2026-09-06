@@ -33,3 +33,8 @@ state/multiloc.json
 # unconditionally; without the ignore, one `git add -A` on a dev machine would
 # be enough to leak it into this public repo's history.
 state/contacted.json
+
+# Regenerated in one command (`npm run yc-domains -- India > state/yc-india.txt`)
+# from a directory that changes weekly, so committing it would add churn without
+# adding information — the durable record of what it resolved to is companies.json.
+state/yc-*.txt

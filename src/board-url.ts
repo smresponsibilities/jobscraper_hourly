@@ -15,7 +15,41 @@ export const HOSTED: { ats: Ats; pattern: RegExp }[] = [
   { ats: 'lever', pattern: /jobs\.(?:eu\.)?lever\.co\/([a-z0-9_-]+)/i },
   { ats: 'ashby', pattern: /jobs\.ashbyhq\.com\/([a-z0-9_-]+)/i },
   { ats: 'smartrecruiters', pattern: /(?:jobs|careers)\.smartrecruiters\.com\/([a-zA-Z0-9_-]+)/i },
+  // These three capture a *subdomain* rather than a path segment, which is why
+  // NOT_A_COMPANY below has to cover the vendors' own hostnames: `www` and
+  // `app` are real subdomains on all three platforms and would otherwise
+  // resolve to a board named "Www".
+  { ats: 'keka', pattern: /([a-z0-9-]+)\.keka\.com/i },
+  { ats: 'teamtailor', pattern: /([a-z0-9-]+)\.teamtailor\.com/i },
+  { ats: 'breezy', pattern: /([a-z0-9-]+)\.breezy\.hr/i },
+  { ats: 'personio', pattern: /([a-z0-9-]+)\.jobs\.personio\.(?:de|com)/i },
 ];
+
+/**
+ * Platforms a careers-page scan can recognise but not turn into a ready-to-add
+ * `Company` on its own. `NO_ADAPTER` is "this project cannot fetch it at all";
+ * `NEEDS_MANUAL_EXTRACTION` is "the adapter exists, but it needs fields (a
+ * companyId hash, an org GUID, a whole hostname) that no single regex group on
+ * the page can supply". `detect.ts` reports both rather than letting a real
+ * board disappear into "no ATS link found".
+ *
+ * These live here rather than in `detect.ts` so the regression suite can hold
+ * them against `FETCHERS` — importing `detect.ts` would run its `main()`.
+ * That check exists because this list went stale silently: Keka and iCIMS both
+ * sat in `NO_ADAPTER` long after their adapters shipped, so every Keka board a
+ * scan found was reported unsupported and dropped. A YC-directory sweep on
+ * 2026-09-06 hit five in one run (Peoplebox, Zuddl, Inito, Loop Health,
+ * AccioJob); three held 23 live India roles between them. A platform named
+ * here that has an adapter is invisible loss, not a warning.
+ *
+ * Keka now resolves automatically — its token is a bare subdomain, so it is in
+ * `HOSTED` above. iCIMS cannot: it keeps the whole hostname as its token.
+ */
+export const NO_ADAPTER =
+  /jobvite\.com|taleo\.net|ultipro\.com|csod\.com|bamboohr\.com|applytojob\.com|comeet\.co|dayforcehcm\.com|ats\.rippling\.com/i;
+
+export const NEEDS_MANUAL_EXTRACTION =
+  /darwinbox\.[a-z]+|turbohire\.co|successfactors\.[a-z]+|phenompeople\.com|icims\.com/i;
 
 export const WORKDAY =
   /https?:\/\/([a-z0-9-]+)\.(wd\d+)\.myworkdayjobs\.com\/(?:(?:[a-z]{2}-[A-Za-z]{2})\/)?([A-Za-z0-9_-]+)/i;
@@ -26,7 +60,7 @@ const ORACLE =
 
 /** Path segments that are ATS plumbing rather than a company. */
 const NOT_A_COMPANY =
-  /^(embed|api|v1|assets|static|images|css|js|robots|sitemap|favicon|_next|search|jobs|job)$/i;
+  /^(embed|api|v1|assets|static|images|css|js|robots|sitemap|favicon|_next|search|jobs|job|www|app|help|support|blog)$/i;
 
 export function prettify(slug: string): string {
   return slug

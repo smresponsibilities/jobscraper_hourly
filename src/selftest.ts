@@ -6,9 +6,15 @@ import { selectBoards } from './select-boards.js';
 import { epochToIso } from './fetchers/eightfold.js';
 import { safeIso } from './fetchers/darwinbox.js';
 import { toIso as recruiteeToIso } from './fetchers/recruitee.js';
+import { place as teamtailorPlace } from './fetchers/teamtailor.js';
+import { place as breezyPlace } from './fetchers/breezy.js';
+import { parsePositions, place as personioPlace } from './fetchers/personio.js';
 import { isPlaceholderLocation, parsePostedOn, parseRobotsSites } from './fetchers/workday.js';
 import { refreshedPostedAt } from './catalog.js';
-import { boardKey } from './board-url.js';
+import { boardKey, NO_ADAPTER, parseBoardUrl } from './board-url.js';
+import { csvFields } from './bulk-import.js';
+import { place as ukgPlace } from './fetchers/ukg.js';
+import { FETCHERS } from './fetchers/index.js';
 import { BlockError, classifyFailure, classifyOkBody } from './fetchers/block.js';
 import { summarizeHostStats, updateHistory, persistentlySlow } from './host-stats.js';
 import {
@@ -1149,6 +1155,28 @@ const zohoLike =
   '<p>The Government of India has bestowed the prestigious Padma Shri on our CEO, Sridhar Vembu! It is a moment of great honor.</p>';
 check('a long prose sentence is not read as a title line', extractLeadership(zohoLike).length, 0);
 check('a bare "CEO" with no name-shaped neighbour yields nothing', extractLeadership('<p>Leadership</p><p>CEO</p><p>Reports</p>').length, 0);
+// Three more false positives found live 2026-09-05 running leadership-sweep
+// against real companies, each fixed and pinned here.
+check(
+  'an all-caps section heading is not read as a name (abb.com)',
+  JSON.stringify(extractLeadership('<p>OUR BUSINESS AREAS</p><p>Morten Wierod, ABB CEO</p>')),
+  JSON.stringify([{ name: 'Morten Wierod', title: 'ABB CEO' }]),
+);
+check(
+  'a "Name, Title" one-line pair is read correctly, not the preceding heading (7shifts.com)',
+  JSON.stringify(extractLeadership('<p>Our Mission</p><p>Jordan Boesch, CEO</p>')),
+  JSON.stringify([{ name: 'Jordan Boesch', title: 'CEO' }]),
+);
+check(
+  'a founding-story sentence with parenthetical titles yields nothing (1bios.co)',
+  extractLeadership('<p>Fast Facts</p><p>Founded by Andy Scott (CEO) and David Faber (CTO) in 2014.</p>').length,
+  0,
+);
+check(
+  'a title naming another company via "at X" is rejected as a client testimonial (4flow.com)',
+  extractLeadership('<p>Wayne Winter</p><p>Vice President EMEA SCM &amp; Procurement at Adient</p>').length,
+  0,
+);
 // DMARC rua parsing — vendor-hosted and multi-record shapes both occur.
 check('parseDmarcRua reads plain rua', parseDmarcRua(['v=DMARC1; p=none; rua=mailto:dmarcreports@meesho.com']), 'dmarcreports@meesho.com');
 check('parseDmarcRua handles vendor host + split records', parseDmarcRua(['v=DMARC1;', 'rua=mailto:g72jrssx@ag.ap.dmarcian.com; p=quarantine']), 'g72jrssx@ag.ap.dmarcian.com');
@@ -1159,5 +1187,154 @@ check('packageNameCandidates rejects tiny slugs', JSON.stringify(packageNameCand
 // ApplyBolt response parsing — found:false, junk, and missing-name shapes.
 check('parseApplyBolt reads a hit', JSON.stringify(parseApplyBolt({ found: true, email: 'Bill.Gates@GatesFoundation.org', fullName: 'Bill Gates', jobTitle: 'Co-chair' })), JSON.stringify({ name: 'Bill Gates', email: 'bill.gates@gatesfoundation.org', title: 'Co-chair' }));
 check('parseApplyBolt rejects not-found and malformed', [parseApplyBolt({ found: false }), parseApplyBolt(null), parseApplyBolt({ found: true })].every((r) => r === null), true);
+console.log('teamtailor location (schema.org extension, not the feed item)');
+// JSON Feed carries no location field at all — the city only exists inside
+// Teamtailor's `_jobposting` extension. Reading the item alone silently gives
+// every posting an empty location, which filter.ts then drops as unmatched.
+check(
+  'a single office reads locality, region and country',
+  teamtailorPlace({ jobLocation: { address: { addressLocality: 'Bengaluru', addressRegion: 'Karnataka', addressCountry: 'IN' } } }),
+  'Bengaluru, Karnataka, IN',
+);
+check(
+  'several offices are joined, not silently reduced to the first',
+  teamtailorPlace({ jobLocation: [{ address: { addressLocality: 'Munich' } }, { address: { addressLocality: 'Berlin' } }] }),
+  'Munich / Berlin',
+);
+// "Remote" is appended to the addresses rather than replacing them. Replacing
+// them would make every country-locked hybrid role read as globally remote,
+// because filter.ts only accepts a remote posting when nothing but noise
+// words is left after the addresses are stripped.
+check(
+  'a remote-flagged posting keeps its country so a locked role stays excluded',
+  locationMatches(teamtailorPlace({ jobLocation: [{ address: { addressLocality: 'Stockholm', addressCountry: 'SE' } }], jobLocationType: 'TELECOMMUTE' })),
+  false,
+);
+check(
+  'a remote posting with no address at all reads as genuinely global',
+  locationMatches(teamtailorPlace({ jobLocationType: 'TELECOMMUTE' })),
+  true,
+);
+check('no location block at all yields empty, not a crash', teamtailorPlace(undefined), '');
+
+console.log('breezy location shapes');
+// Breezy sends the single-office form as `location` and the multi-office form
+// as `locations`; reading only one of them loses half the corpus.
+check('the multi-office array wins over the single field', breezyPlace({ locations: [{ name: 'Bengaluru, KA' }, { name: 'Pune, MH' }] }), 'Bengaluru, KA / Pune, MH');
+check('the single-office field is still read', breezyPlace({ location: { name: 'Chaos, FL' } }), 'Chaos, FL');
+check('a place with no `name` falls back to its parts', breezyPlace({ location: { city: 'Hyderabad', country: { name: 'India' } } }), 'Hyderabad, India');
+check('a remote flag is appended, not substituted', breezyPlace({ location: { name: 'Berlin', is_remote: true } }), 'Berlin, Remote');
+
+console.log('personio XML parsing');
+// This shipped broken once, in this adapter's own first draft: the tag regex
+// was built inside a template literal written with single backslashes, where
+// `\s` is not a recognized escape and collapses to a bare `s`. The pattern
+// silently became `([sS]*?)`, every position parsed to nothing, and the board
+// returned zero jobs while looking perfectly healthy.
+const PERSONIO_FEED = `<?xml version="1.0" encoding="UTF-8"?>
+<workzag-jobs>
+<position>
+    <id>1834171</id>
+    <office>Munich</office>
+    <additionalOffices><office>Bengaluru</office></additionalOffices>
+    <name>Staff Software Engineer</name>
+    <jobDescriptions><jobDescription><name>Your tasks</name><value>Build things</value></jobDescription></jobDescriptions>
+    <createdAt>2024-11-13T14:10:41+00:00</createdAt>
+</position>
+</workzag-jobs>`;
+const personioJobs = parsePositions(PERSONIO_FEED, 'acme');
+check('a real feed yields one position, not zero', personioJobs.length, 1);
+check('the title is the position name', personioJobs[0]?.title, 'Staff Software Engineer');
+// A description section carries its own <name>, and additionalOffices its own
+// <office>. Both nested blocks are stripped before the scalar fields are read,
+// so a reordered feed can never report a section heading as the job title.
+check('a description heading is not mistaken for the title', personioJobs[0]?.title !== 'Your tasks', true);
+check('additional offices are included, not dropped', personioJobs[0]?.location, 'Munich / Bengaluru');
+check('the description text is kept for the years gate', personioJobs[0]?.text?.includes('Build things'), true);
+check('an empty feed parses to nothing rather than throwing', parsePositions('<workzag-jobs></workzag-jobs>', 'acme').length, 0);
+// Personio's feed carries no country field on any position, so an office
+// named exactly "Remote" says nothing about where. locationMatches would
+// read that as globally remote and let it through. Measured on the first 60
+// imported boards: 56 matched only on country-less "Remote" against 4 with a
+// real India location, nearly all German listings from German employers.
+check('a country-less remote-only office reports no location', personioPlace(['Remote']), '');
+check('case and spacing do not rescue it', personioPlace(['  remote  ', 'Home Office']), '');
+check(
+  'a remote-only office is therefore excluded, not treated as global',
+  locationMatches(personioPlace(['Remote'])),
+  false,
+);
+check('a real city is kept even alongside Remote', personioPlace(['Remote', 'Hamburg']), 'Remote / Hamburg');
+check('a mixed set with cities stays excluded by the residue check', locationMatches(personioPlace(['Remote', 'Hamburg'])), false);
+// Personio tenants name offices with a country-prefixed code. `_` is a word
+// character, so `bangalore` never matched "IN_Bangalore" and real India
+// boards were being dropped by a word boundary — caught by this check.
+check('a country-prefixed office code still reads as India', personioPlace(['IN_Bangalore', 'IN_Pune']), 'IN Bangalore / IN Pune');
+check('genuine India offices clear the gate', locationMatches(personioPlace(['IN_Bangalore', 'IN_Pune'])), true);
+
+
+console.log('subdomain-captured board URLs reject the vendors own hostnames');
+// Teamtailor, Breezy and Personio are matched on a *subdomain* rather than a
+// path segment, so the vendor's own marketing and app hosts look exactly like
+// a customer board. Without the NOT_A_COMPANY guard, `detect` would happily
+// add a company literally named "Www".
+// Keka spent months listed in the NO_ADAPTER regex after its adapter had
+// already shipped, so every Keka board a scan found was reported as
+// unsupported and dropped. Its token is a plain subdomain, so it belongs here
+// with the other auto-derivable platforms. The check below is the one that
+// can't go stale: a platform named as unsupported while an adapter for it
+// exists is silent loss, and nothing else in the pipeline would ever say so.
+check(
+  'nothing listed as unsupported already has a working adapter',
+  Object.keys(FETCHERS).filter((ats) => NO_ADAPTER.source.includes(ats)).join(','),
+  '',
+);
+check('a real keka board resolves rather than reading as unsupported', parseBoardUrl('https://peoplebox.keka.com/careers')?.ats, 'keka');
+check('a real teamtailor board resolves', parseBoardUrl('https://lifesum.teamtailor.com/jobs')?.token, 'lifesum');
+check('a real breezy board resolves', parseBoardUrl('https://acme.breezy.hr/')?.ats, 'breezy');
+check('a real personio board resolves', parseBoardUrl('https://acme.jobs.personio.de/xml')?.ats, 'personio');
+check('personio .com is the same platform', parseBoardUrl('https://acme.jobs.personio.com/')?.ats, 'personio');
+check('the vendor marketing host is rejected', parseBoardUrl('https://www.teamtailor.com/en/'), null);
+check('the vendor app host is rejected', parseBoardUrl('https://app.breezy.hr/signin'), null);
+
+
+console.log('bulk-import CSV field splitting')
+// The splitter was a bare `line.split(',')` on the assumption that only the
+// trailing url could contain a comma. 896 rows across the six original tenant
+// lists disprove that: a quoted company name with a comma pushes the tail of
+// the name into the slug field, and the row resolves to a nonsense token that
+// dies at validation. 331 of iCIMS's 2,498 rows are this shape.
+check(
+  'a quoted name containing a comma keeps the slug intact',
+  csvFields('"80,000 Hours",80000hours,https://jobs.ashbyhq.com/80000hours')[1],
+  '80000hours',
+);
+check(
+  'the company name is reassembled, not truncated at the comma',
+  csvFields('"Apex Technology, Inc.",apex-technology-inc,https://x')[0],
+  'Apex Technology, Inc.',
+);
+check('an ordinary unquoted row is unchanged', csvFields('Airtel,airtel,https://airtel.darwinbox.in')[1], 'airtel');
+check('a row with a trailing empty column keeps it', csvFields('10x Genomics,10xgenomics,https://x,').length, 4);
+
+console.log('ukg location (address block, not the internal site label)')
+// UKG's `LocalizedName` is the employer's own site code — "NM - KAFB",
+// "AL - USAG Redstone" — with no city or country in it. Reading that as the
+// location would make every posting on the platform invisible to the
+// India/remote gate, since there is nothing in it for the regex to match.
+check(
+  'the address block supplies a real place name',
+  ukgPlace([{ LocalizedName: 'KA - BLR7', Address: { City: 'Bengaluru', State: { Name: 'Karnataka' }, Country: { Name: 'India' } } }]),
+  'Bengaluru, Karnataka, India',
+);
+check(
+  'an India address actually clears the location gate',
+  locationMatches(ukgPlace([{ LocalizedName: 'KA - BLR7', Address: { City: 'Bengaluru', Country: { Name: 'India' } } }])),
+  true,
+);
+check('several sites are joined', ukgPlace([{ Address: { City: 'Pune' } }, { Address: { City: 'Chennai' } }]), 'Pune / Chennai');
+check('a location with no address at all yields empty, not the site code', ukgPlace([{ LocalizedName: 'NM - KAFB' }]), '');
+check('no locations at all yields empty', ukgPlace(undefined), '');
+
 console.log(failures === 0 ? '\nall checks pass' : `\n${failures} failing check(s)`);
 process.exit(failures === 0 ? 0 : 1);

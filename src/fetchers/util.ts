@@ -4,6 +4,22 @@ import { BlockError, classifyFailure, classifyOkBody, headOf } from './block.js'
 
 const run = promisify(execFile);
 
+/**
+ * Guarded date conversion, shared by every adapter that reads a date field an
+ * ATS controls. Both shapes the APIs actually send can fail: a garbled string
+ * and an out-of-range epoch number each make `new Date(...).toISOString()`
+ * throw `RangeError: Invalid time value` rather than return something falsy,
+ * and one bad value in one posting would make that whole board look dead for
+ * the rest of the eviction clock. This lives here rather than in one adapter
+ * because it is the single most-repeated correctness rule in the fetchers —
+ * see the "recurring bug class" section of HANDOFF.md.
+ */
+export function safeIso(value: string | number | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
+}
+
 /** Identify the bot honestly. Boards are far more tolerant of a named client. */
 export const UA =
   'jobscraper-next/1.0 (personal job alert bot; +https://github.com/topics/job-scraper)';
