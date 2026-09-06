@@ -105225,5 +105225,117 @@
     "industry": "tech",
     "source": "discovered",
     "token": "LyraCollective"
+  },
+  {
+    "name": "ascenttechnologies",
+    "ats": "greenhouse",
+    "token": "ascenttechnologies",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "affirmedrxpbc",
+    "ats": "greenhouse",
+    "token": "affirmedrxpbc",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "aksengineeringforestryllc",
+    "ats": "greenhouse",
+    "token": "aksengineeringforestryllc",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "blacksmith%20agency",
+    "ats": "ashby",
+    "token": "blacksmith%20agency",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "cardboard",
+    "ats": "ashby",
+    "token": "cardboard",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "CasperStudios",
+    "ats": "ashby",
+    "token": "CasperStudios",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Certa",
+    "ats": "ashby",
+    "token": "Certa",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "cerebras",
+    "ats": "ashby",
+    "token": "cerebras",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Citizen%20Health",
+    "ats": "ashby",
+    "token": "Citizen%20Health",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "clickhouse",
+    "ats": "ashby",
+    "token": "clickhouse",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "compound",
+    "ats": "ashby",
+    "token": "compound",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Coperniq",
+    "ats": "ashby",
+    "token": "Coperniq",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "curvionblue",
+    "ats": "ashby",
+    "token": "curvionblue",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "dandelionhealth",
+    "ats": "ashby",
+    "token": "dandelionhealth",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "delos-data",
+    "ats": "ashby",
+    "token": "delos-data",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "dittoai",
+    "ats": "ashby",
+    "token": "dittoai",
+    "industry": "tech",
+    "source": "discovered"
   }
 ]
