@@ -999,6 +999,38 @@ queueing. **Re-measure before concluding anything about the trend, and do not
 touch `HOST_CONCURRENCY` on one data point** — the same rule that constant
 already carries.
 
+**Windows gotcha that cost a real run: `npm run <script> -- --flag` does not
+pass flags through PowerShell.** npm's PowerShell shim
+(`%APPDATA%\npm\npm.ps1`) swallows the `--` separator, so the arguments arrive
+as npm's own config rather than the script's:
+
+```
+npm warn "state/oj-workable.txt" is being parsed as a normal command line argument.
+npm warn Unknown cli config "--file".
+```
+
+The failure is silent in the way that matters. `bulk-import.ts` saw no `--file`
+and no `--platform`, so instead of importing one slug file it fell through to a
+full sweep of every `IMPORTABLE` platform — 18,473 candidates — and did it twice
+before anyone read the log. **Invoke `npx tsx src/<script>.ts --flag ...`
+directly whenever a command takes flags.** The `npm run` form is fine only for
+scripts taking no arguments.
+
+Two smaller traps in the same command, worth knowing before writing another one
+for this project's Windows shell: PowerShell's `*>` all-stream redirect writes
+the log as **UTF-16**, which makes `grep`/`Select-String` on it return nothing
+(use plain `>` for stdout, or `Out-File -Encoding utf8`); and `2>&1` on a native
+executable in PS 5.1 wraps every stderr line in a NativeCommandError and sets
+`$?` to false even on a clean exit.
+
+The accidental sweep was not wasted, and its result is worth keeping: running
+`bulk-import` with no platform filter validated 18,473 untracked candidates
+across every `IMPORTABLE` platform and added **438 boards** (14,165 -> 14,603),
+most visibly Workable 133 -> 203 and Breezy 80 -> 137. That is a useful datum on
+its own — the unfiltered sweep is a real periodic maintenance operation, not
+just an accident, and it is the fastest way to pick up whatever the first source
+has added since the last run.
+
 ## In progress — pick up here
 
 **`discover-news.ts` now names which RSS feed died (2026-08-19).** It

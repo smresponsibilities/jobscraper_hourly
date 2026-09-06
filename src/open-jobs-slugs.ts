@@ -102,6 +102,11 @@ if (process.argv[1]?.endsWith('open-jobs-slugs.ts')) {
     );
   }
 
-  console.log('\nnext: npm run bulk-import -- --file state/oj-<platform>.txt --platform <platform>');
+  // Invoke tsx directly rather than through `npm run -- ...`. npm's PowerShell
+  // shim on Windows swallows the `--` separator and reports `--file` as an
+  // unknown npm config, so the flags never reach this project's code and the
+  // run silently falls through to a full sweep of every IMPORTABLE platform.
+  // That cost a real 18,473-board run before it was noticed.
+  console.log('\nnext: npx tsx src/bulk-import.ts --file state/oj-<platform>.txt --platform <platform>');
   console.log('run them one at a time — each one writes companies.json');
 }
