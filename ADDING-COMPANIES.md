@@ -43,6 +43,10 @@ the URL — identifying it is my job.
 | **Recruitee** | **`acme`**`.recruitee.com` | token |
 | **iCIMS (legacy tenants only)** | the full board hostname, e.g. `careers.`**`acme`**`.com` or **`region`**`careers-`**`acme`**`.icims.com` | whole hostname as `token` — no predictable subdomain pattern. **Modern "Talent Cloud" portals don't work** — they serve JS-rendered results with no `/api/jobs` JSON endpoint at all; only legacy tenants (DocuSign's `careers.docusign.com` is one) have it |
 | **Zoho Recruit** | the full board URL, e.g. `careers.`**`acme`**`.com/jobs/careers` | whole URL as `token`, same reason as iCIMS |
+| **UKG Pro Recruiting (UltiPro)** | the whole board URL: `recruiting.ultipro.com/`**`AIS1000AISI`**`/JobBoard/`**`b22b728d-47a6-4550-9005-01c83b9a527f`** | tenant code + board GUID — **both**, neither is derivable from the other, which is exactly why guessing at this platform failed before |
+| **Teamtailor** | **`acme`**`.teamtailor.com` — or, for a tenant on its own domain, the full hostname (e.g. `career.acme.com`) | token, or the whole hostname when there is no subdomain to derive |
+| **Breezy HR** | **`acme`**`.breezy.hr` | token |
+| **Personio** | **`acme`**`.jobs.personio.de` (`.com` serves the identical feed — either is fine) | token |
 | **Keka, Freshteam, Recruiterflow, GreytHR, PeopleStrong, PyjamaHR, ZappyHire, Zimyo** | **`acme`**`.{platform-domain}` (e.g. `acme.keka.com/careers`, `acme.freshteam.com`) | token; India-specific ATS suites, each with a real subdomain-per-tenant pattern like Greenhouse/Lever |
 
 Workday and Oracle are the ones people truncate. `acme.wd5.myworkdayjobs.com`

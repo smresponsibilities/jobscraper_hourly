@@ -618,6 +618,387 @@ seniority classification results for that platform in ways worth watching.
 
 `npx tsc --noEmit` and `npm test` both pass clean as of this handoff.
 
+## Three new adapters, the YC directory, and a stale-regex bug (2026-09-06)
+
+Prompted by a comparison against **Pinloop** (pinloop.ai, an open-source job-hunt
+CLI whose pitch is "40+ hiring systems, refreshed hourly, LLM reads each posting
+against your resume"). The discovery half of that pitch turned out to be a subset
+of what this repo already does — 27 platforms and 13,719 boards against their
+"40+ systems", same hourly cadence, same deliberate refusal to scrape
+LinkedIn/Indeed. What it genuinely has that this repo does not is an LLM verdict
+per posting, which `docs/FEATURE-SURVEY.md` already parks (items 48-52, 87) and
+`ROADMAP.md` parks again for a stated reason: `classify.ts`'s "every mistake is
+one line" determinism is load-bearing. Not reopened here.
+
+**What was missing was adapters, so three got built.** Every candidate platform
+was probed live before any code was written, because guessing which ATSes have a
+public JSON endpoint is exactly the kind of confident-sounding research this repo
+has been burned by before (see the freebuff fabrication note above).
+
+- **Teamtailor** (`src/fetchers/teamtailor.ts`) — `{token}.teamtailor.com/jobs.json`,
+  a JSON Feed 1.1 document, credential-free and unpaginated. `token` may instead be
+  a full hostname, the same convention iCIMS and Zoho Recruit already use, because
+  Teamtailor customers commonly serve the board from their own domain. **The feed's
+  own items carry no location at all** — JSON Feed has no such field. The city lives
+  only in Teamtailor's `_jobposting` extension (a schema.org JobPosting block), so
+  location parsing goes through the extension. Reading the item alone would give
+  every posting an empty location and `filter.ts` would silently drop the whole board.
+- **Breezy HR** (`src/fetchers/breezy.ts`) — `{token}.breezy.hr/json`, one
+  unpaginated call. The title field is `name`, not `title`. No description in the
+  payload and the per-position detail route (`/json/{id}`) 302s to the board root,
+  so `text` stays undefined; that costs recall on the years gate but never causes a
+  false exclusion, since `filter.ts` keeps a posting whose years cannot be read.
+- **Personio** (`src/fetchers/personio.ts`) — `{token}.jobs.personio.de/xml`
+  (`.com` serves identical content; only `.de` is used). A subdomain with no board
+  **307s to Personio's marketing site rather than 404ing**, which would otherwise
+  arrive as a successful fetch of an HTML page and read as "live board, nothing
+  open" — the `<workzag-jobs>` root-element check is what keeps a dead tenant
+  failing loudly and therefore evictable.
+
+All three were verified end to end through the real `FETCHERS` registry against
+live tenants, not just typechecked. Honest coverage note: Teamtailor's pattern is
+confirmed on two real tenants, Breezy's and Personio's on one each — the endpoint
+shapes are proven, but no tenant *list* exists for any of them yet. **They will
+poll nothing until tenants are found.** `npm run bulk-import -- --file <list>
+--platform teamtailor` already works for all three with no code change (their
+tokens are bare subdomains), so a published tenant list is the only missing input.
+
+Expected India yield from these three is near zero — they are EU/US small and
+mid-market platforms. That was known before building them and is the honest
+trade: they were the cheap, verified end of the gap list, while the platforms
+that would actually add India roles (Taleo, Cornerstone, UKG, ADP — US
+enterprises with Indian GCCs) are all still unbuilt and all need a real tenant or
+site GUID that guessing did not produce. Probed and recorded in `NO_ADAPTER`
+below rather than left as folklore.
+
+**`board-url.ts` matters more than the adapters.** Three new `HOSTED` entries mean
+`detect`/`import` auto-derive these tokens; without that the adapters would be
+dead code. Auto-derivable platforms went from 6 to 10. These patterns capture a
+**subdomain** rather than a path segment, which is new — so `NOT_A_COMPANY` grew
+to cover the vendors' own hosts (`www`, `app`, `help`, `support`, `blog`).
+Without that, `https://www.teamtailor.com/` resolves to a company named "Www".
+Checking that guard against the live corpus found two existing rows it would have
+caught: Greenhouse tokens `help` and `support`, both real boards belonging to
+unrelated US companies (a Cincinnati HVAC firm, a New York education org), both 0
+India. Same token-collision class as the LEAP incident in `board-probe.ts`. Left
+in place — harmless, never alerted — but they would render as companies named
+"HELP" and "support" in an email if they ever went hot.
+
+**The real bug this session: `detect.ts` was silently discarding every Keka board
+it found.** `NO_ADAPTER` read `/keka\.com|icims\.com/i` long after both adapters
+had shipped, so a scan would resolve a real Keka board, print "no adapter yet",
+and drop it. Not a warning — invisible loss, on the platform most
+disproportionately used by Indian mid-market employers. Found by accident while
+running the YC sweep below, which hit five Keka companies in one pass.
+
+Fixed at the root rather than per-caller: Keka's token is a bare subdomain, so it
+moved into `HOSTED` and now resolves automatically; iCIMS moved to
+`NEEDS_MANUAL_EXTRACTION`, since it keeps the whole hostname as its token and has
+no derivable subdomain pattern. `NO_ADAPTER` now lists platforms actually probed
+and confirmed unreachable this session (Jobvite, Taleo, UKG/UltiPro, Cornerstone,
+BambooHR, JazzHR, Comeet, Dayforce, Rippling), so a future scan names the
+platform instead of reporting "no ATS link found".
+
+Both regexes moved out of `detect.ts` into `board-url.ts` for one reason: the
+regression suite can now hold them against `FETCHERS`, and importing `detect.ts`
+would run its `main()`. The check that cannot go stale is
+`Object.keys(FETCHERS).filter((ats) => NO_ADAPTER.source.includes(ats))` — a
+platform named as unsupported while an adapter for it exists is silent loss, and
+nothing else in the pipeline would ever say so.
+
+**YC jobs: the feed is not pollable, but the companies are.** Pinloop names
+YCombinator as a source, and `src/yc-directory.ts` already existed (untracked,
+built as a leadership-sweep company pool) — but it reads the *company* directory,
+not jobs. Checked whether the jobs themselves are reachable: `ycombinator.com/jobs`
+is an Inertia-rendered marketing landing page whose props carry a rotating sample
+of ~20 postings and report the total as the literal string `"thousands"`;
+`?page=2`, `?locations[]=india` and `/jobs/location/india` all return the same
+set, and the real Work at a Startup search 302s to an account login. There is no
+honest way to poll it, so none was built.
+
+Wired as company discovery instead, which needs no adapter at all: YC companies
+overwhelmingly run Greenhouse, Lever or Ashby on their own domains — platforms
+already fetched — so the directory only has to reach `detect`. A CLI entry on
+`yc-directory.ts` (guarded the same way `contacts.ts` guards its own) prints bare
+domains in the format `detect.ts` reads:
+
+```bash
+npm run yc-domains -- India > state/yc-india.txt
+npm run detect -- state/yc-india.txt
+```
+
+158 active YC India companies. First pass added **bolna.ai** (Ashby, 8 jobs, all
+India). The pass after the Keka fix added four more — **Peoplebox** (6 jobs, 6
+India), **Zuddl** (9/6), **Loop Health** (28/26) and **Inito** (13/11) — 49 live
+India roles that the pipeline could already fetch and wasn't. Note Loop Health's
+real Keka token is `loop`, not `loophealth`: exactly the case `detect` exists for
+and `probe` cannot solve. AccioJob resolved to a live board with nothing open and
+was correctly not added; Orange Health runs Darwinbox and needs the documented
+manual extraction. Of the 158, 132 had no ATS link on any `CAREER_PATHS` route
+and 19 were client-rendered SPAs — YC-stage startups mostly do not run a
+detectable ATS yet, which is itself the useful finding: **this list is worth
+re-running periodically, not once.** `state/yc-*.txt` is gitignored — one command
+regenerates it, and the durable record of what it resolved to is `companies.json`.
+
+**The bigger find: `IMPORTABLE` had gone stale the same way `NO_ADAPTER` had,
+and it was starving working adapters.** `bulk-import.ts` reads per-platform
+tenant CSVs from `kalil0321/ats-scrapers`, which publishes **48 platforms** —
+including every platform probed blind earlier in this session. `IMPORTABLE`
+listed seven. Everything else had a working fetcher and nothing feeding it:
+
+| Platform | Boards tracked before | Tenants published |
+|---|---|---|
+| Keka | 7 | 185 |
+| Recruitee | 37 | 1,164 |
+| Darwinbox | 40 | 163 |
+| Personio / Teamtailor / Breezy | 0 (new this session) | 2,463 / 1,464 / 1,384 |
+
+Adding four platforms to `IMPORTABLE` and running two imports took the corpus
+from 13,724 to 13,967 boards, essentially all India-relevant:
+
+- **Keka**: 182 untracked candidates, 178 live, **163 cleared the india bar**.
+  7 boards -> 170.
+- **Darwinbox**: 146 untracked, 81 live, **80 cleared the india bar**. 40 -> 120.
+  (The lower live rate is expected — Darwinbox tenants churn, and this is the
+  platform with the documented mass-block history.)
+
+`parseRow` also gained a URL fallback, because `keka.csv` is `name,url` with no
+slug column: the second field was landing in `slug`, starting with `http`, and
+every row was dropped silently. It now falls back to `parseBoardUrl`, guarded by
+`parsed?.ats === platform` so a stray foreign URL in a list cannot be imported
+under the wrong platform's name and become a board that can never be fetched.
+
+Darwinbox is listed with its tenant slug alone on purpose: the CSV carries the
+older `/ms/candidate/careers` URL form, which needs no companyId hash. Verified
+live against Airtel (57 jobs, 57 India) and BigBasket (5/5) before adding, not
+assumed from the adapter's comment.
+
+**The lesson, which is now also a comment on `IMPORTABLE` itself: before writing
+an adapter, check whether this list is why a platform looks small.** A working
+fetcher that nothing feeds is indistinguishable from no fetcher, and this repo
+had three of them at once. Two stale lists in one session (`NO_ADAPTER` in
+`detect.ts`, `IMPORTABLE` here) is a pattern, not a coincidence — both are
+hand-maintained enumerations that no test held against reality until now.
+
+**Still on the table, ranked by India yield per unit of effort** (each needs a
+small per-platform `parseRow` branch, and each should be verified live against a
+real row from the CSV before being added, exactly as Keka and Darwinbox were):
+
+1. **iCIMS — ~4,700 published tenants against 2 tracked.** The adapter works on
+   legacy tenants only, but the import's own live-validation step sorts legacy
+   from modern for free. Token is the whole hostname from the url column. Best
+   remaining ratio in the project.
+2. **SuccessFactors (~2,000 tenants, 11 tracked)** and **Eightfold (7 tracked)** —
+   same shape, one branch each; Eightfold also needs the CSV's 4th `domain`
+   column. **Phenom** needs two branches, since its CSV puts `url` first.
+3. **Recruitee, Teamtailor, Breezy, Personio full sweep** — 6,475 candidates,
+   near-zero expected India yield by construction, but `--bar india` makes
+   finding out cheap and safe.
+4. **Taleo, Cornerstone, UKG, ADP** — real tenant lists now exist, so these are
+   finally *testable* rather than guessable, which is what defeated the blind
+   probing earlier this session. The endpoints are still unsolved: Taleo needs
+   its careersection API, UKG a per-tenant GUID plus a POST body, Cornerstone
+   the right public search path (its `/services/x/career-site/v1/search` returns
+   401 without one). Highest India yield of anything unbuilt — these are US
+   enterprises with large Indian GCCs.
+5. The 19 client-rendered YC startups, via the existing `rendered.ts` path.
+
+`companies.json` 13,719 -> 14,149 across the whole session. `npm test` and
+`tsc --noEmit` clean throughout.
+Nothing pushed — fetch/merge against `origin/main` first, per the git-workflow
+section below.
+
+**Second tranche the same day: four more platforms into `IMPORTABLE`, one new
+adapter, and two bugs that predate all of it.**
+
+Measured results, one row per platform, all against the live source:
+
+| Platform | Candidates | Live | Cleared india bar | Boards after |
+|---|---|---|---|---|
+| Phenom | 89 | 39 | 38 | 10 -> 49 |
+| Eightfold | 23 | 6 | 6 | 7 -> 13 |
+| SuccessFactors | 60 (sampled) | 59 | 6 | 11 -> 17 |
+| UKG | 105 | 105 | 4 | 0 -> 4 |
+
+Three of those needed a `parseRow` branch, because their rows are not
+`name,slug,url`: SuccessFactors, Phenom and Eightfold are **hostname-token**
+platforms (the whole host is the token), Eightfold additionally needs the CSV's
+fourth `domain` column — that value is the `domain=` query parameter its search
+API requires, not decoration, so rows leaving it blank are dropped rather than
+guessed at. Phenom is the one list whose columns are `url,name,...` instead of
+leading with the name.
+
+**iCIMS was deliberately left out, and that reverses an earlier call in this
+session.** It looked like the best remaining ratio — 2,498 published tenants
+against 2 tracked, with a working adapter. A 12-row live sample came back
+**0/12**: every one a modern Talent Cloud portal with no `/api/jobs` endpoint,
+the same wall `ADDING-COMPANIES.md` §4 already documents. Importing it would
+spend ~2,500 requests to add essentially nothing. The sample result is written
+into the `IMPORTABLE` comment so the ratio argument alone does not tempt a
+future session into re-running it. Revisit only if the modern portal's JSON-LD
+path gets built — that is a new adapter, not a list entry.
+
+**SuccessFactors was sampled rather than swept, on purpose.** `HOST_CONCURRENCY`
+caps it at 2 because its XML feeds take 30-170s each, so the full 1,281
+untracked rows is roughly a 16-hour run. The 60-row sample measured 98%
+reachability but only ~10% clearing the india bar, which extrapolates to ~128
+boards for those 16 hours. That is a real trade, not an obvious yes — decide it
+with the number rather than by assuming either way.
+
+**UKG turned out never to have been walled.** An earlier probe this session
+wrote it off after a guessed tenant returned 404. The blocker was not the
+endpoint: it was the board GUID, which no amount of guessing produces and which
+the published tenant list carries in full. `POST
+recruiting.ultipro.com/{tenant}/JobBoard/{guid}/JobBoardView/LoadSearchResults`
+with a JSON body returns clean JSON — title, requisition number, posted date,
+brief description, and a full address block — plus `totalCount` to bound the
+page walk. New adapter at `src/fetchers/ukg.ts`, live-verified 8/8 on real
+tenants before it was wired in, then **105/105 live** on the full import, the
+best reachability of any platform touched today.
+
+The trap in that adapter, covered in `selftest.ts`: UKG's `LocalizedName` is the
+employer's own internal site code — "NM - KAFB", "AL - USAG Redstone" — with no
+city or country in it. Reading it as the location would make every posting on
+the platform invisible to the India/remote gate. The location comes from the
+`Address` block or not at all.
+
+Worth being honest about the payoff: the adapter is sound and the platform is
+completely reachable, but this particular tenant list is US small and
+mid-market, so only 4 boards cleared the india bar. The large enterprises on UKG
+that would carry Indian GCC roles are not in that list. **The limiting factor
+for UKG is the tenant source, not the fetcher** — which is the same lesson
+`IMPORTABLE` teaches from the other direction.
+
+**Still walled after probing each with a real tenant**: Taleo Business Edition
+server-renders its results as HTML (98KB, parseable, but a genuinely new
+HTML-scraping code path — the JSON assumption was wrong); Cornerstone returns
+`no Authorization header found` on `/services/x/career-site/v1/search` and
+`/v2/search` and its token endpoint alike; ADP WorkforceNow is an HTML SPA. All
+three now have real tenant lists, so the next attempt starts from a working
+tenant instead of a guess — that is the part that was missing before, and it is
+why UKG fell.
+
+**Two bugs found here that predate this whole strand:**
+
+1. **`parseRow` split CSV lines on bare commas**, with a comment asserting that
+   only the trailing url field could contain one. False, and measurably: **896
+   rows across the six original lists** carry a quoted company name with a comma
+   — `"80,000 Hours"`, `"Apex Technology, Inc."`, `"48Forty Solutions, LLC"` —
+   and splitting those pushes the tail of the name into the slug field, so the
+   row resolves to a nonsense token and dies at validation. Replaced with a
+   quote-aware `csvFields`, exported and covered in `selftest.ts`. 331 of
+   iCIMS's rows are this shape, which is part of why that list looked bigger
+   than it is.
+2. **`bulk-import.ts` called `main()` unguarded at module scope**, so importing
+   anything from it — the regression suite now imports `csvFields` — started a
+   real bulk import as a side effect: live requests against thousands of boards
+   and a `saveCompanies` write at the end. It only stayed harmless because
+   `selftest.ts` reaches `process.exit` before the async work lands, which is a
+   race, not a design. Guarded with the `process.argv[1]?.endsWith(...)` check
+   `contacts.ts` and `contact-sources.ts` already use. **`detect.ts` still has
+   the unguarded shape** and is deliberately imported nowhere for that reason —
+   which is why `NO_ADAPTER` had to move into `board-url.ts` to be testable.
+
+**The four slug platforms swept, and the "near-zero India yield" prediction was
+wrong in both directions.** These were built expecting almost nothing — they are
+EU/US small and mid-market platforms — and were run anyway because `--bar india`
+makes finding out cheap. What the sweep actually returned:
+
+| Platform | Candidates | Live | Cleared india bar | Boards after |
+|---|---|---|---|---|
+| Recruitee | 1,137 | 989 | 1 | 37 -> 38 |
+| Teamtailor | 1,464 | 1,165 | 34 | 0 -> 34 |
+| Breezy | 1,383 | 910 | 80 | 0 -> 80 |
+| Personio | 2,462 | 1,448 | 268 -> **12** after the fix below | 0 -> 12 |
+
+**Teamtailor is the standout and the reason the prediction was worth testing**:
+a 34-board sample came back **34/34 with a genuine India location**, 134 India
+roles, zero country-less matches. Its location comes from the schema.org
+address block, which always carries a country, so there is nothing for a
+false positive to hide in. Breezy is genuinely mixed and genuinely useful — 26
+of 60 sampled boards have real India locations (123 India roles), including
+Mumbai roles at Accrete AI and "India, Remote" roles at Jarvis ML.
+
+**Personio was the opposite, and it exposed a real precision bug in the adapter
+written the same day.** Its 268 boards looked like the biggest win of the sweep.
+Spot-checking five of them showed every match was a posting whose office was
+literally the string "Remote" on a German-language listing from a German
+employer. Measured properly across 60 boards: **56 matched only on a
+country-less "Remote", against 4 with a real India location.**
+
+The cause is in the feed, not the gate. Personio offices are bare labels —
+"München", "Göttingen", "Riederich" — and **the feed carries no country field
+anywhere, on any position**. A city name is fine, since the India regex judges
+it directly. An office named "Remote" is not: it says nothing about remote from
+where, and `locationMatches` accepts a remote posting when nothing but noise
+words survive, so it sailed through as globally remote.
+
+Fixed in `personio.ts`, not in `filter.ts` — the shared gate is correct and
+touching it would have changed every platform. An all-remote office set now
+reports **no location at all**, which excludes it: the same conservative call
+SuccessFactors' legacy path already makes, where no usable location field means
+excluded rather than guessed. A mixed set like "Remote / Hamburg / Berlin" keeps
+its cities and is still correctly excluded by the residue check. Re-measured on
+the same 60 boards afterwards: **4 clear the bar, all 4 with real India
+locations, zero remote-only** — precision went from 4-of-60 to 4-of-4.
+
+The 268 already-imported boards were then re-validated against the fixed adapter
+and the 256 that the import would never have added were dropped, leaving 12.
+That is cleanup of a defective import rather than a corpus judgement — the rows
+existed only because of the bug.
+
+**Writing that test found a second Personio bug, this one losing real roles.**
+The check `locationMatches(place(['IN_Bangalore', 'IN_Pune']))` failed. Personio
+tenants commonly name offices with a country-prefixed code, and `_` is a word
+character, so `\bbangalore` in `config.ts`'s INDIA regex never matches
+"IN_Bangalore" — genuine India boards were being dropped by a word boundary.
+`place()` now normalises underscores to spaces before the gate sees them.
+Normalising in the adapter keeps the fix on the platform with the quirk instead
+of loosening a regex every other platform depends on.
+
+**Corpus after the whole day: 13,719 -> 14,149 boards, 27 -> 31 platforms.**
+Per-platform: keka 7->170, darwinbox 40->120, breezy 0->80, phenom 10->49,
+teamtailor 0->34, recruitee 37->38, successfactors 11->17, eightfold 7->13,
+personio 0->12, ukg 0->4.
+
+**The honest summary of where the day's yield actually came from**: almost all
+of it was existing adapters that nothing was feeding (Keka and Darwinbox alone
+account for 243 of the 430 new boards), not the four new adapters. The new
+adapters contributed 130, and the single most India-dense of them — Teamtailor —
+was the one predicted to be worthless. Both halves of that are worth
+remembering: **check the feed before writing the fetcher, and measure the yield
+instead of predicting it.**
+
+**Verified with a real timed dry run, not just tests.** 430 new boards across six
+platforms the runner had never polled is exactly the change that can surprise a
+run, so `DRY_RUN=1 npm run hunt` was run end to end afterwards:
+
+```
+polling 8000 of 14149 boards (4417 hot, 3583 cold on rotation, 6149 waiting)
+584,177 live postings, 30,563 pass location and role screening, 1,094 new
+285 match your filters (37 duplicate requisitions collapsed)
+32 board failures, 0 reconciliation warnings
+```
+
+Clean: no RECONCILIATION warning, no false evictions, and every one of the 32
+failures is a pre-existing Ashby/Greenhouse 404 or bot wall — none on the newly
+added platforms. `BOARDS_PER_RUN` is still doing its job; hot sits at 4,417 of
+8,000 slots (55%), up from the 3,963 recorded earlier, so there is still real
+headroom before cold rotation gets squeezed.
+
+**Wall clock was 32m00s, against the 26m28s measured at the same 8,000-board cap
+on 2026-08-18.** Do not read that as a clean +21% caused by the new boards: only
+430 of the 8,000 polled were new, this run also resolved 10,292 uncached Workday
+multi-location postings, and it is a different day on a different network. The
+most likely single contributor is SuccessFactors, which went 11 -> 17 boards
+while `HOST_CONCURRENCY` caps it at 2 because its feeds take 30-170s each — six
+extra boards in that bucket is roughly four extra minutes on its own. Still
+comfortably inside the real goal of ~1 hour freshness, and in the same
+longer-than-the-20-minute-trigger regime the schedule already tolerates by
+queueing. **Re-measure before concluding anything about the trend, and do not
+touch `HOST_CONCURRENCY` on one data point** — the same rule that constant
+already carries.
+
 ## In progress — pick up here
 
 **`discover-news.ts` now names which RSS feed died (2026-08-19).** It
