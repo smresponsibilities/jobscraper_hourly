@@ -13,6 +13,7 @@ import { isPlaceholderLocation, parsePostedOn, parseRobotsSites } from './fetche
 import { refreshedPostedAt } from './catalog.js';
 import { boardKey, NO_ADAPTER, parseBoardUrl } from './board-url.js';
 import { csvFields, unfedPlatforms } from './bulk-import.js';
+import { untrackedSlugs } from './open-jobs-slugs.js';
 import { place as ukgPlace } from './fetchers/ukg.js';
 import { FETCHERS } from './fetchers/index.js';
 import { BlockError, classifyFailure, classifyOkBody } from './fetchers/block.js';
@@ -1364,6 +1365,16 @@ check(
   unfedPlatforms(['icims.csv'], [], ['icims']).length,
   0,
 );
+
+console.log('open-jobs slug diffing')
+// These lists are crawled out of URLs, so the same tenant appears with
+// different casing across the two published sources. A case-sensitive compare
+// would hand bulk-import thousands of boards it already polls.
+check('an already-tracked slug is dropped', untrackedSlugs(['acme', 'newco'], ['acme']).join(','), 'newco');
+check('casing does not defeat the dedup', untrackedSlugs(['ACME'], ['acme']).length, 0);
+check('duplicates within the source collapse', untrackedSlugs(['newco', 'NewCo', 'newco'], []).join(','), 'newco');
+check('blank and whitespace-only entries are skipped', untrackedSlugs(['', '   ', 'real'], []).join(','), 'real');
+check('original casing is preserved for the board token', untrackedSlugs(['NewCo'], []).join(','), 'NewCo');
 
 console.log(failures === 0 ? '\nall checks pass' : `\n${failures} failing check(s)`);
 process.exit(failures === 0 ? 0 : 1);

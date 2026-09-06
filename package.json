@@ -26,7 +26,8 @@
     "leadership-sweep": "tsx src/leadership-sweep.ts",
     "contact-find": "tsx src/contact-sources.ts",
     "publish-outreach": "tsx src/publish-outreach.ts",
-    "yc-domains": "tsx src/yc-directory.ts"
+    "yc-domains": "tsx src/yc-directory.ts",
+    "oj-slugs": "tsx src/open-jobs-slugs.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
