@@ -9,6 +9,7 @@ import { toIso as recruiteeToIso } from './fetchers/recruitee.js';
 import { place as teamtailorPlace } from './fetchers/teamtailor.js';
 import { place as breezyPlace } from './fetchers/breezy.js';
 import { parsePositions, place as personioPlace } from './fetchers/personio.js';
+import { normalizeLocation, pageCount, parsePortal } from './fetchers/icims.js';
 import { isPlaceholderLocation, parsePostedOn, parseRobotsSites } from './fetchers/workday.js';
 import { refreshedPostedAt } from './catalog.js';
 import { boardKey, NO_ADAPTER, parseBoardUrl } from './board-url.js';
@@ -1357,13 +1358,20 @@ check(
   unfedPlatforms(['taleo.csv', 'bamboohr.csv'], [], ['keka']).length,
   0,
 );
-// iCIMS is excluded by name: its list is published and its adapter exists, but
-// a live sample came back 0/12. Without the exemption this would warn on every
-// run and become a line everyone scrolls past.
+// A platform can be published, have an adapter, and still be deliberately not
+// imported — without the exemption it would warn on every run and become a
+// line everyone scrolls past. The exemption set is passed in rather than read
+// from the module, because what belongs in it changes: iCIMS sat there for one
+// day until its modern-portal path was built, and the test should outlive that.
 check(
   'a deliberately-skipped platform stays quiet',
-  unfedPlatforms(['icims.csv'], [], ['icims']).length,
+  unfedPlatforms(['someats.csv'], [], ['someats'], { someats: 'measured dead' }).length,
   0,
+);
+check(
+  'and is reported again once the exemption is lifted',
+  unfedPlatforms(['someats.csv'], [], ['someats'], {}).join(','),
+  'someats',
 );
 
 console.log('open-jobs slug diffing')
@@ -1375,6 +1383,67 @@ check('casing does not defeat the dedup', untrackedSlugs(['ACME'], ['acme']).len
 check('duplicates within the source collapse', untrackedSlugs(['newco', 'NewCo', 'newco'], []).join(','), 'newco');
 check('blank and whitespace-only entries are skipped', untrackedSlugs(['', '   ', 'real'], []).join(','), 'real');
 check('original casing is preserved for the board token', untrackedSlugs(['NewCo'], []).join(','), 'NewCo');
+
+console.log('icims modern portal parsing')
+// iCIMS was written off as unreachable because /api/jobs 404s on modern
+// "Talent Cloud" tenants. It does — but those tenants server-render their
+// search page inside an iframe, and fetching that URL directly returns real
+// rows. Measured on a 40-tenant sample: 38 return rows.
+const ICIMS_ROW = `<ul class="iCIMS_JobsTable"><li class="iCIMS_JobCardItem">
+  <div class="col-xs-6 header left"><span class="sr-only field-label">Job Locations</span><span > IN-KA-Bengaluru</span></div>
+  <div class="col-xs-12 title"><a href="https://x-acme.icims.com/jobs/4021/staff-engineer/job?in_iframe=1" class="iCIMS_Anchor"><span class="sr-only field-label">Title</span><h3 > Staff Engineer</h3></a></div>
+  <div class="col-xs-12 description">Five years of experience required.</div>
+</li></ul>`;
+const icimsJobs = parsePortal(ICIMS_ROW, 'x-acme.icims.com');
+check('a card yields one job', icimsJobs.length, 1);
+check('the requisition id comes from the job path', icimsJobs[0]?.externalId, '4021');
+check('the title comes from the card heading', icimsJobs[0]?.title, 'Staff Engineer');
+check('the url drops the iframe parameter', icimsJobs[0]?.url, 'https://x-acme.icims.com/jobs/4021/staff-engineer/job');
+check('an inline description is kept, so no enrich round trip is needed', icimsJobs[0]?.text, 'Five years of experience required.');
+// The location label is tenant-configured: "Location" and "Job Locations" both
+// occur, so the pattern matches any label containing "Location".
+check(
+  'the other label spelling parses too',
+  parsePortal(ICIMS_ROW.replace('Job Locations', 'Location'), 'x-acme.icims.com')[0]?.location,
+  'IN-KA-Bengaluru, India',
+);
+// Some tenants localize the label — one Italian board calls it "Sedi di
+// lavoro" — and some put the location only in additionalFields. Neither is
+// reachable by an English pattern, but iCIMS tags exactly the location fields
+// with a map-marker glyphicon, so the icon identifies them where text cannot.
+// Position would be the wrong fallback: other tenants lead with "Client Team".
+const ICIMS_LOCALIZED = `<li class="iCIMS_JobCardItem">
+  <div class="col-xs-12 title"><a href="https://it-acme.icims.com/jobs/3904/process-engineer/job"><h3 > Process Engineer</h3></a></div>
+  <div class="iCIMS_JobHeaderTag"><dt class="iCIMS_JobHeaderField"><span class="glyphicons glyphicons-map-marker"></span><span class="sr-only field-label">Sedi di lavoro</span></dt><dd class="iCIMS_JobHeaderData"><span > IT-Rho</span></dd></div>
+</li>`;
+check(
+  'a localized label is recovered from the map-marker icon',
+  parsePortal(ICIMS_LOCALIZED, 'it-acme.icims.com')[0]?.location,
+  'IT-Rho',
+);
+const ICIMS_NON_LOCATION = `<li class="iCIMS_JobCardItem">
+  <div class="col-xs-12 title"><a href="https://x.icims.com/jobs/7/driver/job"><h3 > Driver</h3></a></div>
+  <div class="iCIMS_JobHeaderTag"><dt class="iCIMS_JobHeaderField">Vehicle Information</dt><dd class="iCIMS_JobHeaderData"><span > Van</span></dd></div>
+</li>`;
+check(
+  'an unmarked header field is not mistaken for a location',
+  parsePortal(ICIMS_NON_LOCATION, 'x.icims.com')[0]?.location,
+  '',
+);
+// iCIMS writes locations as COUNTRY-STATE-CITY. A bare country code is not
+// something the INDIA regex can match, so a leading IN- gets the country name
+// appended. Only leading: "US-IN-Indianapolis" is Indiana, and expanding that
+// would put US roles into an India-only alert.
+check('a leading IN- is expanded so the India gate can see it', normalizeLocation('IN-KA-Bengaluru'), 'IN-KA-Bengaluru, India');
+check('an India location clears the gate', locationMatches(normalizeLocation('IN-Remote')), true);
+check('Indiana in the state slot is left alone', normalizeLocation('US-IN-Indianapolis'), 'US-IN-Indianapolis');
+check('and Indiana still does not read as India', locationMatches(normalizeLocation('US-IN-Indianapolis')), false);
+check('an empty location stays empty rather than becoming ", India"', normalizeLocation('  '), '');
+// Page size is tenant-configured (20 and 50 both observed), so the walk is
+// bounded by the portal's own count rather than by rows returned.
+check('the page count is read from the portal', pageCount('<div>Search Results Page 1 of 7</div>'), 7);
+check('a single-page board reports one', pageCount('<div>Page 1 of 1</div>'), 1);
+check('a portal with no paging text still reports one', pageCount('<div>nothing here</div>'), 1);
 
 console.log(failures === 0 ? '\nall checks pass' : `\n${failures} failing check(s)`);
 process.exit(failures === 0 ? 0 : 1);

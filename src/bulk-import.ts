@@ -61,14 +61,11 @@ const RAW = 'https://raw.githubusercontent.com/kalil0321/ats-scrapers/main/ats-c
  * the older `/ms/candidate/careers` URL form, which needs no companyId hash
  * (verified live against Airtel and BigBasket before adding).
  *
- * SuccessFactors (1,392 rows), Phenom (98) and Eightfold (83) joined the same
- * day, all three as hostname-token platforms. **iCIMS deliberately did not**,
- * despite having 2,498 published tenants against 2 tracked: a 12-row live
- * sample came back 0/12, every one a modern Talent Cloud portal with no
- * `/api/jobs` endpoint, which is the same wall `ADDING-COMPANIES.md` §4
- * already documents. Importing it would spend ~2,500 requests to add
- * essentially nothing. Revisit only if the modern portal's JSON-LD path gets
- * built — that is a new adapter, not a list entry.
+ * SuccessFactors (1,392 rows), Phenom (98), Eightfold (83) and iCIMS (2,498)
+ * are all hostname-token platforms. iCIMS was excluded here for a day on the
+ * strength of a 12-tenant sample that came back 0/12 against its legacy
+ * `/api/jobs` endpoint; `icims.ts` now also reads the modern portal's
+ * server-rendered search page, and a 40-tenant re-check returned rows on 38.
  */
 const IMPORTABLE: Ats[] = [
   'greenhouse',
@@ -88,6 +85,7 @@ const IMPORTABLE: Ats[] = [
   'phenom',
   'eightfold',
   'ukg',
+  'icims',
 ];
 
 /**
@@ -97,8 +95,13 @@ const IMPORTABLE: Ats[] = [
  * to scroll past.
  */
 const NOT_WORTH_IMPORTING: Partial<Record<Ats, string>> = {
-  icims:
-    'a 12-row live sample came back 0/12 — every tenant a modern Talent Cloud portal with no /api/jobs endpoint',
+  // Empty on purpose. iCIMS lived here for exactly one day, on the strength of
+  // a 12-tenant sample that came back 0/12 against its legacy `/api/jobs`
+  // endpoint. The sample was right and the conclusion was wrong: those tenants
+  // server-render a search page instead, `icims.ts` now reads it, and a
+  // 40-tenant re-check returned rows on 38. A measurement that says "this
+  // endpoint is dead" is not a measurement that says "this platform is
+  // unreachable" — check the other shapes before adding anything here.
 };
 
 /**
@@ -118,12 +121,13 @@ export function unfedPlatforms(
   published: readonly string[],
   importable: readonly string[],
   adapters: readonly string[],
+  skip: Readonly<Partial<Record<string, string>>> = NOT_WORTH_IMPORTING,
 ): string[] {
   const have = new Set(published.map((name) => name.replace(/\.csv$/i, '')));
   return adapters
     .filter((ats) => have.has(ats))
     .filter((ats) => !importable.includes(ats))
-    .filter((ats) => !(ats in NOT_WORTH_IMPORTING))
+    .filter((ats) => !(ats in skip))
     .sort();
 }
 
@@ -199,7 +203,7 @@ export function csvFields(line: string): string[] {
 
 /** Hostname-as-token platforms: the board has no derivable slug, so the whole
  *  host is the token (`careers.gehealthcare.com`, `ace1950.jobs2web.com`). */
-const HOSTNAME_TOKEN = new Set<Ats>(['successfactors', 'phenom', 'eightfold']);
+const HOSTNAME_TOKEN = new Set<Ats>(['successfactors', 'phenom', 'eightfold', 'icims']);
 
 const hostOf = (url: string): string | undefined =>
   url.replace(/^https?:\/\//i, '').split('/')[0]?.trim() || undefined;

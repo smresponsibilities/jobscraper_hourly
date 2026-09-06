@@ -41,7 +41,7 @@ the URL — identifying it is my job.
 | **Workable** | `apply.workable.com/`**`acme`** | token |
 | **Trakstar** | **`acme`**`.hire.trakstar.com` | token |
 | **Recruitee** | **`acme`**`.recruitee.com` | token |
-| **iCIMS (legacy tenants only)** | the full board hostname, e.g. `careers.`**`acme`**`.com` or **`region`**`careers-`**`acme`**`.icims.com` | whole hostname as `token` — no predictable subdomain pattern. **Modern "Talent Cloud" portals don't work** — they serve JS-rendered results with no `/api/jobs` JSON endpoint at all; only legacy tenants (DocuSign's `careers.docusign.com` is one) have it |
+| **iCIMS** | the full board hostname, e.g. `careers.`**`acme`**`.com` or **`region`**`careers-`**`acme`**`.icims.com` | whole hostname as `token` — no predictable subdomain pattern. **Both tenant shapes now work**: legacy tenants serve `/api/jobs` JSON; modern "Talent Cloud" tenants 404 there but server-render their search page, which `icims.ts` reads via the iframe URL the company's careers page embeds. 38 of a 40-tenant sample returned rows |
 | **Zoho Recruit** | the full board URL, e.g. `careers.`**`acme`**`.com/jobs/careers` | whole URL as `token`, same reason as iCIMS |
 | **UKG Pro Recruiting (UltiPro)** | the whole board URL: `recruiting.ultipro.com/`**`AIS1000AISI`**`/JobBoard/`**`b22b728d-47a6-4550-9005-01c83b9a527f`** | tenant code + board GUID — **both**, neither is derivable from the other, which is exactly why guessing at this platform failed before |
 | **Teamtailor** | **`acme`**`.teamtailor.com` — or, for a tenant on its own domain, the full hostname (e.g. `career.acme.com`) | token, or the whole hostname when there is no subdomain to derive |
