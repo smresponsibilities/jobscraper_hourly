@@ -41,6 +41,7 @@ import { HOSTNAME_ATS } from './outreach.js';
 import { fetchYCCompanies } from './yc-directory.js';
 
 const SWEEP_PATH = 'state/leadership-sweep.json';
+const INDEX_PATH = 'state/leadership-sweep-index.json';
 const CONTACT_SWEEP_PATH = 'state/contact-sweep.json';
 
 /** Each company's own 7 leadership-path fetches are already sequential; this
@@ -176,6 +177,29 @@ const queue = [...pending];
 const save = async (): Promise<void> => {
   await mkdir('state', { recursive: true });
   await writeFile(SWEEP_PATH, `${JSON.stringify(sweep, null, 2)}\n`, 'utf8');
+  /**
+   * A second, committable projection of the same run.
+   *
+   * SWEEP_PATH is gitignored (megabytes, rewritten wholesale), so a hosted
+   * build on a runner sees none of it — exactly the failure contacts-sweep.ts
+   * already hit and solved this same way. Without this, the 625 companies where
+   * this sweep found a real name against a real domain are unreachable by the
+   * live pipeline, and the leadership section renders empty on every hosted
+   * build no matter how much the sweep actually found.
+   *
+   * Only the tiers backed by evidence travel: `verified` (the ATS token is the
+   * company's own hostname) and `swept` (the domain came from real commit
+   * authors in contacts-sweep). The `guessed` tier is a slug-plus-.com hunch
+   * that produced a documented false positive, so it stays local research only.
+   * Two contacts per company: enough to draft from, small enough to commit to a
+   * public repo, and it carries no addresses at all.
+   */
+  const index: Record<string, { domain: string; contacts: { name: string; title: string }[] }> = {};
+  for (const [name, entry] of Object.entries(sweep)) {
+    if (entry.tier === 'guessed' || !entry.domain || !entry.contacts?.length) continue;
+    index[name] = { domain: entry.domain, contacts: entry.contacts.slice(0, 2) };
+  }
+  await writeFile(INDEX_PATH, JSON.stringify(index, null, 2) + String.fromCharCode(10), 'utf8');
 };
 
 const worker = async (): Promise<void> => {

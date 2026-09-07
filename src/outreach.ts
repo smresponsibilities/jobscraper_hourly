@@ -180,6 +180,8 @@ const actionUrl = (path: string) =>
 export const STATE_PATH = process.env.OUTREACH_STATE_PATH ?? 'state/contacted.json';
 const SWEEP_PATH = 'state/contact-sweep.json';
 const SWEEP_INDEX_PATH = 'state/contact-sweep-index.json';
+const LEADERSHIP_SWEEP_PATH = 'state/leadership-sweep.json';
+const LEADERSHIP_INDEX_PATH = 'state/leadership-sweep-index.json';
 const CATALOG_PATH = 'data/jobs.json';
 const PID_PATH = 'state/outreach.pid';
 const PAGE_PATH = 'out/outbox/today.html';
@@ -258,8 +260,19 @@ export interface CatalogJob {
  * lane a company landed in.
  */
 export function isTriggered(job: CatalogJob): boolean {
-  const byPostedAt = (postedAgeDays(job.postedAt) ?? Infinity) <= TRIGGER_WINDOW_DAYS;
-  if (byPostedAt) return true;
+  const age = postedAgeDays(job.postedAt);
+  // A posting whose real age is known decides on that age alone. firstSeen
+  // used to be consulted even when postedAt said the role was months old,
+  // which quietly turned "just opened" into "we only just started watching":
+  // measured against the live catalogue, 631 of 1,358 triggered companies
+  // (46%) qualified on firstSeen alone while their own postedAt said
+  // otherwise. The catalogue is younger than the postings in it — firstSeen
+  // p50 is under five days — so it is a proxy for our own history, not for
+  // the posting date, and it swamped the lane it was meant to sharpen.
+  if (age != null) return age <= TRIGGER_WINDOW_DAYS;
+  // Only when the ATS will not say. Plenty report nothing, or a bucket string
+  // postedAgeDays() refuses to guess at, and for those a role this tracker has
+  // only just started seeing is exactly what "triggered" is supposed to mean.
   if (!job.firstSeen) return false;
   const firstSeenDays = (Date.now() - new Date(job.firstSeen).getTime()) / 86_400_000;
   return Number.isFinite(firstSeenDays) && firstSeenDays <= TRIGGER_WINDOW_DAYS;
@@ -651,8 +664,47 @@ async function loadSweepLower(): Promise<Map<string, SweepEntry>> {
   return new Map(Object.entries(sweep).map(([k, v]) => [k.toLowerCase(), v]));
 }
 
+interface LeadershipEntry {
+  domain: string;
+  contacts: { name: string; title: string }[];
+}
+
+/**
+ * The leadership sweep, as the live pipeline can actually see it.
+ *
+ * `leadershipContacts()` only ever fired for HOSTNAME_ATS companies — the four
+ * ATSes whose token is the company hostname — because that was the one case a
+ * verified domain existed without guessing one. Measured against the live
+ * corpus that is 41 of the 1,538 companies with an open role, and only after
+ * git, npm, PyPI, Maven and the website scan have all come up empty, which is
+ * why the leadership section renders empty in practice.
+ *
+ * Meanwhile the full sweep had already found a real name against a real domain
+ * for 625 companies and nothing read it. Prefer the full local file, fall back
+ * to the committed index on a runner — the same two-file arrangement, and for
+ * the same reason, as loadSweepLower() above.
+ */
+async function loadLeadershipLower(): Promise<Map<string, LeadershipEntry>> {
+  const full = await readJson<Record<string, { domain?: string; tier?: string; contacts?: { name: string; title: string }[] }>>(
+    LEADERSHIP_SWEEP_PATH,
+    {},
+  );
+  const out = new Map<string, LeadershipEntry>();
+  const rows = Object.keys(full).length > 0 ? full : await readJson<Record<string, LeadershipEntry>>(LEADERSHIP_INDEX_PATH, {});
+  for (const [name, e] of Object.entries(rows)) {
+    if (!e?.domain || !e.contacts?.length) continue;
+    // The guessed tier is a slug-plus-.com hunch that produced a real false
+    // positive (a HelloFresh VP scraped off a client testimonial on another
+    // company's page). It is research, never a send.
+    if ('tier' in e && (e as { tier?: string }).tier === 'guessed') continue;
+    out.set(name.toLowerCase(), { domain: e.domain, contacts: e.contacts });
+  }
+  return out;
+}
+
 let companyIndex: Awaited<ReturnType<typeof buildCompanyIndex>> | null = null;
 let sweepLower: Map<string, SweepEntry> | null = null;
+let leadershipLower: Map<string, LeadershipEntry> | null = null;
 
 async function resolveRecipients(
   company: string,
@@ -663,6 +715,7 @@ async function resolveRecipients(
 ): Promise<Candidate[]> {
   companyIndex ??= await buildCompanyIndex();
   sweepLower ??= await loadSweepLower();
+  leadershipLower ??= await loadLeadershipLower();
 
   const key = company.toLowerCase();
   const entry = sweepLower.get(key);
@@ -811,8 +864,19 @@ function orgNameVariants(name: string): string[] {
        * funnel as every other candidate, so an unverifiable guess degrades to
        * an `unknown`-tagged card rather than a false claim.
        */
-      const lead =
-        reg.length === 0 && py.length === 0 && mvn.length === 0 && web.length === 0 && known && HOSTNAME_ATS.has(known.ats)
+      const exhausted = reg.length === 0 && py.length === 0 && mvn.length === 0 && web.length === 0;
+      /**
+       * The swept index first: it carries a real domain (name-matched from real
+       * commit authors by contacts-sweep) and a real extracted name, needs no
+       * fetch, and covers 625 companies against the 41 the live scrape can reach.
+       * The live scrape stays as the fallback for a HOSTNAME_ATS company the
+       * sweep never covered.
+       */
+      const swept = exhausted ? leadershipLower!.get(company.toLowerCase()) : undefined;
+      const leadDomain = swept?.domain ?? (known && HOSTNAME_ATS.has(known.ats) ? known.token : null);
+      const lead = swept
+        ? swept.contacts
+        : exhausted && known && HOSTNAME_ATS.has(known.ats)
           ? await leadershipContacts(known.token).catch(() => [])
           : [];
       const source = reg.length > 0 ? 'npm' : py.length > 0 ? 'pypi' : mvn.length > 0 ? 'maven' : web.length > 0 ? 'website' : 'leadership';
@@ -826,14 +890,16 @@ function orgNameVariants(name: string): string[] {
         // quarter of the reachable cases, and missed mononym names entirely
         // (applyPattern('first.last') returns null when there is no surname).
         // Both go through the same SMTP-verify funnel, which is what decides.
-        ...lead
-          .flatMap((l) =>
-            (['first.last', 'first'] as const).map((pattern) => ({
-              name: l.name,
-              email: applyPattern(pattern, l.name, known!.token),
-            })),
-          )
-          .filter((c): c is { name: string; email: string } => c.email !== null),
+        ...(leadDomain
+          ? lead
+              .flatMap((l) =>
+                (['first.last', 'first'] as const).map((pattern) => ({
+                  name: l.name,
+                  email: applyPattern(pattern, l.name, leadDomain),
+                })),
+              )
+              .filter((c): c is { name: string; email: string } => c.email !== null)
+          : []),
       ];
       if (alt.length === 0) {
         console.log(`    · ${company}: ${why}, no npm/PyPI/Maven/website/leadership contacts either`);

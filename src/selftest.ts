@@ -1171,15 +1171,31 @@ check('missing date is unknown', postedAgeDays(undefined), null);
 check('lowercase catalogue name displays capitalized', displayName('valtech'), 'Valtech');
 check('mixed-case names pass through', displayName('WorldQuant'), 'WorldQuant');
 
-// isTriggered() — fresh by EITHER signal, since firstSeen only became
-// trustworthy once catalog.ts started merging against the live catalogue
-// (hunt.yml fix, 2026-09-02); before that almost every entry's firstSeen
-// read as "now" regardless of how old the posting actually was.
+// isTriggered() — a KNOWN posting age decides on its own; firstSeen is only
+// consulted when the ATS will not say.
+//
+// This used to be "fresh by either signal", which was reasonable when written
+// but did not survive measurement against the live catalogue: 631 of 1,358
+// triggered companies (46%) qualified on firstSeen alone while their own
+// postedAt said the role was older than the window. firstSeen p50 is under
+// five days, so it tracks how long this project has been watching, not how
+// long the role has been open — and the lane exists to find roles the employer
+// still cares about, which our own discovery date says nothing about.
+//
+// The "Posted 30+ Days Ago" case below is the one worth understanding.
+// postedAgeDays() parses that bucket as literally 30, though it really means
+// "at least 30, possibly years". Either reading keeps it out of a 21-day
+// window, which is the right answer: a req the employer itself describes as a
+// month old is not a fresh trigger however recently we noticed it.
 const catalogJob = (postedAt?: string, firstSeen?: string) => ({
   id: 'x', title: 't', company: 'c', url: '', postedAt, firstSeen,
 });
 check('fresh postedAt alone triggers', isTriggered(catalogJob('Posted Today', undefined)), true);
-check('fresh firstSeen alone triggers, even with a stale postedAt', isTriggered(catalogJob('Posted 30+ Days Ago', daysAgo(1))), true);
+check('a known-stale postedAt is not rescued by a fresh firstSeen', isTriggered(catalogJob('Posted 30+ Days Ago', daysAgo(1))), false);
+// The case the either-signal rule was actually written for, and it still works:
+// plenty of ATSes report no date at all, and for those a role this tracker has
+// only just started seeing is exactly what triggered is meant to mean.
+check('firstSeen carries it when the ATS reports no date', isTriggered(catalogJob(undefined, daysAgo(1))), true);
 check('stale on both signals does not trigger', isTriggered(catalogJob('Posted 30+ Days Ago', daysAgo(90))), false);
 check('neither signal present does not trigger', isTriggered(catalogJob(undefined, undefined)), false);
 check('firstSeen just outside the window does not trigger', isTriggered(catalogJob(undefined, daysAgo(TRIGGER_WINDOW_DAYS + 1))), false);
