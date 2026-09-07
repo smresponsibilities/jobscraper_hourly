@@ -484,34 +484,50 @@ const FACT_TEMPLATES: Record<Exclude<CommitKind, 'revert'>, string[]> = {
   fix: [
     'Was going through {company}\'s public repos and ran into your fix — “{subject}”. Good catch.',
     'Your “{subject}” fix came up while I was reading through {company}\'s repos.',
+    'Reading {company}\'s public repos, and “{subject}” was the commit that made me look twice.',
+    'Found “{subject}” in {company}\'s repos — the kind of bug that is much easier to fix than to find.',
   ],
   feat: [
     'Was going through {company}\'s public repos and saw you shipped “{subject}”.',
     'Came across “{subject}” in {company}\'s public repos — looks like a real chunk of work.',
+    'Reading through {company}\'s repos and stopped on “{subject}”.',
+    'Saw “{subject}” land in {company}\'s public repos.',
   ],
   perf: [
     'Was reading {company}\'s public repos and found your “{subject}”. Performance work is the part I like reading most.',
     'Came across “{subject}” in {company}\'s repos — perf changes are my favourite kind to read.',
+    '“{subject}” came up while I was going through {company}\'s repos. Always curious what the profile looked like before those.',
+    'Saw “{subject}” in {company}\'s public repos — the measurable kind of change.',
   ],
   refactor: [
     'Was going through {company}\'s public repos and saw “{subject}” — the sort of cleanup nobody gets thanked for.',
     'Your “{subject}” showed up while I was reading through {company}\'s repos.',
+    'Came across “{subject}” in {company}\'s repos. Tidying work is usually the least visible and the most missed when it stops.',
+    'Reading {company}\'s public repos, “{subject}” stood out.',
   ],
   test: [
     'Was reading {company}\'s public repos and found “{subject}” — test and harness work is badly underrated.',
     'Came across “{subject}” in {company}\'s public repos.',
+    '“{subject}” came up while I was going through {company}\'s repos. Coverage work rarely gets written about.',
+    'Saw “{subject}” in {company}\'s repos — the commits that stop the 3am ones.',
   ],
   infra: [
     'Was going through {company}\'s public repos and saw “{subject}” — the thankless half of the job.',
     'Your “{subject}” came up while I was reading through {company}\'s repos.',
+    'Came across “{subject}” in {company}\'s public repos. Build plumbing is invisible right up until it is not.',
+    'Reading {company}\'s repos and “{subject}” caught my eye.',
   ],
   docs: [
     'Was going through {company}\'s public repos and your name came up on “{subject}”.',
     'Came across “{subject}” in {company}\'s public repos.',
+    'Reading through {company}\'s repos, “{subject}” had your name on it.',
+    'Saw “{subject}” in {company}\'s public repos.',
   ],
   other: [
     'Was going through {company}\'s public repos and your “{subject}” came up.',
     'Came across “{subject}” in {company}\'s public repos.',
+    'Reading {company}\'s repos and “{subject}” had your name on it.',
+    '“{subject}” came up while I was going through {company}\'s public repos.',
   ],
 };
 
@@ -534,6 +550,44 @@ export function cleanSubject(subject: string): string {
   return stripped.length >= 3 ? stripped : trimmed;
 }
 
+/**
+ * Openers for a contact found through a package registry rather than a commit.
+ *
+ * npm, PyPI and Maven all return the package whose manifest carried the
+ * address, and the mapping into Candidate used to throw it away — so every
+ * registry contact got a mail with no opening fact at all, visibly thinner
+ * than the git path’s for no reason other than a dropped field. A package
+ * somebody publishes under their own name is as specific a hook as a commit
+ * subject, and more obviously public than one.
+ */
+const REGISTRY_LABEL: Record<string, string> = {
+  npm: 'npm',
+  pypi: 'PyPI',
+  maven: 'Maven Central',
+};
+
+const REGISTRY_FACTS = [
+  'Was looking at what {company} publishes and saw you maintain {pkg} on {registry}.',
+  '{pkg} on {registry} has your name on it — that is how I found you rather than a careers form.',
+  'Came across {pkg} on {registry} while reading up on {company}.',
+  'Saw you listed as a maintainer of {pkg} on {registry}.',
+];
+
+/** The registry equivalent of factLine(); null when there is no package to name. */
+export function registryFactLine(
+  pkg: string | undefined,
+  source: string | undefined,
+  company: string,
+  seed: string,
+): string | null {
+  const registry = source ? REGISTRY_LABEL[source] : undefined;
+  if (!pkg || !registry) return null;
+  return pick(REGISTRY_FACTS, seed)
+    .replace('{company}', company)
+    .replace('{pkg}', pkg)
+    .replace('{registry}', registry);
+}
+
 export function factLine(subject: string, company: string, seed: string): string | null {
   const kind = commitKind(subject);
   if (kind === 'revert') return null;
@@ -546,6 +600,9 @@ const ASK_T1 = [
   'Is this req open to 0–3 yrs? y/n works.',
   'Should I apply through the portal, or is there someone better to send this to?',
   'Is it open to early-career folks? One word helps.',
+  'Is there a years-of-experience floor on it? One line is plenty.',
+  'Would a final-semester student be wasting your time applying? Straight answer is fine.',
+  'Is that req open to someone finishing their degree this year?',
 ];
 /**
  * Asks for when the req's own listed band already covers an early-career
@@ -558,19 +615,90 @@ const ASK_MATCHED = [
   'Worth applying through the portal, or is there someone better to send it to?',
   'Anything you would want to see in an application for it?',
   'Is the team still actively interviewing, or is it early days?',
+  'Is the portal the right route, or does that one move through referrals?',
+  'Anything that would make an application stand out for that team?',
+  'Still open in practice, or already down to a shortlist?',
+];
+
+/**
+ * Touch-one asks for a senior contact — a CTO, a VP, a founder.
+ *
+ * OUTREACH-DESIGN.md §4 is explicit that the first touch to someone senior
+ * should request judgement about the role market and never the referral: the
+ * referral ask rides touch three, after any reply. Asking a CTO to forward a
+ * CV is a seniority mismatch and reads as not knowing who you are writing to,
+ * where asking their read on hiring is a question they are uniquely placed to
+ * answer and costs them one line.
+ */
+const ASK_LEADERSHIP = [
+  'Not asking you to forward anything — mostly whether you are still hiring at that level this year.',
+  'Worth applying cold, or does that one usually get filled through people you already know?',
+  'Is the team taking early-career people at all right now?',
+  'Any read on whether to apply now or wait for the next cycle?',
+  'If you were in my position, would you go through the portal or wait for an introduction?',
 ];
 const ASK_T2 = [
   'Following up once — still open? A one-word reply is plenty.',
-  'Circling back on this. Still live?',
+  'Still live, or has it moved on? Either answer helps.',
+  'Any change on this one?',
+  'Worth me still applying, or has that ship sailed?',
+  'One line either way and I will know where I stand.',
 ];
 const ASK_T3 = [
-  "Last nudge from me — if it's filled or off-target, a 'no' closes the loop and I won't write again.",
-  'Closing this out on my side — worth keeping in touch for the next one, or should I stop writing?',
-  "One line either way and I'll stop bothering you: still hiring for this, or not?",
+  'Still worth a conversation, or should I aim at a different team?',
+  'If this one is gone, is there something closer to my level opening soon?',
+  'Happy to be told it is not a fit — that is useful too.',
+  'Is there a better time of year for someone at my stage to be asking?',
+  'Would a different role at your end make more sense than this one?',
 ];
+
+/**
+ * The last touch. It has one job: make stopping easy and leave the door open,
+ * because a clean close is what makes a future mail to the same person
+ * acceptable rather than the fourth in an unwanted sequence.
+ */
+const ASK_FINAL = [
+  "Last one from me — if it's filled or off-target, a 'no' closes the loop and I won't write again.",
+  'Closing this out on my side. Worth keeping in touch for the next opening, or should I stop?',
+  'I will leave it here unless you say otherwise. Either way, thanks for reading.',
+  'Signing off on this one — happy to be pointed at the right moment instead.',
+  'That is me done chasing it. If something opens later I would still be glad to hear.',
+];
+
+/** Which ask pool a follow-up draws on, by the touch already sent. */
+const ASK_BY_TOUCH = [ASK_T2, ASK_T3, ASK_FINAL];
+/**
+ * Shapes for the sentence naming the opening. It used to be a single fixed
+ * form, which meant the middle of every mail this tool has ever produced was
+ * word-for-word identical — the largest single block of shared text between
+ * any two drafts, and the main reason cross-company bodies scored as close as
+ * they did on the similarity guard.
+ */
+const ROLE_LINES = [
+  '{company} just opened {a} {title}{loc}.',
+  '{company} has {a} {title} open{loc}.',
+  'There is {a} {title} open at {company}{loc}.',
+  '{company} put up {a} {title}{loc}.',
+  'Saw {company} is hiring {a} {title}{loc}.',
+];
+
+/** Subject lines. Plain, lower-case, specific — never a fake "re:". */
+const SUBJECTS = [
+  'quick question re: {title}',
+  '{company} {title} — open?',
+  '{title} at {company} — quick question',
+  'question about the {title} req',
+  '{title} — open to early career?',
+  '{company} — {title} still open?',
+];
+
 const PASS_ALONG = [
   'Not you? Happy if you point me right.',
   "If this isn't yours, who should it go to?",
+  'If someone else owns it, glad to be redirected.',
+  'Wrong person? A name is plenty.',
+  'If it belongs to someone else, point me at them and I will stop bothering you.',
+  'Not your area? No problem — just say whose.',
 ];
 const pick = <T>(pool: T[], seed: string): T => pool[hash(seed) % pool.length]!;
 
@@ -644,6 +772,15 @@ interface Candidate extends CommitAuthor {
   verdict?: Verdict;
   gravatar?: boolean;
   source?: string;
+  /**
+   * The package whose manifest yielded this address, for npm / PyPI / Maven
+   * contacts. Every registry source already returns it as `viaPackage` and the
+   * mapping threw it away, so every registry contact shipped with no opening
+   * fact at all — a visibly thinner mail than the git path's, for no reason.
+   * Somebody's published package is as true and specific a hook as a commit,
+   * and rather more clearly public.
+   */
+  viaPackage?: string;
 }
 
 /**
@@ -900,7 +1037,7 @@ function orgNameVariants(name: string): string[] {
         ...reg,
         ...py,
         ...mvn,
-        ...web.map((w) => ({ name: displayName(w.email.split('@')[0] ?? ''), email: w.email })),
+        ...web.map((w) => ({ name: displayName(w.email.split('@')[0] ?? ''), email: w.email, viaPackage: undefined })),
         // COLDMAIL-PLAN.md §4: first.last is 47.7% of B2B addresses and a bare
         // first@ is another 26.8% — emitting only the first guess threw away a
         // quarter of the reachable cases, and missed mononym names entirely
@@ -922,7 +1059,14 @@ function orgNameVariants(name: string): string[] {
         return [];
       }
       console.log(`    · ${company}: ${why}; npm/PyPI/Maven/website/leadership gave ${alt.length} address(es)`);
-      return finalize(alt.slice(0, MAX_PROBES_PER_COMPANY).map((r) => ({ name: r.name, email: r.email, source })));
+      return finalize(
+        alt.slice(0, MAX_PROBES_PER_COMPANY).map((r) => ({
+          name: r.name,
+          email: r.email,
+          source,
+          viaPackage: 'viaPackage' in r ? (r as { viaPackage?: string }).viaPackage : undefined,
+        })),
+      );
     };
 
     if (!found || !found.domain || !usedOrg) {
@@ -1178,7 +1322,9 @@ export function buildFirstDraft(job: CatalogJob, author: Candidate, domainRiskBo
       ? `${pick(SR_FACT_VERBS, author.name)} this req on SmartRecruiters — figured you'd know if it's still open.`
       : author.subject
         ? (factLine(author.subject, company, author.name) ?? undefined)
-        : undefined;
+        : // npm / PyPI / Maven: no commit, but a package published under their
+          // own name is just as specific and rather more clearly public.
+          (registryFactLine(author.viaPackage, author.source, company, author.name) ?? undefined);
   const title = job.title.trim();
   // "a Associate ML Engineer" is the tell that a machine wrote the mail, which
   // retroactively reframes the commit quote from flattering to creepy.
@@ -1189,13 +1335,21 @@ export function buildFirstDraft(job: CatalogJob, author: Candidate, domainRiskBo
   const exp = experienceLabel(job.minYears ?? null, job.maxYears ?? null);
   // A req that opens at or below 3 years already answers the band question.
   const bandCoversEarlyCareer = job.minYears != null && job.minYears <= 3;
-  const ask = pick(bandCoversEarlyCareer ? ASK_MATCHED : ASK_T1, author.email + job.id);
-  const roleLine = `${company} just opened ${article} ${title}${loc}.${exp ? ` Band listed: ${exp}.` : ''}`;
+  // A CTO or a founder gets a question about the hiring market, never a request
+  // to forward a CV — the referral ask belongs on a later touch, after a reply.
+  const askPool =
+    author.source === 'leadership' ? ASK_LEADERSHIP : bandCoversEarlyCareer ? ASK_MATCHED : ASK_T1;
+  const ask = pick(askPool, author.email + job.id);
+  const roleLine =
+    pick(ROLE_LINES, author.email)
+      .replace('{company}', company)
+      .replace('{a}', article)
+      .replace('{title}', title)
+      .replace('{loc}', loc) + (exp ? ` Band listed: ${exp}.` : '');
   const body = renderBody({ greet, first, fact, roleLine, ask, passAlong: pick(PASS_ALONG, author.name) });
-  const subject = pick(
-    [`quick question re: ${job.title.toLowerCase().slice(0, 40)}`, `${company} ${job.title.toLowerCase().slice(0, 30)} — open?`],
-    author.email,
-  );
+  const subject = pick(SUBJECTS, author.email)
+    .replace('{company}', company)
+    .replace('{title}', title.toLowerCase().slice(0, 40));
   return {
     id: author.email,
     addr: author.email,
@@ -1273,7 +1427,10 @@ function buildFollowUps(state: OutreachState, catalog: CatalogJob[]): Draft[] {
     if (Number.isNaN(due) || due > now) continue;
     const overdueDays = Math.floor((now - due) / 86_400_000);
     const daysSinceFirst = Math.round((now - new Date(c.sentAt[0]!).getTime()) / 86_400_000);
-    const askPool = c.touch === 1 ? ASK_T2 : ASK_T3;
+    // Touch 1 -> a light nudge, touch 2 -> a wider question, touch 3 -> a clean
+    // close. Previously touches 2 and 3 shared one pool, so the last mail in a
+    // sequence never actually signalled that it was the last.
+    const askPool = ASK_BY_TOUCH[Math.min(c.touch, ASK_BY_TOUCH.length) - 1]!;
     const body = renderBody({
       greet: 'Hi',
       first: c.firstName ?? 'there',
@@ -1308,12 +1465,89 @@ function buildFollowUps(state: OutreachState, catalog: CatalogJob[]): Draft[] {
   return drafts.sort((a, b) => b.overdueDays - a.overdueDays);
 }
 
-export function enforceSimilarity<T extends { body: string }>(drafts: T[]): { kept: T[]; dropped: T[] } {
+/**
+ * The part of a body that is allowed to vary.
+ *
+ * OUTREACH-DESIGN.md §3 lists what stays constant on purpose: the signature
+ * block, the one link, the opt-out line, and the identity sentence. Those are
+ * about twenty-five words of a seventy-word mail — more than a third of it —
+ * and a rotating signature is its own tell, so keeping them fixed is the
+ * design working, not a defect.
+ *
+ * Comparing whole bodies therefore measured the deliberately-constant third
+ * along with everything else, and got both answers wrong at once: after the
+ * template pools were widened, twelve drafts to twelve different companies
+ * scored up to 0.887 and the guard deleted three of them, while two
+ * colleagues at the SAME company with the same role line scored 0.660 and
+ * both shipped — precisely the pair the guard exists to catch.
+ *
+ * Stripping the fixed block makes the metric measure what it claims to: the
+ * hook, the role sentence, the ask and the pass-along.
+ */
+export function variablePart(body: string): string {
+  const constants = [IDENTITY, OPT_OUT, PROFILE_LINK, `— ${SIGNATURE}`].filter(Boolean);
+  return body
+    .split('\n')
+    .filter((line) => {
+      const trimmed = line.trim();
+      return trimmed !== "" && !constants.some((c) => trimmed === c.trim());
+    })
+    .join('\n');
+}
+
+/**
+ * The structural rule the similarity threshold was only ever approximating.
+ *
+ * OUTREACH-DESIGN.md §6 allows two mails to the same company on the same day,
+ * with one condition: "hooks must differ per recipient ... colleagues who
+ * compare inboxes should see research, not a blast". That is a statement about
+ * company, role and hook — not about token overlap — and a bag-of-words score
+ * cannot express it. Measured after the template pools were widened, two
+ * colleagues quoting the SAME commit scored 0.559 and two with no hook at all
+ * scored 0.619, both comfortably under any threshold that does not also start
+ * deleting unrelated companies (cross-company p90 is 0.583).
+ *
+ * So the rule is enforced as what it actually is. A missing hook deliberately
+ * collides with another missing hook: two hookless mails to one company about
+ * one role are the blast this rule exists to prevent.
+ */
+/**
+ * The lexical backstop, now that hookKey() carries the case that actually
+ * matters. It only has to catch two different companies that came out phrased
+ * almost identically by chance, so it sits above the measured cross-company
+ * spread rather than inside it: across twelve drafts to twelve companies the
+ * varying part scores p50 0.382, p90 0.583, max 0.833, and a 0.8 cut was
+ * deleting two perfectly good options per batch to catch nothing real.
+ */
+const LEXICAL_TWIN_THRESHOLD = 0.85;
+
+export function hookKey(d: { company?: string; role?: string; fact?: string }): string {
+  return [d.company ?? '', d.role ?? '', d.fact ?? '<no hook>'].map((x) => x.toLowerCase().trim()).join('|');
+}
+
+export function enforceSimilarity<T extends { body: string; company?: string; role?: string; fact?: string }>(
+  drafts: T[],
+): { kept: T[]; dropped: T[] } {
   const kept: T[] = [];
   const dropped: T[] = [];
+  const seenHooks = new Set<string>();
   for (const d of drafts) {
-    const twin = kept.find((k) => bodySimilarity(k.body, d.body) > 0.8);
-    (twin ? dropped : kept).push(d);
+    const key = hookKey(d);
+    // Structural first: same company, same role, same (or absent) hook.
+    if (seenHooks.has(key)) {
+      dropped.push(d);
+      continue;
+    }
+    // Then the lexical net, over the varying part only, for near-duplicates
+    // that are not caught by the key — a different company phrased almost
+    // identically by chance.
+    const twin = kept.find((k) => bodySimilarity(variablePart(k.body), variablePart(d.body)) > LEXICAL_TWIN_THRESHOLD);
+    if (twin) {
+      dropped.push(d);
+      continue;
+    }
+    seenHooks.add(key);
+    kept.push(d);
   }
   return { kept, dropped };
 }

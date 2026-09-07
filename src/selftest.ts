@@ -36,7 +36,7 @@ import { readJson } from './state.js';
 import { EventEmitter } from 'node:events';
 import { readReply } from './verify-email.js';
 import { SIGNATURE } from './outreach.js';
-import { cleanSubject, commitKind, factLine, followUpLine, linkedinSearchUrl, mergePool, poolToBatch, section, weeklyConnects } from './outreach.js';
+import { cleanSubject, commitKind, factLine, followUpLine, hookKey, linkedinSearchUrl, mergePool, poolToBatch, registryFactLine, section, variablePart, weeklyConnects } from './outreach.js';
 import { bodySimilarity, bounceGateDecision, buildFirstDraft, displayName, domainRiskTally, enforceSimilarity, isTriggered, loadCompanyPool, postedAgeDays, renderBody, touchGap, TRIGGER_WINDOW_DAYS, type CatalogJob } from './outreach.js';
 import { applyboltLookup, extractEmails, extractLeadership, packageNameCandidates, parseApplyBolt, parseDmarcRua, roleAddresses } from './contact-sources.js';
 import { controlAddress, mxProvider, rejectionIsMeaningful } from './verify-email.js';
@@ -1052,6 +1052,43 @@ check('a conventional prefix is stripped before quoting', cleanSubject('fix: nul
 check('a scoped prefix is stripped too', cleanSubject('feat(rtms): add reconnection'), 'add reconnection');
 check('a non-conventional subject is left alone', cleanSubject('Fixes crash on reconnect'), 'Fixes crash on reconnect');
 check('stripping never empties the subject', cleanSubject('fix:'), 'fix:');
+
+console.log('registry contacts get a hook too');
+// npm, PyPI and Maven all return the package whose manifest carried the
+// address, and the mapping into Candidate dropped it — so every registry
+// contact shipped with no opening fact at all, a visibly thinner mail than the
+// git path for no reason but a lost field.
+check('an npm package becomes an opener', registryFactLine('@razorpay/blade', 'npm', 'Razorpay', 'seed')?.includes('@razorpay/blade'), true);
+check('the registry is named correctly', registryFactLine('sentry-sdk', 'pypi', 'Sentry', 'seed')?.includes('PyPI'), true);
+check('maven reads as Maven Central', registryFactLine('razorpay-java', 'maven', 'Razorpay', 'seed')?.includes('Maven Central'), true);
+// A contact with no package (website scan, leadership page) still has no hook,
+// and must not get a sentence claiming one.
+check('no package means no registry opener', registryFactLine(undefined, 'npm', 'X', 'seed'), null);
+check('an unknown source means no registry opener', registryFactLine('pkg', 'git', 'X', 'seed'), null);
+
+console.log('the twin guard is structural, not lexical');
+// OUTREACH-DESIGN.md §6 allows two mails to one company on one day provided
+// "hooks must differ per recipient". That is a statement about company, role
+// and hook, which a bag-of-words score cannot express: once the template pools
+// were widened, two colleagues quoting the SAME commit scored 0.559 and two
+// with no hook at all scored 0.619 — both under any threshold that does not
+// also delete unrelated companies, whose varying part reaches 0.833.
+const hk = (company: string, role: string, fact?: string) => hookKey({ company, role, fact });
+check('same company, role and hook collide', hk('Acme', 'SDE II', 'fix: x'), hk('acme', 'sde ii', 'fix: x'));
+check('a different hook does not collide', hk('Acme', 'SDE II', 'fix: x') === hk('Acme', 'SDE II', 'feat: y'), false);
+// Two hookless mails to one company about one role are exactly the blast this
+// rule exists to prevent, so a missing hook deliberately collides with itself.
+check('two missing hooks collide', hk('Acme', 'SDE II'), hk('Acme', 'SDE II'));
+check('a different company never collides', hk('Acme', 'SDE II') === hk('Globex', 'SDE II'), false);
+
+// The signature, identity line, opt-out and link are constant by design
+// (§3), and they are about a third of a seventy-word mail. Counting them
+// measured the design as if it were repetition.
+{
+  const withBlock = renderBody({ greet: 'Hi', first: 'A', roleLine: 'R just opened a T.', ask: 'Q?', passAlong: 'P?' });
+  check('the varying part drops the constant block', variablePart(withBlock).includes('Tell me to stop'), false);
+  check('the varying part keeps the role line', variablePart(withBlock).includes('R just opened a T.'), true);
+}
 
 console.log('follow-ups carry new information');
 // OUTREACH-DESIGN.md section 4 requires new information every touch and forbids
