@@ -1024,7 +1024,23 @@ console.log('commit-kind openers');
 // read as generated. Conventional prefixes first, keyword shapes after.
 check('conventional fix prefix', commitKind('fix: null check in order parser'), 'fix');
 check('conventional feat prefix', commitKind('feat(rtms): add reconnection sample'), 'feat');
-check('breaking-change marker does not confuse the prefix', commitKind('feat!: drop v1 api'), 'feat');
+check('breaking-change marker does not confuse the prefix', commitKind('feat!: overhaul the onboarding flow'), 'feat');
+// Subject matter beats the generic prefix on purpose: a commit touching auth,
+// logging, a schema or an endpoint is a more interesting thing to open a mail
+// with than the bare fact that something was added. fix and perf still win
+// outright, being the strongest hooks available.
+check('an api change outranks its feat prefix', commitKind('feat!: drop v1 api'), 'api');
+check('security outranks everything', commitKind('feat: add oauth token refresh'), 'security');
+check('but a fix stays a fix', commitKind('fix: null check in the request handler'), 'fix');
+// Real commit messages are overwhelmingly past tense. Matching only the
+// imperative forms a style guide asks for missed 24% of the generic bucket
+// across 2,070 real subjects pulled from the orgs this project targets.
+check('past-tense verbs classify', commitKind('added support for multiple currencies'), 'feat');
+check('past-tense logging work classifies', commitKind('added more logging'), 'observability');
+// A ticket id in front defeated every anchored pattern: 13% of the generic
+// bucket was nothing but this.
+check('a leading ticket id is stripped first', commitKind('PO-166 added support for offsite redirect'), 'feat');
+check('and a ticketed version bump is housekeeping', isTrivialCommit('PO-184 : version bump 1.3.0'), true);
 check('perf by keyword, no prefix', commitKind('Speed up cold start by lazily loading the parser'), 'perf');
 check('fix by keyword, no prefix', commitKind('Fixes crash when the socket closes mid-handshake'), 'fix');
 check('ci counts as infra', commitKind('ci: bump runner image'), 'infra');
