@@ -174,8 +174,24 @@ const LINK_BASE = (process.env.OUTREACH_LINK_BASE ?? '').replace(/\/$/, '');
  * server needs no key.
  */
 const LINK_KEY = process.env.OUTREACH_KEY ?? '';
+/**
+ * Where a card button actually sends its click.
+ *
+ * Deployed builds get absolute URLs into the hosted API, which records the
+ * click into the private data repo — that is the only path where a click is
+ * durably saved anywhere but this machine.
+ *
+ * Local builds used to emit ROOT-RELATIVE paths ("/outreach/sent/..."), which
+ * work when the page is served by serve() and do nothing whatsoever when the
+ * written file is opened straight off disk: file:// resolves them to a path
+ * that does not exist, the browser goes nowhere, and the click is silently
+ * lost. Absolute localhost URLs work in both cases, so the written file stops
+ * being a page whose buttons quietly do nothing.
+ */
 const actionUrl = (path: string) =>
-  LINK_BASE ? `${LINK_BASE}/${path}${LINK_KEY ? `?k=${encodeURIComponent(LINK_KEY)}` : ''}` : `/${path}`;
+  LINK_BASE
+    ? `${LINK_BASE}/${path}${LINK_KEY ? `?k=${encodeURIComponent(LINK_KEY)}` : ''}`
+    : `http://localhost:${PORT}/${path}`;
 
 export const STATE_PATH = process.env.OUTREACH_STATE_PATH ?? 'state/contacted.json';
 const SWEEP_PATH = 'state/contact-sweep.json';
@@ -1674,6 +1690,12 @@ function page(
 ): string {
   const total = allDrafts(b).length;
   const atCap = sentToday >= SEND_CAP;
+  // The single most confusing thing about this page is that the same HTML
+  // behaves differently depending on how it was built. Say so, rather than
+  // letting a click vanish.
+  const savesTo = LINK_BASE
+    ? `clicks save to the hosted API at ${esc(LINK_BASE)} — durable, shared, survives this machine`
+    : `clicks save to ${esc(STATE_PATH)} on this machine only, and need <code>npm run outreach -- --serve</code> running on port ${PORT}`;
   return `<!doctype html><html><head><meta charset="utf-8"><title>outreach — ${daySeed()}</title><style>
 body{font-family:ui-monospace,monospace;background:#111;color:#ddd;max-width:780px;margin:24px auto;padding:0 12px}
 h1{font-size:18px}.count{color:#666;font-size:12px;margin-bottom:4px}
@@ -1696,6 +1718,7 @@ a.refresh{color:#569;font-size:12px}
 ${b.haltReason ? `<div class="halt">${esc(b.haltReason)}</div>` : ''}
 ${atCap ? `<div class="capped">${sentToday}/${SEND_CAP} sent in the last 24h — at cap. The options below keep for tomorrow; nothing is lost by stopping here.</div>` : ''}
 <div class="count">${sentToday}/${SEND_CAP} sent in the last 24h · sending as Gmail account <b>${esc(GMAIL_USER)}</b> · <a class="refresh" href="/refresh">↻ rebuild</a></div>
+<div class="count">${savesTo}</div>
 <div class="count"><b>${total}</b> options standing. These persist across rebuilds — a card you do not send today is still here tomorrow.</div>
 
 <h2>follow-ups due<span class="sub">${b.followups.length} — time-sensitive, do these first</span></h2>
