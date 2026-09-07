@@ -33,6 +33,7 @@ import {
 } from './contacts.js';
 import { EventEmitter } from 'node:events';
 import { readReply } from './verify-email.js';
+import { cleanSubject, commitKind, factLine, followUpLine, linkedinSearchUrl, weeklyConnects } from './outreach.js';
 import { bodySimilarity, bounceGateDecision, buildFirstDraft, displayName, domainRiskTally, enforceSimilarity, isTriggered, loadCompanyPool, postedAgeDays, renderBody, touchGap, TRIGGER_WINDOW_DAYS, type CatalogJob } from './outreach.js';
 import { applyboltLookup, extractEmails, extractLeadership, packageNameCandidates, parseApplyBolt, parseDmarcRua, roleAddresses } from './contact-sources.js';
 import { controlAddress, mxProvider, rejectionIsMeaningful } from './verify-email.js';
@@ -1011,6 +1012,95 @@ console.log('smtp reply reading');
   const reply = await pending;
   check('a complete reply still resolves', `${reply.code} ${reply.text}`, '250 OK');
 }
+
+console.log('commit-kind openers');
+// A fix, a perf change and a refactor each deserve a different sentence; one
+// generic "saw your recent commit" for all of them is what made the opener
+// read as generated. Conventional prefixes first, keyword shapes after.
+check('conventional fix prefix', commitKind('fix: null check in order parser'), 'fix');
+check('conventional feat prefix', commitKind('feat(rtms): add reconnection sample'), 'feat');
+check('breaking-change marker does not confuse the prefix', commitKind('feat!: drop v1 api'), 'feat');
+check('perf by keyword, no prefix', commitKind('Speed up cold start by lazily loading the parser'), 'perf');
+check('fix by keyword, no prefix', commitKind('Fixes crash when the socket closes mid-handshake'), 'fix');
+check('ci counts as infra', commitKind('ci: bump runner image'), 'infra');
+check('a ticket prefix is not a conventional type', commitKind('SP-1173: say what to do when CUI marking fails'), 'other');
+// Both spellings of a revert must be caught, including the unprefixed form
+// git itself generates ('Revert "feat: ..."').
+check('git-generated revert', commitKind('Revert "feat: add streaming ingest"'), 'revert');
+check('conventional revert', commitKind('revert: streaming ingest'), 'revert');
+// Opening a cold email by mentioning that somebody had to undo their own work
+// is a bad first impression no phrasing rescues, so it produces no fact at all
+// and buildFirstDraft omits the paragraph.
+check('a revert never becomes an opening line', factLine('Revert "feat: add streaming ingest"', 'Zoom', 'seed'), null);
+// The opener says how the sender found them. Unexplained knowledge of a
+// stranger's work is what makes this kind of mail feel like surveillance.
+{
+  // Both variants of every kind explain the provenance; they differ in whether
+  // they say 'public repos' or just 'repos', so assert the substance not the
+  // exact wording.
+  const opener = factLine('fix: null check', 'Zoom', 'seed')!;
+  check('the opener explains where the fact came from', /Zoom's.*repos|repos.*Zoom's/.test(opener), true);
+}
+// The opener already says what kind of change it was, so quoting the prefix
+// too labels it twice and reads like a pasted field.
+check('a conventional prefix is stripped before quoting', cleanSubject('fix: null check in order parser'), 'null check in order parser');
+check('a scoped prefix is stripped too', cleanSubject('feat(rtms): add reconnection'), 'add reconnection');
+check('a non-conventional subject is left alone', cleanSubject('Fixes crash on reconnect'), 'Fixes crash on reconnect');
+check('stripping never empties the subject', cleanSubject('fix:'), 'fix:');
+
+console.log('follow-ups carry new information');
+// OUTREACH-DESIGN.md section 4 requires new information every touch and forbids
+// "bumping this" — which is exactly what the old single template was. All three
+// facts below are already in the catalogue, free, with no extra fetch.
+const FU = { company: 'Zoom', role: 'Network Engineer', jobUrl: 'https://x/1' };
+const FU_JOB = { id: 'gh:zoom:1', title: 'Network Engineer', company: 'zoom', url: 'https://x/1' };
+check(
+  'a closed req becomes the reason to write',
+  followUpLine(FU, [{ ...FU_JOB, closedAt: '2026-09-01' }], 10).includes('came down'),
+  true,
+);
+check(
+  'a newer opening at the same company outranks repeating the old one',
+  followUpLine(FU, [FU_JOB, { ...FU_JOB, id: 'gh:zoom:2', url: 'https://x/2', title: 'Media Systems Engineer' }], 10).includes('Media Systems Engineer'),
+  true,
+);
+check('a still-open req is itself the signal', followUpLine(FU, [FU_JOB], 10).includes('still up, 10 days on'), true);
+check('a company gone from the catalogue still names the role', followUpLine(FU, [], 10).includes('Network Engineer'), true);
+// The old body was identical for every contact, so the similarity guard then
+// deleted most follow-ups before they were ever seen.
+check(
+  'two follow-ups to different companies do not collide',
+  bodySimilarity(
+    followUpLine(FU, [FU_JOB], 10),
+    followUpLine({ company: 'Meesho', role: 'Data Scientist', jobUrl: 'https://y/1' }, [], 4),
+  ) < 0.8,
+  true,
+);
+
+console.log('weekly linkedin list');
+// Search urls only — this project never fetches LinkedIn (CONTACT-DISCOVERY.md
+// section 9). The human clicks through, already signed in, and sends it.
+check(
+  'a search url is built, not a profile url',
+  linkedinSearchUrl('Max Mansfield', 'Zoom'),
+  'https://www.linkedin.com/search/results/people/?keywords=Max%20Mansfield%20Zoom',
+);
+const CONNECT_NOW = Date.UTC(2026, 8, 10);
+const ago = (days: number) => new Date(CONNECT_NOW - days * 86_400_000).toISOString();
+const connectState = {
+  'a@zoom.us': { company: 'Zoom', role: 'r', jobUrl: '', touch: 1, sentAt: [ago(6)], nextDueAt: '', subject: '', name: 'Max Mansfield' },
+  'b@meesho.com': { company: 'Meesho', role: 'r', jobUrl: '', touch: 1, sentAt: [ago(2)], nextDueAt: '', subject: '', name: 'Priya Nair', replied: true },
+  'c@never.com': { company: 'Never', role: 'r', jobUrl: '', touch: 0, sentAt: [], nextDueAt: '', subject: '', name: 'Never Mailed' },
+  'd@done.com': { company: 'Done', role: 'r', jobUrl: '', touch: 1, sentAt: [ago(9)], nextDueAt: '', subject: '', name: 'Already Connected', connectedAt: ago(1) },
+  'e@bounced.com': { company: 'Bounced', role: 'r', jobUrl: '', touch: 1, sentAt: [ago(8)], nextDueAt: '', subject: '', name: 'Bounced Person', bounced: true },
+};
+const connects = weeklyConnects(connectState as never, CONNECT_NOW);
+// Only people already mailed: a request landing days after a real email is a
+// second touch, the same request to a stranger is a different play entirely.
+check('never-mailed, already-connected and bounced contacts are all excluded', connects.length, 2);
+// A reply is the best possible reason to connect, so it sorts to the top.
+check('a reply outranks age', connects[0]?.name, 'Priya Nair');
+check('then oldest-mailed first', connects[1]?.name, 'Max Mansfield');
 
 console.log('outreach lane gating');
 // Workday's relative strings must land in the triggered lane, not parse as null.

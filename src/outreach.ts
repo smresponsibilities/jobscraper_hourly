@@ -136,6 +136,18 @@ const IDENTITY =
   'Final-semester BE CSE, graduating Aug 2026 — looking at 0–3 yr roles.';
 const OPT_OUT = process.env.OUTREACH_OPT_OUT ?? 'Tell me to stop and I will.';
 /**
+ * The one link, in the signature rather than the body. OUTREACH-DESIGN.md §3
+ * allows exactly one and §6 asks for none in the body of a first touch; a URL
+ * sitting in a signature block is ordinary mail furniture rather than a call to
+ * action, which is the distinction those two rules are really drawing.
+ *
+ * LinkedIn over a portfolio or a LeetCode profile on purpose: it is the link a
+ * recipient expects to see, the one they are least suspicious of, and it is
+ * where a claimed employer becomes checkable. Swap it for a portfolio once
+ * there is a real one to swap in — an empty page is worse than no link.
+ */
+const PROFILE_LINK = process.env.OUTREACH_LINK ?? 'linkedin.com/in/mahajanshivam';
+/**
  * Which signed-in Gmail the compose link opens as. The default '0' is whatever
  * account the browser happens to consider first, which on a machine signed into
  * the alert inbox means the first cold mail goes out from the address the whole
@@ -189,6 +201,12 @@ export interface ContactState {
   verifiedAt?: string;
   /** Gravatar confirmed the exact address exists (positive-only signal). */
   gravatar?: boolean;
+  /** Full name as the contact ladder found it — needed to search LinkedIn for
+   *  this person later; firstName alone is not enough to identify anybody. */
+  name?: string;
+  /** When the LinkedIn connection request was sent, so the weekly list can
+   *  stop offering them. Set by a click; nothing here talks to LinkedIn. */
+  connectedAt?: string;
   replied?: boolean;
   skipped?: boolean;
   bounced?: boolean;
@@ -345,7 +363,9 @@ export interface BodyInput {
 export function renderBody(o: BodyInput): string {
   const lines = [`${o.greet} ${o.first},`, ''];
   if (o.fact) lines.push(`${o.fact}`, '');
-  lines.push(o.roleLine, '', IDENTITY, '', o.ask, '', o.passAlong, '', `— ${SIGNATURE}`, OPT_OUT);
+  lines.push(o.roleLine, '', IDENTITY, '', o.ask, '', o.passAlong, '', `— ${SIGNATURE}`);
+  if (PROFILE_LINK) lines.push(PROFILE_LINK);
+  lines.push(OPT_OUT);
   return lines.join('\n');
 }
 
@@ -355,7 +375,131 @@ function hash(s: string): number {
   return h;
 }
 const GREETINGS = ['Hi', 'Hello', 'Hey'];
-const FACT_VERBS = ['Saw your recent commit', 'Came across your commit', 'Noticed your push'];
+/**
+ * What kind of work a commit subject describes. Conventional-Commits prefixes
+ * first, since a repo that uses them is unambiguous; keyword shapes after, for
+ * the majority that do not.
+ *
+ * The point is not taxonomy for its own sake — it is that a fix, a perf change
+ * and a refactor each deserve a different sentence. "Saw your recent commit"
+ * followed by a quoted subject reads identically whatever the person actually
+ * did, which is precisely what makes it feel generated.
+ */
+export type CommitKind = 'fix' | 'feat' | 'perf' | 'refactor' | 'test' | 'infra' | 'docs' | 'revert' | 'other';
+
+export function commitKind(subject: string): CommitKind {
+  const m = subject.trim().toLowerCase();
+  const conventional = /^([a-z]+)(\([^)]*\))?!?:/.exec(m)?.[1];
+  const byPrefix: Record<string, CommitKind> = {
+    fix: 'fix', bugfix: 'fix', hotfix: 'fix',
+    feat: 'feat', feature: 'feat',
+    perf: 'perf',
+    refactor: 'refactor', style: 'refactor',
+    test: 'test', tests: 'test',
+    build: 'infra', ci: 'infra', chore: 'infra', deps: 'infra',
+    docs: 'docs', doc: 'docs',
+    revert: 'revert',
+  };
+  if (conventional && byPrefix[conventional]) return byPrefix[conventional]!;
+  // A revert is somebody's bad day and must be caught even unprefixed — see
+  // FACT_TEMPLATES below for why it never becomes an opening line.
+  if (/^revert\b|\brevert(s|ing|ed)?\b/.test(m)) return 'revert';
+  if (/^(fix|bugfix|hotfix|resolve|correct|patch)\b|\bfixes\b/.test(m)) return 'fix';
+  if (/^(perf|optimi[sz]e|speed ?up|reduce latency|cache)\b|\b(latency|throughput|faster)\b/.test(m)) return 'perf';
+  if (/^(refactor|clean ?up|simplify|rename|extract|deduplicate|tidy)\b/.test(m)) return 'refactor';
+  if (/^(test|spec)\b|\b(unit test|integration test|coverage|e2e)\b/.test(m)) return 'test';
+  if (/^(build|ci|chore|bump|release|deploy|infra)\b|\b(pipeline|dockerfile|workflow)\b/.test(m)) return 'infra';
+  if (/^(doc|docs|readme)\b/.test(m)) return 'docs';
+  if (/^(feat|add|implement|introduce|support|enable)\b|\badds\b/.test(m)) return 'feat';
+  return 'other';
+}
+
+/**
+ * One opener per kind of work, each ending in the commit's own subject.
+ *
+ * Two things every variant does deliberately:
+ *
+ *   1. It says HOW the sender found them — "going through {company}'s public
+ *      repos". Unexplained knowledge of a stranger's work is the single thing
+ *      that makes this kind of mail feel like surveillance; explained knowledge
+ *      reads as research. It is also simply true: that is exactly what
+ *      contacts.ts did to find this address.
+ *   2. It reacts to the *kind* of work rather than praising the person. "Perf
+ *      work is the part I like most" is a statement about the sender and cannot
+ *      be wrong; "great fix!" is a judgement on code nobody here has read, and
+ *      an engineer can tell the difference instantly.
+ *
+ * Nothing here claims to have read the diff, used the product, or understood
+ * the problem. Everything that could only be known by doing so is absent on
+ * purpose — the quoted subject is the whole of the evidence, and the opener
+ * never pretends otherwise.
+ *
+ * 'revert' has no templates and never will: opening a cold email by mentioning
+ * that somebody had to undo their own work is a bad first impression that no
+ * phrasing rescues. It falls through to no fact at all, and buildFirstDraft
+ * simply omits the paragraph.
+ */
+const FACT_TEMPLATES: Record<Exclude<CommitKind, 'revert'>, string[]> = {
+  fix: [
+    'Was going through {company}\'s public repos and ran into your fix — “{subject}”. Good catch.',
+    'Your “{subject}” fix came up while I was reading through {company}\'s repos.',
+  ],
+  feat: [
+    'Was going through {company}\'s public repos and saw you shipped “{subject}”.',
+    'Came across “{subject}” in {company}\'s public repos — looks like a real chunk of work.',
+  ],
+  perf: [
+    'Was reading {company}\'s public repos and found your “{subject}”. Performance work is the part I like reading most.',
+    'Came across “{subject}” in {company}\'s repos — perf changes are my favourite kind to read.',
+  ],
+  refactor: [
+    'Was going through {company}\'s public repos and saw “{subject}” — the sort of cleanup nobody gets thanked for.',
+    'Your “{subject}” showed up while I was reading through {company}\'s repos.',
+  ],
+  test: [
+    'Was reading {company}\'s public repos and found “{subject}” — test and harness work is badly underrated.',
+    'Came across “{subject}” in {company}\'s public repos.',
+  ],
+  infra: [
+    'Was going through {company}\'s public repos and saw “{subject}” — the thankless half of the job.',
+    'Your “{subject}” came up while I was reading through {company}\'s repos.',
+  ],
+  docs: [
+    'Was going through {company}\'s public repos and your name came up on “{subject}”.',
+    'Came across “{subject}” in {company}\'s public repos.',
+  ],
+  other: [
+    'Was going through {company}\'s public repos and your “{subject}” came up.',
+    'Came across “{subject}” in {company}\'s public repos.',
+  ],
+};
+
+/**
+ * The rendered opening line, or null when there should not be one. Pure and
+ * exported so the selftest can assert the revert rule and the kind mapping
+ * without building a whole draft.
+ */
+/**
+ * Drop a Conventional-Commits prefix before quoting. The opener already says
+ * what kind of change it was, so quoting “fix: null check in order parser”
+ * after the words "your fix" labels it twice and reads like a machine pasted a
+ * field in. A non-conventional subject is left exactly as its author wrote it.
+ */
+export function cleanSubject(subject: string): string {
+  const trimmed = subject.trim();
+  const stripped = trimmed.replace(/^[a-z]+(\([^)]*\))?!?:\s*/i, '');
+  // Never strip away the whole subject: a commit literally called "fix:" has
+  // nothing left to quote, and the raw form is better than an empty string.
+  return stripped.length >= 3 ? stripped : trimmed;
+}
+
+export function factLine(subject: string, company: string, seed: string): string | null {
+  const kind = commitKind(subject);
+  if (kind === 'revert') return null;
+  return pick(FACT_TEMPLATES[kind], seed)
+    .replace('{company}', company)
+    .replace('{subject}', cleanSubject(subject));
+}
 const SR_FACT_VERBS = ['Saw you posted', 'Noticed you opened', "Saw you're listed as the creator of"];
 const ASK_T1 = [
   'Is this req open to 0–3 yrs? y/n works.',
@@ -769,6 +913,72 @@ export async function gravatarExists(addr: string): Promise<boolean | null> {
   }
 }
 
+// ── linkedin ─────────────────────────────────────────────────────────────────
+
+/**
+ * How many connection requests the weekly list offers. LinkedIn's own invite
+ * ceiling is around 100 a week and it throttles well before that; 20 is a
+ * deliberate fraction of it, because a connection request that follows a real
+ * email to a named person is a different act from bulk connecting, and doing
+ * twenty of those properly beats doing a hundred badly.
+ */
+const LINKEDIN_WEEKLY_CAP = Number(process.env.OUTREACH_LINKEDIN_WEEKLY ?? 20);
+
+/**
+ * A LinkedIn people-SEARCH url for a name at a company — never a fetch.
+ *
+ * This project's own research (CONTACT-DISCOVERY.md §9) puts LinkedIn among the
+ * most aggressively anti-scraped sites on the web, and calls fetching it a last
+ * resort that trades an IP ban for an account ban. None of that applies to a
+ * link a human clicks in their own browser, already signed in, which is all
+ * this is: the search page, pre-filled. Nothing automated ever loads it.
+ */
+export function linkedinSearchUrl(name: string, company: string): string {
+  return `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(`${name} ${company}`)}`;
+}
+
+export interface ConnectRow {
+  addr: string;
+  name: string;
+  company: string;
+  role: string;
+  daysSinceSent: number;
+  replied: boolean;
+  searchUrl: string;
+}
+
+/**
+ * Who to send a LinkedIn request to this week.
+ *
+ * Only people already mailed (touch > 0). A connection request landing a few
+ * days after a real email about a real req is a second touch on a second
+ * channel and reads as persistence; the same request to somebody who has never
+ * heard the name is just a cold connect, which is a different play with a
+ * different hit rate and does not belong on this list.
+ *
+ * Anyone who replied sorts to the top — a reply is the best possible reason to
+ * connect, and the request will almost certainly be accepted. After that it is
+ * oldest-mailed first, so nobody ages out unnoticed. Bounced and skipped
+ * contacts never appear, and a contact drops off permanently once the request
+ * is marked sent.
+ */
+export function weeklyConnects(state: OutreachState, now: number): ConnectRow[] {
+  return Object.entries(state)
+    .filter(([, c]) => c.touch > 0 && !c.skipped && !c.bounced && !c.connectedAt && c.name)
+    .map(([addr, c]) => ({
+      addr,
+      name: c.name!,
+      company: c.company,
+      role: c.role,
+      daysSinceSent: Math.floor((now - new Date(c.sentAt[c.sentAt.length - 1] ?? 0).getTime()) / 86_400_000),
+      replied: Boolean(c.replied),
+      searchUrl: linkedinSearchUrl(c.name!, c.company),
+    }))
+    .filter((r) => Number.isFinite(r.daysSinceSent))
+    .sort((a, b) => Number(b.replied) - Number(a.replied) || b.daysSinceSent - a.daysSinceSent)
+    .slice(0, LINKEDIN_WEEKLY_CAP);
+}
+
 // ── drafts ───────────────────────────────────────────────────────────────────
 
 export interface Draft {
@@ -829,7 +1039,7 @@ export function buildFirstDraft(job: CatalogJob, author: Candidate, domainRiskBo
     author.source === 'smartrecruiters'
       ? `${pick(SR_FACT_VERBS, author.name)} this req on SmartRecruiters — figured you'd know if it's still open.`
       : author.subject
-        ? `${pick(FACT_VERBS, author.name)} — “${author.subject}”.`
+        ? (factLine(author.subject, company, author.name) ?? undefined)
         : undefined;
   const title = job.title.trim();
   // "a Associate ML Engineer" is the tell that a machine wrote the mail, which
@@ -870,7 +1080,50 @@ export function buildFirstDraft(job: CatalogJob, author: Candidate, domainRiskBo
   };
 }
 
-function buildFollowUps(state: OutreachState): Draft[] {
+/**
+ * The line a follow-up leads with, and the whole reason a follow-up is worth
+ * sending at all.
+ *
+ * OUTREACH-DESIGN.md §4 requires that every touch carry new information and
+ * explicitly forbids "bumping this" — but the code shipped
+ * "Following up on X at Y — wrote N days ago", which is exactly the mail it
+ * forbids, and it was identical across every contact, so the similarity guard
+ * then deleted most of them before they were ever seen.
+ *
+ * The new information is already sitting in the catalogue, free, no fetch:
+ * whether that specific req is still open, whether it came down, and whether
+ * the company has opened something else since. Those are three genuinely
+ * different mails, and the third one is a better mail than the first because
+ * "you have opened something closer to my band" restarts the conversation
+ * instead of repeating it.
+ *
+ * Matching is by job URL, which is stable per requisition; a company that has
+ * left the catalogue entirely falls through to the honest minimum, which still
+ * names the role and the gap rather than saying nothing.
+ */
+export function followUpLine(
+  contact: Pick<ContactState, 'company' | 'role' | 'jobUrl'>,
+  catalog: CatalogJob[],
+  daysSinceFirst: number,
+): string {
+  const mine = catalog.filter((j) => j.company.toLowerCase() === contact.company.toLowerCase());
+  const original = mine.find((j) => j.url === contact.jobUrl);
+  if (original?.closedAt) {
+    return `That ${contact.role} req at ${contact.company} came down since I wrote — anything similar opening on your side?`;
+  }
+  const newer = mine
+    .filter((j) => !j.closedAt && j.url !== contact.jobUrl)
+    .sort((a, b) => (postedAgeDays(a.postedAt) ?? 999) - (postedAgeDays(b.postedAt) ?? 999))[0];
+  if (newer) {
+    return `${contact.company} has opened a ${newer.title.trim()} since I wrote about the ${contact.role} — that one may be the closer fit.`;
+  }
+  if (original) {
+    return `That ${contact.role} req at ${contact.company} is still up, ${daysSinceFirst} days on — so I take it the search is still live.`;
+  }
+  return `Wrote ${daysSinceFirst} days ago about the ${contact.role} at ${contact.company}.`;
+}
+
+function buildFollowUps(state: OutreachState, catalog: CatalogJob[]): Draft[] {
   const now = Date.now();
   const drafts: Draft[] = [];
   for (const [addr, c] of Object.entries(state)) {
@@ -884,7 +1137,7 @@ function buildFollowUps(state: OutreachState): Draft[] {
     const body = renderBody({
       greet: 'Hi',
       first: c.firstName ?? 'there',
-      roleLine: `Following up on ${c.role} at ${c.company} — wrote ${daysSinceFirst} days ago.`,
+      roleLine: followUpLine(c, catalog, daysSinceFirst),
       ask: pick(askPool, addr),
       passAlong: PASS_ALONG[c.touch % PASS_ALONG.length]!,
     });
@@ -1046,7 +1299,10 @@ async function buildBatch(): Promise<Batch> {
   const state = await readJson<OutreachState>(STATE_PATH, {});
   let budget = DAILY_BUDGET;
 
-  const followups = buildFollowUps(state).slice(0, budget);
+  // Read once, up here: follow-ups need it to say anything new, and the
+  // first-touch selection below needs the same array.
+  const catalog = await readJson<CatalogJob[]>(CATALOG_PATH, []);
+  const followups = buildFollowUps(state, catalog).slice(0, budget);
   budget -= followups.length;
   const riskTally = domainRiskTally(state);
 
@@ -1056,7 +1312,6 @@ async function buildBatch(): Promise<Batch> {
   // human chooses when to click. Only the random lane respects weekends.
   const weekend = [0, 6].includes(new Date().getDay()) && process.env.OUTREACH_WEEKEND !== '1';
   if (budget > 0 && process.env.OUTREACH_NO_NEW !== '1') {
-    const catalog = await readJson<CatalogJob[]>(CATALOG_PATH, []);
     const pool = loadCompanyPool(catalog, state);
 
     // Select targets first (cheap, deterministic), then resolve contacts for
@@ -1200,7 +1455,27 @@ function recentRows(recent: ReturnType<typeof recentlySent>): string {
     .join('')}</table>`;
 }
 
-function page(b: Batch, recent: ReturnType<typeof recentlySent>, sentToday = 0): string {
+function connectRows(rows: ConnectRow[]): string {
+  if (rows.length === 0) return '<div class="count">nobody to connect with yet — this list fills up as you send mail</div>';
+  return `<table width="100%">${rows
+    .map(
+      (r) => `<tr>
+      <td>${esc(r.name)}${r.replied ? ' <span class="ok">replied</span>' : ''}</td>
+      <td>${esc(r.company)}</td>
+      <td style="color:#888">${r.daysSinceSent}d ago</td>
+      <td><a class="btn" href="${esc(r.searchUrl)}" target="_blank" rel="noreferrer noopener">Find on LinkedIn</a></td>
+      <td><a href="${actionUrl(`outreach/connected/${encodeURIComponent(r.addr)}`)}">mark sent</a></td>
+    </tr>`,
+    )
+    .join('')}</table>`;
+}
+
+function page(
+  b: Batch,
+  recent: ReturnType<typeof recentlySent>,
+  sentToday = 0,
+  connects: ConnectRow[] = [],
+): string {
   const all = [...b.followups, ...b.triggered, ...b.random];
   const total = all.length;
   const higherUpCount = all.filter((d) => tier(d) === 'higher-up').length;
@@ -1240,6 +1515,11 @@ ${b.haltReason ? `<div class="halt">${esc(b.haltReason)}</div>` : ''}
 <h2>follow-ups due (${b.followups.length})</h2>${b.followups.map(card).join('')}
 <h2>role just opened (${b.triggered.length})</h2>${b.triggered.map(card).join('')}
 <h2>open roles, rotating list (${b.random.length})</h2>${b.random.map(card).join('')}
+<h2>connect on LinkedIn this week (${connects.length})</h2>
+<div class="count">People you have already mailed, replies first then oldest. The button opens
+a LinkedIn <em>search</em> for that name and company — nothing here fetches LinkedIn, you
+click through and send the request yourself. Mark it sent and they drop off the list.</div>
+<div class="count">${connectRows(connects)}</div>
 <h2>in flight — delayed bounces land here (mark when the NDR arrives)</h2>
 <div class="count">${recentRows(recent)}</div>
 </body></html>`;
@@ -1265,6 +1545,8 @@ async function syncVerdicts(batch: Batch): Promise<OutreachState> {
       location: prev?.location ?? d.location,
       jobUrl: prev?.jobUrl ?? d.jobUrl,
       firstName: prev?.firstName ?? d.firstName,
+      name: prev?.name ?? d.name,
+      connectedAt: prev?.connectedAt,
       touch: prev?.touch ?? 0,
       sentAt: prev?.sentAt ?? [],
       nextDueAt: prev?.nextDueAt ?? now,
@@ -1314,6 +1596,8 @@ async function markSent(state: OutreachState, d: Draft): Promise<void> {
     location: d.location,
     jobUrl: d.jobUrl,
     firstName: d.firstName,
+    name: prev?.name ?? d.name,
+    connectedAt: prev?.connectedAt,
     touch: (prev?.touch ?? 0) + 1,
     sentAt: [...(prev?.sentAt ?? []), now],
     nextDueAt: nextDueAt(now, (prev?.touch ?? 0) + 1),
@@ -1355,6 +1639,8 @@ export async function markSentManual(state: OutreachState, addr: string): Promis
     location: prev?.location,
     jobUrl: prev?.jobUrl ?? '',
     firstName: prev?.firstName,
+    name: prev?.name,
+    connectedAt: prev?.connectedAt,
     touch,
     sentAt: [...(prev?.sentAt ?? []), now],
     nextDueAt: nextDueAt(now, touch),
@@ -1433,6 +1719,18 @@ async function serve(initial: Batch): Promise<void> {
           res.end();
           return;
         }
+      } else if (action === 'connected' && rawId) {
+        // Records that the LinkedIn request was sent, so the weekly list stops
+        // offering them. Nothing here talks to LinkedIn — the human clicked
+        // through the search link and sent it themselves.
+        const cur = st[rawId];
+        if (cur) {
+          cur.connectedAt = new Date().toISOString();
+          await saveState(st);
+        }
+        res.writeHead(302, { location: '/' });
+        res.end();
+        return;
       } else if (action === 'sent' && rawId) {
         // Same bookkeeping as clicking Gmail, minus the redirect — for a mail
         // that was written and sent by hand rather than from this page.
@@ -1457,7 +1755,7 @@ async function serve(initial: Batch): Promise<void> {
         return;
       }
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-      res.end(page(batch, recentlySent(st), sentInLast24h(st)));
+      res.end(page(batch, recentlySent(st), sentInLast24h(st), weeklyConnects(st, Date.now())));
     } catch (error) {
       res.writeHead(500, { 'content-type': 'text/plain' });
       res.end(String(error));
@@ -1512,7 +1810,11 @@ if (process.argv[1]?.endsWith('outreach.ts')) {
     const freshState = await syncVerdicts(batch);
 
     await mkdir('out/outbox', { recursive: true });
-    await writeFile(PAGE_PATH, page(batch, recentlySent(freshState), sentInLast24h(freshState)), 'utf8');
+    await writeFile(
+      PAGE_PATH,
+      page(batch, recentlySent(freshState), sentInLast24h(freshState), weeklyConnects(freshState, Date.now())),
+      'utf8',
+    );
     console.log(`static page written → ${PAGE_PATH}`);
     // Deployed mode companion: the hosted click-API needs each draft's
     // redirect targets (the Gmail/mailto URLs are computed at build time from

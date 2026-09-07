@@ -156,6 +156,21 @@ export async function GET(
   // record a mail sent by hand, without opening a compose window. The two
   // implementations have drifted apart before (the GAPS[touch - 1] off-by-one),
   // so they must gain routes together.
+  // Mirrors the connected action on the localhost server. Records that the
+  // LinkedIn request was sent so the weekly list stops offering that person;
+  // nothing here contacts LinkedIn.
+  if (action === 'connected') {
+    let known = true;
+    const { ok } = await commitState((state) => {
+      const cur = state[id];
+      if (!cur) { known = false; return; }
+      (cur as ContactState & { connectedAt?: string }).connectedAt = now;
+    });
+    if (!known) return new Response('unknown contact', { status: 404 });
+    if (!ok) return new Response('could not record - try again', { status: 409 });
+    return NextResponse.redirect(backToPage, 302);
+  }
+
   if (action === 'sent') {
     const { ok } = await commitState((state) => {
       const prev = state[id];
