@@ -97,7 +97,14 @@ if (args.includes('--push')) {
   // State first: if a later upload fails, the bookkeeping that prevents
   // double-mailing is still the thing that survived.
   await push('contacted.json', await readFile(STATE_PATH, 'utf8'));
-  await push('drafts.json', await readFile(DRAFTS_PATH, 'utf8'));
+  // A halted build (bounce gate) returns before it writes the pool, so the
+  // file can legitimately be absent. Pushing an empty array in that case would
+  // wipe the standing options in the data repo, which is the opposite of what
+  // persistence is for — so skip the push entirely and leave the stored pool
+  // alone rather than overwrite it with nothing.
+  const pool = await readFile(DRAFTS_PATH, "utf8").catch(() => null);
+  if (pool === null) console.log(`no ${DRAFTS_PATH} this run — leaving the stored pool untouched`);
+  else await push('drafts.json', pool);
   await push('batch.json', await readFile('out/outbox/batch.json', 'utf8'));
   await push('today.html', await readFile('out/outbox/today.html', 'utf8'));
 }
