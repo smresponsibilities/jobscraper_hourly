@@ -123,7 +123,7 @@ const DOMAIN_RISK_MAX_BOUNCES = Number(process.env.OUTREACH_DOMAIN_RISK_MAX ?? 2
  * while the envelope says a full name is a small mismatch the reader notices
  * before anything else in the mail.
  */
-const SIGNATURE = process.env.OUTREACH_NAME ?? 'Shivam Mahajan';
+export const SIGNATURE = process.env.OUTREACH_NAME ?? 'Shivam Mahajan';
 /**
  * Who is writing, in one line, plus the standing opt-out. Both are deliberately
  * constant across every touch (OUTREACH-DESIGN.md §3: a rotating signature is

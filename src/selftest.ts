@@ -33,6 +33,7 @@ import {
 } from './contacts.js';
 import { EventEmitter } from 'node:events';
 import { readReply } from './verify-email.js';
+import { SIGNATURE } from './outreach.js';
 import { cleanSubject, commitKind, factLine, followUpLine, linkedinSearchUrl, mergePool, poolToBatch, section, weeklyConnects } from './outreach.js';
 import { bodySimilarity, bounceGateDecision, buildFirstDraft, displayName, domainRiskTally, enforceSimilarity, isTriggered, loadCompanyPool, postedAgeDays, renderBody, touchGap, TRIGGER_WINDOW_DAYS, type CatalogJob } from './outreach.js';
 import { applyboltLookup, extractEmails, extractLeadership, packageNameCandidates, parseApplyBolt, parseDmarcRua, roleAddresses } from './contact-sources.js';
@@ -899,7 +900,9 @@ const sample = renderBody({
   passAlong: 'If this isn\'t yours, who should it go to?',
 });
 check('body carries the fact', sample.includes('partial-fill race'), true);
-check('body carries the signature', sample.includes('— SM'), true);
+// Asserted against the constant, not a hard-coded name: the default signature
+// changed once already and this check silently pinned the old value.
+check('body carries the signature', sample.includes(`— ${SIGNATURE}`), true);
 // Every mail must say who is writing and offer a way out — both were missing
 // entirely until 2026-09-07, so the recipient met an unnamed stranger quoting
 // their commit with nobody to reply to. OUTREACH-DESIGN.md §3/§7 mandate both,
