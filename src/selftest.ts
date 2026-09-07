@@ -919,6 +919,15 @@ const factlessJob: CatalogJob = {
 };
 const factless = buildFirstDraft(factlessJob, { name: 'Priya Nair', email: 'priya.nair@meesho.com', source: 'npm' });
 check('factless draft never says undefined', factless.body.includes('undefined'), false);
+// splitName() lowercases for email local parts, so the greeting used to read
+// "Hey max," on every mail this tool has ever drafted.
+check(
+  'the greeting capitalises a lowercased commit-author name',
+  buildFirstDraft(factlessJob, { name: 'max mansfield', email: 'max.mansfield@zoom.us' }).body.startsWith('Hi Max,') ||
+    buildFirstDraft(factlessJob, { name: 'max mansfield', email: 'max.mansfield@zoom.us' }).body.startsWith('Hello Max,') ||
+    buildFirstDraft(factlessJob, { name: 'max mansfield', email: 'max.mansfield@zoom.us' }).body.startsWith('Hey Max,'),
+  true,
+);
 check('factless draft claims no commit', /recent commit|your commit|your push/i.test(factless.body), false);
 // "a Analytics Engineer" is the mail-merge tell that reframes the whole message
 // as machine-written.

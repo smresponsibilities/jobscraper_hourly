@@ -807,7 +807,11 @@ function composeLinks(addr: string, subject: string, body: string) {
 
 export function buildFirstDraft(job: CatalogJob, author: Candidate, domainRiskBounces = 0): Draft {
   const company = displayName(job.company);
-  const first = splitName(author.name)?.first ?? author.name.split(/\s+/)[0]!;
+  // splitName() lowercases every part, because it exists to build email
+  // local parts. Greeting a stranger "Hey max," is a machine-generated tell
+  // on every single mail — real people capitalise a name. Verified against a
+  // real send: a draft to Max Mansfield went out addressed to "max".
+  const first = displayName(splitName(author.name)?.first ?? author.name.split(/\s+/)[0]!);
   const greet = pick(GREETINGS, author.email);
   /**
    * Only the git rung carries a commit subject. Every other rung — npm, PyPI,
