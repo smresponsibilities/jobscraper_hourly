@@ -152,6 +152,25 @@ export async function GET(
     return NextResponse.redirect(action === 'open' ? draft.gmailUrl : draft.mailtoUrl, 302);
   }
 
+  // Mirrors the 'sent' action on the localhost server in src/outreach.ts:
+  // record a mail sent by hand, without opening a compose window. The two
+  // implementations have drifted apart before (the GAPS[touch - 1] off-by-one),
+  // so they must gain routes together.
+  if (action === 'sent') {
+    const { ok } = await commitState((state) => {
+      const prev = state[id];
+      const touch = (prev?.touch ?? 0) + 1;
+      state[id] = {
+        ...prev,
+        touch,
+        sentAt: [...(prev?.sentAt ?? []), now],
+        nextDueAt: new Date(Date.now() + gapAfter(touch) * 86_400_000).toISOString(),
+      };
+    });
+    if (!ok) return new Response('could not record the send — try again', { status: 409 });
+    return NextResponse.redirect(backToPage, 302);
+  }
+
   if (action === 'replied' || action === 'skip' || action === 'bounce') {
     let known = true;
     const { ok } = await commitState((state) => {

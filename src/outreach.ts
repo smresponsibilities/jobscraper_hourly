@@ -1,7 +1,14 @@
 /**
  * Cold-reach draft generator — the human-sends-everything model.
  *
- *   npm run outreach              # build today's batch, serve localhost:7700
+ *   npm run outreach              # build the batch, write out/outbox/today.html
+ *                                 # + batch.json, cache verdicts — no server
+ *   npm run outreach -- --serve   # the same batch, served at localhost:7700
+ *
+ *   npx tsx src/outreach.ts --sent-manual addr@company.com
+ *                                 # record a mail you sent by hand, so the
+ *                                 # follow-up schedule and the 24h send cap
+ *                                 # both stay honest
  *   npm run outreach -- --print   # text-only plan, no server
  *   npm run outreach -- --static  # write out/outbox/today.html, no server
  *   npm run outreach -- --mbox    # write out/outbox/<date>/*.txt for git
@@ -52,8 +59,8 @@ import { verifyEmail, type Verdict } from './verify-email.js';
  * first bump; if a build starts taking noticeably longer than the hourly
  * cadence can absorb, that is the next thing to measure.
  */
-const RANDOM_BUDGET = Number(process.env.OUTREACH_RANDOM ?? 500);
-const TRIGGERED_BUDGET = Number(process.env.OUTREACH_TRIGGERED ?? 500);
+const RANDOM_BUDGET = Number(process.env.OUTREACH_RANDOM ?? 40);
+const TRIGGERED_BUDGET = Number(process.env.OUTREACH_TRIGGERED ?? 40);
 /**
  * Hard ceiling on total cards per build (follow-ups count toward this). Not a
  * literal per-24h counter despite the name — `buildBatch()` recomputes a
@@ -62,7 +69,24 @@ const TRIGGERED_BUDGET = Number(process.env.OUTREACH_TRIGGERED ?? 500);
  * build" now, not "per day". Must stay >= the two caps above combined or it
  * silently becomes the binding constraint instead of them.
  */
-const DAILY_BUDGET = Number(process.env.OUTREACH_DAILY ?? 1000);
+const DAILY_BUDGET = Number(process.env.OUTREACH_DAILY ?? 100);
+/**
+ * The real send ceiling, counted across state's own `sentAt` timestamps on a
+ * rolling 24h window — the way providers count, not per local midnight and not
+ * per process. Shared by the click-through server here and by outreach-send.ts,
+ * which is where this lived while the *primary* send path (a human clicking
+ * cards) had no cap at all. OUTREACH-DESIGN.md §1 sizes it: 20/day/mailbox
+ * while ramping, and a new mailbox jumping to 50/day flags within days.
+ */
+export const SEND_CAP = Number(process.env.OUTREACH_AUTO_CAP ?? 12);
+export function sentInLast24h(state: OutreachState): number {
+  const cutoff = Date.now() - 24 * 60 * 60_000;
+  let count = 0;
+  for (const entry of Object.values(state)) {
+    for (const iso of entry.sentAt ?? []) if (new Date(iso).getTime() >= cutoff) count++;
+  }
+  return count;
+}
 /**
  * A role younger than this puts its company in the triggered lane. Widened
  * 7→21 on 2026-09-02 after measuring the real pool directly against the live
@@ -95,6 +119,30 @@ const VERDICT_TTL_DAYS = 14;
  */
 const DOMAIN_RISK_MAX_BOUNCES = Number(process.env.OUTREACH_DOMAIN_RISK_MAX ?? 2);
 const SIGNATURE = process.env.OUTREACH_NAME ?? 'SM';
+/**
+ * Who is writing, in one line, plus the standing opt-out. Both are deliberately
+ * constant across every touch (OUTREACH-DESIGN.md §3: a rotating signature is
+ * its own tell; §7: the opt-out is the etiquette baseline that keeps a sending
+ * domain off blocklists).
+ *
+ * They exist because the rendered mail previously never said who was writing or
+ * what they wanted. An unnamed stranger quoting your commit and telling you
+ * about your own employer's job posting reads as a scraper, and leaves nobody
+ * to reply to — the most expensive omission in the whole template. Both are
+ * env-overridable; `--check` warns while OUTREACH_NAME is still the default.
+ */
+const IDENTITY =
+  process.env.OUTREACH_IDENTITY ??
+  'Final-semester BE CSE, graduating Aug 2026 — looking at 0–3 yr roles.';
+const OPT_OUT = process.env.OUTREACH_OPT_OUT ?? 'Tell me to stop and I will.';
+/**
+ * Which signed-in Gmail the compose link opens as. The default '0' is whatever
+ * account the browser happens to consider first, which on a machine signed into
+ * the alert inbox means the first cold mail goes out from the address the whole
+ * ramp exists to protect — invisibly, and only discoverable afterwards by
+ * reading Sent Mail. Set it to the outreach account's index or full address.
+ */
+const GMAIL_USER = process.env.OUTREACH_GMAIL_USER ?? '0';
 const PORT = Number(process.env.OUTREACH_PORT ?? 7700);
 /**
  * Deployed mode: when set (e.g. "https://site.vercel.app/api"), card buttons
@@ -153,7 +201,7 @@ export interface ContactState {
 }
 export type OutreachState = Record<string, ContactState>;
 
-interface CatalogJob {
+export interface CatalogJob {
   id: string;
   title: string;
   company: string;
@@ -297,7 +345,7 @@ export interface BodyInput {
 export function renderBody(o: BodyInput): string {
   const lines = [`${o.greet} ${o.first},`, ''];
   if (o.fact) lines.push(`${o.fact}`, '');
-  lines.push(o.roleLine, '', o.ask, '', o.passAlong, '', `— ${SIGNATURE}`);
+  lines.push(o.roleLine, '', IDENTITY, '', o.ask, '', o.passAlong, '', `— ${SIGNATURE}`, OPT_OUT);
   return lines.join('\n');
 }
 
@@ -310,7 +358,7 @@ const GREETINGS = ['Hi', 'Hello', 'Hey'];
 const FACT_VERBS = ['Saw your recent commit', 'Came across your commit', 'Noticed your push'];
 const SR_FACT_VERBS = ['Saw you posted', 'Noticed you opened', "Saw you're listed as the creator of"];
 const ASK_T1 = [
-  'Is this req open to my experience band? y/n works.',
+  'Is this req open to 0–3 yrs? y/n works.',
   'Should I apply through the portal, or is there someone better to send this to?',
   'Is it open to early-career folks? One word helps.',
 ];
@@ -320,6 +368,8 @@ const ASK_T2 = [
 ];
 const ASK_T3 = [
   "Last nudge from me — if it's filled or off-target, a 'no' closes the loop and I won't write again.",
+  'Closing this out on my side — worth keeping in touch for the next one, or should I stop writing?',
+  "One line either way and I'll stop bothering you: still hiring for this, or not?",
 ];
 const PASS_ALONG = [
   'Not you? Happy if you point me right.',
@@ -342,7 +392,7 @@ interface CompanyTarget {
   lane: 'triggered' | 'random';
 }
 
-function loadCompanyPool(catalog: CatalogJob[], state: OutreachState): CompanyTarget[] {
+export function loadCompanyPool(catalog: CatalogJob[], state: OutreachState): CompanyTarget[] {
   const byCompany = new Map<string, CatalogJob>();
   for (const job of catalog) {
     if (job.closedAt) continue;
@@ -352,9 +402,23 @@ function loadCompanyPool(catalog: CatalogJob[], state: OutreachState): CompanyTa
       byCompany.set(key, job);
     }
   }
+  /**
+   * Keyed on an actual send (touch > 0), not on mere presence in the state
+   * file. syncVerdicts() writes an entry for every draft it merely *renders* —
+   * that is what caches the SMTP verdict — so keying on presence meant one
+   * hourly `--static` build permanently excluded every company it displayed,
+   * having sent nothing. Two or three builds and the pool was empty forever:
+   * the feature would have died before its first email. It also matches what
+   * OUTREACH-DESIGN.md §6 actually specifies ("dedupe is by address only, a
+   * company may re-enter the pool for each new job opening").
+   *
+   * A skipped-but-never-mailed contact deliberately does NOT retire its
+   * company — "wrong person" is not "wrong company". The address itself stays
+   * retired, in buildBatch below.
+   */
   const contactedCompanies = new Set(
     Object.values(state)
-      .filter((c) => !c.skipped)
+      .filter((c) => c.touch > 0)
       .map((c) => c.company.toLowerCase()),
   );
   return [...byCompany.values()]
@@ -438,11 +502,40 @@ async function resolveRecipients(
   // Org candidates in priority order: what the sweep verified → the
   // company's own ATS token (often IS the tenant/org slug) → the job-id
   // token hint → the raw name itself (covers tenant-named catalogues).
+/**
+ * 75.1% of the 12,988 companies swept produced no domain at all, and
+ * COLDMAIL-PLAN.md §5 calls widening these candidates "the biggest single
+ * lever by a wide margin" — until now only the sweep's org, the ATS token,
+ * the job-id token and the raw name were ever tried. Orgs are named after
+ * companies with a small, closed set of decorations: a hyphenated or
+ * collapsed multi-word name, or one of a handful of suffixes.
+ *
+ * Ordering matters more than length: the first three candidates are the only
+ * ones actually attempted (see the slice at the call site), so evidence-backed
+ * names stay in front and these guesses only fill empty slots behind them.
+ */
+function orgNameVariants(name: string): string[] {
+  const bare = name.replace(/[^a-z0-9 -]/gi, '').trim().toLowerCase();
+  if (!bare) return [];
+  const collapsed = bare.replace(/[\s-]+/g, '');
+  const hyphenated = bare.replace(/\s+/g, '-');
+  const stem = collapsed.replace(/(inc|llc|ltd|limited|corp|technologies|technology|labs|software)$/, '');
+  return [
+    collapsed,
+    hyphenated,
+    ...['-inc', '-io', '-hq', '-labs', '-eng', '-oss', '-tech', '-dev'].map((sfx) => stem + sfx),
+  ];
+}
+
   const orgCandidates = [
     ...new Set(
-      [entry?.org ?? null, known?.token ?? null, tokenHint.replace(/[^a-z0-9-]/gi, '').toLowerCase() || null, key].filter(
-        (c): c is string => Boolean(c && c.length >= 2),
-      ),
+      [
+        entry?.org ?? null,
+        known?.token ?? null,
+        tokenHint.replace(/[^a-z0-9-]/gi, '').toLowerCase() || null,
+        key,
+        ...orgNameVariants(company),
+      ].filter((c): c is string => Boolean(c && c.length >= 2)),
     ),
   ];
 
@@ -560,8 +653,18 @@ async function resolveRecipients(
         ...py,
         ...mvn,
         ...web.map((w) => ({ name: displayName(w.email.split('@')[0] ?? ''), email: w.email })),
+        // COLDMAIL-PLAN.md §4: first.last is 47.7% of B2B addresses and a bare
+        // first@ is another 26.8% — emitting only the first guess threw away a
+        // quarter of the reachable cases, and missed mononym names entirely
+        // (applyPattern('first.last') returns null when there is no surname).
+        // Both go through the same SMTP-verify funnel, which is what decides.
         ...lead
-          .map((l) => ({ name: l.name, email: applyPattern('first.last', l.name, known!.token) }))
+          .flatMap((l) =>
+            (['first.last', 'first'] as const).map((pattern) => ({
+              name: l.name,
+              email: applyPattern(pattern, l.name, known!.token),
+            })),
+          )
           .filter((c): c is { name: string; email: string } => c.email !== null),
       ];
       if (alt.length === 0) {
@@ -697,23 +800,43 @@ export interface Draft {
 function composeLinks(addr: string, subject: string, body: string) {
   const q = (s: string) => encodeURIComponent(s);
   return {
-    gmailUrl: `https://mail.google.com/mail/?view=cm&fs=1&to=${q(addr)}&su=${q(subject)}&body=${q(body)}`,
+    gmailUrl: `https://mail.google.com/mail/u/${encodeURIComponent(GMAIL_USER)}/?view=cm&fs=1&to=${q(addr)}&su=${q(subject)}&body=${q(body)}`,
     mailtoUrl: `mailto:${addr}?subject=${q(subject)}&body=${q(body)}`,
   };
 }
 
-function buildFirstDraft(job: CatalogJob, author: Candidate, domainRiskBounces = 0): Draft {
+export function buildFirstDraft(job: CatalogJob, author: Candidate, domainRiskBounces = 0): Draft {
   const company = displayName(job.company);
   const first = splitName(author.name)?.first ?? author.name.split(/\s+/)[0]!;
   const greet = pick(GREETINGS, author.email);
+  /**
+   * Only the git rung carries a commit subject. Every other rung — npm, PyPI,
+   * Maven, the website scan, the leadership page — has none, and the old
+   * unconditional template rendered the majority of first touches opening with
+   * `Saw your recent commit — “undefined”.`: a broken mail-merge claiming a
+   * commit the recipient never made, sent to a CEO or a package maintainer.
+   * renderBody drops the paragraph cleanly when there is no fact.
+   *
+   * OUTREACH-DESIGN.md §4's stricter rule is "no fact, no mail" — skip the
+   * candidate outright. That is a targeting change, not a rendering one; this
+   * is the rendering half.
+   */
   const fact =
     author.source === 'smartrecruiters'
       ? `${pick(SR_FACT_VERBS, author.name)} this req on SmartRecruiters — figured you'd know if it's still open.`
-      : `${pick(FACT_VERBS, author.name)} — “${author.subject}”.`;
-  const loc = job.location ? ` in ${job.location}` : '';
+      : author.subject
+        ? `${pick(FACT_VERBS, author.name)} — “${author.subject}”.`
+        : undefined;
+  const title = job.title.trim();
+  // "a Associate ML Engineer" is the tell that a machine wrote the mail, which
+  // retroactively reframes the commit quote from flattering to creepy.
+  const article = /^[aeiou]/i.test(title) ? 'an' : 'a';
+  // Locations arrive already-phrased ("Remote - India", "Bengaluru, KA"), so
+  // they read as an apposition rather than as "in Remote - India".
+  const loc = job.location ? ` — ${job.location}` : '';
   const exp = experienceLabel(job.minYears ?? null, job.maxYears ?? null);
   const ask = pick(ASK_T1, author.email + job.id);
-  const roleLine = `${company} just opened a ${job.title.trim()}${loc}.${exp ? ` Band listed: ${exp}.` : ''}`;
+  const roleLine = `${company} just opened ${article} ${title}${loc}.${exp ? ` Band listed: ${exp}.` : ''}`;
   const body = renderBody({ greet, first, fact, roleLine, ask, passAlong: pick(PASS_ALONG, author.name) });
   const subject = pick(
     [`quick question re: ${job.title.toLowerCase().slice(0, 40)}`, `${company} ${job.title.toLowerCase().slice(0, 30)} — open?`],
@@ -761,7 +884,11 @@ function buildFollowUps(state: OutreachState): Draft[] {
       ask: pick(askPool, addr),
       passAlong: PASS_ALONG[c.touch % PASS_ALONG.length]!,
     });
-    const subject = `re: ${c.subject}`;
+    // Not `re: <original>`. The Gmail compose link cannot thread onto the
+    // earlier message, so a "re:" prefix is a thread that does not exist — a
+    // recognised content signal, and a small deception the moment the reader
+    // checks. An honest subject that names the same req does the same job.
+    const subject = `${c.role.toLowerCase().slice(0, 40)} at ${c.company} — still open?`;
     drafts.push({
       id: addr,
       addr,
@@ -816,6 +943,8 @@ export interface Batch {
   followups: Draft[];
   random: Draft[];
   triggered: Draft[];
+  /** Set when the bounce gate stopped this build — rendered on the page. */
+  haltReason?: string;
 }
 
 // ── bounce gate ──────────────────────────────────────────────────────────────
@@ -889,20 +1018,27 @@ export function bounceGateDecision(contacts: GateInput[], now: number): GateDeci
   return { halt: false, reason: `ok (${pct(windowBounces, windowSends)} window · ${pct(lifeBounces, lifeSends)} lifetime)` };
 }
 
-async function bounceGate(): Promise<boolean> {
+/**
+ * Returns the halting decision rather than a bare boolean so the reason can
+ * reach the review page. A halted build renders as an empty batch, which is
+ * indistinguishable from "nothing to send today" unless the page says why —
+ * and the one moment this fires is the moment the user most needs to know.
+ */
+async function bounceGate(): Promise<GateDecision> {
   const state = await readJson<OutreachState>(STATE_PATH, {});
   const decision = bounceGateDecision(Object.values(state), Date.now());
-  if (!decision.halt) return false;
+  if (!decision.halt) return decision;
   if (process.env.OUTREACH_IGNORE_BOUNCE === '1') {
     console.warn(`${decision.reason} — BYPASSED via OUTREACH_IGNORE_BOUNCE`);
-    return false;
+    return { halt: false, reason: decision.reason };
   }
   console.warn(decision.reason);
-  return true;
+  return decision;
 }
 
 async function buildBatch(): Promise<Batch> {
-  if (await bounceGate()) return { followups: [], random: [], triggered: [] };
+  const gate = await bounceGate();
+  if (gate.halt) return { followups: [], random: [], triggered: [], haltReason: gate.reason };
   const state = await readJson<OutreachState>(STATE_PATH, {});
   let budget = DAILY_BUDGET;
 
@@ -953,7 +1089,10 @@ async function buildBatch(): Promise<Batch> {
       const cap = Math.min(target.lane === 'triggered' ? TRIGGERED_BUDGET : RANDOM_BUDGET, DAILY_BUDGET);
       for (const author of recipients) {
         if (budget <= 0 || laneArr.length >= cap) break;
-        if (state[author.email]) continue;
+        // Same rule as loadCompanyPool: a drafted address is not a spent
+        // one. Only a real send or an explicit skip retires it.
+        const priorContact = state[author.email];
+        if (priorContact && (priorContact.touch > 0 || priorContact.skipped)) continue;
         const domain = author.email.split('@')[1]?.toLowerCase() ?? '';
         const priorBounces = riskTally.get(domain) ?? 0;
         if (priorBounces >= DOMAIN_RISK_MAX_BOUNCES) {
@@ -967,7 +1106,14 @@ async function buildBatch(): Promise<Batch> {
   }
 
   const all = [...followups, ...random, ...triggered];
-  const { kept } = enforceSimilarity(all);
+  const { kept, dropped } = enforceSimilarity(all);
+  // Silently deleting drafts hides the case that matters most: follow-ups are
+  // where COLDMAIL-PLAN.md §2 puts 42% of replies, and they are the drafts most
+  // likely to collide with each other because their bodies vary least.
+  if (dropped.length > 0) {
+    const fu = dropped.filter((d) => d.kind === 'followup').length;
+    console.log(`similarity guard dropped ${dropped.length} near-twin draft(s) (${fu} follow-up(s))`);
+  }
   const keepIds = new Set(kept.map((d) => d.id));
   const filterLane = (arr: Draft[]) => arr.filter((d) => keepIds.has(d.id));
   return { followups: filterLane(followups), random: filterLane(random), triggered: filterLane(triggered) };
@@ -977,6 +1123,13 @@ async function buildBatch(): Promise<Batch> {
 
 const esc = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+/** `leadershipContacts()`-sourced drafts (CEO/founder/CTO-tier) get their own
+ *  tab — see `tier()` below. Everything else (git/npm/pypi/maven/website/
+ *  SmartRecruiters) is "simple": a peer-level engineer or role mailbox. */
+function tier(d: Draft): 'higher-up' | 'simple' {
+  return d.source === 'leadership' ? 'higher-up' : 'simple';
+}
 
 function card(d: Draft): string {
   const badges = [
@@ -990,9 +1143,10 @@ function card(d: Draft): string {
   ]
     .filter(Boolean)
     .join(' ');
-  return `<div class="card" id="c-${esc(d.id)}">
+  return `<div class="card" id="c-${esc(d.id)}" data-tier="${tier(d)}">
   <div class="head"><b>${esc(d.company)}</b> · ${esc(d.role)} · touch ${d.touch + 1} · ${d.lane}
     ${d.kind === 'followup' && d.overdueDays > 0 ? `<span class="late">${d.overdueDays}d overdue</span>` : ''}
+    ${tier(d) === 'higher-up' ? '<span class="warn">higher-up — unverified guess, see CONTACT-DISCOVERY.md §4b</span>' : ''}
     ${badges}
   </div>
   <div class="to">to: ${esc(d.addr)}</div>
@@ -1000,6 +1154,7 @@ function card(d: Draft): string {
   <div class="btns">
     <a class="btn primary" href="${actionUrl(`outreach/open/${encodeURIComponent(d.id)}`)}">Open in Gmail</a>
     <a class="btn" href="${actionUrl(`outreach/mailapp/${encodeURIComponent(d.id)}`)}">Mail app</a>
+    <a class="btn ghost" href="${actionUrl(`outreach/sent/${encodeURIComponent(d.id)}`)}">Sent by hand</a>
     <a class="btn ghost" href="${actionUrl(`outreach/replied/${encodeURIComponent(d.id)}`)}">Replied</a>
     <a class="btn ghost" href="${actionUrl(`outreach/bounce/${encodeURIComponent(d.id)}`)}">Bounced</a>
     <a class="btn ghost" href="${actionUrl(`outreach/skip/${encodeURIComponent(d.id)}`)}">Skip</a>
@@ -1022,7 +1177,13 @@ export function recentlySent(
     }))
     .filter((r) => Number.isFinite(r.daysAgo) && r.daysAgo >= 0 && Date.now() - r.daysAgo * 86_400_000 >= cutoff)
     .sort((a, b) => a.daysAgo - b.daysAgo)
-    .slice(0, 12);
+    // Not 12. Touch gaps are [0,4,9,16] days and COLDMAIL-PLAN.md §2 puts most
+    // positive replies on the third-to-fifth touch, so a reply routinely lands
+    // days after its send — with a 12-row cap those rows are all from today and
+    // the person who replied on day 5 has nothing to click. The 21-day cutoff
+    // above already bounds this; at a 20/day ramp it is a few hundred rows of
+    // plain table.
+    .slice(0, 200);
 }
 
 function recentRows(recent: ReturnType<typeof recentlySent>): string {
@@ -1030,13 +1191,16 @@ function recentRows(recent: ReturnType<typeof recentlySent>): string {
   return `<table width="100%">${recent
     .map(
       (r) => `<tr><td>${esc(r.addr)}</td><td>${esc(r.company)}</td><td>${r.daysAgo}d ago</td>
-    <td><a href="/bounce/${encodeURIComponent(r.addr)}">mark bounced</a> · <a href="/replied/${encodeURIComponent(r.addr)}">replied</a></td></tr>`,
+    <td><a href="${actionUrl(`outreach/bounce/${encodeURIComponent(r.addr)}`)}">mark bounced</a> · <a href="${actionUrl(`outreach/replied/${encodeURIComponent(r.addr)}`)}">replied</a></td></tr>`,
     )
     .join('')}</table>`;
 }
 
-function page(b: Batch, recent: ReturnType<typeof recentlySent>): string {
-  const total = b.followups.length + b.random.length + b.triggered.length;
+function page(b: Batch, recent: ReturnType<typeof recentlySent>, sentToday = 0): string {
+  const all = [...b.followups, ...b.triggered, ...b.random];
+  const total = all.length;
+  const higherUpCount = all.filter((d) => tier(d) === 'higher-up').length;
+  const simpleCount = total - higherUpCount;
   return `<!doctype html><html><head><meta charset="utf-8"><title>outreach — ${daySeed()}</title><style>
 body{font-family:ui-monospace,monospace;background:#111;color:#ddd;max-width:780px;margin:24px auto;padding:0 12px}
 h1{font-size:18px}.count{color:#666;font-size:12px;margin-bottom:4px}
@@ -1044,13 +1208,31 @@ h2{font-size:13px;color:#9ab;margin-top:28px;text-transform:uppercase;letter-spa
 .card{border:1px solid #333;border-radius:8px;padding:12px;margin-bottom:14px;background:#181818}
 .head{color:#fff;margin-bottom:4px}.to{color:#888;font-size:12px;margin-bottom:8px}
 pre{white-space:pre-wrap;font-size:13px;line-height:1.45;color:#ccc;border-left:3px solid #2a4a2a;padding-left:10px}
+.halt{border:1px solid #a33;background:#2a1414;color:#f99;padding:10px 12px;border-radius:8px;margin:10px 0}
 .late{color:#f66}.ok{color:#7dcf95;font-size:11px;margin-left:6px}.warn{color:#e0b050;font-size:11px;margin-left:6px}
 .btns{margin-top:10px;display:flex;gap:8px;flex-wrap:wrap}
 .btn{padding:5px 12px;border-radius:6px;background:#26364a;color:#cfe3ff;text-decoration:none;font-size:13px}
 .primary{background:#1a4a2e;color:#bfe8c8}.ghost{background:#222;color:#777}
-a.refresh{color:#569;font-size:12px}</style></head><body>
+a.refresh{color:#569;font-size:12px}
+.tabs{display:flex;gap:8px;margin:14px 0}
+.tab{padding:6px 14px;border-radius:999px;border:1px solid #333;background:#181818;color:#999;font-size:13px;cursor:pointer}
+.tab.active{background:#26364a;color:#cfe3ff;border-color:#3a5a86}
+/* Default view is "simple" — the higher-up tier is a fallback for when the
+   regular ladder finds nobody, and its addresses are unverified guesses
+   (see CONTACT-DISCOVERY.md §4b), so it should never be the first thing
+   shown. body[data-view] flips which tier's cards are visible. */
+body[data-view="simple"] .card[data-tier="higher-up"]{display:none}
+body[data-view="higher-up"] .card[data-tier="simple"]{display:none}
+</style></head>
+<body data-view="simple">
 <h1>outreach — ${daySeed()}</h1>
+${b.haltReason ? `<div class="halt">${esc(b.haltReason)}</div>` : ''}
+<div class="count">${sentToday}/${SEND_CAP} sent in the last 24h${sentToday >= SEND_CAP ? ' — at cap, the send buttons are disabled' : ''} · sending as Gmail account <b>${esc(GMAIL_USER)}</b></div>
 <div class="count">${b.followups.length} follow-ups + ${b.triggered.length} role-triggered + ${b.random.length} random = <b>${total}</b> clicks today · <a class="refresh" href="/refresh">↻ rebuild</a></div>
+<div class="tabs">
+  <button class="tab active" id="tab-simple" onclick="document.body.dataset.view='simple';document.getElementById('tab-simple').classList.add('active');document.getElementById('tab-higher-up').classList.remove('active')">Simple (${simpleCount})</button>
+  <button class="tab" id="tab-higher-up" onclick="document.body.dataset.view='higher-up';document.getElementById('tab-higher-up').classList.add('active');document.getElementById('tab-simple').classList.remove('active')">Higher-ups (${higherUpCount})</button>
+</div>
 <h2>follow-ups due (${b.followups.length})</h2>${b.followups.map(card).join('')}
 <h2>role just opened (${b.triggered.length})</h2>${b.triggered.map(card).join('')}
 <h2>open roles, rotating list (${b.random.length})</h2>${b.random.map(card).join('')}
@@ -1144,6 +1326,50 @@ async function markSent(state: OutreachState, d: Draft): Promise<void> {
   await saveState(state);
 }
 
+/**
+ * Record a send the tool did not perform: a mail composed by hand in Gmail, a
+ * reply typed straight into a thread, anything sent outside the review page.
+ *
+ * Without this the state file only ever learns about clicks, so a hand-sent
+ * mail leaves the contact at touch 0 — they stay in the pool, get re-drafted,
+ * and eventually get the same opening line twice. It also silently
+ * under-counts the rolling 24h send window that the cap depends on, which is
+ * the failure that lets a genuinely enthusiastic day cross the behavioural
+ * line while every counter still reads zero.
+ *
+ * Designed as `--sent-manual <addr>` in OUTREACH-DESIGN.md §5 and never built
+ * until now. Works whether or not the address was ever drafted: an unknown
+ * address gets a minimal record so its follow-ups still schedule.
+ */
+export async function markSentManual(state: OutreachState, addr: string): Promise<ContactState> {
+  const now = new Date().toISOString();
+  const prev = state[addr];
+  const touch = (prev?.touch ?? 0) + 1;
+  const entry: ContactState = {
+    company: prev?.company ?? '(recorded by hand)',
+    role: prev?.role ?? '',
+    location: prev?.location,
+    jobUrl: prev?.jobUrl ?? '',
+    firstName: prev?.firstName,
+    touch,
+    sentAt: [...(prev?.sentAt ?? []), now],
+    nextDueAt: nextDueAt(now, touch),
+    fact: prev?.fact,
+    subject: prev?.subject ?? '',
+    verdict: prev?.verdict,
+    verifiedAt: prev?.verifiedAt,
+    gravatar: prev?.gravatar,
+    replied: prev?.replied,
+    skipped: prev?.skipped,
+    bounced: prev?.bounced,
+    bouncedAt: prev?.bouncedAt,
+    source: prev?.source,
+  };
+  state[addr] = entry;
+  await saveState(state);
+  return entry;
+}
+
 async function flag(
   state: OutreachState,
   id: string,
@@ -1188,6 +1414,14 @@ async function serve(initial: Batch): Promise<void> {
     try {
       const st = await readJson<OutreachState>(STATE_PATH, {});
       if ((action === 'open' || action === 'mailapp') && rawId) {
+        // Counted on a rolling 24h window across the whole state file, the way
+        // providers count — not per process, not per local midnight.
+        const already = sentInLast24h(st);
+        if (already >= SEND_CAP) {
+          res.writeHead(429, { 'content-type': 'text/plain; charset=utf-8' });
+          res.end(`${already}/${SEND_CAP} already sent in the last 24h. Wait for the window to roll, or raise OUTREACH_AUTO_CAP deliberately.`);
+          return;
+        }
         const d = take(rawId);
         if (d) {
           await markSent(st, d);
@@ -1195,6 +1429,14 @@ async function serve(initial: Batch): Promise<void> {
           res.end();
           return;
         }
+      } else if (action === 'sent' && rawId) {
+        // Same bookkeeping as clicking Gmail, minus the redirect — for a mail
+        // that was written and sent by hand rather than from this page.
+        take(rawId);
+        await markSentManual(st, rawId);
+        res.writeHead(302, { location: '/' });
+        res.end();
+        return;
       } else if (action === 'replied' || action === 'skip' || action === 'bounce') {
         // Works for in-flight addresses even after their card left the page —
         // delayed NDRs arrive days later; the state file outlives the batch.
@@ -1211,7 +1453,7 @@ async function serve(initial: Batch): Promise<void> {
         return;
       }
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-      res.end(page(batch, recentlySent(st)));
+      res.end(page(batch, recentlySent(st), sentInLast24h(st)));
     } catch (error) {
       res.writeHead(500, { 'content-type': 'text/plain' });
       res.end(String(error));
@@ -1232,6 +1474,22 @@ async function serve(initial: Batch): Promise<void> {
 const args = process.argv.slice(2);
 
 if (process.argv[1]?.endsWith('outreach.ts')) {
+  // Before the lock and before any build: recording a hand-sent mail is a
+  // one-line state edit, not a batch build, and must work while a served
+  // instance is running.
+  const manualIdx = args.indexOf('--sent-manual');
+  if (manualIdx !== -1) {
+    const addr = args[manualIdx + 1];
+    if (!addr || !addr.includes('@')) {
+      console.error('usage: npx tsx src/outreach.ts --sent-manual someone@company.com');
+      process.exit(1);
+    }
+    const st = await readJson<OutreachState>(STATE_PATH, {});
+    const entry = await markSentManual(st, addr);
+    console.log('recorded touch ' + entry.touch + ' to ' + addr + '; next follow-up due ' + entry.nextDueAt.slice(0, 10));
+    process.exit(0);
+  }
+
   if (!(await acquireLock())) process.exit(1);
 
   const batch = await buildBatch();
@@ -1250,7 +1508,7 @@ if (process.argv[1]?.endsWith('outreach.ts')) {
     const freshState = await syncVerdicts(batch);
 
     await mkdir('out/outbox', { recursive: true });
-    await writeFile(PAGE_PATH, page(batch, recentlySent(freshState)), 'utf8');
+    await writeFile(PAGE_PATH, page(batch, recentlySent(freshState), sentInLast24h(freshState)), 'utf8');
     console.log(`static page written → ${PAGE_PATH}`);
     // Deployed mode companion: the hosted click-API needs each draft's
     // redirect targets (the Gmail/mailto URLs are computed at build time from

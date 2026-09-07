@@ -44,3 +44,15 @@ state/yc-*.txt
 # it adds churn without adding information, and companies.json is the record
 # of what it actually resolved to.
 state/oj-*.txt
+state/outreach.pid
+.claude/skills/wonder-pill/
+.agents/skills/wonder-pill/
+
+# Per-run state, same class as seen.json above: restored and saved through the
+# Actions cache by hunt.yml, never through git. These five were simply never
+# added to the list, so a local run left them showing as untracked additions.
+state/outage.json
+state/host-stats.json
+state/reposts.json
+state/board-volumes.json
+state/volume-drops.json

@@ -40,22 +40,17 @@
 import { spawnSync } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { readJson } from './state.js';
-import { nextDueAt, STATE_PATH, type OutreachState } from './outreach.js';
+import { nextDueAt, sentInLast24h, SEND_CAP, STATE_PATH, type OutreachState } from './outreach.js';
 
-const DAILY_CAP = Number(process.env.OUTREACH_AUTO_CAP ?? 12);
+/**
+ * One cap, one counter, shared with the click-through server in outreach.ts —
+ * they draw on the same 24h window, so two copies could each believe they had
+ * a full allowance. Both moved there when the served page gained a cap of its
+ * own; this file keeps the name it always used.
+ */
+const DAILY_CAP = SEND_CAP;
 const SEND_DELAY_MS = Number(process.env.OUTREACH_SEND_DELAY_MS ?? 3_000);
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-function sentInLast24h(state: OutreachState): number {
-  const cutoff = Date.now() - 24 * 60 * 60_000;
-  let count = 0;
-  for (const entry of Object.values(state)) {
-    for (const iso of entry.sentAt) {
-      if (new Date(iso).getTime() >= cutoff) count++;
-    }
-  }
-  return count;
-}
 
 interface ManifestEntry {
   addr: string;

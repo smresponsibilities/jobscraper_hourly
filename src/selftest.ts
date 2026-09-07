@@ -10,6 +10,7 @@ import { place as teamtailorPlace } from './fetchers/teamtailor.js';
 import { place as breezyPlace } from './fetchers/breezy.js';
 import { parsePositions, place as personioPlace } from './fetchers/personio.js';
 import { normalizeLocation, pageCount, parsePortal } from './fetchers/icims.js';
+import { locationColumns, parseRows as parseTaleoRows } from './fetchers/taleo.js';
 import { isPlaceholderLocation, parsePostedOn, parseRobotsSites } from './fetchers/workday.js';
 import { refreshedPostedAt } from './catalog.js';
 import { boardKey, NO_ADAPTER, parseBoardUrl } from './board-url.js';
@@ -30,7 +31,9 @@ import {
   isTrivialCommit,
   factScore,
 } from './contacts.js';
-import { bodySimilarity, bounceGateDecision, displayName, domainRiskTally, isTriggered, postedAgeDays, renderBody, touchGap, TRIGGER_WINDOW_DAYS } from './outreach.js';
+import { EventEmitter } from 'node:events';
+import { readReply } from './verify-email.js';
+import { bodySimilarity, bounceGateDecision, buildFirstDraft, displayName, domainRiskTally, enforceSimilarity, isTriggered, loadCompanyPool, postedAgeDays, renderBody, touchGap, TRIGGER_WINDOW_DAYS, type CatalogJob } from './outreach.js';
 import { applyboltLookup, extractEmails, extractLeadership, packageNameCandidates, parseApplyBolt, parseDmarcRua, roleAddresses } from './contact-sources.js';
 import { controlAddress, mxProvider, rejectionIsMeaningful } from './verify-email.js';
 import type { BoardState, Company, Industry, RawJob } from './types.js';
@@ -896,6 +899,109 @@ const sample = renderBody({
 });
 check('body carries the fact', sample.includes('partial-fill race'), true);
 check('body carries the signature', sample.includes('— SM'), true);
+// Every mail must say who is writing and offer a way out — both were missing
+// entirely until 2026-09-07, so the recipient met an unnamed stranger quoting
+// their commit with nobody to reply to. OUTREACH-DESIGN.md §3/§7 mandate both,
+// constant across every touch.
+check('body identifies the sender', sample.includes('BE CSE'), true);
+check('body carries the opt-out', sample.includes('Tell me to stop'), true);
+
+// The fact line is git-only. Every other rung of the ladder (npm, PyPI, Maven,
+// website, leadership) has no commit subject, and the unconditional template
+// opened those mails with `Saw your recent commit — "undefined".` — a broken
+// merge claiming a commit the recipient never made.
+const factlessJob: CatalogJob = {
+  id: 'greenhouse:acme:1',
+  title: 'Analytics Engineer',
+  company: 'meesho',
+  location: 'Bengaluru',
+  url: 'https://example.com/job/1',
+};
+const factless = buildFirstDraft(factlessJob, { name: 'Priya Nair', email: 'priya.nair@meesho.com', source: 'npm' });
+check('factless draft never says undefined', factless.body.includes('undefined'), false);
+check('factless draft claims no commit', /recent commit|your commit|your push/i.test(factless.body), false);
+// "a Analytics Engineer" is the mail-merge tell that reframes the whole message
+// as machine-written.
+check('article agrees with a vowel-initial title', factless.body.includes('an Analytics Engineer'), true);
+check(
+  'article agrees with a consonant-initial title',
+  buildFirstDraft({ ...factlessJob, title: 'Software Engineer I' }, { name: 'Priya Nair', email: 'priya.nair@meesho.com' }).body.includes(
+    'a Software Engineer I',
+  ),
+  true,
+);
+
+// The similarity guard's real threshold is 0.8, not the 0.6 this suite used to
+// assert — so the same-company twin case its own comment claimed to protect
+// was scoring 0.750 and shipping. Both numbers below are measured, not chosen.
+check('same-company twins are actually blocked', enforceSimilarity([{ body: twinA }, { body: twinB }]).kept.length, 1);
+check('cross-company bodies survive the guard', bodySimilarity(twinA, sample) < 0.8, true);
+
+// A merely-drafted contact is not a mailed one. syncVerdicts() writes an entry
+// for every card it renders, so keying dedup on presence made one hourly build
+// exclude every company it displayed — permanently, with nothing sent.
+const poolJobs: CatalogJob[] = [
+  { id: 'greenhouse:acme:1', title: 'SDE II', company: 'Acme', url: 'https://x/1' },
+  { id: 'greenhouse:globex:1', title: 'SDE I', company: 'Globex', url: 'https://x/2' },
+];
+const contactState = (company: string, touch: number, skipped = false) => ({
+  company,
+  role: 'x',
+  jobUrl: '',
+  touch,
+  sentAt: touch > 0 ? ['2026-09-01T00:00:00Z'] : [],
+  nextDueAt: '',
+  subject: 's',
+  skipped,
+});
+const named = (jobs: ReturnType<typeof loadCompanyPool>) => jobs.map((t) => t.company).sort().join(',');
+check(
+  'a drafted-but-unsent contact keeps its company in the pool',
+  named(loadCompanyPool(poolJobs, { 'a@acme.com': contactState('Acme', 0) })),
+  'Acme,Globex',
+);
+check(
+  'an actually-mailed contact retires its company',
+  named(loadCompanyPool(poolJobs, { 'a@acme.com': contactState('Acme', 1) })),
+  'Globex',
+);
+// "Wrong person" is not "wrong company" — skipping a contact must not burn the
+// employer, only that address.
+check(
+  'skipping a contact does not retire its company',
+  named(loadCompanyPool(poolJobs, { 'a@acme.com': contactState('Acme', 0, true) })),
+  'Acme,Globex',
+);
+
+
+console.log('smtp reply reading');
+// A mail server that hangs up mid-conversation emits 'close' with no 'error'
+// and no final reply line. readReply() used to listen for data and error only,
+// so the promise never settled; with the socket gone nothing held the event
+// loop open and node exited 13 with no stack at all. That took down 5 of 8
+// hourly outreach builds. Rejecting is the honest outcome — verifyEmail()
+// turns a thrown probe into `unknown`.
+{
+  const fake = new EventEmitter() as unknown as Parameters<typeof readReply>[0];
+  const pending = readReply(fake);
+  (fake as unknown as EventEmitter).emit('close');
+  const settled = await pending.then(
+    () => 'resolved',
+    (e: Error) => `rejected: ${e.message}`,
+  );
+  check('a mid-reply hangup rejects instead of hanging forever', settled, 'rejected: connection closed before a complete reply');
+}
+{
+  // The normal path must still work: a complete final line resolves, and a
+  // multi-line 220- continuation must not be read as the answer.
+  const fake = new EventEmitter() as unknown as Parameters<typeof readReply>[0];
+  const pending = readReply(fake);
+  const CRLF = String.fromCharCode(13, 10);
+  (fake as unknown as EventEmitter).emit('data', Buffer.from('250-PIPELINING' + CRLF));
+  (fake as unknown as EventEmitter).emit('data', Buffer.from('250 OK' + CRLF));
+  const reply = await pending;
+  check('a complete reply still resolves', `${reply.code} ${reply.text}`, '250 OK');
+}
 
 console.log('outreach lane gating');
 // Workday's relative strings must land in the triggered lane, not parse as null.
@@ -1298,6 +1404,77 @@ check('a real personio board resolves', parseBoardUrl('https://acme.jobs.personi
 check('personio .com is the same platform', parseBoardUrl('https://acme.jobs.personio.com/')?.ats, 'personio');
 check('the vendor marketing host is rejected', parseBoardUrl('https://www.teamtailor.com/en/'), null);
 check('the vendor app host is rejected', parseBoardUrl('https://app.breezy.hr/signin'), null);
+
+
+console.log('taleo business edition parsing')
+// TBE lets each tenant choose its result columns, and they genuinely differ:
+// `Title | Department | Work Location | Search Country`, `Title | City |
+// State/Territory | ZIP`, and `Title | Job Category` (no location at all) are
+// all real, from a six-tenant sample. Reading a fixed column as the location
+// would give one board a department, another a ZIP code, and a third nothing.
+// Column 0 is always the title, so a label at column N is the row's Nth-1 div.
+const TALEO_SORT = (labels: string[]) =>
+  labels.map((label, i) => `<option value="https://x/ats/careers/v2/searchResults?org=X&cws=1&act=sort&sortColumn=${i}">${label}</option>`).join('\n');
+
+// The two halves compose, so they are checked together: a column list is only
+// correct if it lands on the right field of a real row.
+const taleoLocation = (labels: string[], row: string) => parseTaleoRows(row, locationColumns(TALEO_SORT(labels)))[0]?.location;
+
+const TALEO_ROWS = `<div class="oracletaleocwsv2-accordion-head-info">
+<h4 class="oracletaleocwsv2-head-title"><a href="https://phg.tbe.taleo.net/phg02/ats/careers/v2/viewRequisition?org=ACME&cws=52&rid=8041" class="viewJobLink">Software Engineer &amp; Analyst</a></h4>
+<div tabindex="0" >Engineering</div>
+<div tabindex="0" >Bengaluru, India</div>
+<div tabindex="0" >India, United States</div>
+</div>`;
+const taleoJobs = parseTaleoRows(TALEO_ROWS, [1]);
+check('a row yields one job', taleoJobs.length, 1);
+check('the requisition id comes from the rid parameter', taleoJobs[0]?.externalId, '8041');
+check('the title is entity-decoded', taleoJobs[0]?.title, 'Software Engineer & Analyst');
+check('the location comes from the chosen column', taleoJobs[0]?.location, 'Bengaluru, India');
+check('an India board clears the gate', locationMatches(taleoJobs[0]?.location ?? ''), true);
+// The same row parsed with the department column selected is what a fixed
+// column index would have produced on a tenant laid out differently.
+check('a wrong column would have read a department as the location', parseTaleoRows(TALEO_ROWS, [0])[0]?.location, 'Engineering');
+check('a row with no location column parses rather than being dropped', parseTaleoRows(TALEO_ROWS, [])[0]?.title, 'Software Engineer & Analyst');
+
+check(
+  'a Work Location column is read as the location',
+  taleoLocation(['Title', 'Department', 'Work Location', 'Search Country'], TALEO_ROWS),
+  'Bengaluru, India',
+);
+// The third column here is a country *list* — every country a role can be
+// applied from, six of them on one CARE USA posting based in Manila. Folding
+// that into the location puts a foreign role into an India-only alert the
+// moment such a list mentions India, so a country column is a fallback only.
+check(
+  'a country list never overrides a real location column',
+  taleoLocation(['Title', 'Work Location', 'Search Country'], TALEO_ROWS.replace('<div tabindex="0" >Engineering</div>\n', '')),
+  'Bengaluru, India',
+);
+check(
+  'city and state are joined when the tenant has no Location column',
+  taleoLocation(['Title', 'City', 'State/Territory', 'ZIP/Postal code'], TALEO_ROWS),
+  'Bengaluru, India, India, United States',
+);
+check(
+  'a tenant with no location column yields an empty location, not a department',
+  taleoLocation(['Title', 'Job Category', 'Job Type'], TALEO_ROWS),
+  '',
+);
+check(
+  'a country column is used when nothing better exists',
+  taleoLocation(['Title', 'Job Category', 'Job Type', 'Country'], TALEO_ROWS),
+  'India, United States',
+);
+
+// Only Business Edition is covered. The org code is the whole identity: the pod
+// in the path is routing (any pod 302s to the tenant's own) and `cws` comes
+// back from that redirect, so neither is stored.
+check('a TBE board resolves to its org code', parseBoardUrl('https://phg.tbe.taleo.net/phg02/ats/careers/v2/searchResults?org=CAREUSA&cws=52')?.token, 'CAREUSA');
+check('and to the taleo adapter', parseBoardUrl('https://phe.tbe.taleo.net/phe01/ats/careers/v2/searchResults?org=ACTIONLINK&cws=1')?.ats, 'taleo');
+// Enterprise Taleo is a different product that `taleo.ts` cannot read. It must
+// resolve to null rather than be imported as a board that can never be fetched.
+check('enterprise Taleo careersection is not mistaken for TBE', parseBoardUrl('https://acme.taleo.net/careersection/ex/jobsearch.ftl'), null);
 
 
 console.log('bulk-import CSV field splitting')
