@@ -29,7 +29,8 @@ export type Ats =
   | 'teamtailor'
   | 'breezy'
   | 'personio'
-  | 'ukg';
+  | 'ukg'
+  | 'taleo';
 
 /**
  * Industry drives which seniority vocabulary applies. This is not cosmetic:

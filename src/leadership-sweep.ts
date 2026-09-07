@@ -5,8 +5,10 @@
  *   npm run leadership-sweep              # resumes where the last run stopped
  *   npm run leadership-sweep -- --limit 300
  *   npm run leadership-sweep -- --report  # re-print the tally, fetch nothing
+ *   npm run leadership-sweep -- --yc          # sweep the YC directory instead
+ *   npm run leadership-sweep -- --yc India    # ...filtered to one region
  *
- * Three confidence tiers, in the order tried:
+ * Four confidence tiers, in the order tried:
  *
  *   verified — the company's own ATS token IS its real hostname (phenom,
  *              icims, zohorecruit, successfactors). Same set outreach.ts's
@@ -16,6 +18,11 @@
  *              this company's domain from real GitHub commit authors. A
  *              different source than the ATS token, but still evidence, not
  *              a guess.
+ *   yc       — `--yc` mode only: the domain is YC's own listed `website`
+ *              field for that company, straight from their directory. Real
+ *              evidence, not a guess, but a separate pool from companies.json
+ *              (most YC-stage companies aren't tracked job boards here), so
+ *              it gets its own tier rather than overloading `verified`.
  *   guessed  — no evidence either way; `{slug}.com` from the company name.
  *              This is the tier that can misattribute an unrelated
  *              company's leadership page. Kept separate in the output on
@@ -31,6 +38,7 @@ import { writeFile, mkdir } from 'node:fs/promises';
 import { leadershipContacts, type LeadershipContact } from './contact-sources.js';
 import { loadCompanies, readJson } from './state.js';
 import { HOSTNAME_ATS } from './outreach.js';
+import { fetchYCCompanies } from './yc-directory.js';
 
 const SWEEP_PATH = 'state/leadership-sweep.json';
 const CONTACT_SWEEP_PATH = 'state/contact-sweep.json';
@@ -40,7 +48,8 @@ const CONTACT_SWEEP_PATH = 'state/contact-sweep.json';
 const CONCURRENCY = 8;
 const SAVE_EVERY = 25;
 
-type Tier = 'verified' | 'swept' | 'guessed';
+type Tier = 'verified' | 'swept' | 'yc' | 'guessed';
+const TIERS: Tier[] = ['verified', 'swept', 'yc', 'guessed'];
 
 export interface LeadershipSweepResult {
   domain: string | null;
@@ -49,6 +58,12 @@ export interface LeadershipSweepResult {
 }
 
 type Sweep = Record<string, LeadershipSweepResult>;
+
+interface SweepTask {
+  key: string;
+  domain: string;
+  tier: Tier;
+}
 
 /** Same suffix list as contacts-sweep.ts's orgCandidates, for the same reason:
  *  a legal-entity suffix in the company name is never part of its domain. */
@@ -72,8 +87,8 @@ function resolveDomain(
 
 function report(sweep: Sweep): void {
   const results = Object.entries(sweep);
-  const byTier = { verified: 0, swept: 0, guessed: 0 } as Record<Tier, number>;
-  const hitsByTier = { verified: 0, swept: 0, guessed: 0 } as Record<Tier, number>;
+  const byTier = { verified: 0, swept: 0, yc: 0, guessed: 0 } as Record<Tier, number>;
+  const hitsByTier = { verified: 0, swept: 0, yc: 0, guessed: 0 } as Record<Tier, number>;
   let totalContacts = 0;
 
   for (const [, r] of results) {
@@ -88,7 +103,7 @@ function report(sweep: Sweep): void {
   const pct = (n: number, of: number) => (of === 0 ? '0.0' : ((n / of) * 100).toFixed(1));
 
   console.log(`\n=== leadership sweep: ${results.length} companies swept ===`);
-  for (const tier of ['verified', 'swept', 'guessed'] as Tier[]) {
+  for (const tier of TIERS) {
     console.log(
       `${tier.padEnd(10)} ${String(byTier[tier]).padStart(6)} companies, ` +
         `${hitsByTier[tier]} with a contact found (${pct(hitsByTier[tier], byTier[tier])}%)`,
@@ -109,6 +124,10 @@ function report(sweep: Sweep): void {
 const args = process.argv.slice(2);
 const limitFlag = args.indexOf('--limit');
 const limit = limitFlag === -1 ? Infinity : Number(args[limitFlag + 1]);
+const ycFlag = args.indexOf('--yc');
+// `--yc` alone sweeps the whole directory; `--yc India` (any bare word right
+// after it, not another flag) narrows to one of Algolia's region facets.
+const ycRegion = ycFlag !== -1 && args[ycFlag + 1] && !args[ycFlag + 1]!.startsWith('--') ? args[ycFlag + 1] : undefined;
 
 const sweep = await readJson<Sweep>(SWEEP_PATH, {});
 
@@ -117,20 +136,35 @@ if (args.includes('--report')) {
   process.exit(0);
 }
 
-const contactSweepRaw = await readJson<Record<string, { domain: string | null; matched: boolean }>>(
-  CONTACT_SWEEP_PATH,
-  {},
-);
-const contactSweep = Object.fromEntries(
-  Object.entries(contactSweepRaw).map(([name, v]) => [name.toLowerCase(), v]),
-);
+let tasks: SweepTask[];
+if (ycFlag !== -1) {
+  const ycCompanies = await fetchYCCompanies({ region: ycRegion, activeOnly: true });
+  console.log(`YC directory: ${ycCompanies.length} active companies${ycRegion ? ` in ${ycRegion}` : ''}`);
+  tasks = ycCompanies.map((c) => {
+    let domain: string;
+    try {
+      domain = new URL(c.website.startsWith('http') ? c.website : `https://${c.website}`).hostname;
+    } catch {
+      domain = guessDomain(c.name);
+    }
+    return { key: `yc:${c.name}`, domain, tier: 'yc' };
+  });
+} else {
+  const contactSweepRaw = await readJson<Record<string, { domain: string | null; matched: boolean }>>(
+    CONTACT_SWEEP_PATH,
+    {},
+  );
+  const contactSweep = Object.fromEntries(
+    Object.entries(contactSweepRaw).map(([name, v]) => [name.toLowerCase(), v]),
+  );
+  const companies = await loadCompanies();
+  // Deduplicate by name: one company can have several boards, and would
+  // otherwise be swept once per board for the same answer.
+  const uniqueCompanies = [...new Map(companies.map((c) => [c.name, c])).values()];
+  tasks = uniqueCompanies.map((c) => ({ key: c.name, ...resolveDomain(c, contactSweep) }));
+}
 
-const companies = await loadCompanies();
-// Deduplicate by name: one company can have several boards, and would
-// otherwise be swept once per board for the same answer.
-const pending = [...new Map(companies.map((c) => [c.name, c])).values()]
-  .filter((c) => !(c.name in sweep))
-  .slice(0, limit === Infinity ? undefined : limit);
+const pending = tasks.filter((t) => !(t.key in sweep)).slice(0, limit === Infinity ? undefined : limit);
 
 console.log(`${Object.keys(sweep).length} already swept, ${pending.length} to go`);
 
@@ -146,22 +180,22 @@ const save = async (): Promise<void> => {
 
 const worker = async (): Promise<void> => {
   for (;;) {
-    const company = queue.shift();
-    if (!company) return;
+    const task = queue.shift();
+    if (!task) return;
+    const { key, domain, tier } = task;
     try {
-      const { domain, tier } = resolveDomain(company, contactSweep);
       const contacts = await leadershipContacts(domain);
-      sweep[company.name] = { domain, tier, contacts };
+      sweep[key] = { domain, tier, contacts };
       if (contacts.length > 0) {
         hits++;
         console.log(
-          `  ${company.name.slice(0, 28).padEnd(30)} [${tier}] ${domain}: ` +
+          `  ${key.slice(0, 28).padEnd(30)} [${tier}] ${domain}: ` +
             contacts.map((c) => `${c.name} (${c.title})`).join('; '),
         );
       }
     } catch (error) {
-      sweep[company.name] = { domain: null, tier: null, contacts: [] };
-      console.log(`  ! ${company.name}: ${(error as Error).message}`);
+      sweep[key] = { domain: null, tier: null, contacts: [] };
+      console.log(`  ! ${key}: ${(error as Error).message}`);
     }
     done++;
     if (done % SAVE_EVERY === 0) {

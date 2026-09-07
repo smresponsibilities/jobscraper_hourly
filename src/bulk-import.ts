@@ -86,6 +86,7 @@ const IMPORTABLE: Ats[] = [
   'eightfold',
   'ukg',
   'icims',
+  'taleo',
 ];
 
 /**

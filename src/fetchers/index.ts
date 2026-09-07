@@ -30,6 +30,7 @@ import * as teamtailor from './teamtailor.js';
 import * as breezy from './breezy.js';
 import * as personio from './personio.js';
 import * as ukg from './ukg.js';
+import * as taleo from './taleo.js';
 
 export interface Fetcher {
   list(company: Company): Promise<RawJob[]>;
@@ -69,4 +70,5 @@ export const FETCHERS: Record<Ats, Fetcher> = {
   breezy,
   personio,
   ukg,
+  taleo,
 };

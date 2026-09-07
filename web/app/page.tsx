@@ -218,24 +218,25 @@ function JobRow({
 }
 
 /**
- * Open the outreach batch page.
- *
- * The key is asked for once and kept in localStorage rather than compiled into
- * this page: the site is public, so anything in the bundle is public too, and
- * the outreach batch is keyed by real people's addresses. Prompting keeps the
- * secret on the one device that needs it.
+ * Ask for the outreach key once and remember it in localStorage rather than
+ * compiling it into the page: the site is public, so anything in the bundle
+ * is public too, and the outreach batch is keyed by real people's addresses.
+ * Returns the key on success, null if the prompt was cancelled.
  */
-function openOutreach() {
-  const stored = window.localStorage.getItem('outreachKey');
-  const key = stored ?? window.prompt('Outreach key (asked once, then remembered on this device)');
-  if (!key) return;
-  if (!stored) window.localStorage.setItem('outreachKey', key);
-  window.open(`/api/outreach/page?k=${encodeURIComponent(key)}`, '_blank', 'noopener');
+function requestOutreachKey(): string | null {
+  const key = window.prompt('Outreach key (asked once, then remembered on this device)');
+  if (!key) return null;
+  window.localStorage.setItem('outreachKey', key);
+  return key;
 }
 
 export default function Page() {
   const [jobs, setJobs] = useState<Job[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Top-level Jobs/Outreach switch — not to be confused with the per-day
+  // browsing tabs below, which live entirely inside the Jobs view.
+  const [view, setView] = useState<'jobs' | 'outreach'>('jobs');
+  const [outreachKey, setOutreachKey] = useState<string | null>(null);
 
   const [query, setQuery] = useState('');
   const [maxYears, setMaxYears] = useState(3);
@@ -313,6 +314,7 @@ export default function Page() {
     setSavedIds(loadIdSet(SAVED_KEY));
     setAppliedIds(loadIdSet(APPLIED_KEY));
     setExclude(localStorage.getItem(EXCLUDE_KEY) ?? '');
+    setOutreachKey(localStorage.getItem('outreachKey'));
   }, []);
 
   const markOpened = (id: string) =>
@@ -422,9 +424,26 @@ export default function Page() {
       <header>
         <div className="header-row">
           <h1>Job Radar</h1>
-          <button className="chip outreach-link" onClick={openOutreach} title="Today's cold-email batch">
-            Outreach batch
-          </button>
+          <nav className="tabs">
+            <button className="chip" data-on={view === 'jobs'} onClick={() => setView('jobs')}>
+              Jobs
+            </button>
+            <button
+              className="chip"
+              data-on={view === 'outreach'}
+              title="Today's cold-email batch"
+              onClick={() => {
+                if (!outreachKey) {
+                  const key = requestOutreachKey();
+                  if (!key) return;
+                  setOutreachKey(key);
+                }
+                setView('outreach');
+              }}
+            >
+              Outreach
+            </button>
+          </nav>
         </div>
         <p>
           Fresher and entry-level roles in India and remote, read straight from company ATS
@@ -432,6 +451,8 @@ export default function Page() {
         </p>
       </header>
 
+      {view === 'jobs' && (
+      <>
       <section className="controls panel">
         <div className="row">
           <input
@@ -628,6 +649,34 @@ export default function Page() {
       )}
 
       <AddCompany />
+      </>
+      )}
+
+      {view === 'outreach' && (
+        <section className="panel outreach-panel">
+          {outreachKey ? (
+            <iframe
+              key={outreachKey}
+              src={`/api/outreach/page?k=${encodeURIComponent(outreachKey)}`}
+              title="Outreach batch"
+              className="outreach-frame"
+            />
+          ) : (
+            <div className="outreach-locked">
+              <p>Outreach key needed to load today&rsquo;s batch.</p>
+              <button
+                className="chip"
+                onClick={() => {
+                  const key = requestOutreachKey();
+                  if (key) setOutreachKey(key);
+                }}
+              >
+                Enter key
+              </button>
+            </div>
+          )}
+        </section>
+      )}
 
       <footer>
         Data and source on <a href={REPO_URL}>GitHub</a>. Apply on the company link — direct

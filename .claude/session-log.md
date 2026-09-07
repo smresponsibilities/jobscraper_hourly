@@ -71,3 +71,25 @@
 - 2026-09-02T14:17:59Z session ended, HEAD: 6f64a50 Merge remote-tracking branch 'origin/main'
 - 2026-09-02T14:33:14Z session ended, HEAD: 6f64a50 Merge remote-tracking branch 'origin/main'
 - 2026-09-02T14:40:41Z session ended, HEAD: 6f64a50 Merge remote-tracking branch 'origin/main'
+- 2026-09-02T14:55:45Z session ended, HEAD: 8d47bd0 Merge branch 'main' of https://github.com/smresponsibilities/jobscraper_hourly
+- 2026-09-02T16:28:19Z session ended, HEAD: 8d47bd0 Merge branch 'main' of https://github.com/smresponsibilities/jobscraper_hourly
+- 2026-09-02T16:28:57Z session ended, HEAD: 8d47bd0 Merge branch 'main' of https://github.com/smresponsibilities/jobscraper_hourly
+- 2026-09-02T16:43:26Z session ended, HEAD: 8d47bd0 Merge branch 'main' of https://github.com/smresponsibilities/jobscraper_hourly
+- 2026-09-02T16:43:54Z session ended, HEAD: 8d47bd0 Merge branch 'main' of https://github.com/smresponsibilities/jobscraper_hourly
+- 2026-09-03T06:36:04Z session ended, HEAD: 8d47bd0 Merge branch 'main' of https://github.com/smresponsibilities/jobscraper_hourly
+- 2026-09-03T06:36:46Z session ended, HEAD: 8d47bd0 Merge branch 'main' of https://github.com/smresponsibilities/jobscraper_hourly
+- 2026-09-03T06:52:02Z session ended, HEAD: 8d47bd0 Merge branch 'main' of https://github.com/smresponsibilities/jobscraper_hourly
+- 2026-09-03T08:32:30Z session ended, HEAD: 8d47bd0 Merge branch 'main' of https://github.com/smresponsibilities/jobscraper_hourly
+- 2026-09-03T15:19:44Z session ended, HEAD: 3085ef5 refactor: make board roster identity site-aware
+- 2026-09-04T09:00:19Z session ended, HEAD: bbd5917 docs: record open-jobs absorption plan as fully complete (phases 1-9)
+- 2026-09-04T11:28:41Z session ended, HEAD: a76a4c0 docs: reference open-jobs' unevaluated ranking techniques and the unrelated resume-matching item
+- 2026-09-04T11:46:24Z session ended, HEAD: 59cf4b9 docs: bring README/ARCHITECTURE/ADDING-COMPANIES up to current reality
+- 2026-09-04T13:28:26Z session ended, HEAD: 49d27c6 feat: SmartRecruiters requisition-creator contact capture + outreach batch sender
+- 2026-09-04T18:13:33Z session ended, HEAD: 2765015 docs: record the Workday detail-endpoint bug and its real-world impact
+- 2026-09-04T18:28:19Z session ended, HEAD: 2765015 docs: record the Workday detail-endpoint bug and its real-world impact
+- 2026-09-04T18:55:51Z session ended, HEAD: 2765015 docs: record the Workday detail-endpoint bug and its real-world impact
+- 2026-09-06T07:55:44Z session ended, HEAD: 2765015 docs: record the Workday detail-endpoint bug and its real-world impact
+- 2026-09-06T13:30:40Z session ended, HEAD: bd7c059 feat: read open-jobs' slugs.json as a second tenant source
+- 2026-09-06T13:46:51Z session ended, HEAD: 796c664 docs: npm run -- does not pass flags through PowerShell
+- 2026-09-06T20:01:42Z session ended, HEAD: 0b668e9 feat: read modern iCIMS portals, not just legacy /api/jobs tenants
+- 2026-09-07T07:40:11Z session ended, HEAD: 0b668e9 feat: read modern iCIMS portals, not just legacy /api/jobs tenants

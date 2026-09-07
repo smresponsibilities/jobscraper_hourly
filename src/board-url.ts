@@ -23,6 +23,13 @@ export const HOSTED: { ats: Ats; pattern: RegExp }[] = [
   { ats: 'teamtailor', pattern: /([a-z0-9-]+)\.teamtailor\.com/i },
   { ats: 'breezy', pattern: /([a-z0-9-]+)\.breezy\.hr/i },
   { ats: 'personio', pattern: /([a-z0-9-]+)\.jobs\.personio\.(?:de|com)/i },
+  // Taleo Business Edition only. The `org` code is the whole board identity —
+  // the pod in the path is routing (any pod serves any org and 302s to the
+  // right one) and `cws` is filled in by that redirect. Enterprise Taleo's
+  // `careersection` boards are a different product entirely and `taleo.ts`
+  // cannot read them; they resolve to null here rather than being imported as
+  // boards that could never be fetched.
+  { ats: 'taleo', pattern: /tbe\.taleo\.net\/[^"'\s]*?[?&]org=([A-Za-z0-9_-]+)/i },
 ];
 
 /**
@@ -44,12 +51,28 @@ export const HOSTED: { ats: Ats; pattern: RegExp }[] = [
  *
  * Keka now resolves automatically — its token is a bare subdomain, so it is in
  * `HOSTED` above. iCIMS cannot: it keeps the whole hostname as its token.
+ *
+ * Taleo left this list when `taleo.ts` shipped. Only Business Edition
+ * (`tbe.taleo.net`) is covered; enterprise Taleo's `careersection` boards stay
+ * unreachable, but they cannot be named here — the check below tests for the
+ * platform name as a substring, so listing them would read as "taleo is
+ * unsupported" while an adapter exists, which is the exact staleness this
+ * regex has twice been guilty of.
  */
 export const NO_ADAPTER =
-  /jobvite\.com|taleo\.net|ultipro\.com|csod\.com|bamboohr\.com|applytojob\.com|comeet\.co|dayforcehcm\.com|ats\.rippling\.com/i;
+  /jobvite\.com|csod\.com|bamboohr\.com|applytojob\.com|comeet\.co|dayforcehcm\.com|ats\.rippling\.com/i;
 
+/**
+ * UKG moved here from `NO_ADAPTER` when `taleo.ts` was wired in — `ukg.ts` has
+ * worked since the day it shipped, but the platform's domain (`ultipro.com`)
+ * shares no substring with its `FETCHERS` key (`ukg`), so the staleness check
+ * below could not see it and every UKG board a scan found was reported
+ * unsupported. It needs the manual bucket rather than `HOSTED`: the board GUID
+ * in `recruiting.ultipro.com/{tenant}/JobBoard/{guid}` is a second required
+ * field that no single capture group on a careers page supplies.
+ */
 export const NEEDS_MANUAL_EXTRACTION =
-  /darwinbox\.[a-z]+|turbohire\.co|successfactors\.[a-z]+|phenompeople\.com|icims\.com/i;
+  /darwinbox\.[a-z]+|turbohire\.co|successfactors\.[a-z]+|phenompeople\.com|icims\.com|ultipro\.com/i;
 
 export const WORKDAY =
   /https?:\/\/([a-z0-9-]+)\.(wd\d+)\.myworkdayjobs\.com\/(?:(?:[a-z]{2}-[A-Za-z]{2})\/)?([A-Za-z0-9_-]+)/i;
