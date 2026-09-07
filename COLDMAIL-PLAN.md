@@ -10,6 +10,100 @@ Actually composing and sending the first real cold email — and the
 domain-age/mailbox-warmup ramp below — has not started. The rest of this doc
 is the design, the measured constraints, and the open decisions.
 
+---
+
+## SUPERSEDED — read this before anything below (2026-09-07)
+
+Most of the quantitative claims in this document came from cold-email vendor
+blogs: companies selling sequencers and mailbox fleets to B2B sales teams
+pushing hundreds of messages a day. That is not this project's situation — a
+student sending a couple of dozen genuinely personal 1:1 letters — and a
+from-scratch re-check against primary sources killed several of those numbers
+outright. The original text is left in place below because the reasoning it
+drove is still worth reading; these corrections override it.
+
+**KILLED — "500 a day through the browser, only 100 a day over SMTP."** Google's
+own consumer sending-limits page states exactly one number, and draws no
+distinction between the web interface and SMTP:
+
+> more than 500 recipients in a single email and or more than 500 emails sent
+> in a day
+
+(<https://support.google.com/mail/answer/22839>, fetched 2026-09-07.) The same
+page says the consequence is temporary — "you should be able to send emails
+again within 1 to 24 hours" — not suspension. The 100/day figure is a Google
+*Workspace* per-message recipient rule for paid accounts, misapplied. Since the
+review page's normal path is a human clicking a pre-filled Gmail compose window,
+no SMTP limit was ever going to apply to it anyway.
+
+**UNSUPPORTED — "roughly 20/hour" and "new accounts are capped lower."** No
+Google document states either. Both are folklore. Do not architect a sending
+cadence around them.
+
+**KILLED for this project's volume — the 6-8 week domain-age gate.** Google's
+bulk-sender requirements (enforced DMARC, spam-rate policing) activate at
+**5,000 messages a day**, roughly 200x this project's steady state. The
+domain-age clock solves a warmup problem that a 20/day sender never has. This
+is the correction with the largest practical consequence: it removes the only
+6-8 week calendar dependency in the entire plan.
+
+**UNSUPPORTED — "a @gmail.com From address is structurally weak."** No primary
+source was found in either direction. Microsoft's own Bulk Complaint Level
+documentation scores sending *pattern* and complaint history rather than
+sender-domain class, so a genuine 1:1 message rates BCL 0 whether it comes from
+gmail.com or from a purchased domain. The reverse consideration also went
+unexamined here: a brand-new domain carries *no* reputation, while gmail.com
+carries an enormous established one, so for a sender with no history the
+freemail address plausibly starts ahead rather than behind. Career-services
+guidance consistently flags unprofessional local parts (birth years, nicknames),
+never the domain itself.
+
+**Sending-identity decision, revised.** A second free Gmail under the sender's
+real name (`firstname.lastname@gmail.com`), created the same day, never the
+account that receives the hourly job alerts. No domain purchase, no warmup
+wait, no ramp gated on calendar time. `OUTREACH_GMAIL_USER` in `outreach.ts`
+pins the compose links to that account so a click cannot fire from the wrong
+inbox. A still-valid university address is a legitimate free parallel channel
+— already aged, and it signals exactly what the sender is — but it carries a
+graduation expiry, so ongoing threads should not be anchored to it.
+
+**Volume, revised.** The ramp below is retained, but its *justification*
+changes: it is a self-imposed quality gate, not a provider limit. At 20 sends a
+day a single stale address is a 5% bounce rate for that day, and human review
+throughput binds long before Google does. 8/day in week one, 12-15 in week two,
+18-20 in week three, 20-25 at steady state.
+
+**DOWNGRADED — every reply-rate figure in this document.** The 3.43% baseline,
+the 15-25% trigger-event band and the "42% of replies come from follow-ups"
+multiplier all trace to cold-email vendors publishing their own telemetry
+(Instantly, Saleshandy and similar). They may well be true; they are not
+independent evidence. More seriously: **no independent measurement of
+candidate-to-employer cold email reply rates exists anywhere.** Published
+figures for that exact claim range from 3.4% to 87% across sites, all of them
+selling something. Plan against 3-5% as a deliberately pessimistic guess and
+replace it with a measured number after the first ~40 sends.
+
+**ADDED — the channel-ranking this document never checked.** Cold email is not
+the fastest channel for a new grad. Referrals convert at roughly 40%
+interview-rate against ~3% for cold inbound (Ashby, aggregated ATS data), and
+referrals are about 2% of applicants but 11% of hires (CareerPlug, ~10M
+applications). Those are ATS-vendor operational aggregates, a materially better
+evidence class than the cold-email marketing above. The honest conclusion is
+that this pipeline should run *alongside* warm-tie referral asks and direct
+internship-platform applications, not instead of them.
+
+**Realistic timeline, stated plainly.** At the revised ramp and a 3-5% reply
+rate: roughly 100-125 first touches a week at steady state, 4-6 replies a week,
+about 1-1.5 interview-track conversations a week. Banking three such
+conversations is therefore a **6-9 week** path from a standing start, including
+the three-week ramp — not a two-week one.
+
+Full working, sources and the open-source tooling survey behind these
+corrections: `OSS-LEAD-TOOLING.md`.
+
+---
+
+
 ## 1. What the ApplyBolt LinkedIn email finder actually does
 
 Tested live on 2026-08-21 against https://www.applybolt.app/linkedin-email-finder.
@@ -157,8 +251,10 @@ step whose *output* gets committed, and the CI workflow only sends.
 Five hundred companies "bi-daily" is somewhere between 250 and 1,000 messages a
 day depending on which reading is meant. Against that:
 
-- **A free Gmail account allows 500 messages a day through the browser but
-  only 100 a day over SMTP.** That distinction matters more than any other
+- **[KILLED 2026-09-07 — see the superseding section at the top. Google
+  publishes one number, 500/day, with no web-versus-SMTP distinction.]** ~~A
+  free Gmail account allows 500 messages a day through the browser but only
+  100 a day over SMTP.~~ That distinction matters more than any other
   number here, because a GitHub Actions workflow can only send over SMTP —
   so the free-Gmail ceiling for this project is 100/day, not 500. Practical
   limits on new accounts are lower still, commonly 100–200/day, and Gmail
@@ -199,6 +295,11 @@ Those are the mechanical ceilings, and they are **not** the binding constraint.
   working product in order to power a speculative new one.
 
 #### Why not just use the Gmail account
+
+> **Reversed 2026-09-07.** The freemail-penalty claim below has no primary
+> source, and the revised decision is to send from a second free Gmail under
+> the sender's real name. Read the superseding section at the top of this file
+> before acting on anything in this subsection.
 
 Beyond the suspension risk to the alert inbox, a `@gmail.com` From address is
 structurally weak for this specific job. There is no domain reputation to

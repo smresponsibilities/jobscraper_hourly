@@ -277,6 +277,48 @@ still no SLA, wire behind a retry adapter if used. Full method ladder with all
 measurements and dates: **`CONTACT-DISCOVERY.md`** — read that before touching
 any contact-discovery code.
 
+## Cold outreach — the research was re-done from scratch and several numbers died (2026-09-07)
+
+Read `COLDMAIL-PLAN.md`'s superseding section at the top before acting on
+anything in that file or in `OUTREACH-DESIGN.md`. The short version, because
+it changes what to do rather than just what to believe:
+
+- **The 6-8 week domain-age clock is gone.** Google enforces bulk-sender
+  requirements at 5,000 messages a day, ~200x this project's steady state. No
+  domain gets bought. Send from a second free Gmail under the real name,
+  pinned via `OUTREACH_GMAIL_USER`, never the alert-receiving account. That
+  removes the only calendar dependency the plan had.
+- **"500/browser, 100/SMTP" was never real.** Google publishes one number,
+  500/day, with no method distinction, and a breach is a 1-24 hour hold rather
+  than a suspension. "20/hour" and "new accounts are throttled" have no Google
+  source at all. The send ramp is now justified as a self-imposed quality gate
+  (8/12-15/18-20/20-25 by week), not as a provider limit.
+- **Every reply-rate number in these docs is vendor telemetry**, and no
+  independent measurement of candidate-to-employer cold email exists anywhere —
+  published figures for that one claim span 3.4% to 87%. Plan at 3-5% and
+  replace it with a real number after ~40 sends.
+- **Cold email is not the fastest channel for a new grad** (referrals: ~40%
+  interview rate vs ~3% cold, per Ashby; 2% of applicants but 11% of hires, per
+  CareerPlug). Run this pipeline alongside warm-tie asks and internship
+  platforms, not instead of them.
+
+Also this session, in `src/outreach.ts`: the batch builder used to write every
+draft it merely *rendered* into `contacted.json` at `touch: 0`, and both dedup
+predicates keyed on mere presence — so one hourly `--static` build permanently
+excluded every company it displayed, having sent nothing, and the pool would
+have emptied within two builds. Both predicates now require `touch > 0`. The
+fact line also rendered `Saw your recent commit — "undefined".` for every
+non-git rung, which is most of them. Both are pinned in `selftest.ts`.
+
+`markSentManual()` / `--sent-manual <addr>` finally exists (designed in
+`OUTREACH-DESIGN.md` §5, never built): recording a mail sent by hand keeps the
+follow-up schedule and the rolling 24h send cap honest. There is a matching
+"Sent by hand" button on the review page and a mirrored `sent` action on the
+hosted route — those two have drifted apart before, so they gain routes together.
+
+The open-source tooling survey that produced the corrections, plus an absorb
+ladder and the probes to run before building any of it, is `OSS-LEAD-TOOLING.md`.
+
 **Sending itself is not built.** Contact discovery, verification, and the
 click-recording/follow-up-scheduling infrastructure are done; actually
 composing and sending the first real cold email — plus the domain-age and

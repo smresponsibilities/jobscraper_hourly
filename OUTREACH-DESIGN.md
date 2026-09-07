@@ -51,8 +51,13 @@ the mail costs you five minutes instead of thirty.
 Providers count on a rolling 24-hour window, so both lanes draw down one
 counter:
 
-- Total cap while ramping: **20/day/mailbox**, rising toward 25 only after
-  several clean weeks.
+- Total cap while ramping: **8/day in week one, 12-15 in week two, 18-20 in
+  week three, 20-25 at steady state** (revised 2026-09-07). Note what this
+  cap is and is not: Google's own limit is 500/day and a breach costs a
+  temporary 1-24 hour hold, not a suspension, so this ramp is a quality gate
+  the sender imposes on themselves — at 20/day a single stale address is a 5%
+  bounce rate for that day, and human review throughput binds long before any
+  provider does. `SEND_CAP` in `outreach.ts` enforces it on both send paths.
 - Automation self-caps at **12/day** regardless of remaining headroom.
 - Manual sends must be logged (`npm run outreach -- --sent-manual <addr>`) so
   the counter stays honest. An unlogged manual send plus a full automation day
@@ -487,7 +492,22 @@ survivable because the fallback is just… buying another ₹900 domain.
 
 ### Recommended sequence
 
-**Provider decision (recorded): Google Workspace Base, ₹99/user/mo.**
+**Provider decision REVERSED (2026-09-07): a second free Gmail, no domain.**
+The purchase below was justified by two claims that a from-scratch re-check
+against primary sources could not support: that a `@gmail.com` From address
+is scored down by corporate filters, and that a 6-8 week domain-age clock
+gates the first real campaign. Google enforces its bulk-sender requirements
+at 5,000 messages a day — roughly 200x this project's steady state — so the
+age clock solves a problem this sender never has, and Microsoft's own Bulk
+Complaint Level documentation scores sending pattern rather than sender-domain
+class. A brand-new domain also starts with no reputation at all, where
+gmail.com starts with a great deal of it. Full working in COLDMAIL-PLAN.md's
+superseding section and in OSS-LEAD-TOOLING.md. Buy nothing; create
+`firstname.lastname@gmail.com` today, keep it separate from the alert inbox,
+and pin it with `OUTREACH_GMAIL_USER`. The original reasoning is kept below
+because it is still the right analysis for a sender at 500/day volume.
+
+~~**Provider decision (recorded): Google Workspace Base, ₹99/user/mo.**~~
 Rationale: measured earlier that ~81% of the target companies sit on Google
 Workspace themselves, so Gmail-infra → Gmail-infra delivery is the strongest
 single alignment available; setup (SPF/DKIM/DMARC) is the best documented of
