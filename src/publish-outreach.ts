@@ -23,6 +23,7 @@ const REPO = process.env.OUTREACH_DATA_REPO ?? '';
 const TOKEN = process.env.OUTREACH_GH_TOKEN ?? '';
 const BRANCH = process.env.OUTREACH_DATA_BRANCH ?? 'main';
 const STATE_PATH = process.env.OUTREACH_STATE_PATH ?? 'state/contacted.json';
+const DRAFTS_PATH = process.env.OUTREACH_DRAFTS_PATH ?? 'state/drafts.json';
 
 if (!REPO || !TOKEN) {
   console.error('OUTREACH_DATA_REPO and OUTREACH_GH_TOKEN must both be set');
@@ -77,6 +78,14 @@ async function push(remote: string, contents: string): Promise<void> {
 const args = process.argv.slice(2);
 
 if (args.includes('--pull')) {
+  // The standing pool of options travels with the state. Without it every
+  // hosted build starts from an empty pool and the whole point of keeping
+  // yesterday's un-sent drafts is lost on the very next run.
+  const pooled = await pull('drafts.json');
+  await mkdir('state', { recursive: true });
+  await writeFile(DRAFTS_PATH, pooled.text ?? '[]', 'utf8');
+  console.log(`pulled drafts.json -> ${DRAFTS_PATH} (${JSON.parse(pooled.text || '[]').length} options)`);
+
   const { text } = await pull('contacted.json');
   await mkdir('state', { recursive: true });
   await writeFile(STATE_PATH, text ?? '{}\n', 'utf8');
@@ -88,6 +97,7 @@ if (args.includes('--push')) {
   // State first: if a later upload fails, the bookkeeping that prevents
   // double-mailing is still the thing that survived.
   await push('contacted.json', await readFile(STATE_PATH, 'utf8'));
+  await push('drafts.json', await readFile(DRAFTS_PATH, 'utf8'));
   await push('batch.json', await readFile('out/outbox/batch.json', 'utf8'));
   await push('today.html', await readFile('out/outbox/today.html', 'utf8'));
 }

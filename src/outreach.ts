@@ -118,7 +118,12 @@ const VERDICT_TTL_DAYS = 14;
  * build — it only reached the card as a warning badge until now.
  */
 const DOMAIN_RISK_MAX_BOUNCES = Number(process.env.OUTREACH_DOMAIN_RISK_MAX ?? 2);
-const SIGNATURE = process.env.OUTREACH_NAME ?? 'SM';
+/**
+ * Signed with the full name, matching the From header. Signing two initials
+ * while the envelope says a full name is a small mismatch the reader notices
+ * before anything else in the mail.
+ */
+const SIGNATURE = process.env.OUTREACH_NAME ?? 'Shivam Mahajan';
 /**
  * Who is writing, in one line, plus the standing opt-out. Both are deliberately
  * constant across every touch (OUTREACH-DESIGN.md §3: a rotating signature is
@@ -178,6 +183,13 @@ const SWEEP_INDEX_PATH = 'state/contact-sweep-index.json';
 const CATALOG_PATH = 'data/jobs.json';
 const PID_PATH = 'state/outreach.pid';
 const PAGE_PATH = 'out/outbox/today.html';
+/**
+ * The standing pool of options. Gitignored for the same reason contacted.json
+ * is: it is keyed by real people's work addresses and holds unsent mail bodies,
+ * and this repo is public. It round-trips through the private data repo with
+ * the rest of the outreach state.
+ */
+const DRAFTS_PATH = process.env.OUTREACH_DRAFTS_PATH ?? 'state/drafts.json';
 
 // Deterministic daily rotation. OUTREACH_SEED exists so a day's batch can be
 // reproduced exactly (tests, "what did I see yesterday"); default is today.
@@ -505,6 +517,18 @@ const ASK_T1 = [
   'Is this req open to 0–3 yrs? y/n works.',
   'Should I apply through the portal, or is there someone better to send this to?',
   'Is it open to early-career folks? One word helps.',
+];
+/**
+ * Asks for when the req's own listed band already covers an early-career
+ * candidate. "Is this open to 0-3 yrs?" is a wasted question when the posting
+ * says 0-3 on its face — the reader has to wonder whether you read it. Ask the
+ * thing the posting cannot answer instead: routing, timing, what a good
+ * application looks like.
+ */
+const ASK_MATCHED = [
+  'Worth applying through the portal, or is there someone better to send it to?',
+  'Anything you would want to see in an application for it?',
+  'Is the team still actively interviewing, or is it early days?',
 ];
 const ASK_T2 = [
   'Following up once — still open? A one-word reply is plenty.',
@@ -1049,7 +1073,9 @@ export function buildFirstDraft(job: CatalogJob, author: Candidate, domainRiskBo
   // they read as an apposition rather than as "in Remote - India".
   const loc = job.location ? ` — ${job.location}` : '';
   const exp = experienceLabel(job.minYears ?? null, job.maxYears ?? null);
-  const ask = pick(ASK_T1, author.email + job.id);
+  // A req that opens at or below 3 years already answers the band question.
+  const bandCoversEarlyCareer = job.minYears != null && job.minYears <= 3;
+  const ask = pick(bandCoversEarlyCareer ? ASK_MATCHED : ASK_T1, author.email + job.id);
   const roleLine = `${company} just opened ${article} ${title}${loc}.${exp ? ` Band listed: ${exp}.` : ''}`;
   const body = renderBody({ greet, first, fact, roleLine, ask, passAlong: pick(PASS_ALONG, author.name) });
   const subject = pick(
@@ -1198,10 +1224,98 @@ export function domainRiskTally(state: OutreachState): Map<string, number> {
 
 export interface Batch {
   followups: Draft[];
-  random: Draft[];
+  /** Companies whose role opened inside TRIGGER_WINDOW_DAYS. */
   triggered: Draft[];
+  /** Contacts found on a company's leadership page — a named senior person,
+   *  with a guessed address. Their own section rather than mixed in, because
+   *  they are a different kind of mail to a different kind of recipient. */
+  leadership: Draft[];
+  random: Draft[];
   /** Set when the bounce gate stopped this build — rendered on the page. */
   haltReason?: string;
+}
+
+/** Every card in a batch, in the order the page shows them. */
+export function allDrafts(b: Batch): Draft[] {
+  return [...b.followups, ...b.triggered, ...b.leadership, ...b.random];
+}
+
+/**
+ * Which section a draft belongs in. Leadership wins over lane: the lane says
+ * how fresh the role is, the source says what kind of human is on the other
+ * end, and the second matters more for how the mail reads.
+ */
+export function section(d: Draft): 'followups' | 'leadership' | 'triggered' | 'random' {
+  if (d.kind === 'followup') return 'followups';
+  if (d.source === 'leadership') return 'leadership';
+  return d.lane === 'triggered' ? 'triggered' : 'random';
+}
+
+/**
+ * A draft that has survived at least one build.
+ *
+ * Drafts used to be regenerated from scratch every run and thrown away, so a
+ * card seen in the morning was simply gone by lunchtime and there was no way
+ * to go back to one. Since the daily send cap is deliberately far below the
+ * number of candidates a build can produce, most drafts were being discarded
+ * unsent and unseen — the pool is what turns them into a standing set of
+ * options instead.
+ */
+export interface PooledDraft extends Draft {
+  /** When this address first entered the pool, not when it was last rebuilt. */
+  firstDraftedAt: string;
+}
+
+/**
+ * How many drafts to keep. Generous on purpose: the point of the pool is to
+ * have more options than a day's sending could ever use, and a draft costs a
+ * few hundred bytes.
+ */
+const POOL_MAX = Number(process.env.OUTREACH_POOL_MAX ?? 600);
+
+/**
+ * Fold a build's fresh drafts into the standing pool.
+ *
+ *   - A contact that has been actually mailed, skipped, bounced or replied is
+ *     resolved and leaves the pool. That is the same touch > 0 rule the
+ *     company dedup uses, for the same reason: rendering a card is not sending.
+ *   - An address already pooled keeps its original firstDraftedAt but takes the
+ *     fresh body, so an option that has been sitting there for a week still
+ *     names a role that is currently open rather than a stale one.
+ *   - Everything else survives. Eviction is oldest-first and only past the cap.
+ */
+export function mergePool(
+  pool: PooledDraft[],
+  fresh: Draft[],
+  state: OutreachState,
+  nowIso: string,
+): PooledDraft[] {
+  const resolved = (addr: string): boolean => {
+    const c = state[addr];
+    return Boolean(c && (c.touch > 0 || c.skipped || c.bounced || c.replied));
+  };
+  const byAddr = new Map<string, PooledDraft>();
+  for (const d of pool) {
+    if (resolved(d.addr)) continue;
+    byAddr.set(d.addr, d);
+  }
+  for (const d of fresh) {
+    if (resolved(d.addr)) continue;
+    const prev = byAddr.get(d.addr);
+    byAddr.set(d.addr, { ...d, firstDraftedAt: prev?.firstDraftedAt ?? nowIso });
+  }
+  return [...byAddr.values()]
+    .sort((a, b) => new Date(b.firstDraftedAt).getTime() - new Date(a.firstDraftedAt).getTime())
+    .slice(0, POOL_MAX);
+}
+
+/** Split a pool back into the page's sections, newest option first. */
+export function poolToBatch(pool: PooledDraft[], haltReason?: string): Batch {
+  const b: Batch = { followups: [], triggered: [], leadership: [], random: [], haltReason };
+  for (const d of pool) b[section(d)].push(d);
+  // Follow-ups are due-today work, not options to browse: most overdue first.
+  b.followups.sort((a, x) => x.overdueDays - a.overdueDays);
+  return b;
 }
 
 // ── bounce gate ──────────────────────────────────────────────────────────────
@@ -1295,7 +1409,7 @@ async function bounceGate(): Promise<GateDecision> {
 
 async function buildBatch(): Promise<Batch> {
   const gate = await bounceGate();
-  if (gate.halt) return { followups: [], random: [], triggered: [], haltReason: gate.reason };
+  if (gate.halt) return { followups: [], triggered: [], leadership: [], random: [], haltReason: gate.reason };
   const state = await readJson<OutreachState>(STATE_PATH, {});
   let budget = DAILY_BUDGET;
 
@@ -1374,8 +1488,23 @@ async function buildBatch(): Promise<Batch> {
     console.log(`similarity guard dropped ${dropped.length} near-twin draft(s) (${fu} follow-up(s))`);
   }
   const keepIds = new Set(kept.map((d) => d.id));
-  const filterLane = (arr: Draft[]) => arr.filter((d) => keepIds.has(d.id));
-  return { followups: filterLane(followups), random: filterLane(random), triggered: filterLane(triggered) };
+
+  /**
+   * Fold this build's survivors into the standing pool and persist it before
+   * returning. The pool is what makes the page a set of options rather than a
+   * snapshot: the send cap is deliberately far below what a build can produce,
+   * so without this most drafts were generated, never shown long enough to be
+   * chosen, and thrown away on the next rebuild.
+   */
+  const nowIso = new Date().toISOString();
+  const priorPool = await readJson<PooledDraft[]>(DRAFTS_PATH, []);
+  const pool = mergePool(priorPool, [...followups, ...random, ...triggered].filter((d) => keepIds.has(d.id)), state, nowIso);
+  await mkdir('state', { recursive: true });
+  await writeFile(DRAFTS_PATH, `${JSON.stringify(pool, null, 2)}\n`, 'utf8');
+  const carried = pool.length - pool.filter((d) => d.firstDraftedAt === nowIso).length;
+  console.log(`pool: ${pool.length} options (${carried} carried over from earlier builds)`);
+
+  return poolToBatch(pool, gate.halt ? gate.reason : undefined);
 }
 
 // ── server ───────────────────────────────────────────────────────────────────
@@ -1383,14 +1512,14 @@ async function buildBatch(): Promise<Batch> {
 const esc = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
-/** `leadershipContacts()`-sourced drafts (CEO/founder/CTO-tier) get their own
- *  tab — see `tier()` below. Everything else (git/npm/pypi/maven/website/
- *  SmartRecruiters) is "simple": a peer-level engineer or role mailbox. */
-function tier(d: Draft): 'higher-up' | 'simple' {
-  return d.source === 'leadership' ? 'higher-up' : 'simple';
-}
-
-function card(d: Draft): string {
+function card(d: Draft & { firstDraftedAt?: string }): string {
+  // How long this option has been sitting in the pool. Worth showing because
+  // the pool now outlives a build: without it there is no way to tell a card
+  // drafted an hour ago from one that has been waiting a fortnight.
+  const pooledDays =
+    d.firstDraftedAt && !Number.isNaN(new Date(d.firstDraftedAt).getTime())
+      ? Math.floor((Date.now() - new Date(d.firstDraftedAt).getTime()) / 86_400_000)
+      : null;
   const badges = [
     d.verdict === 'valid' ? '<span class="ok">verified</span>' : '',
     d.verdict === 'unknown'
@@ -1402,10 +1531,11 @@ function card(d: Draft): string {
   ]
     .filter(Boolean)
     .join(' ');
-  return `<div class="card" id="c-${esc(d.id)}" data-tier="${tier(d)}">
-  <div class="head"><b>${esc(d.company)}</b> · ${esc(d.role)} · touch ${d.touch + 1} · ${d.lane}
+  return `<div class="card" id="c-${esc(d.id)}">
+  <div class="head"><b>${esc(d.company)}</b> · ${esc(d.role)} · touch ${d.touch + 1}
+    ${pooledDays !== null && pooledDays > 0 ? `<span class="aged">in the pool ${pooledDays}d</span>` : ''}
     ${d.kind === 'followup' && d.overdueDays > 0 ? `<span class="late">${d.overdueDays}d overdue</span>` : ''}
-    ${tier(d) === 'higher-up' ? '<span class="warn">higher-up — unverified guess, see CONTACT-DISCOVERY.md §4b</span>' : ''}
+    ${d.source === 'leadership' ? '<span class="warn">guessed address — see CONTACT-DISCOVERY.md §4b</span>' : ''}
     ${badges}
   </div>
   <div class="to">to: ${esc(d.addr)}</div>
@@ -1476,51 +1606,51 @@ function page(
   sentToday = 0,
   connects: ConnectRow[] = [],
 ): string {
-  const all = [...b.followups, ...b.triggered, ...b.random];
-  const total = all.length;
-  const higherUpCount = all.filter((d) => tier(d) === 'higher-up').length;
-  const simpleCount = total - higherUpCount;
+  const total = allDrafts(b).length;
+  const atCap = sentToday >= SEND_CAP;
   return `<!doctype html><html><head><meta charset="utf-8"><title>outreach — ${daySeed()}</title><style>
 body{font-family:ui-monospace,monospace;background:#111;color:#ddd;max-width:780px;margin:24px auto;padding:0 12px}
 h1{font-size:18px}.count{color:#666;font-size:12px;margin-bottom:4px}
-h2{font-size:13px;color:#9ab;margin-top:28px;text-transform:uppercase;letter-spacing:.08em}
+h2{font-size:13px;color:#9ab;margin-top:30px;text-transform:uppercase;letter-spacing:.08em}
+h2 .sub{text-transform:none;letter-spacing:0;color:#666;font-size:11px;margin-left:8px}
 .card{border:1px solid #333;border-radius:8px;padding:12px;margin-bottom:14px;background:#181818}
 .head{color:#fff;margin-bottom:4px}.to{color:#888;font-size:12px;margin-bottom:8px}
 pre{white-space:pre-wrap;font-size:13px;line-height:1.45;color:#ccc;border-left:3px solid #2a4a2a;padding-left:10px}
 .halt{border:1px solid #a33;background:#2a1414;color:#f99;padding:10px 12px;border-radius:8px;margin:10px 0}
+.capped{border:1px solid #a80;background:#2a2210;color:#e0b050;padding:10px 12px;border-radius:8px;margin:10px 0}
 .late{color:#f66}.ok{color:#7dcf95;font-size:11px;margin-left:6px}.warn{color:#e0b050;font-size:11px;margin-left:6px}
+.aged{color:#7a8ba0;font-size:11px;margin-left:6px}
 .btns{margin-top:10px;display:flex;gap:8px;flex-wrap:wrap}
 .btn{padding:5px 12px;border-radius:6px;background:#26364a;color:#cfe3ff;text-decoration:none;font-size:13px}
 .primary{background:#1a4a2e;color:#bfe8c8}.ghost{background:#222;color:#777}
 a.refresh{color:#569;font-size:12px}
-.tabs{display:flex;gap:8px;margin:14px 0}
-.tab{padding:6px 14px;border-radius:999px;border:1px solid #333;background:#181818;color:#999;font-size:13px;cursor:pointer}
-.tab.active{background:#26364a;color:#cfe3ff;border-color:#3a5a86}
-/* Default view is "simple" — the higher-up tier is a fallback for when the
-   regular ladder finds nobody, and its addresses are unverified guesses
-   (see CONTACT-DISCOVERY.md §4b), so it should never be the first thing
-   shown. body[data-view] flips which tier's cards are visible. */
-body[data-view="simple"] .card[data-tier="higher-up"]{display:none}
-body[data-view="higher-up"] .card[data-tier="simple"]{display:none}
 </style></head>
-<body data-view="simple">
+<body>
 <h1>outreach — ${daySeed()}</h1>
 ${b.haltReason ? `<div class="halt">${esc(b.haltReason)}</div>` : ''}
-<div class="count">${sentToday}/${SEND_CAP} sent in the last 24h${sentToday >= SEND_CAP ? ' — at cap, the send buttons are disabled' : ''} · sending as Gmail account <b>${esc(GMAIL_USER)}</b></div>
-<div class="count">${b.followups.length} follow-ups + ${b.triggered.length} role-triggered + ${b.random.length} random = <b>${total}</b> clicks today · <a class="refresh" href="/refresh">↻ rebuild</a></div>
-<div class="tabs">
-  <button class="tab active" id="tab-simple" onclick="document.body.dataset.view='simple';document.getElementById('tab-simple').classList.add('active');document.getElementById('tab-higher-up').classList.remove('active')">Simple (${simpleCount})</button>
-  <button class="tab" id="tab-higher-up" onclick="document.body.dataset.view='higher-up';document.getElementById('tab-higher-up').classList.add('active');document.getElementById('tab-simple').classList.remove('active')">Higher-ups (${higherUpCount})</button>
-</div>
-<h2>follow-ups due (${b.followups.length})</h2>${b.followups.map(card).join('')}
-<h2>role just opened (${b.triggered.length})</h2>${b.triggered.map(card).join('')}
-<h2>open roles, rotating list (${b.random.length})</h2>${b.random.map(card).join('')}
-<h2>connect on LinkedIn this week (${connects.length})</h2>
+${atCap ? `<div class="capped">${sentToday}/${SEND_CAP} sent in the last 24h — at cap. The options below keep for tomorrow; nothing is lost by stopping here.</div>` : ''}
+<div class="count">${sentToday}/${SEND_CAP} sent in the last 24h · sending as Gmail account <b>${esc(GMAIL_USER)}</b> · <a class="refresh" href="/refresh">↻ rebuild</a></div>
+<div class="count"><b>${total}</b> options standing. These persist across rebuilds — a card you do not send today is still here tomorrow.</div>
+
+<h2>follow-ups due<span class="sub">${b.followups.length} — time-sensitive, do these first</span></h2>
+${b.followups.length ? b.followups.map(card).join('') : `<div class="count">nothing due</div>`}
+
+<h2>companies with a role just opened<span class="sub">${b.triggered.length} — posted inside ${TRIGGER_WINDOW_DAYS} days</span></h2>
+${b.triggered.length ? b.triggered.map(card).join('') : `<div class="count">none right now</div>`}
+
+<h2>leadership<span class="sub">${b.leadership.length} — named senior contact, address is a guess</span></h2>
+${b.leadership.length ? b.leadership.map(card).join('') : `<div class="count">none right now</div>`}
+
+<h2>random<span class="sub">${b.random.length} — open roles, rotating daily</span></h2>
+${b.random.length ? b.random.map(card).join('') : `<div class="count">none right now</div>`}
+
+<h2>connect on LinkedIn this week<span class="sub">${connects.length}</span></h2>
 <div class="count">People you have already mailed, replies first then oldest. The button opens
 a LinkedIn <em>search</em> for that name and company — nothing here fetches LinkedIn, you
 click through and send the request yourself. Mark it sent and they drop off the list.</div>
 <div class="count">${connectRows(connects)}</div>
-<h2>in flight — delayed bounces land here (mark when the NDR arrives)</h2>
+
+<h2>in flight<span class="sub">delayed bounces land here — mark when the NDR arrives</span></h2>
 <div class="count">${recentRows(recent)}</div>
 </body></html>`;
 }
@@ -1537,7 +1667,7 @@ click through and send the request yourself. Mark it sent and they drop off the 
 async function syncVerdicts(batch: Batch): Promise<OutreachState> {
   const freshState = await readJson<OutreachState>(STATE_PATH, {});
   const now = new Date().toISOString();
-  for (const d of [...batch.followups, ...batch.triggered, ...batch.random]) {
+  for (const d of allDrafts(batch)) {
     const prev = freshState[d.addr];
     freshState[d.addr] = {
       company: prev?.company ?? d.company,
@@ -1577,7 +1707,7 @@ async function syncVerdicts(batch: Batch): Promise<OutreachState> {
 async function writeMbox(batch: Batch): Promise<void> {
   const dir = `out/outbox/${daySeed()}`;
   await mkdir(dir, { recursive: true });
-  const drafts = [...batch.followups, ...batch.triggered, ...batch.random];
+  const drafts = allDrafts(batch);
   const manifest = drafts.map((d) => ({ addr: d.addr, file: `${d.addr}.txt`, company: d.company, role: d.role, source: d.source }));
   await Promise.all(
     drafts.map((d) => writeFile(`${dir}/${d.addr}.txt`, `Subject: ${d.subject}\n\n${d.body}\n`, 'utf8')),
@@ -1682,7 +1812,7 @@ async function serve(initial: Batch): Promise<void> {
   const byId = new Map<string, Draft>();
   const index = (b: Batch) => {
     byId.clear();
-    [...b.followups, ...b.triggered, ...b.random].forEach((d) => byId.set(d.id, d));
+    allDrafts(b).forEach((d) => byId.set(d.id, d));
   };
   index(batch);
 
@@ -1691,8 +1821,9 @@ async function serve(initial: Batch): Promise<void> {
     if (d) {
       byId.delete(id);
       batch.followups = batch.followups.filter((x) => x.id !== id);
-      batch.random = batch.random.filter((x) => x.id !== id);
       batch.triggered = batch.triggered.filter((x) => x.id !== id);
+      batch.leadership = batch.leadership.filter((x) => x.id !== id);
+      batch.random = batch.random.filter((x) => x.id !== id);
     }
     return d;
   };
@@ -1763,9 +1894,9 @@ async function serve(initial: Batch): Promise<void> {
   });
 
   server.listen(PORT, () => {
-    const total = initial.followups.length + initial.random.length + initial.triggered.length;
+    const total = allDrafts(initial).length;
     console.log(`\noutreach ready → http://localhost:${PORT}`);
-    console.log(`(${total} cards: ${initial.followups.length} follow-ups, ${initial.triggered.length} triggered, ${initial.random.length} random)`);
+    console.log(`(${total} options: ${initial.followups.length} follow-ups, ${initial.triggered.length} just-opened, ${initial.leadership.length} leadership, ${initial.random.length} random)`);
   });
 }
 
@@ -1795,8 +1926,8 @@ if (process.argv[1]?.endsWith('outreach.ts')) {
   if (!(await acquireLock())) process.exit(1);
 
   const batch = await buildBatch();
-  console.log(`batch: ${batch.followups.length} follow-ups + ${batch.triggered.length} triggered + ${batch.random.length} random`);
-  for (const d of [...batch.followups, ...batch.triggered, ...batch.random]) {
+  console.log(`batch: ${batch.followups.length} follow-ups + ${batch.triggered.length} just-opened + ${batch.leadership.length} leadership + ${batch.random.length} random`);
+  for (const d of allDrafts(batch)) {
     const v = d.verdict === 'valid' ? '✓' : d.verdict === 'unknown' ? '?' : '-';
     console.log(`  [t${d.touch + 1}] ${d.company.padEnd(20)} ${d.addr.padEnd(32)} ${v} ${d.fact ? `"${d.fact.slice(0, 40)}"` : ''}`);
   }
@@ -1820,7 +1951,7 @@ if (process.argv[1]?.endsWith('outreach.ts')) {
     // redirect targets (the Gmail/mailto URLs are computed at build time from
     // subject+body, and the API route never sees them otherwise).
     const drafts = Object.fromEntries(
-      [...batch.followups, ...batch.triggered, ...batch.random].map((d) => [
+      allDrafts(batch).map((d) => [
         d.id,
         { gmailUrl: d.gmailUrl, mailtoUrl: d.mailtoUrl, company: d.company, role: d.role, touch: d.touch },
       ]),

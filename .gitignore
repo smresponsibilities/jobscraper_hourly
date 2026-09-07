@@ -56,3 +56,8 @@ state/host-stats.json
 state/reposts.json
 state/board-volumes.json
 state/volume-drops.json
+
+# The standing pool of unsent drafts: real work addresses and full mail
+# bodies, same reason contacted.json is ignored. It round-trips through the
+# private data repo, never through this public one.
+state/drafts.json

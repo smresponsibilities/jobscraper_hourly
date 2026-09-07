@@ -33,7 +33,7 @@ import {
 } from './contacts.js';
 import { EventEmitter } from 'node:events';
 import { readReply } from './verify-email.js';
-import { cleanSubject, commitKind, factLine, followUpLine, linkedinSearchUrl, weeklyConnects } from './outreach.js';
+import { cleanSubject, commitKind, factLine, followUpLine, linkedinSearchUrl, mergePool, poolToBatch, section, weeklyConnects } from './outreach.js';
 import { bodySimilarity, bounceGateDecision, buildFirstDraft, displayName, domainRiskTally, enforceSimilarity, isTriggered, loadCompanyPool, postedAgeDays, renderBody, touchGap, TRIGGER_WINDOW_DAYS, type CatalogJob } from './outreach.js';
 import { applyboltLookup, extractEmails, extractLeadership, packageNameCandidates, parseApplyBolt, parseDmarcRua, roleAddresses } from './contact-sources.js';
 import { controlAddress, mxProvider, rejectionIsMeaningful } from './verify-email.js';
@@ -1101,6 +1101,60 @@ check('never-mailed, already-connected and bounced contacts are all excluded', c
 // A reply is the best possible reason to connect, so it sorts to the top.
 check('a reply outranks age', connects[0]?.name, 'Priya Nair');
 check('then oldest-mailed first', connects[1]?.name, 'Max Mansfield');
+
+console.log('the standing draft pool');
+// Drafts used to be regenerated and thrown away every build, so a card seen in
+// the morning was gone by lunchtime. Since the send cap is far below what a
+// build produces, most drafts were being discarded unsent and unseen.
+const poolDraft = (addr: string, over: Record<string, unknown> = {}) => ({
+  id: addr, addr, name: 'N', firstName: 'N', company: 'C', role: 'r', jobUrl: '',
+  lane: 'random' as const, kind: 'first' as const, touch: 0, overdueDays: 0,
+  subject: 's', body: 'b', gmailUrl: '', mailtoUrl: '', ...over,
+});
+const poolContact = (over: Record<string, unknown> = {}) => ({
+  company: 'C', role: 'r', jobUrl: '', touch: 0, sentAt: [], nextDueAt: '', subject: 's', ...over,
+});
+const NOW_ISO = '2026-09-10T00:00:00.000Z';
+const OLD_ISO = '2026-09-01T00:00:00.000Z';
+
+// An option nobody actioned survives the next build — that is the whole point.
+const carried = mergePool([{ ...poolDraft('old@x.com'), firstDraftedAt: OLD_ISO }], [poolDraft('new@x.com')], {}, NOW_ISO);
+check('an un-actioned option survives a rebuild', carried.length, 2);
+check('and keeps the date it first appeared', carried.find((d) => d.addr === 'old@x.com')?.firstDraftedAt, OLD_ISO);
+
+// Resolved contacts leave. Same touch > 0 rule the company dedup uses, for the
+// same reason: rendering a card is not sending one.
+const resolvedOut = mergePool(
+  [{ ...poolDraft('sent@x.com'), firstDraftedAt: OLD_ISO }, { ...poolDraft('skip@x.com'), firstDraftedAt: OLD_ISO }, { ...poolDraft('open@x.com'), firstDraftedAt: OLD_ISO }],
+  [],
+  { 'sent@x.com': poolContact({ touch: 1, sentAt: ['x'] }), 'skip@x.com': poolContact({ skipped: true }) } as never,
+  NOW_ISO,
+);
+check('a mailed or skipped contact leaves the pool', resolvedOut.map((d) => d.addr).join(','), 'open@x.com');
+
+// A week-old option must still name a role that is currently open, so the body
+// refreshes while the age does not.
+const refreshed = mergePool(
+  [{ ...poolDraft('a@x.com', { body: 'stale' }), firstDraftedAt: OLD_ISO }],
+  [poolDraft('a@x.com', { body: 'current' })],
+  {},
+  NOW_ISO,
+);
+check('a re-drafted option takes the fresh body', refreshed[0]?.body, 'current');
+check('but keeps its original age', refreshed[0]?.firstDraftedAt, OLD_ISO);
+
+// Leadership wins over lane: the lane says how fresh the role is, the source
+// says what kind of human is on the other end, and the second decides the mail.
+check('a follow-up sections as a follow-up', section(poolDraft('a@x.com', { kind: 'followup' }) as never), 'followups');
+check('leadership beats a triggered lane', section(poolDraft('a@x.com', { lane: 'triggered', source: 'leadership' }) as never), 'leadership');
+check('a triggered git contact stays triggered', section(poolDraft('a@x.com', { lane: 'triggered', source: 'git' }) as never), 'triggered');
+check('everything else is random', section(poolDraft('a@x.com', { source: 'npm' }) as never), 'random');
+const split = poolToBatch([
+  { ...poolDraft('a@x.com', { lane: 'triggered', source: 'git' }), firstDraftedAt: NOW_ISO },
+  { ...poolDraft('b@x.com', { source: 'leadership' }), firstDraftedAt: NOW_ISO },
+  { ...poolDraft('c@x.com'), firstDraftedAt: NOW_ISO },
+] as never);
+check('the pool splits into the page sections', [split.triggered.length, split.leadership.length, split.random.length].join(','), '1,1,1');
 
 console.log('outreach lane gating');
 // Workday's relative strings must land in the triggered lane, not parse as null.
