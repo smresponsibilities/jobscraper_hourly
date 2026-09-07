@@ -1123,6 +1123,15 @@ const OLD_ISO = '2026-09-01T00:00:00.000Z';
 // An option nobody actioned survives the next build — that is the whole point.
 const carried = mergePool([{ ...poolDraft('old@x.com'), firstDraftedAt: OLD_ISO }], [poolDraft('new@x.com')], {}, NOW_ISO);
 check('an un-actioned option survives a rebuild', carried.length, 2);
+
+// A follow-up is derived state, recomputed from contacted.json every build,
+// and its whole identity is a touch count that has already advanced. Pooling
+// one is self-defeating: the eviction rule below retires anything with
+// touch > 0, so a pooled follow-up is thrown straight back out. A live build
+// reported "0 follow-ups" against 207 contacts with two genuinely overdue
+// before this was caught, so buildBatch layers them on after the pool split.
+const withFollowup = mergePool([], [poolDraft('f@x.com', { kind: 'followup', touch: 1 }), poolDraft('n@x.com')], {}, NOW_ISO);
+check('a follow-up is never pooled', withFollowup.map((d) => d.addr).join(','), 'n@x.com');
 check('and keeps the date it first appeared', carried.find((d) => d.addr === 'old@x.com')?.firstDraftedAt, OLD_ISO);
 
 // Resolved contacts leave. Same touch > 0 rule the company dedup uses, for the

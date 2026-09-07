@@ -1358,6 +1358,12 @@ const POOL_MAX = Number(process.env.OUTREACH_POOL_MAX ?? 600);
 /**
  * Fold a build's fresh drafts into the standing pool.
  *
+ *   - Only FIRST touches belong here. A follow-up is derived state: buildFollowUps
+ *     recomputes it from contacted.json on every build, and its whole identity is
+ *     a touch count that has already advanced. Pooling one is both redundant and
+ *     self-defeating, since the eviction rule below would throw it straight back
+ *     out for having touch > 0 — which is exactly what happened: a live build
+ *     reported "0 follow-ups" against 207 contacts with two genuinely overdue.
  *   - A contact that has been actually mailed, skipped, bounced or replied is
  *     resolved and leaves the pool. That is the same touch > 0 rule the
  *     company dedup uses, for the same reason: rendering a card is not sending.
@@ -1378,11 +1384,11 @@ export function mergePool(
   };
   const byAddr = new Map<string, PooledDraft>();
   for (const d of pool) {
-    if (resolved(d.addr)) continue;
+    if (d.kind !== 'first' || resolved(d.addr)) continue;
     byAddr.set(d.addr, d);
   }
   for (const d of fresh) {
-    if (resolved(d.addr)) continue;
+    if (d.kind !== 'first' || resolved(d.addr)) continue;
     const prev = byAddr.get(d.addr);
     byAddr.set(d.addr, { ...d, firstDraftedAt: prev?.firstDraftedAt ?? nowIso });
   }
@@ -1586,7 +1592,15 @@ async function buildBatch(): Promise<Batch> {
   const carried = pool.length - pool.filter((d) => d.firstDraftedAt === nowIso).length;
   console.log(`pool: ${pool.length} options (${carried} carried over from earlier builds)`);
 
-  return poolToBatch(pool, gate.halt ? gate.reason : undefined);
+  /**
+   * Follow-ups are layered back on after the pool split, not stored in it:
+   * buildFollowUps() already derives them from contacted.json every build, so
+   * they are always current, and they must never be subject to the pool
+   * eviction rule that retires anything already mailed.
+   */
+  const batch = poolToBatch(pool, gate.halt ? gate.reason : undefined);
+  batch.followups = followups.filter((d) => keepIds.has(d.id));
+  return batch;
 }
 
 // ── server ───────────────────────────────────────────────────────────────────
