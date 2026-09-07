@@ -195,3 +195,15 @@ footer { margin-top: 40px; font-size: 12px; color: var(--muted); text-align: cen
   padding: 32px 16px;
   color: var(--muted);
 }
+
+/* YC India tab. Rows reuse `.job`'s card styling; the only additions are the
+   two-column split (company on the left, its open roles on the right) and the
+   collapsed role list, which is a <details> so a company with 30 open roles
+   doesn't push the rest of the directory off the screen. */
+.yc-list { margin-top: 18px; display: grid; gap: 8px; }
+.yc-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+.yc-jobs { font-size: 13px; flex: 1 1 340px; }
+.yc-jobs summary { cursor: pointer; color: var(--accent); font-weight: 600; }
+.yc-jobs ul { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 4px; }
+.yc-jobs a { color: var(--fg); text-decoration: none; }
+.yc-jobs a:hover { text-decoration: underline; }

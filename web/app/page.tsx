@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { DATA_URL, REPO_URL, type Job } from '@/lib/types';
 import { AddCompany } from './add-company';
+import { YCPanel } from './yc';
 
 const INDUSTRIES = ['tech', 'fintech', 'quant', 'banking', 'consulting'] as const;
 
@@ -235,7 +236,7 @@ export default function Page() {
   const [error, setError] = useState<string | null>(null);
   // Top-level Jobs/Outreach switch — not to be confused with the per-day
   // browsing tabs below, which live entirely inside the Jobs view.
-  const [view, setView] = useState<'jobs' | 'outreach'>('jobs');
+  const [view, setView] = useState<'jobs' | 'outreach' | 'yc'>('jobs');
   const [outreachKey, setOutreachKey] = useState<string | null>(null);
 
   const [query, setQuery] = useState('');
@@ -442,6 +443,14 @@ export default function Page() {
               }}
             >
               Outreach
+            </button>
+            <button
+              className="chip"
+              data-on={view === 'yc'}
+              title="YC India companies, and which of them we can see hiring"
+              onClick={() => setView('yc')}
+            >
+              YC India
             </button>
           </nav>
         </div>
@@ -677,6 +686,8 @@ export default function Page() {
           )}
         </section>
       )}
+
+      {view === 'yc' && <YCPanel jobs={jobs ?? []} />}
 
       <footer>
         Data and source on <a href={REPO_URL}>GitHub</a>. Apply on the company link — direct

@@ -1186,6 +1186,26 @@ by the next day. India-only on purpose: `detect` has no `--bar` of its own, so
 widening the region widens what gets committed, and the rest of the directory is
 overwhelmingly US startups.
 
+The sweep also got a face: **a third top-level tab on the web UI** (`web/app/yc.tsx`,
+next to Jobs and Outreach). It reads YC's India directory live from the browser —
+same public Algolia credentials `src/yc-directory.ts` uses, duplicated for the
+same reason `lib/types.ts` duplicates `CatalogEntry`, since the web app is a
+separate package that does not import from `src/` — and cross-references it
+against the catalogue already loaded for the Jobs view. Companies we can see
+hiring sort first, with their open roles behind a `<details>`; everything else
+reads "no live roles", which is the honest state of most of the list. Names are
+matched by stripping to letters and digits, because `detect` builds a board's
+name from its domain ("Loophealth") while YC uses the brand ("Loop Health"); the
+domain's own base is the second key.
+
+Building the tab surfaced a real bug in the CLI it mirrors. `yc-directory.ts`
+cleaned a founder-typed website by splitting on `/`, which does nothing for
+100x's listed URL — `https://100x.bot?utm_source=inbound&utm_medium=bookface&...`
+has no path separator at all, so the whole campaign tail stayed glued to the
+hostname and `detect` fetched a URL that could never resolve. One company
+skipped, silently, every week from now on. Extracted as `bareDomain`, split on
+`[/?#]`, covered in `selftest.ts`.
+
 
 ## In progress — pick up here
 

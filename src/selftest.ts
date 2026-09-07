@@ -18,6 +18,7 @@ import { limitForHost, rateLimitKey } from './config.js';
 import { mapLimitByKey } from './fetchers/util.js';
 import { csvFields, unfedPlatforms } from './bulk-import.js';
 import { untrackedSlugs } from './open-jobs-slugs.js';
+import { bareDomain } from './yc-directory.js';
 import { place as ukgPlace } from './fetchers/ukg.js';
 import { FETCHERS } from './fetchers/index.js';
 import { BlockError, classifyFailure, classifyOkBody } from './fetchers/block.js';
@@ -1748,6 +1749,20 @@ check('and to the taleo adapter', parseBoardUrl('https://phe.tbe.taleo.net/phe01
 // Enterprise Taleo is a different product that `taleo.ts` cannot read. It must
 // resolve to null rather than be imported as a board that can never be fetched.
 check('enterprise Taleo careersection is not mistaken for TBE', parseBoardUrl('https://acme.taleo.net/careersection/ex/jobsearch.ftl'), null);
+
+
+console.log('YC directory domain cleanup')
+// The directory stores whatever URL the founders typed. This list is now swept
+// weekly by discover.yml, so a domain that `detect` cannot fetch is a company
+// silently skipped every week rather than a one-off annoyance.
+check('a plain https url', bareDomain('https://razorpay.com'), 'razorpay.com');
+check('www is dropped', bareDomain('https://www.zuddl.com/'), 'zuddl.com');
+check('a trailing path is dropped', bareDomain('http://loophealth.com/careers'), 'loophealth.com');
+// 100x's listed website is `https://100x.bot?utm_source=inbound&...` with no
+// path separator at all, so splitting on "/" alone left the whole campaign tail
+// glued to the hostname.
+check('a query string with no path is dropped', bareDomain('https://100x.bot?utm_source=inbound&utm_medium=bookface'), '100x.bot');
+check('a fragment is dropped', bareDomain('https://acme.in#about'), 'acme.in');
 
 
 console.log('rate-limit bucketing')

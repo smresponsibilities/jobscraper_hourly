@@ -77,6 +77,25 @@ export async function fetchYCCompanies(opts: { region?: string; activeOnly?: boo
 }
 
 /**
+ * The directory stores whatever URL the founders typed, so the scheme, `www.`,
+ * a trailing path, a trailing slash and a query string are all inconsistent —
+ * `detect` wants a bare hostname.
+ *
+ * The query string is not hypothetical: 100x's listed website is
+ * `https://100x.bot?utm_source=inbound&utm_medium=bookface&...` with no path
+ * separator at all, so splitting on "/" alone leaves the whole campaign tail
+ * glued to the hostname and `detect` fetches a URL that cannot resolve.
+ */
+export function bareDomain(website: string): string {
+  return website
+    .replace(/^https?:\/\//i, '')
+    .replace(/^www\./i, '')
+    .split(/[/?#]/)[0]!
+    .trim()
+    .toLowerCase();
+}
+
+/**
  * CLI: print one bare domain per line, in the format `detect.ts` reads.
  *
  *   npx tsx src/yc-directory.ts India > state/yc-india.txt
@@ -100,15 +119,7 @@ if (process.argv[1]?.endsWith('yc-directory.ts')) {
   console.log(`# ${companies.length} active YC companies${region ? ` in ${region}` : ''}, generated ${new Date().toISOString().slice(0, 10)}`);
   console.log('# npm run detect -- <this file>');
   for (const company of companies) {
-    // The directory stores whatever URL the founders typed, so the scheme,
-    // `www.`, a trailing path and a trailing slash are all inconsistent —
-    // `detect` wants a bare hostname.
-    const domain = company.website
-      .replace(/^https?:\/\//i, '')
-      .replace(/^www\./i, '')
-      .split('/')[0]!
-      .trim()
-      .toLowerCase();
+    const domain = bareDomain(company.website);
     if (!domain.includes('.') || seen.has(domain)) continue;
     seen.add(domain);
     console.log(domain);
