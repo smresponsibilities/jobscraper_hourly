@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import type { Ats, Company, Industry } from './types.js';
 import { FETCHERS } from './fetchers/index.js';
 import { mapLimitByKey, UA } from './fetchers/util.js';
-import { HOST_CONCURRENCY } from './config.js';
+import { limitForHost, rateLimitKey } from './config.js';
 import { isServiceCompany, locationMatches, roleFamily } from './filter.js';
 import { classify } from './classify.js';
 import { loadCompanies, saveCompanies } from './state.js';
@@ -312,10 +312,17 @@ async function loadPlainSlugFile(path: string, platform: Ats): Promise<Company[]
   }));
 }
 
-/** Same shape as the hourly run's scheduler, so imports respect the same host caps. */
-const rateLimitKey = (c: Company) => (c.ats === 'workday' ? `workday:${c.host}` : c.ats);
-const limitForHost = (key: string) =>
-  HOST_CONCURRENCY[key.split(':')[0]!] ?? HOST_CONCURRENCY.default!;
+/**
+ * How many host groups an import runs at once.
+ *
+ * The hourly run needs no such ceiling — `BOARDS_PER_RUN` already bounds how
+ * many hosts one run can touch. An import is the opposite shape: it sweeps a
+ * whole published tenant list, and SuccessFactors alone spans 1,289 distinct
+ * hostnames whose feeds take 30-170s each. Left unbounded, the per-host cap
+ * would open a socket per tenant. At 24 the same sweep finishes in roughly an
+ * hour and a half while no individual host ever sees more than its own cap.
+ */
+const IMPORT_MAX_HOSTS = 24;
 
 /**
  * Shared by `--rediscover` and `--file`: neither source carries a `site`, so
@@ -432,31 +439,37 @@ async function main(): Promise<void> {
     return pendingSave;
   };
 
-  await mapLimitByKey(candidates, rateLimitKey, limitForHost, async (company) => {
-    if (++done % 250 === 0) {
-      console.log(`  ...${done}/${candidates.length}, ${keep.length} kept`);
-      await checkpoint();
-    }
-    try {
-      const jobs = await FETCHERS[company.ats].list(company);
-      if (jobs.length === 0) return;
-      live++;
-      if (bar === 'live') return void keep.push(company);
+  await mapLimitByKey(
+    candidates,
+    rateLimitKey,
+    limitForHost,
+    async (company) => {
+      if (++done % 250 === 0) {
+        console.log(`  ...${done}/${candidates.length}, ${keep.length} kept`);
+        await checkpoint();
+      }
+      try {
+        const jobs = await FETCHERS[company.ats].list(company);
+        if (jobs.length === 0) return;
+        live++;
+        if (bar === 'live') return void keep.push(company);
 
-      const india = jobs.filter((j) => locationMatches(j.location));
-      if (india.length === 0) return;
-      if (bar === 'india') return void keep.push(company);
+        const india = jobs.filter((j) => locationMatches(j.location));
+        if (india.length === 0) return;
+        if (bar === 'india') return void keep.push(company);
 
-      const fresher = india.some((j) => {
-        if (!roleFamily(j.title, company.industry)) return false;
-        const c = classify(j, company.industry);
-        return !c.excluded && c.isJunior;
-      });
-      if (fresher) keep.push(company);
-    } catch {
-      /* dead or unreachable board — silently skipped, same as detect */
-    }
-  });
+        const fresher = india.some((j) => {
+          if (!roleFamily(j.title, company.industry)) return false;
+          const c = classify(j, company.industry);
+          return !c.excluded && c.isJunior;
+        });
+        if (fresher) keep.push(company);
+      } catch {
+        /* dead or unreachable board — silently skipped, same as detect */
+      }
+    },
+    IMPORT_MAX_HOSTS,
+  );
 
   console.log(`\n${live}/${candidates.length} live, ${keep.length} cleared the "${bar}" bar`);
   if (keep.length === 0) return;

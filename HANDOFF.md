@@ -1073,6 +1073,120 @@ its own — the unfiltered sweep is a real periodic maintenance operation, not
 just an accident, and it is the fastest way to pick up whatever the first source
 has added since the last run.
 
+## Taleo built, the SuccessFactors "16 hours" turned out to be a bug, and the YC sweep is now cron (2026-09-07)
+
+Three items from the previous session's ranked list, done together.
+
+### Taleo Business Edition (`src/fetchers/taleo.ts`) — built and measured
+
+The earlier session wrote Taleo off with "needs its JSON API"; there isn't one,
+and that was the blocker. TBE server-renders every row, so the adapter is a
+parser, not a new kind of access. Three things were measured against live
+tenants before any code was written, and each of them would have been a bug if
+assumed the other way:
+
+1. **The pod in the URL is routing, not identity.** Published board URLs look
+   like `https://phg.tbe.taleo.net/phg02/ats/careers/v2/searchResults?org=X&cws=N`,
+   but any pod serves any org: TBE 302s to the tenant's real pod and fills in
+   the right `cws` itself. So the org code alone is the whole board identity,
+   and neither the pod nor `cws` is stored. `phe01` was asked for `CAREUSA` and
+   landed on `phg02` with `cws=52` attached, unprompted.
+2. **Paging is session-stateful.** 10 rows per page, fixed — `rowMax`,
+   `rowsPerPage`, `maxRows` and `pageSize` were each tried live and each
+   returned 10. The "next" link is a `rowFrom` cursor that only resolves inside
+   the JSESSIONID the first response set; without the cookie it returns an
+   empty body, which would have read as "this board has exactly 10 jobs" on
+   every board in the corpus.
+3. **A dead tenant answers 200.** An unknown org gets the TBE recruiter login
+   page; a retired one gets Oracle's "Come Back Soon" page. Both are the
+   Personio-307 trap — a successful fetch of the wrong page reads as a live
+   board with nothing open, so the board never fails and never gets evicted.
+   The `oracletaleocwsv2` marker (on every real results page, on neither error
+   page) is what keeps a dead tenant failing loudly.
+
+**The location trap is the column layout.** TBE lets each tenant choose its
+result columns and they genuinely differ: `Title | Department | Work Location |
+Search Country`, `Title | City | State/Territory | ZIP`, `Title | Employment
+duration | City | State` and `Title | Job Category` (no location at all) are all
+real, from a six-tenant sample. A fixed column index reads a department as the
+location on one board and a ZIP code on another. The adapter reads the board's
+own sort dropdown, which enumerates its columns in order, and picks the ones
+labelled as a place. A country column is a *fallback*, never merged into a real
+location: CARE USA's `Search Country` lists every country a role can be applied
+from — six of them on a posting based in Manila — and folding that in would put
+a foreign role into an India-only alert the first time such a list said India.
+
+Measured across the full published list, live: **167 rows, all 167 parsed, 126
+live, 20 dead, 7,819 jobs, 8 boards clearing the india bar.** Two of those are
+genuinely India — Covestic (42 roles, Gurugram/Hyderabad) and IFPRI (3, New
+Delhi) — and the other six clear it on bare `Remote`, which on US federal
+contractors means US-remote. So the honest yield is ~2 real boards, which is
+what a list of US small and mid-market employers was always going to give. The
+adapter is sound and the tenant source is the limit, exactly as UKG's was.
+
+`taleo.net` also had to leave `NO_ADAPTER`, and enterprise Taleo's
+`careersection` boards could not replace it there: the staleness check tests for
+the platform name as a substring, so naming them would read as "taleo is
+unsupported" while an adapter exists. They resolve to null instead, with a
+regression test pinning that boundary.
+
+**A second `NO_ADAPTER` staleness bug fell out of that.** UKG had been sitting
+in it since before `ukg.ts` shipped, and the check could not see it: the
+platform's domain (`ultipro.com`) shares no substring with its `FETCHERS` key
+(`ukg`), so every UKG board a careers-page scan found was reported unsupported
+and dropped. Moved to `NEEDS_MANUAL_EXTRACTION`, which is the honest bucket —
+the board GUID in `recruiting.ultipro.com/{tenant}/JobBoard/{guid}` is a second
+required field no single capture group on a page supplies.
+
+### SuccessFactors: the 16-hour estimate was measuring a bug, not the platform
+
+The previous session's framing was "~16 hours for ~128 boards, decide it with
+the number rather than by assuming either way." The number was wrong.
+
+`bulk-import.ts` had its own copy of `rateLimitKey`, with a comment claiming it
+was "the same shape as the hourly run's scheduler, so imports respect the same
+host caps." It kept only the Workday case. `index.ts`'s real version keys
+SuccessFactors by **host**, because SuccessFactors tenants live on their own
+hostnames — the published list is 1,392 tenants across **1,289 distinct
+hosts**. The import's copy keyed all of them as one bucket capped at 2, so a
+sweep that touches each host exactly once was serialized two requests at a
+time. That is the entire 16 hours.
+
+Fixed at the root: one exported `rateLimitKey`/`limitForHost` in `config.ts`,
+imported by both callers, with regression tests that fail if a second copy ever
+drifts again. Per-host keying alone would then open ~1,300 concurrent 180-second
+XML feeds, so `mapLimitByKey` gained an optional `maxBuckets` and the import
+passes 24 — no host sees more than its own cap of 2, and the sweep lands at
+roughly an hour and a half instead of sixteen. The hourly run passes nothing and
+is unchanged.
+
+**So the decision is: run it.** It was never a 16-hour-for-128-boards trade; it
+is a ~90-minute one, which needs no deliberation. Still run it alone — anything
+else writing `companies.json` at the same time loses rows.
+
+The general lesson is the third instance of the same pattern this repo keeps
+finding: `NO_ADAPTER`, `IMPORTABLE`, and now `rateLimitKey` were all
+hand-maintained duplicates that no test held against reality, and each one was
+silently costing real coverage. A duplicated function with a comment asserting
+it matches the original is the same failure mode as a stale list.
+
+### The YC sweep is now cron, not a one-off
+
+Added a third job to `discover.yml`, chained after `bulk-import` for the same
+reason `bulk-import` is chained after `discover`: all three commit
+`companies.json`, and concurrent pushes lose to a non-fast-forward rejection.
+It regenerates `state/yc-india.txt` and runs `detect` over it weekly.
+
+Cron-shaped because of what the first pass actually measured: of 158 active YC
+India companies, 132 had no detectable ATS and 19 were client-rendered SPAs.
+That is the finding, not a failure — YC-stage startups adopt an ATS after they
+start hiring in volume, so the same list re-run later resolves companies that
+resolved to nothing before. The directory itself had already grown to **159**
+by the next day. India-only on purpose: `detect` has no `--bar` of its own, so
+widening the region widens what gets committed, and the rest of the directory is
+overwhelmingly US startups.
+
+
 ## In progress — pick up here
 
 **`discover-news.ts` now names which RSS feed died (2026-08-19).** It

@@ -14,6 +14,8 @@ import { locationColumns, parseRows as parseTaleoRows } from './fetchers/taleo.j
 import { isPlaceholderLocation, parsePostedOn, parseRobotsSites } from './fetchers/workday.js';
 import { refreshedPostedAt } from './catalog.js';
 import { boardKey, NO_ADAPTER, parseBoardUrl } from './board-url.js';
+import { limitForHost, rateLimitKey } from './config.js';
+import { mapLimitByKey } from './fetchers/util.js';
 import { csvFields, unfedPlatforms } from './bulk-import.js';
 import { untrackedSlugs } from './open-jobs-slugs.js';
 import { place as ukgPlace } from './fetchers/ukg.js';
@@ -1716,10 +1718,16 @@ check(
   taleoLocation(['Title', 'Work Location', 'Search Country'], TALEO_ROWS.replace('<div tabindex="0" >Engineering</div>\n', '')),
   'Bengaluru, India',
 );
+// ACME Brick's real layout: no "Location" column at all, the place split
+// across City and State/Territory, and a ZIP column that must stay out of it.
+const TALEO_ADDRESS_ROW = TALEO_ROWS.replace(
+  /<div tabindex="0" >[\s\S]*<\/div>\n/,
+  '<div tabindex="0" >Houston</div>\n<div tabindex="0" >US-TX</div>\n<div tabindex="0" >77095</div>\n',
+);
 check(
   'city and state are joined when the tenant has no Location column',
-  taleoLocation(['Title', 'City', 'State/Territory', 'ZIP/Postal code'], TALEO_ROWS),
-  'Bengaluru, India, India, United States',
+  taleoLocation(['Title', 'City', 'State/Territory', 'ZIP/Postal code'], TALEO_ADDRESS_ROW),
+  'Houston, US-TX',
 );
 check(
   'a tenant with no location column yields an empty location, not a department',
@@ -1740,6 +1748,44 @@ check('and to the taleo adapter', parseBoardUrl('https://phe.tbe.taleo.net/phe01
 // Enterprise Taleo is a different product that `taleo.ts` cannot read. It must
 // resolve to null rather than be imported as a board that can never be fetched.
 check('enterprise Taleo careersection is not mistaken for TBE', parseBoardUrl('https://acme.taleo.net/careersection/ex/jobsearch.ftl'), null);
+
+
+console.log('rate-limit bucketing')
+// This key function was duplicated in bulk-import.ts, and the copy kept only
+// the Workday case while its comment claimed to be "the same shape as the
+// hourly run's scheduler". It therefore keyed all 1,392 published
+// SuccessFactors tenants — which live on 1,289 *distinct* hostnames — into one
+// bucket capped at 2, turning a sweep that touches each host once into a
+// ~16-hour serial crawl. There is now one exported copy; these checks are what
+// makes a second one show up as a failure rather than as a slow overnight run.
+const sf = (host: string) => rateLimitKey({ ats: 'successfactors' as const, token: 'acme', host });
+check('SuccessFactors is keyed by its own host', sf('career5.successfactors.eu'), 'successfactors:career5.successfactors.eu');
+check('two SF tenants on different hosts do not share a bucket', sf('career5.successfactors.eu') === sf('jobs.sap.com'), false);
+check('an SF tenant with no host falls back to its token', rateLimitKey({ ats: 'successfactors', token: 'careers.acme.com' }), 'successfactors:careers.acme.com');
+check('Workday is keyed by pod, so wd5 boards queue together', rateLimitKey({ ats: 'workday', token: 'acme', host: 'wd5' }), 'workday:wd5');
+check('Greenhouse boards all share one API host', rateLimitKey({ ats: 'greenhouse', token: 'acme' }), 'greenhouse');
+// The cap is looked up by platform even though the key carries the host, which
+// is what makes "2 per host" mean 2 per host rather than 2 in total.
+check('the per-host cap is read from the platform half of the key', limitForHost('successfactors:career5.successfactors.eu'), 2);
+check('an unlisted platform falls back to the default cap', limitForHost('taleo'), 4);
+
+// `maxBuckets` bounds how many host groups run at once. Without it a full
+// SuccessFactors import opens ~1,300 concurrent XML feeds, each with a
+// 180-second timeout and a multi-megabyte body.
+let liveBuckets = 0;
+let peakBuckets = 0;
+await mapLimitByKey(
+  Array.from({ length: 40 }, (_, i) => `host${i}`),
+  (h) => `successfactors:${h}`,
+  () => 2,
+  async () => {
+    peakBuckets = Math.max(peakBuckets, ++liveBuckets);
+    await new Promise((r) => setTimeout(r, 1));
+    liveBuckets--;
+  },
+  4,
+);
+check('maxBuckets bounds how many hosts run at once', peakBuckets <= 4, true);
 
 
 console.log('bulk-import CSV field splitting')
