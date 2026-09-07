@@ -777,7 +777,7 @@ function orgNameVariants(name: string): string[] {
   ];
 
   /** SMTP verdict + Gravatar tie-break, shared by the git path and the npm path. */
-  const finalize = async (candidates: Candidate[]): Promise<Candidate[]> => {
+  const finalize = async (candidates: Candidate[], wanted = want): Promise<Candidate[]> => {
     // DMARC pre-flight, once per company domain: a published rua record is the
     // cheapest evidence the mail domain is real and managed before any probe.
     const firstDomain = candidates[0]?.email.split('@')[1];
@@ -814,7 +814,7 @@ function orgNameVariants(name: string): string[] {
     // For the unknowns (catch-all / gateway), one free positive signal:
     // a Gravatar registered to this exact address proves a human owns it.
     const result: Candidate[] = [];
-    for (const c of candidates.filter((c) => c.verdict !== 'invalid').slice(0, want)) {
+    for (const c of candidates.filter((c) => c.verdict !== 'invalid').slice(0, wanted)) {
       if (c.verdict === 'unknown' && c.gravatar === undefined) {
         const prior = state[c.email];
         if (prior?.gravatar !== undefined && prior?.verifiedAt) {
@@ -985,12 +985,44 @@ function orgNameVariants(name: string): string[] {
       }
     }
 
-    const candidates: Candidate[] = [...srCandidates, ...ordered.map((a) => ({ ...a, source: 'git' }))].slice(
-      0,
-      MAX_PROBES_PER_COMPANY,
-    );
+    /**
+     * A senior contact ALONGSIDE the engineers, not instead of them.
+     *
+     * leadershipContacts() sat at the bottom of the ladder as a last resort, and
+     * measurement showed that position makes it unreachable by construction: of
+     * the 92 companies present in both the live catalogue and the leadership
+     * index, git already finds a matched domain for all 92, so the rung below it
+     * never ran. That is not bad luck — the sweep's `swept` tier gets its domain
+     * FROM contacts-sweep, which is the git sweep, so "the leadership sweep knows
+     * this company" and "git works here" are very nearly the same set.
+     *
+     * Reaching them means treating leadership as a different kind of recipient
+     * rather than a fallback, which is also what the page's own leadership
+     * section is for. And doing it here is strictly better than the old guess:
+     * git has just resolved a real domain and inferred a real pattern, so a
+     * known senior name becomes an address on the same evidence as everyone
+     * else's, instead of a bare 'first.last' hope.
+     */
+    const leadEntry = leadershipLower!.get(company.toLowerCase());
+    const leadCandidates: Candidate[] = [];
+    if (leadEntry && found.pattern && found.domain) {
+      for (const person of leadEntry.contacts.slice(0, 1)) {
+        const email = applyPattern(found.pattern, person.name, found.domain);
+        if (email) leadCandidates.push({ name: person.name, email, source: 'leadership' });
+      }
+    }
 
-    return await finalize(candidates);
+    const candidates: Candidate[] = [
+      ...[...srCandidates, ...ordered.map((a) => ({ ...a, source: 'git' }))].slice(
+        0,
+        Math.max(1, MAX_PROBES_PER_COMPANY - leadCandidates.length),
+      ),
+      ...leadCandidates,
+    ];
+
+    // One extra slot when a leadership option exists, so it is an addition to
+    // the peer contacts rather than a replacement for one.
+    return await finalize(candidates, want + leadCandidates.length);
   } catch (error) {
     // Distinguish "no contact" from real trouble — a silent rate-limit death
     // would look exactly like a legitimate miss (the HANDOFF lesson).
