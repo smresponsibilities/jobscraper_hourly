@@ -31,6 +31,8 @@ import {
   isTrivialCommit,
   factScore,
 } from './contacts.js';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { readJson } from './state.js';
 import { EventEmitter } from 'node:events';
 import { readReply } from './verify-email.js';
 import { SIGNATURE } from './outreach.js';
@@ -1104,6 +1106,35 @@ check('never-mailed, already-connected and bounced contacts are all excluded', c
 // A reply is the best possible reason to connect, so it sorts to the top.
 check('a reply outranks age', connects[0]?.name, 'Priya Nair');
 check('then oldest-mailed first', connects[1]?.name, 'Max Mansfield');
+
+console.log('state reads never fake an empty file');
+// The 2026-09-04 catalogue loss: the hunt restored data/jobs.json with
+// `curl -o` (whose --retry covers connection failures, not a truncated 200
+// body), readJson swallowed the parse error and returned [], updateCatalog
+// concluded there was no catalogue yet, and the publish step force-pushed 144
+// entries over 2,859 on an orphan branch with no history. Three weeks of
+// firstSeen, gone, with the run green and reporting "0 pruned".
+{
+  const dir = 'out/selftest-readjson';
+  await mkdir(dir, { recursive: true });
+  await writeFile(`${dir}/truncated.json`, '[{"id":"a"},{"id":"b","ti', 'utf8');
+  await writeFile(`${dir}/empty.json`, '', 'utf8');
+  await writeFile(`${dir}/good.json`, '[{"id":"a"}]', 'utf8');
+  const outcome = async (path: string): Promise<string> => {
+    try {
+      return `ok:${JSON.stringify(await readJson<unknown[]>(path, []))}`;
+    } catch {
+      return 'threw';
+    }
+  };
+  // A genuinely absent file is an ordinary first run and must stay silent.
+  check('a missing state file still falls back', await outcome(`${dir}/absent.json`), 'ok:[]');
+  // Everything else is corruption wearing an empty file as a disguise.
+  check('a truncated download throws instead of reading as empty', await outcome(`${dir}/truncated.json`), 'threw');
+  check('a zero-byte file throws too', await outcome(`${dir}/empty.json`), 'threw');
+  check('a valid file is unaffected', await outcome(`${dir}/good.json`), 'ok:[{"id":"a"}]');
+  await rm(dir, { recursive: true, force: true });
+}
 
 console.log('the standing draft pool');
 // Drafts used to be regenerated and thrown away every build, so a card seen in
