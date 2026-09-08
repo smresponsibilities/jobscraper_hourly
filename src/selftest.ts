@@ -41,7 +41,7 @@ import { readJson } from './state.js';
 import { EventEmitter } from 'node:events';
 import { readReply } from './verify-email.js';
 import { SIGNATURE } from './outreach.js';
-import { cleanSubject, commitKind, connectQuota, connectTier, factLine, followUpLine, groupConnects, hookKey, linkedinSearchUrl, mergePool, poolToBatch, registryFactLine, section, variablePart, weeklyConnects } from './outreach.js';
+import { cleanSubject, commitKind, connectQuota, connectTier, domainOwner, factLine, greetingName, ownedDomains, followUpLine, groupConnects, hookKey, linkedinSearchUrl, mergePool, poolToBatch, registryFactLine, section, variablePart, weeklyConnects } from './outreach.js';
 import { bodySimilarity, bounceGateDecision, buildFirstDraft, displayName, domainRiskTally, enforceSimilarity, isTriggered, loadCompanyPool, postedAgeDays, renderBody, touchGap, TRIGGER_WINDOW_DAYS, type CatalogJob } from './outreach.js';
 import { applyboltLookup, extractEmails, extractLeadership, packageNameCandidates, parseApplyBolt, parseDmarcRua, roleAddresses } from './contact-sources.js';
 import { controlAddress, mxProvider, rejectionIsMeaningful } from './verify-email.js';
@@ -1139,6 +1139,53 @@ check(
   ) < 0.8,
   true,
 );
+
+console.log('the wrong Apollo, and the npm handle used as a first name');
+// Both taught by one real draft: "Hello Glasser," sent to an Apollo GraphQL
+// maintainer about an Analyst role in Mumbai at an entirely different Apollo.
+//
+// Containment alone was the collision. "apollo" is a substring of
+// "apollographql", so the npm rung's domain guard accepted a US
+// developer-tools company as the Indian employer in the catalogue.
+// Tightening the name test itself was tried, measured against
+// state/contact-sweep.json and reverted — it rejected 100 of 1,637 already
+// matched pairs, nearly all of them correct. So the name test still accepts
+// this, on purpose:
+check('a name match alone still accepts the wrong Apollo', domainMatchesOrg('Apollo', 'apollographql.com'), true);
+
+// The corpus is what knows better. Apollo GraphQL is tracked here as its own
+// company with apollographql.com as its sweep-matched domain, so that domain
+// is a fact about a different company, not a guess about this one.
+{
+  const owners = ownedDomains(
+    Object.entries({
+      'apollo graphql': { org: 'apollographql', domain: 'apollographql.com', matched: true },
+      apollo: { org: null, domain: null, matched: false },
+      calico: { org: 'calico', domain: 'calicolabs.com', matched: true },
+      // An unmatched row records whatever the commits showed, which may be an
+      // outside contributor's domain — vetoing on it would spread one bad row
+      // across every company sharing that domain.
+      someco: { org: 'someco', domain: 'shared.com', matched: false },
+    }) as never,
+  );
+  check('a domain owned by another tracked company is vetoed', domainOwner(owners, 'Apollo', 'glasser@apollographql.com'), 'apollo graphql');
+  check('the owner itself is not vetoed', domainOwner(owners, 'Apollo GraphQL', 'glasser@apollographql.com'), null);
+  check('a domain nobody else claims passes', domainOwner(owners, 'Apollo', 'someone@apollo-athene.com'), null);
+  check('and the company keeps its own name-matched domain', domainOwner(owners, 'Calico', 'someone@calicolabs.com'), null);
+  check('an unmatched sweep row claims nothing', domainOwner(owners, 'Otherco', 'someone@shared.com'), null);
+}
+
+// A greeting is only as good as the name behind it. npm carries handles and
+// the website scan falls back to an email local part, so a single token is
+// refused rather than capitalised and used as a first name.
+check('an npm handle is not a first name', greetingName('glasser'), null);
+check('nor a lone surname', greetingName('Glasser'), null);
+check('a real full name is', greetingName('David Glasser'), 'David');
+check('a lowercase one is capitalised', greetingName('max mansfield'), 'Max');
+check('an email local part splits on its separator', greetingName('david.glasser'), 'David');
+check('and on an underscore or hyphen', greetingName('priya_nair'), 'Priya');
+check('an initial is not a name to greet by', greetingName('D. Glasser'), null);
+check('nor is anything carrying digits', greetingName('user123.smith'), null);
 
 console.log('weekly linkedin list');
 // Search urls only — this project never fetches LinkedIn (CONTACT-DISCOVERY.md

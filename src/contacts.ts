@@ -95,6 +95,17 @@ export function domainMatchesOrg(org: string, domain: string): boolean {
   if (labels.includes(slug)) return true;
   // Longer names are distinctive enough that appearing inside a label is
   // evidence — "razorpaycorp", "swiggyindia". Short ones are not.
+  //
+  // TRIED AND REVERTED: requiring whatever the label adds around the name to
+  // be a corporate form or a geography, so "apollographql" would stop matching
+  // the company "Apollo". Measured against state/contact-sweep.json first: it
+  // rejected 100 of 1,637 already-matched pairs, 6.1%, and the rejections were
+  // overwhelmingly correct matches — calicolabs.com for Calico, flocksafety.com
+  // for Flock, foxitsoftware.com for Foxit, grailbio.com for GRAIL. "Name plus
+  // an ordinary word" is the same shape whether or not it is the same company,
+  // so no rule reading only the two strings can separate them. The wrong-Apollo
+  // case is handled where real evidence exists instead — see
+  // domainClaimedByOtherCompany() in outreach.ts.
   if (slug.length >= 5 && labels.some((label) => label.includes(slug))) return true;
   // Reverse direction: a short, distinctive domain label that is itself
   // contained in the flattened org name — "rockwell" inside

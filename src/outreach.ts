@@ -33,7 +33,7 @@ import { createHash } from 'node:crypto';
 import { writeFile, mkdir, readFile, rm } from 'node:fs/promises';
 import { readJson } from './state.js';
 import { mapLimit } from './fetchers/util.js';
-import { githubContacts, splitName, applyPattern, type CommitAuthor } from './contacts.js';
+import { githubContacts, applyPattern, type CommitAuthor } from './contacts.js';
 import { dmarcRua, npmContacts, pypiContacts, mavenContacts, smartRecruitersCreators, websiteContacts, leadershipContacts } from './contact-sources.js';
 import { verifyEmail, type Verdict } from './verify-email.js';
 
@@ -371,6 +371,36 @@ export function postedAgeDays(postedAt?: string): number | null {
 }
 
 /** Catalogue names arrive raw from auto-discovery; lowercase ones read badly in mail. */
+/**
+ * The name to greet somebody by, or null when there isn't one.
+ *
+ * Not every rung of the contact ladder yields a human name. npm maintainer
+ * records carry the maintainer's *handle*, and the website scan falls back to
+ * an email local part — so `author.name` is regularly something like
+ * "glasser", which the old code capitalised and used as a first name. A real
+ * draft opened "Hello Glasser," which is a stranger being greeted by their npm
+ * username, and reads worse than no name at all.
+ *
+ * Two parts are the test. A full name splits ("David Glasser", and local parts
+ * like "david.glasser" split on their separator too), while a handle or a lone
+ * surname does not — so a single token is refused rather than guessed at. The
+ * cost of refusing is "Hi there", which is what the follow-up templates have
+ * always fallen back to; the cost of guessing is the greeting being visibly
+ * machine-generated on the one line the reader sees first.
+ */
+export function greetingName(name: string): string | null {
+  const parts = name
+    .trim()
+    .split(/[\s._\-]+/)
+    .filter(Boolean);
+  if (parts.length < 2) return null;
+  const first = parts[0]!;
+  // Initials ("D. Glasser") and anything carrying digits are not a name to
+  // greet somebody by either.
+  if (!/^[a-z]{2,}$/i.test(first)) return null;
+  return displayName(first.toLowerCase());
+}
+
 export function displayName(name: string): string {
   return name === name.toLowerCase()
     ? name.replace(/\b[a-z]/g, (c) => c.toUpperCase())
@@ -904,6 +934,65 @@ interface SweepEntry {
   matched: boolean;
 }
 
+let domainOwners: Map<string, Set<string>> | null = null;
+
+/**
+ * Which company does this mail domain already belong to?
+ *
+ * The registry rungs match a company to a domain by NAME, and a name is not an
+ * identity. The catalogue's "Apollo" is a Workday board on the `athene` tenant
+ * — Apollo Global Management — and the npm rung resolved it to a maintainer at
+ * apollographql.com, because "apollo" is a substring of "apollographql". A real
+ * first-touch went out to an Apollo GraphQL engineer about an Analyst role in
+ * Mumbai.
+ *
+ * Tightening the name test itself was tried and measured, and it does not work
+ * (see domainMatchesOrg in contacts.ts): "name plus an ordinary word" is the
+ * same shape for calicolabs.com, which IS Calico, as for apollographql.com,
+ * which is not Apollo.
+ *
+ * But this corpus already knew the answer. Apollo GraphQL is tracked here as
+ * its own company, with apollographql.com recorded as its sweep-matched
+ * domain. So a domain that is already some OTHER company's known domain is not
+ * a guess about the company being resolved — it is a fact about a different
+ * one, and the more companies this project tracks, the more of these it
+ * catches.
+ *
+ * Only sweep-MATCHED domains count. An unmatched sweep row records whatever
+ * domain the commits happened to show, which may itself be an outside
+ * contributor's, and vetoing on that would spread one bad row across every
+ * company that shares its domain.
+ */
+export function domainOwner(
+  owners: Map<string, Set<string>>,
+  company: string,
+  email: string,
+): string | null {
+  const domain = email.split('@')[1]?.toLowerCase();
+  if (!domain) return null;
+  const claimed = owners.get(domain);
+  if (!claimed || claimed.has(company.toLowerCase())) return null;
+  return [...claimed][0]!;
+}
+
+/** domain -> the companies whose sweep row matched it. */
+export function ownedDomains(sweep: Iterable<[string, SweepEntry]>): Map<string, Set<string>> {
+  const owners = new Map<string, Set<string>>();
+  for (const [name, entry] of sweep) {
+    if (!entry.matched || !entry.domain) continue;
+    const key = entry.domain.toLowerCase();
+    const set = owners.get(key) ?? new Set<string>();
+    set.add(name.toLowerCase());
+    owners.set(key, set);
+  }
+  return owners;
+}
+
+function domainClaimedByOtherCompany(company: string, email: string): string | null {
+  domainOwners ??= ownedDomains(sweepLower ?? []);
+  return domainOwner(domainOwners, company, email);
+}
+
 interface Candidate extends CommitAuthor {
   verdict?: Verdict;
   gravatar?: boolean;
@@ -1190,13 +1279,25 @@ function orgNameVariants(name: string): string[] {
               .filter((c): c is { name: string; email: string } => c.email !== null)
           : []),
       ];
-      if (alt.length === 0) {
+      // Every rung above matched this company by NAME, so this is where a name
+      // collision has to be caught: drop anything whose domain is already some
+      // other tracked company's.
+      const owned: string[] = [];
+      const kept = alt.filter((candidate) => {
+        const owner = domainClaimedByOtherCompany(company, candidate.email);
+        if (owner) owned.push(`${candidate.email} belongs to ${owner}`);
+        return !owner;
+      });
+      if (owned.length > 0) {
+        console.log(`    · ${company}: dropped ${owned.length} wrong-company address(es) — ${owned.slice(0, 2).join('; ')}`);
+      }
+      if (kept.length === 0) {
         console.log(`    · ${company}: ${why}, no npm/PyPI/Maven/website/leadership contacts either`);
         return [];
       }
-      console.log(`    · ${company}: ${why}; npm/PyPI/Maven/website/leadership gave ${alt.length} address(es)`);
+      console.log(`    · ${company}: ${why}; npm/PyPI/Maven/website/leadership gave ${kept.length} address(es)`);
       return finalize(
-        alt.slice(0, MAX_PROBES_PER_COMPANY).map((r) => ({
+        kept.slice(0, MAX_PROBES_PER_COMPANY).map((r) => ({
           name: r.name,
           email: r.email,
           source,
@@ -1674,11 +1775,12 @@ function composeLinks(addr: string, subject: string, body: string) {
 
 export function buildFirstDraft(job: CatalogJob, author: Candidate, domainRiskBounces = 0): Draft {
   const company = displayName(job.company);
-  // splitName() lowercases every part, because it exists to build email
-  // local parts. Greeting a stranger "Hey max," is a machine-generated tell
-  // on every single mail — real people capitalise a name. Verified against a
-  // real send: a draft to Max Mansfield went out addressed to "max".
-  const first = displayName(splitName(author.name)?.first ?? author.name.split(/\s+/)[0]!);
+  // greetingName() capitalises, and refuses a name it cannot vouch for. Two
+  // real sends taught this line: a draft to Max Mansfield went out addressed
+  // to "max" (splitName lowercases every part, because it exists to build
+  // email local parts, not greetings), and one to an npm maintainer opened
+  // "Hello Glasser," — their own handle, not their name.
+  const first = greetingName(author.name) ?? 'there';
   const greet = pick(GREETINGS, author.email);
   /**
    * Only the git rung carries a commit subject. Every other rung — npm, PyPI,
