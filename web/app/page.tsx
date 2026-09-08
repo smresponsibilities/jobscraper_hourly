@@ -236,7 +236,7 @@ export default function Page() {
   const [error, setError] = useState<string | null>(null);
   // Top-level Jobs/Outreach switch — not to be confused with the per-day
   // browsing tabs below, which live entirely inside the Jobs view.
-  const [view, setView] = useState<'jobs' | 'outreach' | 'yc'>('jobs');
+  const [view, setView] = useState<'jobs' | 'outreach' | 'connect' | 'yc'>('jobs');
   const [outreachKey, setOutreachKey] = useState<string | null>(null);
 
   const [query, setQuery] = useState('');
@@ -443,6 +443,21 @@ export default function Page() {
               }}
             >
               Outreach
+            </button>
+            <button
+              className="chip"
+              data-on={view === 'connect'}
+              title="This week's LinkedIn connection requests, clubbed by company"
+              onClick={() => {
+                if (!outreachKey) {
+                  const key = requestOutreachKey();
+                  if (!key) return;
+                  setOutreachKey(key);
+                }
+                setView('connect');
+              }}
+            >
+              LinkedIn
             </button>
             <button
               className="chip"
@@ -673,6 +688,32 @@ export default function Page() {
           ) : (
             <div className="outreach-locked">
               <p>Outreach key needed to load today&rsquo;s batch.</p>
+              <button
+                className="chip"
+                onClick={() => {
+                  const key = requestOutreachKey();
+                  if (key) setOutreachKey(key);
+                }}
+              >
+                Enter key
+              </button>
+            </div>
+          )}
+        </section>
+      )}
+
+      {view === 'connect' && (
+        <section className="panel outreach-panel">
+          {outreachKey ? (
+            <iframe
+              key={outreachKey}
+              src={`/api/outreach/connects?k=${encodeURIComponent(outreachKey)}`}
+              title="Weekly LinkedIn connections"
+              className="outreach-frame"
+            />
+          ) : (
+            <div className="outreach-locked">
+              <p>Outreach key needed to load this week&rsquo;s list.</p>
               <button
                 className="chip"
                 onClick={() => {

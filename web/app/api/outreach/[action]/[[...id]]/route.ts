@@ -20,6 +20,28 @@ const BRANCH = process.env.OUTREACH_DATA_BRANCH ?? 'main';
 const KEY = process.env.OUTREACH_KEY ?? '';
 /** Same cadence as TOUCH_GAPS in src/outreach.ts — keep in sync. */
 const GAPS = [0, 4, 9, 16];
+/**
+ * Same rolling-24h ceiling as SEND_CAP in src/outreach.ts, and it must be read
+ * from the same env var so raising one raises both.
+ *
+ * This is the *primary* send path — a human clicking cards on the deployed
+ * page — and it had no cap at all while the localhost server it mirrors did.
+ * A published batch of 80 cards could be clicked end to end in one sitting,
+ * which is exactly the volume that gets a young mailbox flagged
+ * (OUTREACH-DESIGN.md §1: 20/day while ramping).
+ */
+const SEND_CAP = Number(process.env.OUTREACH_AUTO_CAP ?? 12);
+
+/** Counted across state's own timestamps on a rolling window, the way
+ *  providers count — not per local midnight. Mirrors sentInLast24h(). */
+function sentInLast24h(state: OutreachState): number {
+  const cutoff = Date.now() - 24 * 60 * 60_000;
+  let count = 0;
+  for (const entry of Object.values(state)) {
+    for (const iso of entry.sentAt ?? []) if (new Date(iso).getTime() >= cutoff) count++;
+  }
+  return count;
+}
 
 /**
  * Indexed by the touch just sent, matching `touchGap()` in src/outreach.ts.
@@ -116,8 +138,11 @@ export async function GET(
 
   const { action, id: idParts } = await params;
 
-  if (action === 'page') {
-    const { text } = await getFile('today.html');
+  // Both rendered pages are published as plain HTML by src/publish-outreach.ts
+  // and served straight back: the mail batch, and the weekly LinkedIn list.
+  if (action === 'page' || action === 'connects') {
+    const file = action === 'page' ? 'today.html' : 'connects.html';
+    const { text } = await getFile(file);
     if (text === null) return new Response('no batch published yet — run the outreach workflow', { status: 404 });
     return new Response(text, {
       headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' },
@@ -135,6 +160,28 @@ export async function GET(
     if (draftsText === null) return new Response('batch unavailable — rebuild first', { status: 409 });
     const draft = (JSON.parse(draftsText || '{}') as Record<string, DraftRef>)[id];
     if (!draft) return new Response('draft not in current batch', { status: 404 });
+
+    // Both gates read the state as it is right now, not as the page was
+    // rendered. A published page is static and a browser tab can sit open for
+    // days, so "the batch builder would never have drawn this card" is not a
+    // guarantee at click time — only a fresh read is.
+    const { text: currentText } = await getFile('contacted.json');
+    if (currentText === null) return new Response('state unavailable — try again', { status: 409 });
+    const current = JSON.parse(currentText || '{}') as OutreachState;
+    const cur = current[id];
+    if (cur?.replied || cur?.bounced || cur?.skipped) {
+      return new Response(
+        `${id} is already marked ${cur.bounced ? 'bounced' : cur.replied ? 'replied' : 'skipped'} — not opening the draft. Rebuild to clear this card.`,
+        { status: 409 },
+      );
+    }
+    const already = sentInLast24h(current);
+    if (already >= SEND_CAP) {
+      return new Response(
+        `${already}/${SEND_CAP} already sent in the last 24h. Wait for the window to roll, or raise OUTREACH_AUTO_CAP deliberately.`,
+        { status: 429 },
+      );
+    }
 
     const { ok } = await commitState((state) => {
       const prev = state[id];

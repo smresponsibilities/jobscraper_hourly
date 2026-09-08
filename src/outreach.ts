@@ -201,6 +201,7 @@ const LEADERSHIP_INDEX_PATH = 'state/leadership-sweep-index.json';
 const CATALOG_PATH = 'data/jobs.json';
 const PID_PATH = 'state/outreach.pid';
 const PAGE_PATH = 'out/outbox/today.html';
+const CONNECT_PAGE_PATH = 'out/outbox/connects.html';
 /**
  * The standing pool of options. Gitignored for the same reason contacted.json
  * is: it is keyed by real people's work addresses and holds unsent mail bodies,
@@ -1333,13 +1334,154 @@ export async function gravatarExists(addr: string): Promise<boolean | null> {
 // ── linkedin ─────────────────────────────────────────────────────────────────
 
 /**
- * How many connection requests the weekly list offers. LinkedIn's own invite
- * ceiling is around 100 a week and it throttles well before that; 20 is a
- * deliberate fraction of it, because a connection request that follows a real
- * email to a named person is a different act from bulk connecting, and doing
- * twenty of those properly beats doing a hundred badly.
+ * How many connection requests the weekly list offers.
+ *
+ * Raised 20 -> 100 on direct request. 20 was a deliberate fraction of
+ * LinkedIn's own ceiling; 100 sits on it, so the safety margin is now the
+ * targeting rather than the number — everyone on this list has already been
+ * mailed by name, which is what separates it from bulk connecting.
+ *
+ * The thing to watch is acceptance rate, not the count: LinkedIn throttles
+ * accounts whose invitations sit unaccepted, and the withdrawal of a stale
+ * pending invite is what keeps that ratio honest. If requests start silently
+ * failing or the invite button disappears, this is the first number to lower,
+ * and OUTREACH_LINKEDIN_WEEKLY exists so it can be lowered without a deploy.
  */
-const LINKEDIN_WEEKLY_CAP = Number(process.env.OUTREACH_LINKEDIN_WEEKLY ?? 20);
+const LINKEDIN_WEEKLY_CAP = Number(process.env.OUTREACH_LINKEDIN_WEEKLY ?? 100);
+/**
+ * LinkedIn's own ceiling, for context on the page only — never enforced here,
+ * because this list can only ever offer LINKEDIN_WEEKLY_CAP of it. Since 2021
+ * LinkedIn has capped invitations at roughly 100 per week per account and
+ * throttles earlier for accounts with a low acceptance rate, and it caps total
+ * *pending* invitations far higher (thousands). Both numbers move without
+ * announcement, so they are shown as guidance, not as a budget to spend down.
+ */
+export const LINKEDIN_PLATFORM_WEEKLY = 100;
+
+/**
+ * Who is worth a request first, in accept-rate-times-usefulness order.
+ *
+ * `replied` outranks everything: they have already written back, so the
+ * request is near-certain to be accepted and the relationship already exists.
+ * Then recruiters and talent people, whose job is literally to accept
+ * connections from candidates; then the hiring lead who owns the req; then
+ * execs, who are the decision maker at a small company and unreachable noise
+ * at a large one — which is what the company-size tiebreak below is for; then
+ * peer engineers, who are the warmest human contact but move a hire the least.
+ */
+export type ConnectTier = 'replied' | 'recruiter' | 'hiring-lead' | 'exec' | 'peer';
+const TIER_RANK: Record<ConnectTier, number> = {
+  replied: 0,
+  recruiter: 1,
+  'hiring-lead': 2,
+  exec: 3,
+  peer: 4,
+};
+export const TIER_LABEL: Record<ConnectTier, string> = {
+  replied: 'replied to you',
+  recruiter: 'recruiter / talent',
+  'hiring-lead': 'hiring lead',
+  exec: 'founder / exec',
+  peer: 'engineer',
+};
+const RECRUITER_TITLE =
+  /\b(recruit\w*|talent|sourcer|staffing|hiring manager|people ops|people operations|human resources|HR)\b/i;
+const HIRING_LEAD_TITLE =
+  /\b(CTO|Chief Technology Officer|VP\s*,?\s*Engineering|Vice President\s*,?\s*Engineering|Head of Engineering|Engineering Manager|Director of Engineering|Engineering Lead|Head of Product)\b/i;
+const EXEC_TITLE = /\b(CEO|Chief Executive Officer|Chief \w+ Officer|Co-?Founder|Founder|President)\b/i;
+
+/**
+ * Checked recruiter-first and CTO-before-CEO on purpose: a CTO matches both
+ * the hiring-lead and the exec pattern, and for a hiring conversation the
+ * hiring-lead reading is the useful one.
+ */
+export function connectTier(c: { replied?: boolean; source?: string; title?: string }): ConnectTier {
+  if (c.replied) return 'replied';
+  // SmartRecruiters exposes the human who created the req. That is the
+  // recruiter or hiring manager for this exact role, whether or not a title
+  // string was ever scraped for them.
+  if (c.source === 'smartrecruiters') return 'recruiter';
+  const title = c.title ?? '';
+  if (RECRUITER_TITLE.test(title)) return 'recruiter';
+  if (HIRING_LEAD_TITLE.test(title)) return 'hiring-lead';
+  if (EXEC_TITLE.test(title)) return 'exec';
+  return 'peer';
+}
+
+/**
+ * Titles for people already in the outreach state, keyed `company|name`.
+ *
+ * ContactState has never stored the person's own title — only the job title
+ * being written about — so the tiering above would be blind without this.
+ * The leadership sweep already holds a real name-to-title pair per company,
+ * so read it rather than migrating state: it covers contacts mailed long
+ * before this list existed as well as new ones, with no backfill step.
+ */
+export async function connectTitles(): Promise<Map<string, string>> {
+  // Same module-level cache resolveRecipients() fills: the sweep file is
+  // megabytes, and serve() would otherwise re-read it on every page view.
+  leadershipLower ??= await loadLeadershipLower();
+  const out = new Map<string, string>();
+  for (const [company, entry] of leadershipLower) {
+    for (const person of entry.contacts) out.set(`${company}|${person.name.toLowerCase()}`, person.title);
+  }
+  return out;
+}
+
+/**
+ * Open roles per company — the stand-in for follower count.
+ *
+ * ponytail: a real follower count would need LinkedIn itself, which this
+ * project deliberately never fetches (CONTACT-DISCOVERY.md §9), so there is no
+ * honest way to sort on the real number. Hiring volume is the closest signal
+ * already on hand: a company with four open roles is a company whose CEO has
+ * four figures of followers and reads their own invitations, and one with six
+ * hundred is a company whose CEO has six figures and does not. Swap this for a
+ * real count only if a source ever appears that does not mean scraping.
+ */
+export function openRolesByCompany(catalog: CatalogJob[]): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const job of catalog) {
+    if (job.closedAt) continue;
+    const key = job.company.toLowerCase();
+    out.set(key, (out.get(key) ?? 0) + 1);
+  }
+  return out;
+}
+
+export interface ConnectQuota {
+  /** Requests marked sent from this list in the last rolling 7 days. */
+  sent: number;
+  cap: number;
+  remaining: number;
+  platformCap: number;
+}
+
+/**
+ * Counted on a rolling 7-day window over `connectedAt`, the same way
+ * `sentInLast24h()` counts mail and the same way LinkedIn itself counts —
+ * not per calendar week, so there is no Monday at which a burst of forty
+ * suddenly looks like two quiet weeks.
+ *
+ * Only requests marked sent here are counted. Requests sent directly on
+ * LinkedIn are invisible to this, which is the one way the number can read
+ * low; it can never read high.
+ */
+export function connectQuota(state: OutreachState, now: number): ConnectQuota {
+  const cutoff = now - 7 * 86_400_000;
+  let sent = 0;
+  for (const c of Object.values(state)) {
+    if (!c.connectedAt) continue;
+    const at = new Date(c.connectedAt).getTime();
+    if (Number.isFinite(at) && at >= cutoff) sent++;
+  }
+  return {
+    sent,
+    cap: LINKEDIN_WEEKLY_CAP,
+    remaining: Math.max(0, LINKEDIN_WEEKLY_CAP - sent),
+    platformCap: LINKEDIN_PLATFORM_WEEKLY,
+  };
+}
 
 /**
  * A LinkedIn people-SEARCH url for a name at a company — never a fetch.
@@ -1362,7 +1504,27 @@ export interface ConnectRow {
   daysSinceSent: number;
   replied: boolean;
   searchUrl: string;
+  /** The person's own title, when the leadership sweep knows it. */
+  title?: string;
+  tier: ConnectTier;
+  /** Open roles at this company right now — the follower-count stand-in. */
+  companyOpenRoles: number;
 }
+
+/** A company's whole cluster, so one sitting covers one company. */
+export interface ConnectGroup {
+  company: string;
+  openRoles: number;
+  rows: ConnectRow[];
+}
+
+/**
+ * Zero open roles means the catalogue cannot see this company hiring at all,
+ * which is a worse reason to spend a request than any real headcount number —
+ * so it sorts last rather than first, where a plain ascending sort would put
+ * it.
+ */
+const sizeKey = (openRoles: number) => (openRoles > 0 ? openRoles : Number.MAX_SAFE_INTEGER);
 
 /**
  * Who to send a LinkedIn request to this week.
@@ -1379,21 +1541,99 @@ export interface ConnectRow {
  * contacts never appear, and a contact drops off permanently once the request
  * is marked sent.
  */
-export function weeklyConnects(state: OutreachState, now: number): ConnectRow[] {
-  return Object.entries(state)
+export function weeklyConnects(
+  state: OutreachState,
+  now: number,
+  opts: {
+    /** `company|name` to title, from connectTitles(). */
+    titles?: Map<string, string>;
+    /** company to open-role count, from openRolesByCompany(). */
+    openRoles?: Map<string, number>;
+    /** How many requests are left this week; defaults to the full cap. */
+    limit?: number;
+  } = {},
+): ConnectRow[] {
+  const limit = opts.limit ?? LINKEDIN_WEEKLY_CAP;
+  if (limit <= 0) return [];
+  const rows = Object.entries(state)
     .filter(([, c]) => c.touch > 0 && !c.skipped && !c.bounced && !c.connectedAt && c.name)
-    .map(([addr, c]) => ({
-      addr,
-      name: c.name!,
-      company: c.company,
-      role: c.role,
-      daysSinceSent: Math.floor((now - new Date(c.sentAt[c.sentAt.length - 1] ?? 0).getTime()) / 86_400_000),
-      replied: Boolean(c.replied),
-      searchUrl: linkedinSearchUrl(c.name!, c.company),
-    }))
-    .filter((r) => Number.isFinite(r.daysSinceSent))
-    .sort((a, b) => Number(b.replied) - Number(a.replied) || b.daysSinceSent - a.daysSinceSent)
-    .slice(0, LINKEDIN_WEEKLY_CAP);
+    .map(([addr, c]) => {
+      const key = c.company.toLowerCase();
+      const title = opts.titles?.get(`${key}|${c.name!.toLowerCase()}`);
+      return {
+        addr,
+        name: c.name!,
+        company: c.company,
+        role: c.role,
+        // `sentAt` cannot be empty here — touch > 0 is only ever set alongside
+        // an appended timestamp — but a state file edited by hand can say
+        // otherwise, and `new Date(undefined)` is an Invalid Date, not epoch 0.
+        daysSinceSent: Math.floor(
+          (now - new Date(c.sentAt[c.sentAt.length - 1] ?? 0).getTime()) / 86_400_000,
+        ),
+        replied: Boolean(c.replied),
+        searchUrl: linkedinSearchUrl(c.name!, c.company),
+        title,
+        tier: connectTier({ replied: c.replied, source: c.source, title }),
+        companyOpenRoles: opts.openRoles?.get(key) ?? 0,
+      };
+    })
+    .filter((r) => Number.isFinite(r.daysSinceSent));
+
+  // A company is worth as much as its best person in it: one recruiter drags
+  // that company's peers up the list with them, because the request to the
+  // recruiter and the requests to their colleagues are one sitting.
+  const bestRank = new Map<string, number>();
+  for (const r of rows) {
+    const key = r.company.toLowerCase();
+    bestRank.set(key, Math.min(bestRank.get(key) ?? Number.MAX_SAFE_INTEGER, TIER_RANK[r.tier]));
+  }
+
+  return rows
+    .sort(
+      (a, b) =>
+        (bestRank.get(a.company.toLowerCase()) ?? 9) - (bestRank.get(b.company.toLowerCase()) ?? 9) ||
+        sizeKey(a.companyOpenRoles) - sizeKey(b.companyOpenRoles) ||
+        a.company.localeCompare(b.company) ||
+        TIER_RANK[a.tier] - TIER_RANK[b.tier] ||
+        b.daysSinceSent - a.daysSinceSent,
+    )
+    // Cuts mid-company when the week's remaining budget runs out mid-cluster.
+    // The cap is the cap: rounding up to a whole company would overshoot it,
+    // and the rest of that company is still top of next week's list.
+    .slice(0, limit);
+}
+
+let openRolesCache: Map<string, number> | null = null;
+
+/**
+ * The whole weekly list, read from state — quota first, because the quota is
+ * what decides how many rows there is any point offering.
+ */
+export async function buildConnects(
+  state: OutreachState,
+  now = Date.now(),
+): Promise<{ quota: ConnectQuota; groups: ConnectGroup[]; count: number }> {
+  const quota = connectQuota(state, now);
+  openRolesCache ??= openRolesByCompany(await readJson<CatalogJob[]>(CATALOG_PATH, []));
+  const rows = weeklyConnects(state, now, {
+    titles: await connectTitles(),
+    openRoles: openRolesCache,
+    limit: quota.remaining,
+  });
+  return { quota, groups: groupConnects(rows), count: rows.length };
+}
+
+/** The same rows, clubbed by company for rendering. Order is preserved, and
+ *  `weeklyConnects()` already sorts each company's people contiguously. */
+export function groupConnects(rows: ConnectRow[]): ConnectGroup[] {
+  const out: ConnectGroup[] = [];
+  for (const row of rows) {
+    const last = out[out.length - 1];
+    if (last && last.company === row.company) last.rows.push(row);
+    else out.push({ company: row.company, openRoles: row.companyOpenRoles, rows: [row] });
+  }
+  return out;
 }
 
 // ── drafts ───────────────────────────────────────────────────────────────────
@@ -2009,6 +2249,59 @@ async function buildBatch(): Promise<Batch> {
 const esc = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
+/** Shared by both rendered pages — the mail batch and the weekly connect
+ *  list. One stylesheet, so the two never drift into looking like different
+ *  tools when they are two views of one workflow. */
+const PAGE_STYLE = `body{font-family:ui-monospace,monospace;background:#111;color:#ddd;max-width:780px;margin:24px auto;padding:0 12px}
+h1{font-size:18px}.count{color:#666;font-size:12px;margin-bottom:4px}
+h2{font-size:13px;color:#9ab;margin-top:30px;text-transform:uppercase;letter-spacing:.08em}
+h2 .sub{text-transform:none;letter-spacing:0;color:#666;font-size:11px;margin-left:8px}
+.card{border:1px solid #333;border-radius:8px;padding:12px;margin-bottom:14px;background:#181818}
+.head{color:#fff;margin-bottom:4px}.to{color:#888;font-size:12px;margin-bottom:8px}
+pre{white-space:pre-wrap;font-size:13px;line-height:1.45;color:#ccc;border-left:3px solid #2a4a2a;padding-left:10px}
+.halt{border:1px solid #a33;background:#2a1414;color:#f99;padding:10px 12px;border-radius:8px;margin:10px 0}
+.capped{border:1px solid #a80;background:#2a2210;color:#e0b050;padding:10px 12px;border-radius:8px;margin:10px 0}
+.late{color:#f66}.ok{color:#7dcf95;font-size:11px;margin-left:6px}.warn{color:#e0b050;font-size:11px;margin-left:6px}
+.aged{color:#7a8ba0;font-size:11px;margin-left:6px}
+.btns{margin-top:10px;display:flex;gap:8px;flex-wrap:wrap}
+.btn{padding:5px 12px;border-radius:6px;background:#26364a;color:#cfe3ff;text-decoration:none;font-size:13px}
+.primary{background:#1a4a2e;color:#bfe8c8}.ghost{background:#222;color:#777}
+a.refresh{color:#569;font-size:12px}
+`;
+
+/**
+ * Every action link posts in the background instead of navigating.
+ *
+ * These pages are rendered once and served as static HTML, including inside
+ * an iframe on the deployed site, so a plain link navigation would replace
+ * the whole page (or the frame) with a bare redirect and lose the reader's
+ * place. A failed write must be loud: an unrecorded send is how somebody
+ * gets mailed twice, so the click only greys the card out once the server
+ * has confirmed it.
+ */
+const ACT_SCRIPT = `async function act(el,openUrl){
+  var href=el.href;
+  el.style.opacity='0.4';el.style.pointerEvents='none';
+  try{
+    var r=await fetch(href,{redirect:'manual'});
+    var ok=r.type==='opaqueredirect'||r.ok;
+    if(!ok){
+      var msg=r.status?'Error '+r.status+' — try again':'Failed to record — try again';
+      try{msg=await r.text()||msg;}catch(e){}
+      alert(msg);
+      el.style.opacity='';el.style.pointerEvents='';
+      return;
+    }
+    if(openUrl)window.open(openUrl,'_blank');
+    var card=el.closest('.card');
+    if(card){card.style.opacity='0.25';card.style.pointerEvents='none';}
+  }catch(e){
+    alert('Network error — try again');
+    el.style.opacity='';el.style.pointerEvents='';
+  }
+}
+`;
+
 function card(d: Draft & { firstDraftedAt?: string }): string {
   // How long this option has been sitting in the pool. Worth showing because
   // the pool now outlives a build: without it there is no way to tell a card
@@ -2038,12 +2331,12 @@ function card(d: Draft & { firstDraftedAt?: string }): string {
   <div class="to">to: ${esc(d.addr)}</div>
   <pre>${esc(d.body)}</pre>
   <div class="btns">
-    <a class="btn primary" href="${actionUrl(`outreach/open/${encodeURIComponent(d.id)}`)}">Open in Gmail</a>
-    <a class="btn" href="${actionUrl(`outreach/mailapp/${encodeURIComponent(d.id)}`)}">Mail app</a>
-    <a class="btn ghost" href="${actionUrl(`outreach/sent/${encodeURIComponent(d.id)}`)}">Sent by hand</a>
-    <a class="btn ghost" href="${actionUrl(`outreach/replied/${encodeURIComponent(d.id)}`)}">Replied</a>
-    <a class="btn ghost" href="${actionUrl(`outreach/bounce/${encodeURIComponent(d.id)}`)}">Bounced</a>
-    <a class="btn ghost" href="${actionUrl(`outreach/skip/${encodeURIComponent(d.id)}`)}">Skip</a>
+    <a class="btn primary" href="${actionUrl(`outreach/open/${encodeURIComponent(d.id)}`)}" data-open="${esc(d.gmailUrl)}" onclick="act(this,this.dataset.open);return false;">Open in Gmail</a>
+    <a class="btn" href="${actionUrl(`outreach/mailapp/${encodeURIComponent(d.id)}`)}" data-open="${esc(d.mailtoUrl)}" onclick="act(this,this.dataset.open);return false;">Mail app</a>
+    <a class="btn ghost" href="${actionUrl(`outreach/sent/${encodeURIComponent(d.id)}`)}" onclick="act(this);return false;">Sent by hand</a>
+    <a class="btn ghost" href="${actionUrl(`outreach/replied/${encodeURIComponent(d.id)}`)}" onclick="act(this);return false;">Replied</a>
+    <a class="btn ghost" href="${actionUrl(`outreach/bounce/${encodeURIComponent(d.id)}`)}" onclick="act(this);return false;">Bounced</a>
+    <a class="btn ghost" href="${actionUrl(`outreach/skip/${encodeURIComponent(d.id)}`)}" onclick="act(this);return false;">Skip</a>
   </div>
 </div>`;
 }
@@ -2077,31 +2370,68 @@ function recentRows(recent: ReturnType<typeof recentlySent>): string {
   return `<table width="100%">${recent
     .map(
       (r) => `<tr><td>${esc(r.addr)}</td><td>${esc(r.company)}</td><td>${r.daysAgo}d ago</td>
-    <td><a href="${actionUrl(`outreach/bounce/${encodeURIComponent(r.addr)}`)}">mark bounced</a> · <a href="${actionUrl(`outreach/replied/${encodeURIComponent(r.addr)}`)}">replied</a></td></tr>`,
+    <td><a href="${actionUrl(`outreach/bounce/${encodeURIComponent(r.addr)}`)}" onclick="act(this);return false;">mark bounced</a> · <a href="${actionUrl(`outreach/replied/${encodeURIComponent(r.addr)}`)}" onclick="act(this);return false;">replied</a></td></tr>`,
     )
     .join('')}</table>`;
 }
 
-function connectRows(rows: ConnectRow[]): string {
-  if (rows.length === 0) return '<div class="count">nobody to connect with yet — this list fills up as you send mail</div>';
-  return `<table width="100%">${rows
+function connectGroupBlock(g: ConnectGroup): string {
+  return `<div class="card">
+  <div class="head">${esc(g.company)}<span class="aged">${g.openRoles > 0 ? `${g.openRoles} open role${g.openRoles === 1 ? '' : 's'}` : 'no open role in the catalogue right now'}</span></div>
+  <table width="100%">${g.rows
     .map(
       (r) => `<tr>
       <td>${esc(r.name)}${r.replied ? ' <span class="ok">replied</span>' : ''}</td>
-      <td>${esc(r.company)}</td>
-      <td style="color:#888">${r.daysSinceSent}d ago</td>
+      <td style="color:#9ab">${esc(TIER_LABEL[r.tier])}</td>
+      <td style="color:#888">${esc(r.title ?? r.role)}</td>
+      <td style="color:#888">mailed ${r.daysSinceSent}d ago</td>
       <td><a class="btn" href="${esc(r.searchUrl)}" target="_blank" rel="noreferrer noopener">Find on LinkedIn</a></td>
-      <td><a href="${actionUrl(`outreach/connected/${encodeURIComponent(r.addr)}`)}">mark sent</a></td>
+      <td><a href="${actionUrl(`outreach/connected/${encodeURIComponent(r.addr)}`)}" onclick="act(this);return false;">mark sent</a></td>
     </tr>`,
     )
-    .join('')}</table>`;
+    .join('')}</table>
+</div>`;
+}
+
+/**
+ * The weekly LinkedIn list, as its own page.
+ *
+ * Separate from the mail page because it is a different cadence and a
+ * different act: mail is a daily batch with a 24h cap, this is one weekly
+ * sitting with a weekly cap. Sharing one page meant the list sat below four
+ * sections of drafts and was only ever seen by someone scrolling past them.
+ */
+export function connectPage(groups: ConnectGroup[], quota: ConnectQuota): string {
+  const people = groups.reduce((n, g) => n + g.rows.length, 0);
+  const atCap = quota.remaining <= 0;
+  return `<!doctype html><html><head><meta charset="utf-8"><title>connect — ${daySeed()}</title><style>${PAGE_STYLE}</style>
+<script>${ACT_SCRIPT}</script>
+</head>
+<body>
+<h1>connect on LinkedIn — week of ${daySeed()}</h1>
+${
+  atCap
+    ? `<div class="capped">${quota.sent}/${quota.cap} requests already marked sent in the last 7 days — that is this week's budget. The list refills as the window rolls; nothing here expires.</div>`
+    : `<div class="count"><b>${quota.sent}/${quota.cap}</b> sent in the last rolling 7 days · <b>${quota.remaining}</b> left, and that is what this page offers.</div>`
+}
+<div class="count">LinkedIn's own ceiling is around <b>${quota.platformCap} invitations a week</b>, and it throttles earlier than that for accounts whose invitations sit unaccepted${quota.cap >= quota.platformCap ? ` — this list is set to ${quota.cap}, which sits on that ceiling, so watch whether requests are being accepted rather than whether the number is under it` : `, which is why this list is set to the lower ${quota.cap}`}. The count only sees requests marked sent here; anything sent straight from LinkedIn is invisible to it, so the real number can be higher than this, never lower.</div>
+<div class="count">Everyone here has already been mailed. Companies are clubbed together — do one company in one sitting — and ordered by the most useful person in them, then by fewest open roles, which is this project's stand-in for follower count: smaller company, fewer invitations competing for that person's attention. Nothing on this page fetches LinkedIn; the button opens a <em>search</em> you click through yourself.</div>
+<div class="count"><b>${people}</b> ${people === 1 ? 'person' : 'people'} across <b>${groups.length}</b> ${groups.length === 1 ? 'company' : 'companies'}.</div>
+
+${
+  groups.length
+    ? groups.map(connectGroupBlock).join('')
+    : `<div class="count">${atCap ? 'nothing offered while at cap' : 'nobody to connect with yet — this list fills up as you send mail'}</div>`
+}
+</body></html>`;
 }
 
 function page(
   b: Batch,
   recent: ReturnType<typeof recentlySent>,
   sentToday = 0,
-  connects: ConnectRow[] = [],
+  /** How many people the weekly connect page is holding — a pointer, not a list. */
+  connects = 0,
 ): string {
   const total = allDrafts(b).length;
   const atCap = sentToday >= SEND_CAP;
@@ -2111,23 +2441,9 @@ function page(
   const savesTo = LINK_BASE
     ? `clicks save to the hosted API at ${esc(LINK_BASE)} — durable, shared, survives this machine`
     : `clicks save to ${esc(STATE_PATH)} on this machine only, and need <code>npm run outreach -- --serve</code> running on port ${PORT}`;
-  return `<!doctype html><html><head><meta charset="utf-8"><title>outreach — ${daySeed()}</title><style>
-body{font-family:ui-monospace,monospace;background:#111;color:#ddd;max-width:780px;margin:24px auto;padding:0 12px}
-h1{font-size:18px}.count{color:#666;font-size:12px;margin-bottom:4px}
-h2{font-size:13px;color:#9ab;margin-top:30px;text-transform:uppercase;letter-spacing:.08em}
-h2 .sub{text-transform:none;letter-spacing:0;color:#666;font-size:11px;margin-left:8px}
-.card{border:1px solid #333;border-radius:8px;padding:12px;margin-bottom:14px;background:#181818}
-.head{color:#fff;margin-bottom:4px}.to{color:#888;font-size:12px;margin-bottom:8px}
-pre{white-space:pre-wrap;font-size:13px;line-height:1.45;color:#ccc;border-left:3px solid #2a4a2a;padding-left:10px}
-.halt{border:1px solid #a33;background:#2a1414;color:#f99;padding:10px 12px;border-radius:8px;margin:10px 0}
-.capped{border:1px solid #a80;background:#2a2210;color:#e0b050;padding:10px 12px;border-radius:8px;margin:10px 0}
-.late{color:#f66}.ok{color:#7dcf95;font-size:11px;margin-left:6px}.warn{color:#e0b050;font-size:11px;margin-left:6px}
-.aged{color:#7a8ba0;font-size:11px;margin-left:6px}
-.btns{margin-top:10px;display:flex;gap:8px;flex-wrap:wrap}
-.btn{padding:5px 12px;border-radius:6px;background:#26364a;color:#cfe3ff;text-decoration:none;font-size:13px}
-.primary{background:#1a4a2e;color:#bfe8c8}.ghost{background:#222;color:#777}
-a.refresh{color:#569;font-size:12px}
-</style></head>
+  return `<!doctype html><html><head><meta charset="utf-8"><title>outreach — ${daySeed()}</title><style>${PAGE_STYLE}</style>
+<script>${ACT_SCRIPT}</script>
+</head>
 <body>
 <h1>outreach — ${daySeed()}</h1>
 ${b.haltReason ? `<div class="halt">${esc(b.haltReason)}</div>` : ''}
@@ -2148,11 +2464,9 @@ ${b.leadership.length ? b.leadership.map(card).join('') : `<div class="count">no
 <h2>random<span class="sub">${b.random.length} — open roles, rotating daily</span></h2>
 ${b.random.length ? b.random.map(card).join('') : `<div class="count">none right now</div>`}
 
-<h2>connect on LinkedIn this week<span class="sub">${connects.length}</span></h2>
-<div class="count">People you have already mailed, replies first then oldest. The button opens
-a LinkedIn <em>search</em> for that name and company — nothing here fetches LinkedIn, you
-click through and send the request yourself. Mark it sent and they drop off the list.</div>
-<div class="count">${connectRows(connects)}</div>
+<h2>connect on LinkedIn this week<span class="sub">${connects} waiting</span></h2>
+<div class="count">A weekly sitting, not a daily one, so it has its own page:
+<a class="btn" href="${actionUrl('outreach/connects')}">open the connect list</a></div>
 
 <h2>in flight<span class="sub">delayed bounces land here — mark when the NDR arrives</span></h2>
 <div class="count">${recentRows(recent)}</div>
@@ -2212,7 +2526,12 @@ async function writeMbox(batch: Batch): Promise<void> {
   const dir = `out/outbox/${daySeed()}`;
   await mkdir(dir, { recursive: true });
   const drafts = allDrafts(batch);
-  const manifest = drafts.map((d) => ({ addr: d.addr, file: `${d.addr}.txt`, company: d.company, role: d.role, source: d.source }));
+  // `touch` is the count of sends ALREADY completed when this file was
+  // written, so the send it represents produces touch + 1. outreach-send.ts
+  // compares it against the live state to tell "not sent yet" from "sent, and
+  // this directory is just still lying around" — without it, re-running a
+  // crashed send re-sends everything it already delivered.
+  const manifest = drafts.map((d) => ({ addr: d.addr, file: `${d.addr}.txt`, company: d.company, role: d.role, source: d.source, touch: d.touch }));
   await Promise.all(
     drafts.map((d) => writeFile(`${dir}/${d.addr}.txt`, `Subject: ${d.subject}\n\n${d.body}\n`, 'utf8')),
   );
@@ -2335,6 +2654,15 @@ async function serve(initial: Batch): Promise<void> {
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://x');
     const seg = url.pathname.split('/').filter(Boolean).map(decodeURIComponent);
+    // actionUrl() emits "outreach/<action>/<id>" because the hosted API is
+    // mounted under /api/outreach — and it emits the same path in local mode,
+    // where this server is the whole origin. Without this shift every card
+    // button on a locally served page parsed as action "outreach", matched no
+    // route, and fell through to re-rendering the page with a 200: the click
+    // script read that as success, greyed the card out and opened Gmail, and
+    // the send was never recorded. Accept both shapes rather than teaching
+    // actionUrl a second one.
+    if (seg[0] === 'outreach') seg.shift();
     const [action, rawId] = seg;
     try {
       const st = await readJson<OutreachState>(STATE_PATH, {});
@@ -2388,9 +2716,14 @@ async function serve(initial: Batch): Promise<void> {
         res.writeHead(302, { location: '/' });
         res.end();
         return;
+      } else if (action === 'connects') {
+        const { groups, quota } = await buildConnects(st);
+        res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+        res.end(connectPage(groups, quota));
+        return;
       }
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-      res.end(page(batch, recentlySent(st), sentInLast24h(st), weeklyConnects(st, Date.now())));
+      res.end(page(batch, recentlySent(st), sentInLast24h(st), (await buildConnects(st)).count));
     } catch (error) {
       res.writeHead(500, { 'content-type': 'text/plain' });
       res.end(String(error));
@@ -2445,12 +2778,19 @@ if (process.argv[1]?.endsWith('outreach.ts')) {
     const freshState = await syncVerdicts(batch);
 
     await mkdir('out/outbox', { recursive: true });
+    const connects = await buildConnects(freshState);
     await writeFile(
       PAGE_PATH,
-      page(batch, recentlySent(freshState), sentInLast24h(freshState), weeklyConnects(freshState, Date.now())),
+      page(batch, recentlySent(freshState), sentInLast24h(freshState), connects.count),
       'utf8',
     );
     console.log(`static page written → ${PAGE_PATH}`);
+    // The weekly LinkedIn list is a second page, not a section: different
+    // cadence, different cap, and it is a tab of its own on the deployed site.
+    await writeFile(CONNECT_PAGE_PATH, connectPage(connects.groups, connects.quota), 'utf8');
+    console.log(
+      `connect page written → ${CONNECT_PAGE_PATH} (${connects.count} people, ${connects.quota.sent}/${connects.quota.cap} used this week)`,
+    );
     // Deployed mode companion: the hosted click-API needs each draft's
     // redirect targets (the Gmail/mailto URLs are computed at build time from
     // subject+body, and the API route never sees them otherwise).

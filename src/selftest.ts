@@ -35,11 +35,13 @@ import {
   factScore,
 } from './contacts.js';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mergeState } from './publish-outreach.js';
+import { alreadySent } from './outreach-send.js';
 import { readJson } from './state.js';
 import { EventEmitter } from 'node:events';
 import { readReply } from './verify-email.js';
 import { SIGNATURE } from './outreach.js';
-import { cleanSubject, commitKind, factLine, followUpLine, hookKey, linkedinSearchUrl, mergePool, poolToBatch, registryFactLine, section, variablePart, weeklyConnects } from './outreach.js';
+import { cleanSubject, commitKind, connectQuota, connectTier, factLine, followUpLine, groupConnects, hookKey, linkedinSearchUrl, mergePool, poolToBatch, registryFactLine, section, variablePart, weeklyConnects } from './outreach.js';
 import { bodySimilarity, bounceGateDecision, buildFirstDraft, displayName, domainRiskTally, enforceSimilarity, isTriggered, loadCompanyPool, postedAgeDays, renderBody, touchGap, TRIGGER_WINDOW_DAYS, type CatalogJob } from './outreach.js';
 import { applyboltLookup, extractEmails, extractLeadership, packageNameCandidates, parseApplyBolt, parseDmarcRua, roleAddresses } from './contact-sources.js';
 import { controlAddress, mxProvider, rejectionIsMeaningful } from './verify-email.js';
@@ -1162,6 +1164,107 @@ check('never-mailed, already-connected and bounced contacts are all excluded', c
 // A reply is the best possible reason to connect, so it sorts to the top.
 check('a reply outranks age', connects[0]?.name, 'Priya Nair');
 check('then oldest-mailed first', connects[1]?.name, 'Max Mansfield');
+
+// Tiering. The recruiter beats the founder beats the engineer, and a
+// SmartRecruiters contact is a recruiter on its source alone — that rung is
+// the human who created the req, whether or not a title was ever scraped.
+check('a scraped recruiter title tiers as recruiter', connectTier({ title: 'Senior Technical Recruiter' }), 'recruiter');
+check('the req creator tiers as recruiter with no title at all', connectTier({ source: 'smartrecruiters' }), 'recruiter');
+// A CTO matches the exec pattern too; for a hiring conversation the hiring-lead
+// reading is the useful one, so the order of the checks is the behaviour.
+check('a CTO tiers as the hiring lead, not as an exec', connectTier({ title: 'CTO' }), 'hiring-lead');
+check('a founder tiers as exec', connectTier({ title: 'Co-Founder & CEO' }), 'exec');
+check('an unknown title falls through to peer', connectTier({ title: 'Staff Software Engineer' }), 'peer');
+check('a reply outranks every title', connectTier({ replied: true, title: 'Recruiter' }), 'replied');
+
+// Clubbing and the follower-count stand-in. Two companies, both peer-only, so
+// the tiebreak is company size: the one with fewer open roles goes first, and
+// a company the catalogue shows no open role for sorts last rather than first.
+{
+  const st = {
+    'a@big.com': { company: 'Big', role: 'r', jobUrl: '', touch: 1, sentAt: [ago(3)], nextDueAt: '', subject: '', name: 'Big One' },
+    'b@big.com': { company: 'Big', role: 'r', jobUrl: '', touch: 1, sentAt: [ago(4)], nextDueAt: '', subject: '', name: 'Big Two' },
+    'c@small.com': { company: 'Small', role: 'r', jobUrl: '', touch: 1, sentAt: [ago(1)], nextDueAt: '', subject: '', name: 'Small One' },
+    'd@unseen.com': { company: 'Unseen', role: 'r', jobUrl: '', touch: 1, sentAt: [ago(1)], nextDueAt: '', subject: '', name: 'Unseen One' },
+  };
+  const openRoles = new Map([['big', 90], ['small', 3]]);
+  const rows = weeklyConnects(st as never, CONNECT_NOW, { openRoles });
+  check('fewer open roles is a better bet than more', rows[0]?.company, 'Small');
+  check('a company with no visible open role sorts last, not first', rows[rows.length - 1]?.company, 'Unseen');
+  const groups = groupConnects(rows);
+  check('one group per company', groups.map((g) => g.company).join(','), 'Small,Big,Unseen');
+  check('the company cluster stays together', groups[1]?.rows.length, 2);
+
+  // One recruiter drags their whole company up the list: the request to them
+  // and the requests to their colleagues are one sitting.
+  const withRecruiter = weeklyConnects(
+    { ...st, 'e@big.com': { company: 'Big', role: 'r', jobUrl: '', touch: 1, sentAt: [ago(2)], nextDueAt: '', subject: '', name: 'Big Recruiter', source: 'smartrecruiters' } } as never,
+    CONNECT_NOW,
+    { openRoles },
+  );
+  check('a recruiter lifts their whole company above a smaller one', withRecruiter[0]?.company, 'Big');
+
+  // The weekly budget is the real limit on this page, so it must bound the
+  // list itself — offering twenty when four are left is how the LinkedIn cap
+  // gets blown through.
+  check('the offer is capped by what is left this week', weeklyConnects(st as never, CONNECT_NOW, { openRoles, limit: 2 }).length, 2);
+  check('nothing is offered at cap', weeklyConnects(st as never, CONNECT_NOW, { openRoles, limit: 0 }).length, 0);
+}
+
+// The quota counts marked-sent requests on a rolling 7 days, the way LinkedIn
+// counts and the way sentInLast24h() counts mail — not per calendar week.
+{
+  const st = {
+    'a@x.com': { company: 'X', role: 'r', jobUrl: '', touch: 1, sentAt: [ago(20)], nextDueAt: '', subject: '', name: 'A', connectedAt: ago(2) },
+    'b@x.com': { company: 'X', role: 'r', jobUrl: '', touch: 1, sentAt: [ago(20)], nextDueAt: '', subject: '', name: 'B', connectedAt: ago(6) },
+    'c@x.com': { company: 'X', role: 'r', jobUrl: '', touch: 1, sentAt: [ago(20)], nextDueAt: '', subject: '', name: 'C', connectedAt: ago(8) },
+    'd@x.com': { company: 'X', role: 'r', jobUrl: '', touch: 1, sentAt: [ago(20)], nextDueAt: '', subject: '', name: 'D', connectedAt: 'not a date' },
+  };
+  const q = connectQuota(st as never, CONNECT_NOW);
+  check('only requests inside the last 7 days count', q.sent, 2);
+  check('remaining is the cap minus those', q.remaining, q.cap - 2);
+}
+
+console.log('a crashed send never re-sends what it delivered');
+// The only guard used to be "does the .txt still exist", and nothing deletes a
+// file after sending it: re-running an interrupted send re-sent every message
+// it had already delivered, to the same people, byte for byte.
+{
+  const entry = { addr: 'a@x.com', file: 'a@x.com.txt', company: 'X', role: 'r', touch: 0 };
+  check('unsent draft still sends', alreadySent({} as never, entry), false);
+  check('a recorded send of this exact draft blocks the re-send', alreadySent({ 'a@x.com': { touch: 1 } } as never, entry), true);
+  // Touch 1 recorded, and this file is the touch-2 follow-up: a different
+  // message that has not gone out yet.
+  check('the next follow-up in the sequence still sends', alreadySent({ 'a@x.com': { touch: 1 } } as never, { ...entry, touch: 1 }), false);
+  // Manifests written before the field existed carry no touch to compare, so
+  // they keep the old permissive behaviour rather than refusing a whole run.
+  check('a pre-existing manifest is not blocked wholesale', alreadySent({ 'a@x.com': { touch: 3 } } as never, { ...entry, touch: undefined }), false);
+}
+
+console.log('publish merge never forgets a click');
+// The hourly workflow pulls contacted.json, builds for minutes, then pushes.
+// Clicks landing on the live page during those minutes commit to the remote
+// through the hosted API, and push() re-reads the sha right before writing, so
+// GitHub cannot reject the overwrite. Overwriting reverted a reply or a bounce
+// and the next build then mailed that person again.
+{
+  const local = {
+    'a@x.com': { touch: 1, sentAt: ['2026-09-01T00:00:00.000Z'], nextDueAt: '2026-09-05T00:00:00.000Z', verdict: 'valid' },
+    'new@x.com': { touch: 0, sentAt: [], nextDueAt: '2026-09-01T00:00:00.000Z' },
+  };
+  const remote = {
+    'a@x.com': { touch: 2, sentAt: ['2026-09-01T00:00:00.000Z', '2026-09-05T00:00:00.000Z'], nextDueAt: '2026-09-14T00:00:00.000Z', replied: true },
+    'clicked@x.com': { touch: 1, sentAt: ['2026-09-06T00:00:00.000Z'], nextDueAt: '2026-09-10T00:00:00.000Z', bounced: true },
+  };
+  const merged = mergeState(local as never, remote as never);
+  check('a reply recorded mid-build survives the push', merged['a@x.com']?.replied, true);
+  check('a send recorded mid-build survives the push', merged['a@x.com']?.sentAt?.length, 2);
+  check('touch follows the union, not either counter', merged['a@x.com']?.touch, 2);
+  check('the later follow-up date wins', merged['a@x.com']?.nextDueAt, '2026-09-14T00:00:00.000Z');
+  check('locally computed research fields survive too', merged['a@x.com']?.verdict, 'valid');
+  check('a contact only the remote knows about is kept', merged['clicked@x.com']?.bounced, true);
+  check('a contact only the local build knows about is kept', 'new@x.com' in merged, true);
+}
 
 console.log('state reads never fake an empty file');
 // The 2026-09-04 catalogue loss: the hunt restored data/jobs.json with
