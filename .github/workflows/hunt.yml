@@ -321,6 +321,16 @@ jobs:
           commit_message: 'companies: board list update [skip ci]'
           file_pattern: companies.json
 
+      # The commit message carries [skip ci] for the same reason every commit
+      # to main does, and it matters more here: Vercel deploys every branch by
+      # default and honours [skip ci], and this branch is force-pushed 72 times
+      # a day. That was 72 preview deployments a day of an app that does not
+      # live on this branch at all — enough on its own to exhaust the Hobby
+      # plan's 100-deployments-per-day limit, which is how real deploys of the
+      # web app started getting rate limited. The site reads jobs.json from
+      # raw.githubusercontent at runtime (see web/next.config.mjs), so new data
+      # has never needed a deploy to go live.
+      #
       # The catalogue is DERIVED data — regenerable from the boards at any time,
       # so its history has no value. Keeping it on main would add a fresh copy to
       # git 24 times a day, forever. Instead it lives on an orphan `data` branch
@@ -374,5 +384,5 @@ jobs:
           git init -q
           git checkout -qb data
           git add jobs.json
-          git -c user.name='github-actions[bot]'               -c user.email='github-actions[bot]@users.noreply.github.com'               commit -qm "catalog: ${{ steps.hunt.outputs.new_count }} new"
+          git -c user.name='github-actions[bot]'               -c user.email='github-actions[bot]@users.noreply.github.com'               commit -qm "catalog: ${{ steps.hunt.outputs.new_count }} new [skip ci]"
           git push -qf "https://x-access-token:$GITHUB_TOKEN@github.com/$GITHUB_REPOSITORY.git" data
