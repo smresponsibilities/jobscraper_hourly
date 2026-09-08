@@ -1714,7 +1714,12 @@ let openRolesCache: Map<string, number> | null = null;
 export async function buildConnects(
   state: OutreachState,
   now = Date.now(),
-): Promise<{ quota: ConnectQuota; groups: ConnectGroup[]; count: number }> {
+): Promise<{
+  quota: ConnectQuota;
+  groups: ConnectGroup[];
+  cold: ConnectGroup[];
+  count: number;
+}> {
   const quota = connectQuota(state, now);
   openRolesCache ??= openRolesByCompany(await readJson<CatalogJob[]>(CATALOG_PATH, []));
   const rows = weeklyConnects(state, now, {
@@ -1722,7 +1727,140 @@ export async function buildConnects(
     openRoles: openRolesCache,
     limit: quota.remaining,
   });
-  return { quota, groups: groupConnects(rows), count: rows.length };
+  // The mailed list takes what it needs first — it is small, and a request
+  // following a real email is the better of the two. The daily cold block
+  // fills whatever the week's budget has left, up to its own daily number.
+  leadershipLower ??= await loadLeadershipLower();
+  const cold = dailyConnects(state, leadershipLower, openRolesCache, {
+    limit: Math.min(DAILY_CONNECT_RANDOM, quota.remaining - rows.length),
+    exclude: rows.map((r) => coldConnectId(r.company, r.name)),
+  });
+  return {
+    quota,
+    groups: groupConnects(rows),
+    cold: groupConnects(cold),
+    count: rows.length + cold.length,
+  };
+}
+
+/**
+ * How many people the daily cold block offers on top of the mailed list.
+ *
+ * A different act from the rest of this page: these people have NOT been
+ * mailed, so the request arrives with no prior context and a lower acceptance
+ * rate. That is the deliberate trade — the mailed list is bounded by how much
+ * mail has actually gone out, which is a dozen a day at most, and a weekly
+ * invitation budget of 100 goes unused waiting for it. Ten to fifteen a day of
+ * named, senior, currently-hiring people fills that budget with something
+ * better than nothing.
+ */
+const DAILY_CONNECT_RANDOM = Number(process.env.OUTREACH_CONNECT_DAILY ?? 12);
+
+/**
+ * State key for somebody who has never been mailed.
+ *
+ * `contacted.json` is keyed by email address, and a cold connect has no
+ * address — a LinkedIn search needs only a name and a company. The `li:`
+ * prefix keeps these rows obviously not-an-address, and the two places that
+ * read a domain out of a state key (`recentlySent`, `domainRiskTally`) already
+ * check for an `@` before doing so, so these rows are inert everywhere except
+ * the connect page that wrote them.
+ */
+/**
+ * A daily shuffle key that actually shuffles.
+ *
+ * hash() is a 31-polynomial, so `hash(seed + key)` works out as
+ * `hash(seed) * 31^key.length + hash(key)` — the seed contributes the SAME
+ * additive constant to every key of the same length. Across real company or
+ * person names, whose lengths vary, that still reorders the pool: measured
+ * against companies.json, consecutive days share 0 of their top 40, which is
+ * why the mail batch's random lane is left alone. But within one length class
+ * the order is frozen, and a set of people at one company is exactly where
+ * near-equal lengths cluster. The avalanche below (splitmix32's finalizer)
+ * removes the question entirely, and stays deterministic per seed.
+ */
+function seededRank(seed: string, key: string): number {
+  const h = hash(`${seed}::${key}`);
+  let x = (h ^ (h >>> 16)) >>> 0;
+  x = (Math.imul(x, 0x7feb352d) ^ ((Math.imul(x, 0x7feb352d) >>> 0) >>> 15)) >>> 0;
+  x = Math.imul(x, 0x846ca68b) >>> 0;
+  return (x ^ (x >>> 16)) >>> 0;
+}
+
+export const coldConnectId = (company: string, name: string) =>
+  `li:${company.toLowerCase()}|${name.toLowerCase()}`;
+
+/**
+ * The daily cold block: named people at companies hiring right now.
+ *
+ * Source is the leadership sweep, which already holds a real name and a real
+ * title per company and cost nothing to collect — and unlike mail, a
+ * connection request needs no address at all, so the whole sweep is reachable
+ * here even where no email pattern was ever inferred.
+ *
+ * Only companies with an open role in the catalogue: "saw you're hiring" is
+ * the reason the request makes sense, and without an open role there isn't
+ * one. Peers are dropped rather than ranked last — everybody offered here
+ * should be a recruiter, a hiring lead or a founder, because a cold request
+ * to an engineer at a company you have not written to is the weakest play on
+ * this page.
+ *
+ * Rotation is by day, seeded the same way and for the same reason as the mail
+ * batch's random lane: the pool is far larger than a day's budget, so a stable
+ * sort would offer the same people every day forever, and nothing here records
+ * that somebody was merely *offered* — only that a request was marked sent.
+ */
+export function dailyConnects(
+  state: OutreachState,
+  leadership: Map<string, { contacts: { name: string; title: string }[] }>,
+  openRoles: Map<string, number>,
+  opts: { seed?: string; limit?: number; exclude?: Iterable<string> } = {},
+): ConnectRow[] {
+  const limit = opts.limit ?? DAILY_CONNECT_RANDOM;
+  if (limit <= 0) return [];
+  const seed = opts.seed ?? daySeed();
+  const taken = new Set(opts.exclude ?? []);
+  const rows: (ConnectRow & { rank: number })[] = [];
+
+  for (const [companyKey, entry] of leadership) {
+    const open = openRoles.get(companyKey) ?? 0;
+    if (open <= 0) continue;
+    for (const person of entry.contacts) {
+      const tier = connectTier({ title: person.title });
+      if (tier === 'peer') continue;
+      const id = coldConnectId(companyKey, person.name);
+      if (taken.has(id) || state[id]?.connectedAt) continue;
+      rows.push({
+        addr: id,
+        name: person.name,
+        company: displayName(companyKey),
+        role: person.title,
+        title: person.title,
+        // Never mailed — that is the whole point of this block, and the page
+        // says so rather than letting the column read as "mailed 0d ago".
+        daysSinceSent: -1,
+        replied: false,
+        searchUrl: linkedinSearchUrl(person.name, companyKey),
+        tier,
+        companyOpenRoles: open,
+        rank: seededRank(seed, id),
+      });
+    }
+  }
+
+  return rows
+    .sort((a, b) => a.rank - b.rank)
+    .slice(0, limit)
+    // Cluster the day's picks by company, same sitting-per-company reasoning
+    // as the mailed list — the rotation above chose them, this only groups
+    // what it chose.
+    .sort(
+      (a, b) =>
+        a.company.localeCompare(b.company) ||
+        TIER_RANK[a.tier] - TIER_RANK[b.tier] ||
+        a.name.localeCompare(b.name),
+    )
+    .map(({ rank: _rank, ...row }) => row);
 }
 
 /** The same rows, clubbed by company for rendering. Order is preserved, and
@@ -2486,7 +2624,7 @@ function connectGroupBlock(g: ConnectGroup): string {
       <td>${esc(r.name)}${r.replied ? ' <span class="ok">replied</span>' : ''}</td>
       <td style="color:#9ab">${esc(TIER_LABEL[r.tier])}</td>
       <td style="color:#888">${esc(r.title ?? r.role)}</td>
-      <td style="color:#888">mailed ${r.daysSinceSent}d ago</td>
+      <td style="color:#888">${r.daysSinceSent < 0 ? 'not mailed' : `mailed ${r.daysSinceSent}d ago`}</td>
       <td><a class="btn" href="${esc(r.searchUrl)}" target="_blank" rel="noreferrer noopener">Find on LinkedIn</a></td>
       <td><a href="${actionUrl(`outreach/connected/${encodeURIComponent(r.addr)}`)}" onclick="act(this);return false;">mark sent</a></td>
     </tr>`,
@@ -2503,8 +2641,9 @@ function connectGroupBlock(g: ConnectGroup): string {
  * sitting with a weekly cap. Sharing one page meant the list sat below four
  * sections of drafts and was only ever seen by someone scrolling past them.
  */
-export function connectPage(groups: ConnectGroup[], quota: ConnectQuota): string {
+export function connectPage(groups: ConnectGroup[], quota: ConnectQuota, cold: ConnectGroup[] = []): string {
   const people = groups.reduce((n, g) => n + g.rows.length, 0);
+  const coldPeople = cold.reduce((n, g) => n + g.rows.length, 0);
   const atCap = quota.remaining <= 0;
   return `<!doctype html><html><head><meta charset="utf-8"><title>connect — ${daySeed()}</title><style>${PAGE_STYLE}</style>
 <script>${ACT_SCRIPT}</script>
@@ -2517,14 +2656,24 @@ ${
     : `<div class="count"><b>${quota.sent}/${quota.cap}</b> sent in the last rolling 7 days · <b>${quota.remaining}</b> left, and that is what this page offers.</div>`
 }
 <div class="count">LinkedIn's own ceiling is around <b>${quota.platformCap} invitations a week</b>, and it throttles earlier than that for accounts whose invitations sit unaccepted${quota.cap >= quota.platformCap ? ` — this list is set to ${quota.cap}, which sits on that ceiling, so watch whether requests are being accepted rather than whether the number is under it` : `, which is why this list is set to the lower ${quota.cap}`}. The count only sees requests marked sent here; anything sent straight from LinkedIn is invisible to it, so the real number can be higher than this, never lower.</div>
-<div class="count">Everyone here has already been mailed. Companies are clubbed together — do one company in one sitting — and ordered by the most useful person in them, then by fewest open roles, which is this project's stand-in for follower count: smaller company, fewer invitations competing for that person's attention. Nothing on this page fetches LinkedIn; the button opens a <em>search</em> you click through yourself.</div>
-<div class="count"><b>${people}</b> ${people === 1 ? 'person' : 'people'} across <b>${groups.length}</b> ${groups.length === 1 ? 'company' : 'companies'}.</div>
+<div class="count">Two lists below: people you have already mailed, then a daily rotation of named senior people you have not. Companies are clubbed together — do one company in one sitting — and ordered by the most useful person in them, then by fewest open roles, which is this project's stand-in for follower count: smaller company, fewer invitations competing for that person's attention. Nothing on this page fetches LinkedIn; the button opens a <em>search</em> you click through yourself.</div>
+<div class="count"><b>${people + coldPeople}</b> ${people + coldPeople === 1 ? 'person' : 'people'} across <b>${groups.length + cold.length}</b> ${groups.length + cold.length === 1 ? 'company' : 'companies'} — ${people} already mailed, ${coldPeople} cold.</div>
 
+<h2>already mailed<span class="sub">${people} — a request following a real email</span></h2>
 ${
   groups.length
     ? groups.map(connectGroupBlock).join('')
     : `<div class="count">${atCap ? 'nothing offered while at cap' : 'nobody to connect with yet — this list fills up as you send mail'}</div>`
 }
+
+<h2>cold, today's rotation<span class="sub">${coldPeople} — not mailed, named senior people at companies hiring now</span></h2>
+<div class="count">These have had no email from you, so the request arrives with no context and
+a lower acceptance rate — that is the trade for filling a weekly budget the mailed list alone
+cannot. Everyone here is a recruiter, a hiring lead or a founder at a company with an open role
+in the catalogue right now; engineers are left out, because a cold request to a peer at a company
+you have not written to is the weakest thing this page could offer. The set rotates daily, so
+skipping a day costs nothing and nobody is stuck at the top of the list forever.</div>
+${cold.length ? cold.map(connectGroupBlock).join('') : `<div class="count">none today</div>`}
 </body></html>`;
 }
 
@@ -2792,6 +2941,25 @@ async function serve(initial: Batch): Promise<void> {
         if (cur) {
           cur.connectedAt = new Date().toISOString();
           await saveState(st);
+        } else if (rawId.startsWith('li:')) {
+          // Somebody from the cold block, who has never been mailed and so
+          // has no row yet. The row exists only to remember the request and
+          // to let it count against the weekly quota; every other field is
+          // inert, and the key is not an address on purpose.
+          const [company = '', name = ''] = rawId.slice(3).split('|');
+          const at = new Date().toISOString();
+          st[rawId] = {
+            company: displayName(company),
+            role: '',
+            jobUrl: '',
+            name: displayName(name),
+            touch: 0,
+            sentAt: [],
+            nextDueAt: at,
+            subject: '',
+            connectedAt: at,
+          };
+          await saveState(st);
         }
         res.writeHead(302, { location: '/' });
         res.end();
@@ -2819,9 +2987,9 @@ async function serve(initial: Batch): Promise<void> {
         res.end();
         return;
       } else if (action === 'connects') {
-        const { groups, quota } = await buildConnects(st);
+        const { groups, quota, cold } = await buildConnects(st);
         res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-        res.end(connectPage(groups, quota));
+        res.end(connectPage(groups, quota, cold));
         return;
       }
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
@@ -2889,7 +3057,7 @@ if (process.argv[1]?.endsWith('outreach.ts')) {
     console.log(`static page written → ${PAGE_PATH}`);
     // The weekly LinkedIn list is a second page, not a section: different
     // cadence, different cap, and it is a tab of its own on the deployed site.
-    await writeFile(CONNECT_PAGE_PATH, connectPage(connects.groups, connects.quota), 'utf8');
+    await writeFile(CONNECT_PAGE_PATH, connectPage(connects.groups, connects.quota, connects.cold), 'utf8');
     console.log(
       `connect page written → ${CONNECT_PAGE_PATH} (${connects.count} people, ${connects.quota.sent}/${connects.quota.cap} used this week)`,
     );

@@ -41,7 +41,7 @@ import { readJson } from './state.js';
 import { EventEmitter } from 'node:events';
 import { readReply } from './verify-email.js';
 import { SIGNATURE } from './outreach.js';
-import { cleanSubject, commitKind, connectQuota, connectTier, domainOwner, factLine, greetingName, ownedDomains, followUpLine, groupConnects, hookKey, linkedinSearchUrl, mergePool, poolToBatch, registryFactLine, section, variablePart, weeklyConnects } from './outreach.js';
+import { cleanSubject, coldConnectId, commitKind, connectQuota, connectTier, dailyConnects, domainOwner, factLine, greetingName, ownedDomains, followUpLine, groupConnects, hookKey, linkedinSearchUrl, mergePool, poolToBatch, registryFactLine, section, variablePart, weeklyConnects } from './outreach.js';
 import { bodySimilarity, bounceGateDecision, buildFirstDraft, displayName, domainRiskTally, enforceSimilarity, isTriggered, loadCompanyPool, postedAgeDays, renderBody, touchGap, TRIGGER_WINDOW_DAYS, type CatalogJob } from './outreach.js';
 import { applyboltLookup, extractEmails, extractLeadership, packageNameCandidates, parseApplyBolt, parseDmarcRua, roleAddresses } from './contact-sources.js';
 import { controlAddress, mxProvider, rejectionIsMeaningful } from './verify-email.js';
@@ -1311,6 +1311,48 @@ console.log('publish merge never forgets a click');
   check('locally computed research fields survive too', merged['a@x.com']?.verdict, 'valid');
   check('a contact only the remote knows about is kept', merged['clicked@x.com']?.bounced, true);
   check('a contact only the local build knows about is kept', 'new@x.com' in merged, true);
+}
+
+console.log('the daily cold connect block');
+// The mailed list is bounded by how much mail has gone out, which leaves most
+// of a 100-a-week invitation budget unused. This block fills it with named
+// senior people at companies hiring right now.
+{
+  const lead = new Map([
+    ['hiringco', { contacts: [
+      { name: 'Ravi Menon', title: 'Talent Acquisition Lead' },
+      { name: 'Anu Iyer', title: 'CTO' },
+      { name: 'Some Engineer', title: 'Senior Software Engineer' },
+    ] }],
+    ['quietco', { contacts: [{ name: 'Nobody Hiring', title: 'CEO' }] }],
+  ]);
+  const openRoles = new Map([['hiringco', 6]]);
+  const cold = dailyConnects({} as never, lead as never, openRoles, { seed: 'x' });
+  const names = cold.map((r) => r.name).sort().join(',');
+  // An open role is the reason the request makes sense, so a company with none
+  // is not offered at all — and a peer engineer is dropped rather than ranked
+  // last, because a cold request to a peer is the weakest thing on the page.
+  check('only companies with an open role, and only useful tiers', names, 'Anu Iyer,Ravi Menon');
+  check('nobody is marked as mailed', cold.every((r) => r.daysSinceSent === -1), true);
+
+  // Marking one sent must retire them permanently — this is the only record
+  // that the request happened, and their id is not an address.
+  const id = coldConnectId('hiringco', 'Ravi Menon');
+  check('the id is namespaced, not an address', id.startsWith('li:') && !id.includes('@'), true);
+  const after = dailyConnects({ [id]: { connectedAt: '2026-09-01T00:00:00.000Z' } } as never, lead as never, openRoles, { seed: 'x' });
+  check('somebody already connected to is not offered again', after.map((r) => r.name).join(','), 'Anu Iyer');
+  // Anyone already on the mailed list is not offered twice in one sitting.
+  check('the mailed list wins a duplicate', dailyConnects({} as never, lead as never, openRoles, { seed: 'x', exclude: [id] }).map((r) => r.name).join(','), 'Anu Iyer');
+
+  // The pool is far larger than a day's budget, so a stable sort would offer
+  // the same people every day forever. Nothing records a mere offer.
+  const big = new Map([['hiringco', { contacts: Array.from({ length: 60 }, (_, i) => ({ name: `Person ${i}`, title: 'Recruiter' })) }]]);
+  const day1 = dailyConnects({} as never, big as never, openRoles, { seed: '2026-09-08', limit: 12 });
+  const day2 = dailyConnects({} as never, big as never, openRoles, { seed: '2026-09-09', limit: 12 });
+  check('the daily limit is respected', day1.length, 12);
+  check('and the rotation actually moves', day1.map((r) => r.name).join(',') === day2.map((r) => r.name).join(','), false);
+  check('but a given day is reproducible', dailyConnects({} as never, big as never, openRoles, { seed: '2026-09-08', limit: 12 }).map((r) => r.name).join(','), day1.map((r) => r.name).join(','));
+  check('nothing is offered with no budget left', dailyConnects({} as never, big as never, openRoles, { seed: 'x', limit: 0 }).length, 0);
 }
 
 console.log('state reads never fake an empty file');

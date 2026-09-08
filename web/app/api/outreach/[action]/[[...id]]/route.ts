@@ -236,8 +236,20 @@ export async function GET(
     let known = true;
     const { ok } = await commitState((state) => {
       const cur = state[id];
-      if (!cur) { known = false; return; }
-      (cur as ContactState & { connectedAt?: string }).connectedAt = now;
+      if (cur) {
+        (cur as ContactState & { connectedAt?: string }).connectedAt = now;
+        return;
+      }
+      // The connect page's cold block offers named people who have never been
+      // mailed, so they have no row here yet — their id is 'li:company|name',
+      // deliberately not an address. The row exists only to remember the
+      // request and to count it against the weekly invitation budget.
+      if (!id.startsWith('li:')) { known = false; return; }
+      const [company = '', name = ''] = id.slice(3).split('|');
+      state[id] = { company, role: '', touch: 0, sentAt: [], nextDueAt: now, connectedAt: now, name } as ContactState & {
+        connectedAt?: string;
+        name?: string;
+      };
     });
     if (!known) return new Response('unknown contact', { status: 404 });
     if (!ok) return new Response('could not record - try again', { status: 409 });
