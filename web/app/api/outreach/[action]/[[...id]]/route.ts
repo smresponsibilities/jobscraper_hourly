@@ -66,6 +66,26 @@ type OutreachState = Record<string, ContactState>;
 interface DraftRef {
   gmailUrl: string;
   mailtoUrl: string;
+  /** Sends already completed when this batch was built; see alreadyRecorded(). */
+  touch?: number;
+}
+
+/**
+ * Has this exact draft's send already been recorded?
+ *
+ * Every send route did a blind `touch + 1`, so clicking a button twice — which
+ * is exactly what someone does when the first click appears to do nothing —
+ * recorded two sends for one real email and pushed the follow-up schedule a
+ * whole rung forward. The batch records the touch each draft was built at, so
+ * a live count above it means this draft's send is already on file and the
+ * second click is a repeat, not a second mail.
+ *
+ * A draft with no recorded touch (an older batch.json) has nothing to compare
+ * against and stays permissive rather than refusing to record a real send.
+ */
+function alreadyRecorded(state: OutreachState, id: string, draftTouch: number | undefined): boolean {
+  if (draftTouch === undefined) return false;
+  return (state[id]?.touch ?? 0) > draftTouch;
 }
 
 async function gh(path: string, init?: RequestInit): Promise<Response> {
@@ -175,6 +195,12 @@ export async function GET(
         { status: 409 },
       );
     }
+    if (alreadyRecorded(current, id, draft.touch)) {
+      return new Response(
+        `already recorded as sent (touch ${current[id]?.touch}) — not opening the draft again. Rebuild to clear this card.`,
+        { status: 409 },
+      );
+    }
     const already = sentInLast24h(current);
     if (already >= SEND_CAP) {
       return new Response(
@@ -219,6 +245,15 @@ export async function GET(
   }
 
   if (action === 'sent') {
+    // Same repeat-click guard as the Gmail path above. This button is the one
+    // most likely to be clicked twice, because it gives no feedback of its own
+    // beyond the card fading.
+    const { text: sentDrafts } = await getFile('batch.json');
+    const sentDraft = sentDrafts === null ? undefined : (JSON.parse(sentDrafts || '{}') as Record<string, DraftRef>)[id];
+    const { text: sentState } = await getFile('contacted.json');
+    if (sentState !== null && alreadyRecorded(JSON.parse(sentState || '{}') as OutreachState, id, sentDraft?.touch)) {
+      return new Response('already recorded as sent — nothing to do. Rebuild to clear this card.', { status: 409 });
+    }
     const { ok } = await commitState((state) => {
       const prev = state[id];
       const touch = (prev?.touch ?? 0) + 1;
