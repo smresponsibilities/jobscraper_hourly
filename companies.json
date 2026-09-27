@@ -113112,5 +113112,89 @@
     "token": "haemonetics",
     "host": "wd5",
     "site": "hae"
+  },
+  {
+    "name": "ondofinance",
+    "ats": "greenhouse",
+    "token": "ondofinance",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "openup",
+    "ats": "greenhouse",
+    "token": "openup",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "patriotgrowthinsuranceservicesllc",
+    "ats": "greenhouse",
+    "token": "patriotgrowthinsuranceservicesllc",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "peregrinehealthcorporate",
+    "ats": "greenhouse",
+    "token": "peregrinehealthcorporate",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "aspenviewtech",
+    "ats": "greenhouse",
+    "token": "aspenviewtech",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "astropakllc",
+    "ats": "greenhouse",
+    "token": "astropakllc",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "barkleyokrp",
+    "ats": "greenhouse",
+    "token": "barkleyokrp",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "gismart",
+    "ats": "ashby",
+    "token": "gismart",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "hyphametrics",
+    "ats": "ashby",
+    "token": "hyphametrics",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "integral-de",
+    "ats": "ashby",
+    "token": "integral-de",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "ispeedtolead",
+    "ats": "ashby",
+    "token": "ispeedtolead",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "irissoftwaregroup",
+    "ats": "ashby",
+    "token": "irissoftwaregroup",
+    "industry": "tech",
+    "source": "discovered"
   }
 ]
