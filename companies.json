@@ -113029,5 +113029,12 @@
     "industry": "tech",
     "source": "discovered",
     "token": "paytient"
+  },
+  {
+    "name": "Armadin",
+    "ats": "ashby",
+    "token": "armadin",
+    "industry": "tech",
+    "source": "discovered"
   }
 ]
