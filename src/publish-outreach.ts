@@ -58,6 +58,9 @@ const api = (path: string, init?: RequestInit) =>
 async function pull(remote: string): Promise<{ text: string | null; sha: string | null }> {
   const res = await api(`/contents/${remote}?ref=${BRANCH}`);
   if (res.status === 404) return { text: null, sha: null };
+  if (res.status === 401) {
+    throw new Error(`GET ${remote}: 401 Unauthorized. The OUTREACH_GH_TOKEN has likely expired or been revoked. Please generate a new Personal Access Token with repository permissions for ${REPO} and update the GitHub Actions secret.`);
+  }
   if (!res.ok) throw new Error(`GET ${remote}: ${res.status} ${await res.text()}`);
   const body = (await res.json()) as { content?: string; sha: string };
   return {
@@ -78,6 +81,9 @@ async function push(remote: string, contents: string): Promise<void> {
       ...(sha ? { sha } : {}),
     }),
   });
+  if (res.status === 401) {
+    throw new Error(`PUT ${remote}: 401 Unauthorized. The OUTREACH_GH_TOKEN has likely expired or been revoked. Please generate a new Personal Access Token with repository permissions for ${REPO} and update the GitHub Actions secret.`);
+  }
   if (!res.ok) throw new Error(`PUT ${remote}: ${res.status} ${await res.text()}`);
   console.log(`pushed ${remote} (${contents.length} bytes)`);
 }
