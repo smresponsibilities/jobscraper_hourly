@@ -1,5 +1,6 @@
 import type { Company, RawJob } from '../types.js';
-import { curlJson, safeIso, toPlainText } from './util.js';
+import { safeIso, toPlainText } from './util.js';
+import { scraplingJson } from './scrapling.js';
 
 interface DarwinboxJob {
   id: string;
@@ -63,7 +64,7 @@ async function post(company: Company, page: number): Promise<unknown> {
   const companyId = company.site ?? '';
   const url = `https://${company.token}.darwinbox.in/ms/candidateapi/job/alljobs?companyId=${companyId}`;
   const origin = `https://${company.token}.darwinbox.in`;
-  return curlJson(url, {
+  return scraplingJson(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

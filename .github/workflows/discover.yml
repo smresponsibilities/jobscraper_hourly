@@ -21,6 +21,16 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          
+      - name: Install Scrapling
+        run: |
+          pip install scrapling playwright
+          playwright install chromium
+
       - run: npm install --no-audit --no-fund
 
       - run: npm run discover
@@ -73,6 +83,16 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          
+      - name: Install Scrapling
+        run: |
+          pip install scrapling playwright
+          playwright install chromium
+
       - run: npm install --no-audit --no-fund
 
       # `india` rather than `fresher`: a board with senior-only India roles today
@@ -120,6 +140,16 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          
+      - name: Install Scrapling
+        run: |
+          pip install scrapling playwright
+          playwright install chromium
 
       - run: npm install --no-audit --no-fund
 
