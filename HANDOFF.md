@@ -1,5 +1,27 @@
 # Handoff
 
+## Uber rendered acquisition repair, 2026-10-05
+
+Uber's reported dual-engine failure combined a Scrapling worker deadline with a
+missing Node Playwright Chromium binary. Python and Node Playwright require their
+own matching browser revisions; README now shows both installation commands.
+Scrapling 0.4.15 waits for full load even with `load_dom=False`, so the worker's
+public `page_setup` hook now uses DOM readiness, job-link selectors, and one
+browser attempt. The current Node Playwright fallback also waits for DOM/job
+readiness instead of network idle.
+
+Rendered worker failures/status errors now trigger fallback rather than becoming
+empty success. Scrapling selectors extract each job's own card; the previous HTML
+substring scan mixed neighbouring titles and locations. Both engines stop card
+climbing before including multiple jobs. Relative links become absolute URLs.
+Unverified empty first pages remain failures, not catalogue closure evidence.
+
+Red-before-green regressions cover worker failure, successful primary routing,
+relative links, delayed cards with hanging resources, and neighbouring location
+isolation. Run `npm run test:rendered` and `npm run test:browser-worker` in addition
+to `npm test` and typecheck. These focused checks do not certify every older
+integration ticket or placeholder test as complete.
+
 Read this first in any new session on this repo. It's the "why," not the "what" —
 README.md, ARCHITECTURE.md and ADDING-COMPANIES.md cover the what; this covers
 the decisions, the gotchas, and what's still open.
@@ -1769,9 +1791,10 @@ without intervention nearly every time.
   adapter's own 180s timeout instead of the shared 30s default. `detect.ts`
   can spot a SuccessFactors-powered careers page but still can't auto-derive
   the token/host — that part stays manual, see ADDING-COMPANIES.md.
-- **iCIMS** (DocuSign, D.E. Shaw): still open. HTML with no JSON, though detail
-  pages do carry a `schema.org/JobPosting` JSON-LD block — same shape of fix as
-  SuccessFactors would take (a genuinely new code path), just not built yet.
+- **iCIMS**: `src/fetchers/icims.ts` supports legacy-API listing, modern-portal
+  listing, and JSON-LD enrichment from detail pages. Specific tenants that return
+  bot-wall challenges (not missing endpoint) may still fail; audit them individually
+  before filing a coverage gap (see SC-14).
 - **Large enterprises with no detectable ATS on their careers domain** — the
   honest floor of what unauthenticated public JSON endpoints reach; these
   build bespoke portals. Most of the original ~60-name list from placement
@@ -1787,6 +1810,71 @@ without intervention nearly every time.
   **L&T is no longer on this list** — the core conglomerate resolved on
   PeopleStrong (`larsentoubrocareers.peoplestrong.com`, round 16), tracked
   alongside L&T Technology Services (SuccessFactors, separate entity).
+
+## Scrapling dual-engine architecture (SC-01 – SC-15)
+
+**Engine order:** Scrapling static fetcher is primary for all job-board HTTP requests;
+existing Node `fetch`/`curlJson` is retained secondary. Scrapling browser
+(`StealthyFetcher`) is primary for configured rendered sites; Node Playwright is secondary.
+Python is never required for state, classification, email, or non-acquisition paths.
+
+**Rollback:** Set `LEGACY_ONLY=1` in the workflow environment to force every adapter to
+the legacy engine with no Python spawned. Seen-state, block-hold, and catalogue are
+unchanged by mode switches — job IDs are engine-agnostic.
+
+**Cohort staging** (`SCRAPLING_COHORTS` in `src/config.ts`): Only adapters listed here
+use `scrapling-first` routing. Default: `['darwinbox']`. Add names to promote cohorts;
+remove to revert without touching `LEGACY_ONLY`.
+
+### Fallback table
+
+| Adapter group | Primary | Secondary |
+|---|---|---|
+| Darwinbox | Scrapling static | curlJson |
+| All other JSON adapters | Scrapling static (via `getJson`) | Node fetch |
+| SuccessFactors/iCIMS/Taleo XML | Scrapling static | Node fetch |
+| Rendered (configured sites) | Scrapling browser | Node Playwright |
+
+### Retry and deadline ownership
+
+Defined once in `src/fetchers/routing.ts:route()`. Scrapling internal retries disabled.
+`getJson` retries (429/503 only) run inside primary attempt. Fallback attempted once.
+Total: ≤2 network attempts per operation. Rate limits (429) propagate without engine
+switch. Cancellation (`AbortError`) propagates without fallback.
+
+### Diagnostics and shadow mode
+
+`SHADOW_MODE=1` runs a read-only comparison for a sample of boards; output to
+`out/shadow-report.json`. No writes, alerts, or catalogue mutations in shadow mode.
+Per-board diagnostics captured via `routingDiagnostics` AsyncLocalStorage.
+
+### Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `ScraplingError: spawn error` | Python missing or wrong interpreter | Check `SCRAPLING_PYTHON_EXE`; see README |
+| `ScraplingError: import failed` | Package not installed | `pip install "scrapling[fetchers]==0.4.15"` |
+| `ScraplingError: browser not available` | Chromium not installed | `playwright install --with-deps chromium` |
+| Every board failing, legacy succeeds | Python env broken | Set `LEGACY_ONLY=1` while fixing |
+| `challenge` block on both engines | WAF on host | Board enters BLOCK_HOLD_DAYS hold |
+| `FallbackError` in log | Both engines failed | Inspect `.primaryError` and `.secondaryError` |
+
+### SC-01 coverage checklist
+
+All 32 adapters in `FETCHERS` inventoried and migrated:
+
+- ✅ greenhouse · lever · ashby · smartrecruiters · workday · oracle · amazon · atlassian
+- ✅ phenom · eightfold · darwinbox · turbohire · rendered · successfactors · trakstar
+- ✅ icims · workable · zohorecruit · keka · freshteam · recruiterflow · greythr
+- ✅ peoplestrong · pyjamahr · zappyhire · zimyo · recruitee · teamtailor · breezy
+- ✅ personio · ukg · taleo
+
+Unrelated calls (SMTP, GitHub, npm, contact enrichment) out of scope and not migrated.
+
+### SC-14 — deferred P2
+
+Requires stable SC-09/SC-12 baseline, verified selector examples, and dated evidence of
+specific failing tenants. Track as a separate issue; do not re-open here.
 
 ## Useful commands
 

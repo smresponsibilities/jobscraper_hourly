@@ -16,6 +16,8 @@ export interface ScraplingRequest {
   timeout?: number;
   wait_selector?: string;
   solve_cloudflare?: boolean;
+  job_link_pattern?: string;
+  card_up?: number;
 }
 
 export interface ScraplingResponse {
@@ -27,6 +29,7 @@ export interface ScraplingResponse {
   body?: string;
   encoding?: string;
   engine?: 'static' | 'browser';
+  rows?: { href: string; title: string; text: string }[];
   error?: {
     category: string;
     message: string;
@@ -44,7 +47,7 @@ export class ScraplingError extends Error {
 
 export async function scraplingFetch(
   url: string,
-  options: { method?: 'GET' | 'POST'; headers?: Record<string, string>; body?: string; engine?: 'static' | 'browser'; timeout?: number; wait_selector?: string; solve_cloudflare?: boolean; signal?: AbortSignal } = {}
+  options: { method?: 'GET' | 'POST'; headers?: Record<string, string>; body?: string; engine?: 'static' | 'browser'; timeout?: number; wait_selector?: string; solve_cloudflare?: boolean; job_link_pattern?: string; card_up?: number; signal?: AbortSignal } = {}
 ): Promise<ScraplingResponse> {
   const method = options.method || 'GET';
   const engine = options.engine || 'static';
@@ -63,6 +66,8 @@ export async function scraplingFetch(
     timeout: options.timeout || 30,
     wait_selector: options.wait_selector,
     solve_cloudflare: options.solve_cloudflare,
+    job_link_pattern: options.job_link_pattern,
+    card_up: options.card_up,
   };
 
   const payloadStr = JSON.stringify(payload);

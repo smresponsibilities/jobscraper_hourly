@@ -76,7 +76,7 @@ async function post(company: Company, page: number): Promise<unknown> {
   };
 
   return route({
-    mode: 'scrapling-first',
+    adapter: 'darwinbox',
     method: 'POST',
     isReadOnlyPost: true,
     primary: () => scraplingJson(url, options),

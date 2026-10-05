@@ -7,6 +7,8 @@
   "scripts": {
     "hunt": "tsx src/index.ts",
     "test": "tsx src/selftest.ts",
+    "test:rendered": "tsx --test src/fetchers/rendered.test.ts",
+    "test:browser-worker": "python -B -m unittest discover -s src/fetchers -p test_browser_readiness.py",
     "discover": "tsx src/discover.ts",
     "dry": "DRY_RUN=1 tsx src/index.ts",
     "preview": "tsx src/preview.ts",

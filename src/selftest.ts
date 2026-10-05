@@ -2140,9 +2140,7 @@ check('the page count is read from the portal', pageCount('<div>Search Results P
 check('a single-page board reports one', pageCount('<div>Page 1 of 1</div>'), 1);
 check('a portal with no paging text still reports one', pageCount('<div>nothing here</div>'), 1);
 
-import { FallbackError } from './fetchers/routing.js';
-import { BlockError } from './fetchers/block.js';
-import { extractBlockKind } from './fetchers/routing.js';
+import { FallbackError, extractBlockKind } from './fetchers/routing.js';
 
 console.log('SC-07: block and outage semantics');
 

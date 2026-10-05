@@ -1,5 +1,7 @@
 import type { Company, RawJob } from '../types.js';
 import { UA } from './util.js';
+import { scraplingFetch } from './scrapling.js';
+import { route } from './routing.js';
 
 interface ZohoJob {
   id: string;

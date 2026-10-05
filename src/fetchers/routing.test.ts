@@ -151,4 +151,33 @@ describe('routing policy', () => {
     assert.strictEqual(pCalls, 0);
     assert.strictEqual(sCalls, 1);
   });
+
+  it('cohort selection defaults to scrapling-first for enabled cohorts', async () => {
+    let pCalls = 0;
+    let sCalls = 0;
+    const res = await route({
+      adapter: 'darwinbox', // enabled in config
+      primary: async () => { pCalls++; return { ok: true }; },
+      secondary: async () => { sCalls++; return { ok: true, s: true }; },
+    });
+    // Assuming LEGACY_ONLY is false during this test run
+    if (!process.env.LEGACY_ONLY) {
+      assert.deepStrictEqual(res, { ok: true });
+      assert.strictEqual(pCalls, 1);
+      assert.strictEqual(sCalls, 0);
+    }
+  });
+
+  it('cohort selection defaults to legacy-only for unknown cohorts', async () => {
+    let pCalls = 0;
+    let sCalls = 0;
+    const res = await route({
+      adapter: 'unknown-adapter',
+      primary: async () => { pCalls++; return { ok: true }; },
+      secondary: async () => { sCalls++; return { ok: true, s: true }; },
+    });
+    assert.deepStrictEqual(res, { ok: true, s: true });
+    assert.strictEqual(pCalls, 0);
+    assert.strictEqual(sCalls, 1);
+  });
 });

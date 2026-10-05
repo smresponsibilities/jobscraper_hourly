@@ -17,7 +17,8 @@ export interface RouteDiagnostics {
 export const routingDiagnostics = new AsyncLocalStorage<RouteDiagnostics>();
 
 export interface RouteOptions<T> {
-  mode: RoutingMode;
+  mode?: RoutingMode;
+  adapter?: string;
   method?: 'GET' | 'POST';
   isReadOnlyPost?: boolean;
   primaryName?: string;
@@ -26,6 +27,8 @@ export interface RouteOptions<T> {
   secondary: () => Promise<T>;
   validate?: (data: T) => boolean;
 }
+
+import { LEGACY_ONLY, SCRAPLING_COHORTS } from '../config.js';
 
 export class FallbackError extends Error {
   constructor(message: string, public readonly primaryError: Error, public readonly secondaryError: Error) {
@@ -38,7 +41,16 @@ export async function route<T>(options: RouteOptions<T>): Promise<T> {
   const diag = routingDiagnostics.getStore();
   const primaryName = options.primaryName || 'scrapling';
   const secondaryName = options.secondaryName || 'legacy';
-  const effectiveMode = diag?.forceMode || options.mode;
+  
+  let effectiveMode = diag?.forceMode || options.mode || 'legacy-only';
+  
+  if (options.adapter && !diag?.forceMode && !options.mode) {
+    effectiveMode = SCRAPLING_COHORTS.includes(options.adapter) ? 'scrapling-first' : 'legacy-only';
+  }
+  
+  if (LEGACY_ONLY) {
+    effectiveMode = 'legacy-only';
+  }
 
   if (diag) {
     diag.primaryEngine = effectiveMode === 'legacy-only' ? secondaryName : primaryName;

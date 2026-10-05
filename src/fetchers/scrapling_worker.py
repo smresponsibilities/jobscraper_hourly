@@ -3,6 +3,9 @@ import json
 import logging
 from typing import Dict, Any
 import warnings
+import re
+from urllib.parse import urljoin
+from functools import wraps
 
 # Ignore the deprecation warning
 warnings.filterwarnings('ignore')
@@ -10,6 +13,53 @@ warnings.filterwarnings('ignore')
 from scrapling import Fetcher
 
 logging.basicConfig(stream=sys.stderr, level=logging.INFO, format="%(message)s")
+
+def wait_for_dom(page):
+    # The 0.4.15 browser engine waits for full load even with load_dom=False.
+    # Careers pages may keep third-party assets open indefinitely. Use the
+    # public page_setup hook to wait for DOM readiness and then job selectors.
+    goto = page.goto
+    wait = page.wait_for_load_state
+
+    @wraps(goto)
+    def goto_dom(url, **kwargs):
+        return goto(url, **{**kwargs, "wait_until": "domcontentloaded"})
+
+    @wraps(wait)
+    def wait_dom(state="load", **kwargs):
+        return wait("domcontentloaded" if state == "load" else state, **kwargs)
+
+    page.goto = goto_dom
+    page.wait_for_load_state = wait_dom
+
+def job_rows(response, pattern, card_up):
+    matcher = re.compile(pattern)
+    rows = []
+    seen = set()
+    for anchor in response.css('a[href]'):
+        href = urljoin(response.url, anchor.attrib['href'])
+        if not matcher.search(href) or href in seen:
+            continue
+        own = anchor.get_all_text(separator=' ', strip=True)
+        ancestors = anchor.xpath('ancestor::li[1]')
+        card = ancestors[0] if ancestors else anchor.parent
+        for _ in range(card_up):
+            if card is None or card.parent is None:
+                break
+            parent = card.parent
+            links = {urljoin(response.url, node.attrib['href']) for node in parent.css('a[href]')
+                     if matcher.search(urljoin(response.url, node.attrib['href']))}
+            if len(links) > 1:
+                break
+            card = parent
+        heading = card.css('h2,h3,h4') if card is not None else []
+        title = own if len(own) >= 6 else heading[0].get_all_text(separator=' ', strip=True) if heading else ''
+        if len(title) < 4:
+            continue
+        seen.add(href)
+        text = card.get_all_text(separator=' ', strip=True) if card is not None else own
+        rows.append({'href': href, 'title': title, 'text': f'{own} {text}'[:1500]})
+    return rows
 
 def process_request(payload: Dict[str, Any]) -> Dict[str, Any]:
     # Validate contract
@@ -34,6 +84,12 @@ def process_request(payload: Dict[str, Any]) -> Dict[str, Any]:
     headers = payload.get("headers") or {}
     body = payload.get("body")
     timeout = payload.get("timeout", 30)
+    pattern = payload.get('job_link_pattern')
+    card_up = payload.get('card_up', 0)
+    if pattern is not None:
+        if not isinstance(pattern, str) or len(pattern) > 1000 or not isinstance(card_up, int) or not 0 <= card_up <= 10:
+            raise ValueError('Invalid job extraction options')
+        re.compile(pattern)
     
     if engine == "static":
         fetcher = Fetcher()
@@ -83,6 +139,10 @@ def process_request(payload: Dict[str, Any]) -> Dict[str, Any]:
             "headless": True,
             "solve_cloudflare": solve_cloudflare,
             "google_search": False, # Do not override referer if provided
+            "load_dom": False,
+            "network_idle": False,
+            "retries": 1,
+            "page_setup": wait_for_dom,
         }
         
         if wait_selector:
@@ -108,7 +168,8 @@ def process_request(payload: Dict[str, Any]) -> Dict[str, Any]:
             "body": text_body,
             "encoding": encoding,
             "engine": engine,
-            "error": None
+            "error": None,
+            "rows": job_rows(response, pattern, card_up) if pattern else None,
         }
 
 def main():

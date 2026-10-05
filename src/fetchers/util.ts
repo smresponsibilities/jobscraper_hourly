@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { BlockError, classifyFailure, classifyOkBody, headOf } from './block.js';
-import { scraplingFetch } from './scrapling.js';
+import { scraplingFetch, scraplingJson } from './scrapling.js';
 import { route, FallbackError } from './routing.js';
 
 const run = promisify(execFile);
@@ -79,56 +79,64 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  * pods were being rate-limited at once, so this would have quietly evicted them
  * three days later.
  */
-export async function getJson<T>(url: string, init?: RequestInit): Promise<T> {
-  let lastError: Error | undefined;
+export async function getJson<T>(url: string, init?: RequestInit & { adapter?: string }): Promise<T> {
+  const method = (init?.method || 'GET') as 'GET' | 'POST';
+  const headers = { 'user-agent': UA, accept: 'application/json', ...(init?.headers as Record<string, string> ?? {}) };
+  const body = init?.body as string | undefined;
 
-  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    let res: Response;
-    try {
-      res = await fetch(url, {
-        ...init,
-        headers: { 'user-agent': UA, accept: 'application/json', ...(init?.headers ?? {}) },
-        signal: AbortSignal.timeout(30_000),
-      });
-    } catch (error) {
-      // A thrown fetch (socket reset, DNS blip, timeout) is not classifiable by
-      // status code but is exactly as transient as a 503 — retry it the same
-      // way instead of failing the whole run on one flaky connection.
-      lastError = error instanceof Error ? error : new Error(String(error));
-      if (attempt === MAX_ATTEMPTS - 1) throw lastError;
-      await sleep(1000 * 2 ** attempt);
-      continue;
-    }
+  return route({
+    adapter: init?.adapter,
+    method,
+    isReadOnlyPost: method === 'POST',
+    primaryName: 'scrapling',
+    secondaryName: 'fetch',
+    primary: async () => {
+      return scraplingJson<T>(url, { method, headers, body, timeout: 30 });
+    },
+    secondary: async () => {
+      let lastError: Error | undefined;
 
-    // The body is read once and kept as text so a failure can be classified
-    // before parsing — a Cloudflare challenge served with a 200 status would
-    // otherwise surface as an opaque SyntaxError indistinguishable from our
-    // own parsing bugs.
-    const text = await res.text();
+      for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+        let res: Response;
+        try {
+          res = await fetch(url, {
+            ...init,
+            headers,
+            signal: AbortSignal.timeout(30_000),
+          });
+        } catch (error) {
+          lastError = error instanceof Error ? error : new Error(String(error));
+          if (attempt === MAX_ATTEMPTS - 1) throw lastError;
+          await sleep(1000 * 2 ** attempt);
+          continue;
+        }
 
-    if (res.ok) {
-      try {
-        return JSON.parse(text) as T;
-      } catch {
-        const verdict = classifyOkBody(headOf(text));
-        if (verdict) throw new BlockError(verdict, res.status, url);
-        throw new Error(`unparseable 200 body for ${url}: ${text.slice(0, 120)}`);
+        const text = await res.text();
+
+        if (res.ok) {
+          try {
+            return JSON.parse(text) as T;
+          } catch {
+            const verdict = classifyOkBody(headOf(text));
+            if (verdict) throw new BlockError(verdict, res.status, url);
+            throw new Error(`unparseable 200 body for ${url}: ${text.slice(0, 120)}`);
+          }
+        }
+
+        const verdict = classifyFailure(res.status, headOf(text));
+        lastError = verdict ? new BlockError(verdict, res.status, url) : new Error(`${res.status} ${res.statusText} for ${url}`);
+        if (!RETRY_STATUS.has(res.status) || attempt === MAX_ATTEMPTS - 1) throw lastError;
+
+        const after = Number(res.headers.get('retry-after'));
+        const backoff = Number.isFinite(after) && after > 0
+          ? Math.min(after * 1000, 15_000)
+          : 1000 * 2 ** attempt;
+        await sleep(backoff);
       }
+
+      throw lastError ?? new Error(`failed for ${url}`);
     }
-
-    const verdict = classifyFailure(res.status, headOf(text));
-    lastError = verdict ? new BlockError(verdict, res.status, url) : new Error(`${res.status} ${res.statusText} for ${url}`);
-    if (!RETRY_STATUS.has(res.status) || attempt === MAX_ATTEMPTS - 1) throw lastError;
-
-    // `Retry-After` is seconds; cap it so one unlucky board can't stall the run.
-    const after = Number(res.headers.get('retry-after'));
-    const backoff = Number.isFinite(after) && after > 0
-      ? Math.min(after * 1000, 15_000)
-      : 1000 * 2 ** attempt;
-    await sleep(backoff);
-  }
-
-  throw lastError ?? new Error(`failed for ${url}`);
+  });
 }
 
 const ENTITIES: Record<string, string> = {
@@ -212,60 +220,3 @@ export async function mapLimit<T, R>(
   return results;
 }
 
-export class Semaphore {
-  private queue: (() => void)[] = [];
-  public active = 0;
-
-  constructor(private max: number) {}
-
-  async acquire(signal?: AbortSignal): Promise<void> {
-    if (signal?.aborted) {
-      const err = new Error('aborted before acquire');
-      err.name = 'AbortError';
-      throw err;
-    }
-    if (this.active < this.max) {
-      this.active++;
-      return Promise.resolve();
-    }
-    return new Promise((resolve, reject) => {
-      const onAbort = () => {
-        const idx = this.queue.indexOf(resolve);
-        if (idx >= 0) this.queue.splice(idx, 1);
-        const err = new Error('aborted while waiting in queue');
-        err.name = 'AbortError';
-        reject(err);
-      };
-      if (signal) {
-        signal.addEventListener('abort', onAbort, { once: true });
-        const originalResolve = resolve;
-        resolve = () => {
-          signal.removeEventListener('abort', onAbort);
-          originalResolve();
-        };
-      }
-      this.queue.push(resolve);
-    });
-  }
-
-  release(): void {
-    if (this.queue.length > 0) {
-      const next = this.queue.shift();
-      if (next) next();
-    } else {
-      this.active--;
-    }
-  }
-
-  async run<T>(fn: () => Promise<T>, signal?: AbortSignal): Promise<T> {
-    await this.acquire(signal);
-    try {
-      return await fn();
-    } finally {
-      this.release();
-    }
-  }
-}
-
-export const globalPythonSemaphore = new Semaphore(10);
-export const globalBrowserSemaphore = new Semaphore(5);

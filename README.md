@@ -23,6 +23,27 @@ the CDX index one block per run, and `npm run bulk-import` pulls from published
 tenant lists (crawled by other open-source projects) and keeps only boards that
 currently have an India or remote role.
 
+## Local browser setup
+
+Scrapling and the Node Playwright fallback can require different Chromium revisions.
+Installing the Python browser alone does not install the Node fallback's binary.
+After `npm install`, run these commands in PowerShell:
+
+```powershell
+npx playwright install chromium
+python -m pip install "scrapling[fetchers]==0.4.15"
+python -m playwright install chromium
+```
+
+Use the interpreter selected by `SCRAPLING_PYTHON_EXE` for the Python commands if
+that variable is set. Linux runners also need browser OS dependencies through
+`install --with-deps chromium`. Rendered boards try Scrapling first, then Node
+Playwright. Both engines must report failures rather than returning an empty
+listing for a challenge or unavailable browser.
+
+Run the focused regression checks with `npm run test:rendered` and
+`npm run test:browser-worker`. `npm test` remains the existing job-filter suite.
+
 ## How it works
 
 ```
@@ -74,7 +95,6 @@ relative dates ("Posted Today") and companies routinely bump timestamps when the
 repost, so IDs are the only reliable signal.
 
 
-3. Python 3.11+ is optionally used for Scrapling engine. Install Python and run: pip install "scrapling[fetchers]==0.4.15" playwright and playwright install --with-deps chromium (on Windows, just playwright install chromium).
    → **Get started** → verify with your phone. App Passwords only appears
    once this is on.
 3. Generate an app password: [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords)

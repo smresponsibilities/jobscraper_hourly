@@ -1,5 +1,5 @@
 import type { Company, RawJob } from '../types.js';
-import { toPlainText, UA } from './util.js';
+import { toPlainText, UA, getJson } from './util.js';
 
 interface PhenomJob {
   jobId?: string;
