@@ -1,0 +1,620 @@
+[
+  {
+    "file": "amazon.ts",
+    "method": "list",
+    "line": 33,
+    "code": "const data = await getJson<{ hits?: number; jobs?: AmazonJob[] }>("
+  },
+  {
+    "file": "ashby.ts",
+    "method": "list",
+    "line": 24,
+    "code": "const data = await getJson<{ jobs?: AshbyJob[] }>("
+  },
+  {
+    "file": "atlassian.ts",
+    "method": "list",
+    "line": 23,
+    "code": "const listings = await getJson<AtlassianListing[]>("
+  },
+  {
+    "file": "block.ts",
+    "method": "",
+    "line": 14,
+    "code": "* this project's JSON-first fetchers can actually encounter. Two deliberate"
+  },
+  {
+    "file": "block.ts",
+    "method": "classifyOkBody",
+    "line": 156,
+    "code": "* Thrown by `getJson` instead of a bare status string when the classifier"
+  },
+  {
+    "file": "breezy.ts",
+    "method": "list",
+    "line": 55,
+    "code": "const positions = await getJson<BzPosition[]>(`https://${company.token}.breezy.hr/json`);"
+  },
+  {
+    "file": "darwinbox.ts",
+    "method": "",
+    "line": 49,
+    "code": "*     not just headers. Node's fetch is rejected with 403 no matter what headers"
+  },
+  {
+    "file": "darwinbox.ts",
+    "method": "",
+    "line": 50,
+    "code": "*     you send (verified against plain, sec-fetch and accept-encoding variants);"
+  },
+  {
+    "file": "darwinbox.ts",
+    "method": "post",
+    "line": 67,
+    "code": "return scraplingJson(url, {"
+  },
+  {
+    "file": "eightfold.ts",
+    "method": "list",
+    "line": 60,
+    "code": "const body = await getJson<{ data?: { positions?: EightfoldPosition[]; count?: number } }>(url);"
+  },
+  {
+    "file": "freshteam.ts",
+    "method": "list",
+    "line": 17,
+    "code": "const res = await fetch(url, {"
+  },
+  {
+    "file": "freshteam.ts",
+    "method": "enrich",
+    "line": 45,
+    "code": "const res = await fetch(job.url, {"
+  },
+  {
+    "file": "greenhouse.ts",
+    "method": "",
+    "line": 15,
+    "code": "* Deliberately fetched WITHOUT `?content=true`. Descriptions roughly 20x the"
+  },
+  {
+    "file": "greenhouse.ts",
+    "method": "list",
+    "line": 19,
+    "code": "const data = await getJson<{ jobs?: GhJob[] }>("
+  },
+  {
+    "file": "greenhouse.ts",
+    "method": "enrich",
+    "line": 41,
+    "code": "const data = await getJson<GhJob>("
+  },
+  {
+    "file": "greythr.ts",
+    "method": "list",
+    "line": 37,
+    "code": "getJson<{ data?: GreytJob[] }>(`${base}/career/published_jobs/`, {"
+  },
+  {
+    "file": "greythr.ts",
+    "method": "list",
+    "line": 42,
+    "code": "getJson<{ value?: Record<string, EmpCategoryValue> }>(`${base}/greythr/emp-category/`),"
+  },
+  {
+    "file": "icims.ts",
+    "method": "",
+    "line": 35,
+    "code": "*   the portal in an iframe, and fetching that iframe URL directly"
+  },
+  {
+    "file": "icims.ts",
+    "method": "listLegacy",
+    "line": 59,
+    "code": "const data = await getJson<{"
+  },
+  {
+    "file": "icims.ts",
+    "method": "fetchHtml",
+    "line": 91,
+    "code": "async function fetchHtml(url: string): Promise<string> {"
+  },
+  {
+    "file": "icims.ts",
+    "method": "fetchHtml",
+    "line": 92,
+    "code": "const res = await fetch(url, {"
+  },
+  {
+    "file": "icims.ts",
+    "method": "listPortal",
+    "line": 185,
+    "code": "const first = await fetchHtml(base);"
+  },
+  {
+    "file": "icims.ts",
+    "method": "listPortal",
+    "line": 191,
+    "code": "const batch = parsePortal(await fetchHtml(`${base}&pr=${page}`), company.token);"
+  },
+  {
+    "file": "icims.ts",
+    "method": "enrich",
+    "line": 217,
+    "code": "const html = await fetchHtml(`${job.url}?in_iframe=1`);"
+  },
+  {
+    "file": "keka.ts",
+    "method": "list",
+    "line": 34,
+    "code": "const jobs = await getJson<KekaJob[]>("
+  },
+  {
+    "file": "lever.ts",
+    "method": "list",
+    "line": 24,
+    "code": "const postings = await getJson<LeverPosting[]>("
+  },
+  {
+    "file": "oracle.ts",
+    "method": "list",
+    "line": 33,
+    "code": "const data = await getJson<{"
+  },
+  {
+    "file": "peoplestrong.ts",
+    "method": "list",
+    "line": 31,
+    "code": "const data = await getJson<{ totalRecords?: number; response?: PsJob[] }>("
+  },
+  {
+    "file": "peoplestrong.ts",
+    "method": "enrich",
+    "line": 61,
+    "code": "const data = await getJson<{ response?: { jobDescription?: string } }>(url);"
+  },
+  {
+    "file": "personio.ts",
+    "method": "",
+    "line": 14,
+    "code": "* 404ing, which would otherwise arrive as a successful fetch of an HTML page"
+  },
+  {
+    "file": "personio.ts",
+    "method": "list",
+    "line": 102,
+    "code": "const res = await fetch(url, {"
+  },
+  {
+    "file": "phenom.ts",
+    "method": "page",
+    "line": 42,
+    "code": "const res = await fetch(`https://${company.token}/widgets`, {"
+  },
+  {
+    "file": "pyjamahr.ts",
+    "method": "list",
+    "line": 33,
+    "code": "const data: { results?: PyjamaJob[]; next?: string | null } = await getJson(url);"
+  },
+  {
+    "file": "recruitee.ts",
+    "method": "list",
+    "line": 43,
+    "code": "const data = await getJson<{ offers?: RtOffer[] }>("
+  },
+  {
+    "file": "recruiterflow.ts",
+    "method": "list",
+    "line": 41,
+    "code": "const res = await fetch(url, {"
+  },
+  {
+    "file": "scrapling.test.ts",
+    "method": "",
+    "line": 5,
+    "code": "test('scraplingFetch valid request', async () => {"
+  },
+  {
+    "file": "scrapling.test.ts",
+    "method": "",
+    "line": 6,
+    "code": "const res = await scraplingFetch('https://example.com', {"
+  },
+  {
+    "file": "scrapling.test.ts",
+    "method": "",
+    "line": 17,
+    "code": "test('scraplingFetch invalid url', async () => {"
+  },
+  {
+    "file": "scrapling.test.ts",
+    "method": "",
+    "line": 20,
+    "code": "await scraplingFetch('ftp://example.com', { engine: 'static' });"
+  },
+  {
+    "file": "scrapling.test.ts",
+    "method": "",
+    "line": 30,
+    "code": "test('scraplingFetch malformed JSON response from worker', async () => {"
+  },
+  {
+    "file": "scrapling.ts",
+    "method": "scraplingFetch",
+    "line": 42,
+    "code": "export async function scraplingFetch("
+  },
+  {
+    "file": "scrapling.ts",
+    "method": "scraplingJson",
+    "line": 103,
+    "code": "export async function scraplingJson<T>("
+  },
+  {
+    "file": "scrapling.ts",
+    "method": "scraplingJson",
+    "line": 107,
+    "code": "const res = await scraplingFetch(url, options);"
+  },
+  {
+    "file": "smartrecruiters.ts",
+    "method": "list",
+    "line": 35,
+    "code": "const data = await getJson<{ totalFound?: number; content?: SrPosting[] }>("
+  },
+  {
+    "file": "smartrecruiters.ts",
+    "method": "enrich",
+    "line": 61,
+    "code": "const data = await getJson<{"
+  },
+  {
+    "file": "successfactors.ts",
+    "method": "",
+    "line": 12,
+    "code": "* generous timeout rather than the 30s in getJson."
+  },
+  {
+    "file": "successfactors.ts",
+    "method": "fetchXml",
+    "line": 16,
+    "code": "async function fetchXml(url: string): Promise<string> {"
+  },
+  {
+    "file": "successfactors.ts",
+    "method": "fetchXml",
+    "line": 17,
+    "code": "const res = await fetch(url, {"
+  },
+  {
+    "file": "successfactors.ts",
+    "method": "list",
+    "line": 82,
+    "code": "const xml = await fetchXml("
+  },
+  {
+    "file": "successfactors.ts",
+    "method": "list",
+    "line": 87,
+    "code": "const xml = await fetchXml(`https://${company.token}/sitemal.xml`);"
+  },
+  {
+    "file": "taleo.ts",
+    "method": "",
+    "line": 31,
+    "code": "*    trap: a successful fetch of the wrong page reads as a live board with"
+  },
+  {
+    "file": "taleo.ts",
+    "method": "fetchPage",
+    "line": 59,
+    "code": "async function fetchPage(url: string, cookie?: string): Promise<Page & { cookie: string }> {"
+  },
+  {
+    "file": "taleo.ts",
+    "method": "fetchPage",
+    "line": 60,
+    "code": "const res = await fetch(url, {"
+  },
+  {
+    "file": "taleo.ts",
+    "method": "list",
+    "line": 142,
+    "code": "const first = await fetchPage(`${ENTRY_POD}?org=${encodeURIComponent(company.token)}`);"
+  },
+  {
+    "file": "taleo.ts",
+    "method": "list",
+    "line": 155,
+    "code": "page = await fetchPage(new URL(next[1]!, page.url).toString(), first.cookie);"
+  },
+  {
+    "file": "taleo.ts",
+    "method": "enrich",
+    "line": 170,
+    "code": "const { html } = await fetchPage(job.url);"
+  },
+  {
+    "file": "teamtailor.ts",
+    "method": "list",
+    "line": 75,
+    "code": "const data = await getJson<{ items?: TtItem[] }>(`https://${host(company)}/jobs.json`);"
+  },
+  {
+    "file": "trakstar.ts",
+    "method": "extractLocation",
+    "line": 21,
+    "code": "* unauthenticated call — no pagination, no per-job detail fetch needed."
+  },
+  {
+    "file": "trakstar.ts",
+    "method": "list",
+    "line": 25,
+    "code": "const res = await fetch(url, {"
+  },
+  {
+    "file": "turbohire.ts",
+    "method": "experience",
+    "line": 60,
+    "code": "*     \"Authorization has been denied\", so the token must be fetched first."
+  },
+  {
+    "file": "turbohire.ts",
+    "method": "token",
+    "line": 68,
+    "code": "const res = await fetch(`${API}/api/token/noauth`, {"
+  },
+  {
+    "file": "turbohire.ts",
+    "method": "list",
+    "line": 87,
+    "code": "const res = await fetch("
+  },
+  {
+    "file": "ukg.ts",
+    "method": "list",
+    "line": 71,
+    "code": "const body = await getJson<{ opportunities?: UkgOpportunity[]; totalCount?: number }>("
+  },
+  {
+    "file": "util.ts",
+    "method": "",
+    "line": 14,
+    "code": "* because it is the single most-repeated correctness rule in the fetchers —"
+  },
+  {
+    "file": "util.ts",
+    "method": "safeIso",
+    "line": 34,
+    "code": "* Shells out to system `curl` instead of Node's `fetch`, for the rare board"
+  },
+  {
+    "file": "util.ts",
+    "method": "safeIso",
+    "line": 36,
+    "code": "* handshake itself, not just headers — Node's OpenSSL-based fetch gets"
+  },
+  {
+    "file": "util.ts",
+    "method": "getJson",
+    "line": 86,
+    "code": "res = await fetch(url, {"
+  },
+  {
+    "file": "util.ts",
+    "method": "getJson",
+    "line": 92,
+    "code": "// A thrown fetch (socket reset, DNS blip, timeout) is not classifiable by"
+  },
+  {
+    "file": "workable.ts",
+    "method": "",
+    "line": 30,
+    "code": "* but it carries no description, so that's an `enrich()` fetch against the"
+  },
+  {
+    "file": "workable.ts",
+    "method": "list",
+    "line": 34,
+    "code": "const data = await getJson<{ jobs?: WorkableJob[] }>("
+  },
+  {
+    "file": "workable.ts",
+    "method": "enrich",
+    "line": 57,
+    "code": "const res = await fetch(`https://apply.workable.com/${company.token}/j/${job.externalId}`, {"
+  },
+  {
+    "file": "workday.ts",
+    "method": "discoverSites",
+    "line": 79,
+    "code": "const res = await fetch(`${base(company)}/robots.txt`, { headers: { 'user-agent': UA } });"
+  },
+  {
+    "file": "workday.ts",
+    "method": "search",
+    "line": 153,
+    "code": "const data = await getJson<{ total?: number; jobPostings?: WdPosting[] }>(endpoint, {"
+  },
+  {
+    "file": "workday.ts",
+    "method": "search",
+    "line": 198,
+    "code": "* `enrich()` swallows a failed fetch into `undefined` and a missing"
+  },
+  {
+    "file": "workday.ts",
+    "method": "fetchDetail",
+    "line": 204,
+    "code": "async function fetchDetail(company: Company, job: { url: string }): Promise<JobPostingInfo | undefined> {"
+  },
+  {
+    "file": "workday.ts",
+    "method": "fetchDetail",
+    "line": 207,
+    "code": "const res = await fetch("
+  },
+  {
+    "file": "workday.ts",
+    "method": "html",
+    "line": 217,
+    "code": "const html = (await fetchDetail(company, job))?.jobDescription;"
+  },
+  {
+    "file": "workday.ts",
+    "method": "isPlaceholderLocation",
+    "line": 234,
+    "code": "* `additionalLocations`, same shape open-jobs' detail fetch uses), one"
+  },
+  {
+    "file": "workday.ts",
+    "method": "resolvePlaceholderLocations",
+    "line": 265,
+    "code": "const info = await fetchDetail(company, job);"
+  },
+  {
+    "file": "zappyhire.ts",
+    "method": "list",
+    "line": 31,
+    "code": "const data = await getJson<{ results?: { hits?: ZappyHit[] } }>("
+  },
+  {
+    "file": "zappyhire.ts",
+    "method": "enrich",
+    "line": 52,
+    "code": "const data = await getJson<{ results?: { description?: string } }>("
+  },
+  {
+    "file": "zimyo.ts",
+    "method": "list",
+    "line": 24,
+    "code": "const data = await getJson<{ data?: { result?: ZimyoJob[]; totalCount?: number } }>("
+  },
+  {
+    "file": "zimyo.ts",
+    "method": "enrich",
+    "line": 48,
+    "code": "const data = await getJson<{ data?: { jobDetail?: { JOB_DESCRIPTION?: string } } }>("
+  },
+  {
+    "file": "zohorecruit.ts",
+    "method": "decodeNumericEntities",
+    "line": 29,
+    "code": "* only in the SPA's client-rendered detail view, not fetched here."
+  },
+  {
+    "file": "zohorecruit.ts",
+    "method": "list",
+    "line": 32,
+    "code": "const res = await fetch(company.token, {"
+  },
+  {
+    "file": "detect.ts",
+    "method": "fetchText",
+    "line": 23,
+    "code": "async function fetchText(url: string): Promise<string> {"
+  },
+  {
+    "file": "detect.ts",
+    "method": "fetchText",
+    "line": 25,
+    "code": "const res = await fetch(url, {"
+  },
+  {
+    "file": "detect.ts",
+    "method": "detect",
+    "line": 64,
+    "code": "const html = await fetchText(`https://${domain}${path}`);"
+  },
+  {
+    "file": "bulk-import.ts",
+    "method": "",
+    "line": 46,
+    "code": "* Platforms whose CSV row carries everything the fetcher needs."
+  },
+  {
+    "file": "bulk-import.ts",
+    "method": "",
+    "line": 50,
+    "code": "* via `parseRow`'s fallback) is enough to build a fetchable board. Row counts"
+  },
+  {
+    "file": "bulk-import.ts",
+    "method": "",
+    "line": 59,
+    "code": "* small** — a working fetcher that nothing feeds is the same as no fetcher."
+  },
+  {
+    "file": "bulk-import.ts",
+    "method": "",
+    "line": 112,
+    "code": "* so Keka, Recruitee and Darwinbox each had a working fetcher and nothing"
+  },
+  {
+    "file": "bulk-import.ts",
+    "method": "so",
+    "line": 118,
+    "code": "* network call. The caller does the fetching and treats any failure as"
+  },
+  {
+    "file": "bulk-import.ts",
+    "method": "warnAboutUnfedPlatforms",
+    "line": 140,
+    "code": "const res = await fetch(LISTING_URL, {"
+  },
+  {
+    "file": "bulk-import.ts",
+    "method": "warnAboutUnfedPlatforms",
+    "line": 154,
+    "code": "console.warn('    a working fetcher that nothing feeds is the same as no fetcher — check these before writing a new adapter\\n');"
+  },
+  {
+    "file": "bulk-import.ts",
+    "method": "name",
+    "line": 234,
+    "code": "// that leave that column blank cannot be fetched, so they are dropped"
+  },
+  {
+    "file": "bulk-import.ts",
+    "method": "name",
+    "line": 261,
+    "code": "// can never be fetched."
+  },
+  {
+    "file": "bulk-import.ts",
+    "method": "loadCsv",
+    "line": 269,
+    "code": "const res = await fetch(`${RAW}/${platform}.csv`, { headers: { 'user-agent': UA } });"
+  },
+  {
+    "file": "discover.ts",
+    "method": "latestIndex",
+    "line": 33,
+    "code": "const collections = await getJson<{ 'cdx-api': string }[]>("
+  },
+  {
+    "file": "discover.ts",
+    "method": "cdxRows",
+    "line": 51,
+    "code": "const res = await fetch("
+  },
+  {
+    "file": "discover-news.ts",
+    "method": "fetchFeed",
+    "line": 37,
+    "code": "async function fetchFeed(url: string): Promise<string> {"
+  },
+  {
+    "file": "discover-news.ts",
+    "method": "fetchFeed",
+    "line": 39,
+    "code": "const res = await fetch(url, {"
+  },
+  {
+    "file": "discover-news.ts",
+    "method": "main",
+    "line": 79,
+    "code": "const feeds = await mapLimit(FEEDS, 6, fetchFeed);"
+  }
+]

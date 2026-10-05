@@ -51,9 +51,10 @@ jobs:
           python-version: '3.11'
           
       - name: Install Scrapling
+        continue-on-error: true
         run: |
-          pip install scrapling playwright
-          playwright install chromium
+          pip install "scrapling[fetchers]==0.4.15" playwright
+          playwright install --with-deps chromium
 
       # State lives in the Actions cache between runs, not in a commit. Committing
       # it hourly would add a full copy of the file to git history 24 times a day.

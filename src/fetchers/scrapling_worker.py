@@ -1,51 +1,150 @@
 import sys
 import json
-from scrapling.fetchers import StealthyFetcher
-from playwright.sync_api import sync_playwright
+import logging
+from typing import Dict, Any
+import warnings
+
+# Ignore the deprecation warning
+warnings.filterwarnings('ignore')
+
+from scrapling import Fetcher
+
+logging.basicConfig(stream=sys.stderr, level=logging.INFO, format="%(message)s")
+
+def process_request(payload: Dict[str, Any]) -> Dict[str, Any]:
+    # Validate contract
+    if not isinstance(payload, dict):
+        raise ValueError("Payload must be a JSON object")
+    
+    if payload.get("version") != 1:
+        raise ValueError("Unsupported protocol version")
+        
+    url = payload.get("url")
+    if not url or not isinstance(url, str) or not (url.startswith("http://") or url.startswith("https://")):
+        raise ValueError("Invalid URL scheme")
+        
+    method = payload.get("method", "GET").upper()
+    if method not in ("GET", "POST"):
+        raise ValueError("Unsupported method")
+        
+    engine = payload.get("engine", "static")
+    if engine not in ("static", "browser"):
+        raise ValueError("Unsupported engine")
+        
+    headers = payload.get("headers") or {}
+    body = payload.get("body")
+    timeout = payload.get("timeout", 30)
+    
+    if engine == "static":
+        fetcher = Fetcher()
+        # Ensure we pass the headers exactly as requested
+        if method == "GET":
+            response = fetcher.get(url, headers=headers, timeout=timeout)
+        else:
+            if isinstance(body, dict):
+                response = fetcher.post(url, headers=headers, json=body, timeout=timeout)
+            elif isinstance(body, str):
+                response = fetcher.post(url, headers=headers, data=body.encode('utf-8'), timeout=timeout)
+            else:
+                response = fetcher.post(url, headers=headers, data=body, timeout=timeout)
+
+        # Build raw body string 
+        raw_body = response.body
+        try:
+            text_body = raw_body.decode('utf-8')
+            encoding = 'utf-8'
+        except UnicodeDecodeError:
+            text_body = raw_body.decode('latin-1', errors='replace')
+            encoding = 'latin-1'
+            
+        return {
+            "version": 1,
+            "success": True,
+            "status": response.status,
+            "headers": dict(response.headers),
+            "url": response.url,
+            "body": text_body,
+            "encoding": encoding,
+            "engine": engine,
+            "error": None
+        }
+    else:
+        from scrapling import StealthyFetcher
+        wait_selector = payload.get("wait_selector")
+        solve_cloudflare = payload.get("solve_cloudflare", True)
+        
+        # The timeout is in milliseconds for StealthyFetcher
+        timeout_ms = int(timeout * 1000)
+        
+        # Forward headers, use wait_selector for bounded site readiness
+        fetch_kwargs = {
+            "extra_headers": headers,
+            "timeout": timeout_ms,
+            "headless": True,
+            "solve_cloudflare": solve_cloudflare,
+            "google_search": False, # Do not override referer if provided
+        }
+        
+        if wait_selector:
+            fetch_kwargs["wait_selector"] = wait_selector
+            
+        # StealthyFetcher.fetch is a class method
+        response = StealthyFetcher.fetch(url, **fetch_kwargs)
+        
+        raw_body = response.body
+        try:
+            text_body = raw_body.decode('utf-8')
+            encoding = 'utf-8'
+        except UnicodeDecodeError:
+            text_body = raw_body.decode('latin-1', errors='replace')
+            encoding = 'latin-1'
+            
+        return {
+            "version": 1,
+            "success": True,
+            "status": response.status,
+            "headers": dict(response.headers),
+            "url": response.url,
+            "body": text_body,
+            "encoding": encoding,
+            "engine": engine,
+            "error": None
+        }
 
 def main():
-    if len(sys.argv) < 2:
-        print("Missing JSON payload", file=sys.stderr)
-        sys.exit(1)
-        
     try:
-        payload = json.loads(sys.argv[1])
-    except Exception as e:
-        print(f"Invalid JSON payload: {e}", file=sys.stderr)
-        sys.exit(1)
+        raw_input = sys.stdin.read()
+        if not raw_input.strip():
+            raise ValueError("Empty body")
+            
+        payload = json.loads(raw_input)
         
-    url = payload.get('url')
-    method = payload.get('method', 'GET')
-    headers = payload.get('headers', {})
-    body = payload.get('body')
-    
-    if not url:
-        print("Missing url", file=sys.stderr)
-        sys.exit(1)
-
-    StealthyFetcher.adaptive = True
-    
-    # Scrapling StealthyFetcher is primarily for GET.
-    # For POST to an API, we can use Playwright's API request context 
-    # but that defeats the purpose of Scrapling's turnstile bypass if we don't load a page.
-    # However, if we only need the TLS bypass, playwright request context works.
-    # But let's try to just use Scrapling StealthyFetcher if it supports method/body.
-    # I'll use Playwright request context if method is POST, since API fetching with POST usually doesn't need Turnstile execution.
-    if method.upper() == 'POST':
-        with sync_playwright() as p:
-            # We can use browser or request context
-            request_context = p.request.new_context(
-                extra_http_headers=headers
-            )
-            response = request_context.post(
-                url,
-                data=body
-            )
-            print(response.text())
-    else:
-        # standard GET with bypass
-        page = StealthyFetcher.fetch(url, headless=True, network_idle=True)
-        print(page.text)
+        response = process_request(payload)
+        
+    except json.JSONDecodeError as e:
+        logging.error(f"JSON decode error: {e}")
+        response = {
+            "version": 1,
+            "success": False,
+            "error": {"category": "protocol", "message": "Malformed JSON input"}
+        }
+    except ValueError as e:
+        logging.error(f"Validation error: {e}")
+        response = {
+            "version": 1,
+            "success": False,
+            "error": {"category": "validation", "message": str(e)}
+        }
+    except Exception as e:
+        logging.error(f"Internal error: {e}")
+        response = {
+            "version": 1,
+            "success": False,
+            "error": {"category": "internal", "message": str(e)}
+        }
+        
+    sys.stdout.write(json.dumps(response))
+    sys.stdout.flush()
 
 if __name__ == "__main__":
     main()

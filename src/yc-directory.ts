@@ -30,7 +30,7 @@ async function getApiKey(): Promise<string> {
   const html = await res.text();
   const match = html.match(/"([A-Za-z0-9]{150,300})"/);
   if (!match) throw new Error('Could not find Algolia API key in YC directory page');
-  API_KEY = match[1];
+  API_KEY = match[1] as string;
   return API_KEY;
 }
 

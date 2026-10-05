@@ -1,0 +1,170 @@
+[
+  {
+    "file": "darwinbox.ts",
+    "method": "post",
+    "line": 67,
+    "code": "return scraplingJson(url, {"
+  },
+  {
+    "file": "freshteam.ts",
+    "method": "list",
+    "line": 17,
+    "code": "const res = await fetch(url, {"
+  },
+  {
+    "file": "freshteam.ts",
+    "method": "enrich",
+    "line": 45,
+    "code": "const res = await fetch(job.url, {"
+  },
+  {
+    "file": "icims.ts",
+    "method": "fetchHtml",
+    "line": 92,
+    "code": "const res = await fetch(url, {"
+  },
+  {
+    "file": "personio.ts",
+    "method": "list",
+    "line": 102,
+    "code": "const res = await fetch(url, {"
+  },
+  {
+    "file": "phenom.ts",
+    "method": "page",
+    "line": 42,
+    "code": "const res = await fetch(`https://${company.token}/widgets`, {"
+  },
+  {
+    "file": "pyjamahr.ts",
+    "method": "list",
+    "line": 33,
+    "code": "const data: { results?: PyjamaJob[]; next?: string | null } = await getJson(url);"
+  },
+  {
+    "file": "recruiterflow.ts",
+    "method": "list",
+    "line": 41,
+    "code": "const res = await fetch(url, {"
+  },
+  {
+    "file": "scrapling.test.ts",
+    "method": "",
+    "line": 6,
+    "code": "const res = await scraplingFetch('https://example.com', {"
+  },
+  {
+    "file": "scrapling.test.ts",
+    "method": "",
+    "line": 20,
+    "code": "await scraplingFetch('ftp://example.com', { engine: 'static' });"
+  },
+  {
+    "file": "scrapling.ts",
+    "method": "scraplingFetch",
+    "line": 42,
+    "code": "export async function scraplingFetch("
+  },
+  {
+    "file": "scrapling.ts",
+    "method": "scraplingJson",
+    "line": 107,
+    "code": "const res = await scraplingFetch(url, options);"
+  },
+  {
+    "file": "successfactors.ts",
+    "method": "fetchXml",
+    "line": 17,
+    "code": "const res = await fetch(url, {"
+  },
+  {
+    "file": "taleo.ts",
+    "method": "fetchPage",
+    "line": 60,
+    "code": "const res = await fetch(url, {"
+  },
+  {
+    "file": "trakstar.ts",
+    "method": "list",
+    "line": 25,
+    "code": "const res = await fetch(url, {"
+  },
+  {
+    "file": "turbohire.ts",
+    "method": "token",
+    "line": 68,
+    "code": "const res = await fetch(`${API}/api/token/noauth`, {"
+  },
+  {
+    "file": "turbohire.ts",
+    "method": "list",
+    "line": 87,
+    "code": "const res = await fetch("
+  },
+  {
+    "file": "util.ts",
+    "method": "getJson",
+    "line": 86,
+    "code": "res = await fetch(url, {"
+  },
+  {
+    "file": "util.ts",
+    "method": "getJson",
+    "line": 92,
+    "code": "// A thrown fetch (socket reset, DNS blip, timeout) is not classifiable by"
+  },
+  {
+    "file": "workable.ts",
+    "method": "enrich",
+    "line": 57,
+    "code": "const res = await fetch(`https://apply.workable.com/${company.token}/j/${job.externalId}`, {"
+  },
+  {
+    "file": "workday.ts",
+    "method": "discoverSites",
+    "line": 79,
+    "code": "const res = await fetch(`${base(company)}/robots.txt`, { headers: { 'user-agent': UA } });"
+  },
+  {
+    "file": "workday.ts",
+    "method": "fetchDetail",
+    "line": 207,
+    "code": "const res = await fetch("
+  },
+  {
+    "file": "zohorecruit.ts",
+    "method": "list",
+    "line": 32,
+    "code": "const res = await fetch(company.token, {"
+  },
+  {
+    "file": "detect.ts",
+    "method": "fetchText",
+    "line": 25,
+    "code": "const res = await fetch(url, {"
+  },
+  {
+    "file": "bulk-import.ts",
+    "method": "warnAboutUnfedPlatforms",
+    "line": 140,
+    "code": "const res = await fetch(LISTING_URL, {"
+  },
+  {
+    "file": "bulk-import.ts",
+    "method": "loadCsv",
+    "line": 269,
+    "code": "const res = await fetch(`${RAW}/${platform}.csv`, { headers: { 'user-agent': UA } });"
+  },
+  {
+    "file": "discover.ts",
+    "method": "cdxRows",
+    "line": 51,
+    "code": "const res = await fetch("
+  },
+  {
+    "file": "discover-news.ts",
+    "method": "fetchFeed",
+    "line": 39,
+    "code": "const res = await fetch(url, {"
+  }
+]

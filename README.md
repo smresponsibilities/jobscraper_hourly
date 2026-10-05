@@ -73,10 +73,8 @@ New roles are detected by **requisition ID**, never by date. Workday only expose
 relative dates ("Posted Today") and companies routinely bump timestamps when they
 repost, so IDs are the only reliable signal.
 
-## Setup
 
-1. Push this repo to GitHub (public — needed later so the UI can read the data).
-2. Turn on 2-Step Verification, if it isn't already: [myaccount.google.com/signinoptions/two-step-verification](https://myaccount.google.com/signinoptions/two-step-verification)
+3. Python 3.11+ is optionally used for Scrapling engine. Install Python and run: pip install "scrapling[fetchers]==0.4.15" playwright and playwright install --with-deps chromium (on Windows, just playwright install chromium).
    → **Get started** → verify with your phone. App Passwords only appears
    once this is on.
 3. Generate an app password: [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords)
@@ -289,3 +287,4 @@ location alone — typically well under 10% of what a full run sees.
   a name (a staffing agency, a school district, a sandbox tenant). Every
   `bulk-import` candidate is polled and its real job titles checked, not just
   its HTTP status, before being kept.
+

@@ -1,0 +1,189 @@
+﻿  D:\Jobscraper-next\src\fetchers\darwinbox.ts:66:  const origin = `https://${company.token}.darwinbox.in`;
+> D:\Jobscraper-next\src\fetchers\darwinbox.ts:67:  return scraplingJson(url, {
+  D:\Jobscraper-next\src\fetchers\darwinbox.ts:68:    method: 'POST',
+  D:\Jobscraper-next\src\fetchers\darwinbox.ts:69:    headers: {
+  D:\Jobscraper-next\src\fetchers\darwinbox.ts:70:      'Content-Type': 'application/json',
+  D:\Jobscraper-next\src\fetchers\darwinbox.ts:71:      Accept: 'application/json, text/plain, */*',
+  D:\Jobscraper-next\src\fetchers\darwinbox.ts:72:      Origin: origin,
+  D:\Jobscraper-next\src\fetchers\freshteam.ts:16:  const url = `https://${company.token}.freshteam.com/jobs`;
+> D:\Jobscraper-next\src\fetchers\freshteam.ts:17:  const res = await fetch(url, {
+  D:\Jobscraper-next\src\fetchers\freshteam.ts:18:    headers: { 'user-agent': UA, accept: 'text/html' },
+  D:\Jobscraper-next\src\fetchers\freshteam.ts:19:    signal: AbortSignal.timeout(30_000),
+  D:\Jobscraper-next\src\fetchers\freshteam.ts:20:  });
+  D:\Jobscraper-next\src\fetchers\freshteam.ts:21:  if (!res.ok) throw new Error(`${res.status} ${res.statusText} for ${url}`);
+  D:\Jobscraper-next\src\fetchers\freshteam.ts:22:  const html = await res.text();
+  D:\Jobscraper-next\src\fetchers\freshteam.ts:44:export async function enrich(_company: Company, job: RawJob): Promise<string | undefined> {
+> D:\Jobscraper-next\src\fetchers\freshteam.ts:45:  const res = await fetch(job.url, {
+  D:\Jobscraper-next\src\fetchers\freshteam.ts:46:    headers: { 'user-agent': UA, accept: 'text/html' },
+  D:\Jobscraper-next\src\fetchers\freshteam.ts:47:    signal: AbortSignal.timeout(30_000),
+  D:\Jobscraper-next\src\fetchers\freshteam.ts:48:  });
+  D:\Jobscraper-next\src\fetchers\freshteam.ts:49:  if (!res.ok) return undefined;
+  D:\Jobscraper-next\src\fetchers\freshteam.ts:50:  const html = await res.text();
+  D:\Jobscraper-next\src\fetchers\icims.ts:91:async function fetchHtml(url: string): Promise<string> {
+> D:\Jobscraper-next\src\fetchers\icims.ts:92:  const res = await fetch(url, {
+  D:\Jobscraper-next\src\fetchers\icims.ts:93:    headers: { 'user-agent': UA, accept: 'text/html' },
+  D:\Jobscraper-next\src\fetchers\icims.ts:94:    signal: AbortSignal.timeout(PORTAL_TIMEOUT_MS),
+  D:\Jobscraper-next\src\fetchers\icims.ts:95:  });
+  D:\Jobscraper-next\src\fetchers\icims.ts:96:  if (!res.ok) throw new Error(`${res.status} ${res.statusText} for ${url}`);
+  D:\Jobscraper-next\src\fetchers\icims.ts:97:  return res.text();
+  D:\Jobscraper-next\src\fetchers\personio.ts:101:  const url = `https://${company.token}.jobs.personio.de/xml`;
+> D:\Jobscraper-next\src\fetchers\personio.ts:102:  const res = await fetch(url, {
+  D:\Jobscraper-next\src\fetchers\personio.ts:103:    headers: { 'user-agent': UA, accept: 'application/xml, text/xml' },
+  D:\Jobscraper-next\src\fetchers\personio.ts:104:    signal: AbortSignal.timeout(FEED_TIMEOUT_MS),
+  D:\Jobscraper-next\src\fetchers\personio.ts:105:  });
+  D:\Jobscraper-next\src\fetchers\personio.ts:106:  if (!res.ok) throw new Error(`${res.status} ${res.statusText} for ${url}`);
+  D:\Jobscraper-next\src\fetchers\personio.ts:107:
+  D:\Jobscraper-next\src\fetchers\phenom.ts:41:async function page(company: Company, from: number): Promise<{ jobs: PhenomJob[]; total: number }> {
+> D:\Jobscraper-next\src\fetchers\phenom.ts:42:  const res = await fetch(`https://${company.token}/widgets`, {
+  D:\Jobscraper-next\src\fetchers\phenom.ts:43:    method: 'POST',
+  D:\Jobscraper-next\src\fetchers\phenom.ts:44:    headers: { 'content-type': 'application/json', 'user-agent': UA, accept: 'application/json' },
+  D:\Jobscraper-next\src\fetchers\phenom.ts:45:    signal: AbortSignal.timeout(30_000),
+  D:\Jobscraper-next\src\fetchers\phenom.ts:46:    body: JSON.stringify({
+  D:\Jobscraper-next\src\fetchers\phenom.ts:47:      lang: 'en_us',
+  D:\Jobscraper-next\src\fetchers\pyjamahr.ts:32:  for (let page = 0; page < MAX_PAGES && url; page++) {
+> D:\Jobscraper-next\src\fetchers\pyjamahr.ts:33:    const data: { results?: PyjamaJob[]; next?: string | null } = await getJson(url);
+  D:\Jobscraper-next\src\fetchers\pyjamahr.ts:34:    const batch = data.results ?? [];
+  D:\Jobscraper-next\src\fetchers\pyjamahr.ts:35:    if (batch.length === 0) break;
+  D:\Jobscraper-next\src\fetchers\pyjamahr.ts:36:
+  D:\Jobscraper-next\src\fetchers\pyjamahr.ts:37:    for (const job of batch) {
+  D:\Jobscraper-next\src\fetchers\pyjamahr.ts:38:      const years =
+  D:\Jobscraper-next\src\fetchers\recruiterflow.ts:40:  const url = `https://recruiterflow.com/${company.token}/jobs`;
+> D:\Jobscraper-next\src\fetchers\recruiterflow.ts:41:  const res = await fetch(url, {
+  D:\Jobscraper-next\src\fetchers\recruiterflow.ts:42:    headers: { 'user-agent': UA, accept: 'text/html' },
+  D:\Jobscraper-next\src\fetchers\recruiterflow.ts:43:    signal: AbortSignal.timeout(30_000),
+  D:\Jobscraper-next\src\fetchers\recruiterflow.ts:44:  });
+  D:\Jobscraper-next\src\fetchers\recruiterflow.ts:45:  if (!res.ok) throw new Error(`${res.status} ${res.statusText} for ${url}`);
+  D:\Jobscraper-next\src\fetchers\recruiterflow.ts:46:  const html = await res.text();
+  D:\Jobscraper-next\src\fetchers\scrapling.test.ts:5:test('scraplingFetch valid request', async () => {
+> D:\Jobscraper-next\src\fetchers\scrapling.test.ts:6:  const res = await scraplingFetch('https://example.com', {
+  D:\Jobscraper-next\src\fetchers\scrapling.test.ts:7:    method: 'GET',
+  D:\Jobscraper-next\src\fetchers\scrapling.test.ts:8:    engine: 'static'
+  D:\Jobscraper-next\src\fetchers\scrapling.test.ts:9:  });
+  D:\Jobscraper-next\src\fetchers\scrapling.test.ts:10:  
+  D:\Jobscraper-next\src\fetchers\scrapling.test.ts:11:  assert.strictEqual(res.success, true);
+  D:\Jobscraper-next\src\fetchers\scrapling.test.ts:19:    async () => {
+> D:\Jobscraper-next\src\fetchers\scrapling.test.ts:20:      await scraplingFetch('ftp://example.com', { engine: 'static' });
+  D:\Jobscraper-next\src\fetchers\scrapling.test.ts:21:    },
+  D:\Jobscraper-next\src\fetchers\scrapling.test.ts:22:    (err: Error) => {
+  D:\Jobscraper-next\src\fetchers\scrapling.test.ts:23:      assert(err instanceof ScraplingError);
+  D:\Jobscraper-next\src\fetchers\scrapling.test.ts:24:      assert.strictEqual(err.category, 'validation');
+  D:\Jobscraper-next\src\fetchers\scrapling.test.ts:25:      return true;
+  D:\Jobscraper-next\src\fetchers\scrapling.ts:41:
+> D:\Jobscraper-next\src\fetchers\scrapling.ts:42:export async function scraplingFetch(
+  D:\Jobscraper-next\src\fetchers\scrapling.ts:43:  url: string,
+  D:\Jobscraper-next\src\fetchers\scrapling.ts:44:  options: { method?: 'GET' | 'POST'; headers?: Record<string, string>; body?: string; engine?: 'static' | 'browser'; timeout?: number } = {}
+  D:\Jobscraper-next\src\fetchers\scrapling.ts:45:): Promise<ScraplingResponse> {
+  D:\Jobscraper-next\src\fetchers\scrapling.ts:46:  const method = options.method || 'GET';
+  D:\Jobscraper-next\src\fetchers\scrapling.ts:47:  const engine = options.engine || 'static';
+  D:\Jobscraper-next\src\fetchers\scrapling.ts:106:): Promise<T> {
+> D:\Jobscraper-next\src\fetchers\scrapling.ts:107:  const res = await scraplingFetch(url, options);
+  D:\Jobscraper-next\src\fetchers\scrapling.ts:108:  if (!res.success) {
+  D:\Jobscraper-next\src\fetchers\scrapling.ts:109:    throw new ScraplingError(`Scrapling error: ${res.error?.message}`, res.error?.category);
+  D:\Jobscraper-next\src\fetchers\scrapling.ts:110:  }
+  D:\Jobscraper-next\src\fetchers\scrapling.ts:111:  
+  D:\Jobscraper-next\src\fetchers\scrapling.ts:112:  if (!res.body) {
+  D:\Jobscraper-next\src\fetchers\successfactors.ts:16:async function fetchXml(url: string): Promise<string> {
+> D:\Jobscraper-next\src\fetchers\successfactors.ts:17:  const res = await fetch(url, {
+  D:\Jobscraper-next\src\fetchers\successfactors.ts:18:    headers: { 'user-agent': UA, accept: 'application/xml, text/xml' },
+  D:\Jobscraper-next\src\fetchers\successfactors.ts:19:    signal: AbortSignal.timeout(FEED_TIMEOUT_MS),
+  D:\Jobscraper-next\src\fetchers\successfactors.ts:20:  });
+  D:\Jobscraper-next\src\fetchers\successfactors.ts:21:  if (!res.ok) throw new Error(`${res.status} ${res.statusText} for ${url}`);
+  D:\Jobscraper-next\src\fetchers\successfactors.ts:22:  return res.text();
+  D:\Jobscraper-next\src\fetchers\taleo.ts:59:async function fetchPage(url: string, cookie?: string): Promise<Page & { cookie: string }> {
+> D:\Jobscraper-next\src\fetchers\taleo.ts:60:  const res = await fetch(url, {
+  D:\Jobscraper-next\src\fetchers\taleo.ts:61:    headers: { 'user-agent': UA, accept: 'text/html', ...(cookie ? { cookie } : {}) },
+  D:\Jobscraper-next\src\fetchers\taleo.ts:62:    signal: AbortSignal.timeout(TIMEOUT_MS),
+  D:\Jobscraper-next\src\fetchers\taleo.ts:63:  });
+  D:\Jobscraper-next\src\fetchers\taleo.ts:64:  if (!res.ok) throw new Error(`${res.status} ${res.statusText} for ${url}`);
+  D:\Jobscraper-next\src\fetchers\taleo.ts:65:  return {
+  D:\Jobscraper-next\src\fetchers\trakstar.ts:24:  const url = `https://${company.token}.hire.trakstar.com/jobfeeds/${company.token}`;
+> D:\Jobscraper-next\src\fetchers\trakstar.ts:25:  const res = await fetch(url, {
+  D:\Jobscraper-next\src\fetchers\trakstar.ts:26:    headers: { 'user-agent': UA, accept: 'application/xml, text/xml' },
+  D:\Jobscraper-next\src\fetchers\trakstar.ts:27:    signal: AbortSignal.timeout(30_000),
+  D:\Jobscraper-next\src\fetchers\trakstar.ts:28:  });
+  D:\Jobscraper-next\src\fetchers\trakstar.ts:29:  if (!res.ok) throw new Error(`${res.status} ${res.statusText} for ${url}`);
+  D:\Jobscraper-next\src\fetchers\trakstar.ts:30:  const xml = await res.text();
+  D:\Jobscraper-next\src\fetchers\turbohire.ts:67:  const origin = `https://${company.site}.turbohire.co`;
+> D:\Jobscraper-next\src\fetchers\turbohire.ts:68:  const res = await fetch(`${API}/api/token/noauth`, {
+  D:\Jobscraper-next\src\fetchers\turbohire.ts:69:    headers: {
+  D:\Jobscraper-next\src\fetchers\turbohire.ts:70:      'user-agent': UA,
+  D:\Jobscraper-next\src\fetchers\turbohire.ts:71:      accept: 'application/json, text/plain, */*',
+  D:\Jobscraper-next\src\fetchers\turbohire.ts:72:      origin,
+  D:\Jobscraper-next\src\fetchers\turbohire.ts:73:      referer: `${origin}/`,
+  D:\Jobscraper-next\src\fetchers\turbohire.ts:86:
+> D:\Jobscraper-next\src\fetchers\turbohire.ts:87:  const res = await fetch(
+  D:\Jobscraper-next\src\fetchers\turbohire.ts:88:    `${API}/api/careerpagev2/filteredjobs?orgId=${company.token}&pageType=2`,
+  D:\Jobscraper-next\src\fetchers\turbohire.ts:89:    {
+  D:\Jobscraper-next\src\fetchers\turbohire.ts:90:      method: 'POST',
+  D:\Jobscraper-next\src\fetchers\turbohire.ts:91:      headers: {
+  D:\Jobscraper-next\src\fetchers\turbohire.ts:92:        'content-type': 'application/json',
+  D:\Jobscraper-next\src\fetchers\util.ts:85:    try {
+> D:\Jobscraper-next\src\fetchers\util.ts:86:      res = await fetch(url, {
+  D:\Jobscraper-next\src\fetchers\util.ts:87:        ...init,
+  D:\Jobscraper-next\src\fetchers\util.ts:88:        headers: { 'user-agent': UA, accept: 'application/json', ...(init?.headers ?? {}) },
+  D:\Jobscraper-next\src\fetchers\util.ts:89:        signal: AbortSignal.timeout(30_000),
+  D:\Jobscraper-next\src\fetchers\util.ts:90:      });
+  D:\Jobscraper-next\src\fetchers\util.ts:91:    } catch (error) {
+  D:\Jobscraper-next\src\fetchers\workable.ts:56:export async function enrich(company: Company, job: RawJob): Promise<string | undefined> {
+> D:\Jobscraper-next\src\fetchers\workable.ts:57:  const res = await fetch(`https://apply.workable.com/${company.token}/j/${job.externalId}`, {
+  D:\Jobscraper-next\src\fetchers\workable.ts:58:    headers: { 'user-agent': UA, accept: 'text/html' },
+  D:\Jobscraper-next\src\fetchers\workable.ts:59:    signal: AbortSignal.timeout(30_000),
+  D:\Jobscraper-next\src\fetchers\workable.ts:60:  });
+  D:\Jobscraper-next\src\fetchers\workable.ts:61:  if (!res.ok) return undefined;
+  D:\Jobscraper-next\src\fetchers\workable.ts:62:
+  D:\Jobscraper-next\src\fetchers\workday.ts:78:export async function discoverSites(company: Company): Promise<string[] | 'gone'> {
+> D:\Jobscraper-next\src\fetchers\workday.ts:79:  const res = await fetch(`${base(company)}/robots.txt`, { headers: { 'user-agent': UA } });
+  D:\Jobscraper-next\src\fetchers\workday.ts:80:  if (res.status === 404 || res.status === 422 || res.status === 500) return 'gone';
+  D:\Jobscraper-next\src\fetchers\workday.ts:81:  if (!res.ok) throw new Error(`workday ${company.token}.${company.host}: robots.txt HTTP ${res.status}`);
+  D:\Jobscraper-next\src\fetchers\workday.ts:82:  return parseRobotsSites(await res.text());
+  D:\Jobscraper-next\src\fetchers\workday.ts:83:}
+  D:\Jobscraper-next\src\fetchers\workday.ts:84:
+  D:\Jobscraper-next\src\fetchers\workday.ts:206:  if (!path) return undefined;
+> D:\Jobscraper-next\src\fetchers\workday.ts:207:  const res = await fetch(
+  D:\Jobscraper-next\src\fetchers\workday.ts:208:    `${base(company)}/wday/cxs/${company.token}/${company.site}${path}`,
+  D:\Jobscraper-next\src\fetchers\workday.ts:209:    { headers: { 'user-agent': UA, accept: 'application/json' }, signal: AbortSignal.timeout(30_000) },
+  D:\Jobscraper-next\src\fetchers\workday.ts:210:  );
+  D:\Jobscraper-next\src\fetchers\workday.ts:211:  if (!res.ok) return undefined;
+  D:\Jobscraper-next\src\fetchers\workday.ts:212:  const data = (await res.json()) as { jobPostingInfo?: JobPostingInfo };
+  D:\Jobscraper-next\src\fetchers\zohorecruit.ts:31:export async function list(company: Company): Promise<RawJob[]> {
+> D:\Jobscraper-next\src\fetchers\zohorecruit.ts:32:  const res = await fetch(company.token, {
+  D:\Jobscraper-next\src\fetchers\zohorecruit.ts:33:    headers: { 'user-agent': UA, accept: 'text/html' },
+  D:\Jobscraper-next\src\fetchers\zohorecruit.ts:34:    signal: AbortSignal.timeout(30_000),
+  D:\Jobscraper-next\src\fetchers\zohorecruit.ts:35:  });
+  D:\Jobscraper-next\src\fetchers\zohorecruit.ts:36:  if (!res.ok) throw new Error(`${res.status} ${res.statusText} for ${company.token}`);
+  D:\Jobscraper-next\src\fetchers\zohorecruit.ts:37:  const html = await res.text();
+  D:\Jobscraper-next\src\detect.ts:24:  try {
+> D:\Jobscraper-next\src\detect.ts:25:    const res = await fetch(url, {
+  D:\Jobscraper-next\src\detect.ts:26:      headers: { 'user-agent': 'Mozilla/5.0 (compatible; jobscraper-next)' },
+  D:\Jobscraper-next\src\detect.ts:27:      redirect: 'follow',
+  D:\Jobscraper-next\src\detect.ts:28:      signal: AbortSignal.timeout(20_000),
+  D:\Jobscraper-next\src\detect.ts:29:    });
+  D:\Jobscraper-next\src\detect.ts:30:    return res.ok ? await res.text() : '';
+  D:\Jobscraper-next\src\bulk-import.ts:139:  try {
+> D:\Jobscraper-next\src\bulk-import.ts:140:    const res = await fetch(LISTING_URL, {
+  D:\Jobscraper-next\src\bulk-import.ts:141:      headers: { 'user-agent': UA, accept: 'application/vnd.github+json' },
+  D:\Jobscraper-next\src\bulk-import.ts:142:      signal: AbortSignal.timeout(15_000),
+  D:\Jobscraper-next\src\bulk-import.ts:143:    });
+  D:\Jobscraper-next\src\bulk-import.ts:144:    if (!res.ok) return;
+  D:\Jobscraper-next\src\bulk-import.ts:145:    names = ((await res.json()) as { name?: string }[]).map((f) => f.name ?? '');
+  D:\Jobscraper-next\src\bulk-import.ts:268:async function loadCsv(platform: Ats): Promise<Company[]> {
+> D:\Jobscraper-next\src\bulk-import.ts:269:  const res = await fetch(`${RAW}/${platform}.csv`, { headers: { 'user-agent': UA } });
+  D:\Jobscraper-next\src\bulk-import.ts:270:  if (!res.ok) {
+  D:\Jobscraper-next\src\bulk-import.ts:271:    console.warn(`  ! ${platform}.csv: ${res.status}`);
+  D:\Jobscraper-next\src\bulk-import.ts:272:    return [];
+  D:\Jobscraper-next\src\bulk-import.ts:273:  }
+  D:\Jobscraper-next\src\bulk-import.ts:274:  const lines = (await res.text()).trim().split('\n').slice(1);
+  D:\Jobscraper-next\src\discover.ts:50:async function cdxRows(indexUrl: string, pattern: string, page: number): Promise<CdxRow[]> {
+> D:\Jobscraper-next\src\discover.ts:51:  const res = await fetch(
+  D:\Jobscraper-next\src\discover.ts:52:    `${indexUrl}?url=${encodeURIComponent(pattern)}&output=json&page=${page}&pageSize=1`,
+  D:\Jobscraper-next\src\discover.ts:53:    { headers: { 'user-agent': UA }, signal: AbortSignal.timeout(300_000) },
+  D:\Jobscraper-next\src\discover.ts:54:  );
+  D:\Jobscraper-next\src\discover.ts:55:  if (!res.ok) return [];
+  D:\Jobscraper-next\src\discover.ts:56:  const body = await res.text();
+  D:\Jobscraper-next\src\discover-news.ts:38:  try {
+> D:\Jobscraper-next\src\discover-news.ts:39:    const res = await fetch(url, {
+  D:\Jobscraper-next\src\discover-news.ts:40:      headers: { 'user-agent': UA, accept: 'application/rss+xml, application/xml, text/xml' },
+  D:\Jobscraper-next\src\discover-news.ts:41:      signal: AbortSignal.timeout(30_000),
+  D:\Jobscraper-next\src\discover-news.ts:42:    });
+  D:\Jobscraper-next\src\discover-news.ts:43:    return res.ok ? await res.text() : '';
+  D:\Jobscraper-next\src\discover-news.ts:44:  } catch {

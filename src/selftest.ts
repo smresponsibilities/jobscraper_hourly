@@ -707,9 +707,9 @@ console.log('host history (rolling worst-N persistence)');
 // updateHistory takes stats.slice(0, WORST_N=3) as-is (already worst-first
 // from summarizeHostStats), so this run needs >3 hosts for "never worst" to
 // mean anything — with only 2 entries both would land in the top 3.
-const alwaysWorst = { key: 'wd504', count: 1, errors: 0, p50: 1, p95: 1 };
-const filler = (key: string) => ({ key, count: 1, errors: 0, p50: 1, p95: 1 });
-const neverWorst = { key: 'greenhouse', count: 1, errors: 0, p50: 1, p95: 1 };
+const alwaysWorst = { key: 'wd504', count: 1, errors: 0, p50: 1, p95: 1, failureClasses: [] };
+const filler = (key: string) => ({ key, count: 1, errors: 0, p50: 1, p95: 1, failureClasses: [] });
+const neverWorst = { key: 'greenhouse', count: 1, errors: 0, p50: 1, p95: 1, failureClasses: [] };
 const runStats = [alwaysWorst, filler('a'), filler('b'), neverWorst];
 let history: Record<string, boolean[]> = {};
 for (let i = 0; i < 6; i++) history = updateHistory(history, runStats);
@@ -2139,6 +2139,64 @@ check('an empty location stays empty rather than becoming ", India"', normalizeL
 check('the page count is read from the portal', pageCount('<div>Search Results Page 1 of 7</div>'), 7);
 check('a single-page board reports one', pageCount('<div>Page 1 of 1</div>'), 1);
 check('a portal with no paging text still reports one', pageCount('<div>nothing here</div>'), 1);
+
+import { FallbackError } from './fetchers/routing.js';
+import { BlockError } from './fetchers/block.js';
+import { extractBlockKind } from './fetchers/routing.js';
+
+console.log('SC-07: block and outage semantics');
+
+// "both fail with challenge retains bounded block hold"
+const wallA = new BlockError({ kind: 'challenge', vendor: 'cloudflare' }, 403, 'x');
+const wallB = new BlockError({ kind: 'waf_block', vendor: 'datadome' }, 403, 'y');
+check(
+  'both fail with challenge retains bounded block hold',
+  extractBlockKind(new FallbackError('both', wallA, wallB)),
+  'challenge'
+);
+
+// "fallback 404 plus primary wall retains both causes" (meaning the wall is not extracted, 404 takes precedence for eviction)
+const authFail = new Error('404 Not Found');
+check(
+  'genuine invalid tenant follows existing eviction policy (404 overrides wall)',
+  extractBlockKind(new FallbackError('both', wallA, authFail)),
+  undefined
+);
+
+const infraFail = new Error('Python missing');
+check(
+  'infrastructure failure plus wall retains bounded block hold',
+  extractBlockKind(new FallbackError('both', infraFail, wallA)),
+  'challenge'
+);
+
+import { shouldEvictBoard } from './state.js';
+
+check(
+  'board fails and day limit not reached (hold)',
+  shouldEvictBoard(2, undefined, false).evict,
+  false
+);
+check(
+  'board fails and day limit reached (evict)',
+  shouldEvictBoard(3, undefined, false).evict,
+  true
+);
+check(
+  'bot wall holds past day 3',
+  shouldEvictBoard(3, 'challenge', false).evict,
+  false
+);
+check(
+  'bot wall hold expires eventually',
+  shouldEvictBoard(14, 'challenge', false).evict,
+  true
+);
+check(
+  'suspected outage prevents eviction',
+  shouldEvictBoard(4, undefined, true).evict,
+  false
+);
 
 console.log(failures === 0 ? '\nall checks pass' : `\n${failures} failing check(s)`);
 process.exit(failures === 0 ? 0 : 1);

@@ -1,5 +1,8 @@
 import type { Page } from 'playwright';
 import type { Company, RawJob } from '../types.js';
+import { route } from './routing.js';
+import { scraplingFetch } from './scrapling.js';
+import { globalBrowserSemaphore } from './concurrency.js';
 
 /**
  * Last-resort adapter for careers sites that expose no readable API at all.
@@ -135,49 +138,95 @@ export async function list(company: Company): Promise<RawJob[]> {
   try {
     ({ chromium } = await import('playwright'));
   } catch {
-    console.warn(`  ~ ${company.name}: playwright not installed, skipping`);
-    return [];
+    throw new Error('missing browser: playwright not installed');
   }
 
-  const browser = await chromium.launch();
-  try {
-    const page = await browser.newPage({
-      userAgent:
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36',
-    });
-
-    const collected = new Map<string, Row>();
-    const pages = site.pageParam ? (site.maxPages ?? 3) : 1;
-
-    for (let index = 1; index <= pages; index++) {
-      const target = new URL(site.url);
-      if (site.pageParam && index > 1) target.searchParams.set(site.pageParam, String(index));
-
-      await page.goto(target.toString(), { waitUntil: 'networkidle', timeout: 60_000 });
-      await page.waitForTimeout(site.settleMs ?? 3500);
-
-      const before = collected.size;
-      for (const row of await scrape(page, site.linkPattern.source, site.cardUp ?? 0)) {
-        collected.set(row.href, row);
-      }
-      // A page that adds nothing new means we've run past the end.
-      if (collected.size === before) break;
-    }
-
+  const parseJobs = (collected: Map<string, Row>) => {
     return [...collected.values()].map((row) => ({
-      // The numeric id in the URL is stable across title and slug edits.
       externalId: row.href.match(/(\d{6,})/)?.[1] ?? row.href,
       title: row.title,
-      // Match the href too — slugs routinely encode the city
-      // ("/job/23590255/application-engineer-iii-hyderabad-in/") even when the
-      // rendered card shows only a title.
       location:
         `${row.text} ${row.href}`.match(INDIAN_PLACE)?.[0]?.trim() ??
         (site.indiaOnly ? 'India' : ''),
       url: row.href,
       text: row.text,
     }));
-  } finally {
-    await browser.close();
-  }
+  };
+
+  const fetchPrimary = async (): Promise<RawJob[]> => {
+    return globalBrowserSemaphore.run(async () => {
+      const browser = await chromium.launch();
+      try {
+        const page = await browser.newPage();
+        const collected = new Map<string, Row>();
+        const pages = site.pageParam ? (site.maxPages ?? 3) : 1;
+
+        for (let index = 1; index <= pages; index++) {
+          const target = new URL(site.url);
+          if (site.pageParam && index > 1) target.searchParams.set(site.pageParam, String(index));
+
+          const res = await scraplingFetch(target.toString(), {
+            engine: 'browser',
+            timeout: 60,
+            headers: {
+              referer: 'https://www.google.com/',
+            },
+            wait_selector: 'a[href]',
+            solve_cloudflare: true,
+          });
+
+          await page.setContent(res.body || '');
+
+          const before = collected.size;
+          for (const row of await scrape(page, site.linkPattern.source, site.cardUp ?? 0)) {
+            collected.set(row.href, row);
+          }
+          if (collected.size === before) break;
+        }
+
+        return parseJobs(collected);
+      } finally {
+        await browser.close();
+      }
+    });
+  };
+
+  const fetchSecondary = async (): Promise<RawJob[]> => {
+    return globalBrowserSemaphore.run(async () => {
+      const browser = await chromium.launch();
+      try {
+        const page = await browser.newPage({
+          userAgent:
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36',
+        });
+
+        const collected = new Map<string, Row>();
+        const pages = site.pageParam ? (site.maxPages ?? 3) : 1;
+
+        for (let index = 1; index <= pages; index++) {
+          const target = new URL(site.url);
+          if (site.pageParam && index > 1) target.searchParams.set(site.pageParam, String(index));
+
+          await page.goto(target.toString(), { waitUntil: 'networkidle', timeout: 60_000 });
+          await page.waitForTimeout(site.settleMs ?? 3500);
+
+          const before = collected.size;
+          for (const row of await scrape(page, site.linkPattern.source, site.cardUp ?? 0)) {
+            collected.set(row.href, row);
+          }
+          if (collected.size === before) break;
+        }
+
+        return parseJobs(collected);
+      } finally {
+        await browser.close();
+      }
+    });
+  };
+
+  return route({
+    mode: 'scrapling-first',
+    primary: fetchPrimary,
+    secondary: fetchSecondary,
+  });
 }

@@ -27,9 +27,10 @@ jobs:
           python-version: '3.11'
           
       - name: Install Scrapling
+        continue-on-error: true
         run: |
-          pip install scrapling playwright
-          playwright install chromium
+          pip install "scrapling[fetchers]==0.4.15" playwright
+          playwright install --with-deps chromium
 
       - run: npm install --no-audit --no-fund
 
@@ -89,9 +90,10 @@ jobs:
           python-version: '3.11'
           
       - name: Install Scrapling
+        continue-on-error: true
         run: |
-          pip install scrapling playwright
-          playwright install chromium
+          pip install "scrapling[fetchers]==0.4.15" playwright
+          playwright install --with-deps chromium
 
       - run: npm install --no-audit --no-fund
 
@@ -147,9 +149,10 @@ jobs:
           python-version: '3.11'
           
       - name: Install Scrapling
+        continue-on-error: true
         run: |
-          pip install scrapling playwright
-          playwright install chromium
+          pip install "scrapling[fetchers]==0.4.15" playwright
+          playwright install --with-deps chromium
 
       - run: npm install --no-audit --no-fund
 
