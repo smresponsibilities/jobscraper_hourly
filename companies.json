@@ -112612,5 +112612,12 @@
     "token": "cvshealth",
     "host": "wd1",
     "site": "cvs_health_careers"
+  },
+  {
+    "name": "Nuvacore",
+    "ats": "lever",
+    "token": "nuvacore",
+    "industry": "tech",
+    "source": "discovered"
   }
 ]
