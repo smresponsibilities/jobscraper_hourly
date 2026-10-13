@@ -112555,5 +112555,12 @@
     "industry": "tech",
     "source": "discovered",
     "token": "modoenergy"
+  },
+  {
+    "name": "Clueso",
+    "ats": "ashby",
+    "token": "clueso",
+    "industry": "tech",
+    "source": "discovered"
   }
 ]
