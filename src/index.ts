@@ -251,8 +251,8 @@ async function main(): Promise<void> {
    * silently deleted — and with rotation most of the corpus is missing from
    * any single run.
    */
-  const polledTokens = new Set(selection.polling.map(boardKey));
-  const updatedCompanies: Company[] = companies.filter((c) => !polledTokens.has(boardKey(c)));
+  const evictedKeys = new Set<string>();
+  const updatedByBoardKey = new Map<string, Company>();
   const dropped: string[] = [];
   const fresh: { company: Company; job: RawJob }[] = [];
   /**
@@ -314,6 +314,7 @@ async function main(): Promise<void> {
       const { evict, heldByWall } = shouldEvictBoard(days, blockKind, suspectedOutage.has(company.ats));
       if (evict) {
         dropped.push(company.name);
+        evictedKeys.add(key);
         delete nextBoardState[key];
       } else {
         if (heldByWall) {
@@ -323,7 +324,6 @@ async function main(): Promise<void> {
           );
         }
         nextBoardState[key] = failed;
-        updatedCompanies.push(company);
       }
       continue;
     }
@@ -336,10 +336,12 @@ async function main(): Promise<void> {
      */
     const hasIndia = jobs.some((job) => locationMatches(job.location));
     nextBoardState[boardKey(company)] = recordSuccess(nowIso);
-    updatedCompanies.push({
-      ...company,
-      ...(hasIndia || company.lastIndiaAt ? { lastIndiaAt: hasIndia ? nowIso : company.lastIndiaAt } : {}),
-    });
+    if (hasIndia || company.lastIndiaAt) {
+      updatedByBoardKey.set(boardKey(company), {
+        ...company,
+        lastIndiaAt: hasIndia ? nowIso : company.lastIndiaAt,
+      });
+    }
     totalSeen += jobs.length;
     tenantPolls.set(tenant, (tenantPolls.get(tenant) ?? 0) + 1);
     polledPrefixes.add(`${tenant}:`);
@@ -388,6 +390,13 @@ async function main(): Promise<void> {
   }
   for (const [tenant, polls] of tenantPolls) {
     if (polls === tenantRows.get(tenant)) polledBoards.add(tenant);
+  }
+
+  const updatedCompanies: Company[] = [];
+  for (const c of companies) {
+    const key = boardKey(c);
+    if (evictedKeys.has(key)) continue;
+    updatedCompanies.push(updatedByBoardKey.get(key) ?? c);
   }
 
   // Already screened above, so every fresh job is a candidate worth enriching —

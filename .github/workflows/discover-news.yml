@@ -54,12 +54,18 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
-          git pull --rebase --autostash origin main
+          if ! git pull --rebase --autostash origin main; then
+            echo "Rebase conflict encountered, aborting and resetting to origin/main"
+            git rebase --abort 2>/dev/null || true
+            git stash drop 2>/dev/null || true
+            git checkout -- . 2>/dev/null || true
+          fi
 
       # Most days this changes nothing — a run that finds no new board with an
       # India role is the normal outcome, not a failure. git-auto-commit is a
       # no-op when the file is unchanged.
       - name: Commit new boards
+        continue-on-error: true
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: 'discover: new boards from funding news [skip ci]'

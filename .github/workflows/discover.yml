@@ -36,7 +36,20 @@ jobs:
 
       - run: npm run discover
 
+      - name: Rebase onto any commits that landed mid-run
+        continue-on-error: true
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          if ! git pull --rebase --autostash origin main; then
+            echo "Rebase conflict encountered, aborting and resetting to origin/main"
+            git rebase --abort 2>/dev/null || true
+            git stash drop 2>/dev/null || true
+            git checkout -- . 2>/dev/null || true
+          fi
+
       - name: Commit new boards
+        continue-on-error: true
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: 'discover: new boards from Common Crawl [skip ci]'
@@ -103,7 +116,20 @@ jobs:
       # India role at all, which is runtime spent to learn nothing.
       - run: npm run bulk-import -- --bar india
 
+      - name: Rebase onto any commits that landed mid-run
+        continue-on-error: true
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          if ! git pull --rebase --autostash origin main; then
+            echo "Rebase conflict encountered, aborting and resetting to origin/main"
+            git rebase --abort 2>/dev/null || true
+            git stash drop 2>/dev/null || true
+            git checkout -- . 2>/dev/null || true
+          fi
+
       - name: Commit imported boards
+        continue-on-error: true
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: 'bulk-import: new boards from ats-scrapers tenant lists [skip ci]'
@@ -165,7 +191,20 @@ jobs:
 
       - run: npm run detect -- state/yc-india.txt
 
+      - name: Rebase onto any commits that landed mid-run
+        continue-on-error: true
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          if ! git pull --rebase --autostash origin main; then
+            echo "Rebase conflict encountered, aborting and resetting to origin/main"
+            git rebase --abort 2>/dev/null || true
+            git stash drop 2>/dev/null || true
+            git checkout -- . 2>/dev/null || true
+          fi
+
       - name: Commit resolved boards
+        continue-on-error: true
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: 'yc: boards resolved from the YC India directory [skip ci]'

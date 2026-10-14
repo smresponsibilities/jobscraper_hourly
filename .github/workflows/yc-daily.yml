@@ -35,7 +35,20 @@ jobs:
 
       - run: npm run detect -- state/yc-india.txt
 
+      - name: Rebase onto any commits that landed mid-run
+        continue-on-error: true
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          if ! git pull --rebase --autostash origin main; then
+            echo "Rebase conflict encountered, aborting and resetting to origin/main"
+            git rebase --abort 2>/dev/null || true
+            git stash drop 2>/dev/null || true
+            git checkout -- . 2>/dev/null || true
+          fi
+
       - name: Commit resolved boards
+        continue-on-error: true
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: 'yc: boards resolved from the YC India directory [skip ci]'

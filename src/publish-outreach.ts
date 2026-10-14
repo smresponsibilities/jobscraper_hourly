@@ -63,10 +63,24 @@ async function pull(remote: string): Promise<{ text: string | null; sha: string 
   }
   if (!res.ok) throw new Error(`GET ${remote}: ${res.status} ${await res.text()}`);
   const body = (await res.json()) as { content?: string; sha: string };
-  return {
-    text: body.content ? Buffer.from(body.content, 'base64').toString('utf8') : '',
-    sha: body.sha,
-  };
+  if (body.content) {
+    return {
+      text: Buffer.from(body.content, 'base64').toString('utf8'),
+      sha: body.sha,
+    };
+  }
+  // GitHub Contents API omits `content` for files > 1 MB (content: "", encoding: "none").
+  // Fetch blob directly via Git Blobs API to support up to 100 MB.
+  if (body.sha) {
+    const blobRes = await api(`/git/blobs/${body.sha}`);
+    if (!blobRes.ok) throw new Error(`GET blob ${body.sha}: ${blobRes.status} ${await blobRes.text()}`);
+    const blob = (await blobRes.json()) as { content: string; encoding: string };
+    return {
+      text: Buffer.from(blob.content, blob.encoding as BufferEncoding).toString('utf8'),
+      sha: body.sha,
+    };
+  }
+  return { text: '', sha: null };
 }
 
 async function push(remote: string, contents: string): Promise<void> {
@@ -149,13 +163,15 @@ if (args.includes('--pull')) {
   // yesterday's un-sent drafts is lost on the very next run.
   const pooled = await pull('drafts.json');
   await mkdir('state', { recursive: true });
-  await writeFile(DRAFTS_PATH, pooled.text ?? '[]', 'utf8');
-  console.log(`pulled drafts.json -> ${DRAFTS_PATH} (${JSON.parse(pooled.text || '[]').length} options)`);
+  const draftsText = pooled.text && pooled.text.trim() ? pooled.text : '[]';
+  await writeFile(DRAFTS_PATH, draftsText, 'utf8');
+  console.log(`pulled drafts.json -> ${DRAFTS_PATH} (${JSON.parse(draftsText).length} options)`);
 
   const { text } = await pull('contacted.json');
   await mkdir('state', { recursive: true });
-  await writeFile(STATE_PATH, text ?? '{}\n', 'utf8');
-  const count = Object.keys(JSON.parse(text || '{}')).length;
+  const stateText = text && text.trim() ? text : '{}\n';
+  await writeFile(STATE_PATH, stateText, 'utf8');
+  const count = Object.keys(JSON.parse(stateText)).length;
   console.log(`pulled contacted.json → ${STATE_PATH} (${count} contacts)`);
 }
 

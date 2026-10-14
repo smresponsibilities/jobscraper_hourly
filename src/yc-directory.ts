@@ -28,10 +28,27 @@ async function getApiKey(): Promise<string> {
   const res = await fetch('https://www.ycombinator.com/companies');
   if (!res.ok) throw new Error(`Failed to fetch YC directory page: ${res.status}`);
   const html = await res.text();
-  const match = html.match(/"([A-Za-z0-9]{150,300})"/);
-  if (!match) throw new Error('Could not find Algolia API key in YC directory page');
-  API_KEY = match[1] as string;
-  return API_KEY;
+  const optsMatch = html.match(/AlgoliaOpts\s*=\s*(\{.+?\});/);
+  if (optsMatch && optsMatch[1]) {
+    try {
+      const opts = JSON.parse(optsMatch[1]) as { key?: unknown };
+      if (typeof opts.key === 'string' && opts.key) {
+        API_KEY = opts.key;
+        return opts.key;
+      }
+    } catch {
+      // ignore and try fallback
+    }
+  }
+  const keyMatch = html.match(/"key"\s*:\s*"([^"]+)"/);
+  if (keyMatch && keyMatch[1]) {
+    API_KEY = keyMatch[1];
+    return keyMatch[1];
+  }
+  const match = html.match(/"([A-Za-z0-9+/=_-]{150,300})"/);
+  if (!match || !match[1]) throw new Error('Could not find Algolia API key in YC directory page');
+  API_KEY = match[1];
+  return match[1];
 }
 
 export interface YCCompany {
