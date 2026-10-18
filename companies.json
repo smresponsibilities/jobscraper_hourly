@@ -112382,5 +112382,95 @@
     "industry": "tech",
     "source": "discovered",
     "token": "levelworks"
+  },
+  {
+    "name": "cemd",
+    "ats": "greenhouse",
+    "token": "cemd",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "comfrt",
+    "ats": "greenhouse",
+    "token": "comfrt",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "plenful",
+    "ats": "ashby",
+    "token": "plenful",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "procurementsciences",
+    "ats": "ashby",
+    "token": "procurementsciences",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Pulsora%20Inc",
+    "ats": "ashby",
+    "token": "Pulsora%20Inc",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "profound",
+    "ats": "ashby",
+    "token": "profound",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Redesign%20Health",
+    "ats": "ashby",
+    "token": "Redesign%20Health",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Revecore",
+    "ats": "ashby",
+    "token": "Revecore",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "ResolveAI",
+    "ats": "ashby",
+    "token": "ResolveAI",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "greystar",
+    "ats": "workday",
+    "token": "greystar",
+    "host": "wd1",
+    "site": "International_Career_Site",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "masco",
+    "ats": "workday",
+    "token": "masco",
+    "host": "wd1",
+    "site": "Behr",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "masco",
+    "ats": "workday",
+    "token": "masco",
+    "host": "wd1",
+    "site": "masco",
+    "industry": "tech",
+    "source": "discovered"
   }
 ]
