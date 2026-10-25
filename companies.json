@@ -114550,5 +114550,291 @@
     "industry": "tech",
     "source": "discovered",
     "lastIndiaAt": "2026-10-25T09:01:48.785Z"
+  },
+  {
+    "name": "ADES Global",
+    "ats": "oracle",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "epgv",
+    "host": "fa.em3",
+    "siteNumber": "CX_1"
+  },
+  {
+    "name": "Airtel",
+    "ats": "darwinbox",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "airtel"
+  },
+  {
+    "name": "Al Jomaih Energy and Water",
+    "ats": "workable",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "al-jomaih-energy-and-water"
+  },
+  {
+    "name": "Alconost Inc.",
+    "ats": "breezy",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "alconost-inc"
+  },
+  {
+    "name": "Blue Stout",
+    "ats": "workable",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "blue-stout"
+  },
+  {
+    "name": "Brandfolder",
+    "ats": "greenhouse",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "brandfolder"
+  },
+  {
+    "name": "CareCentrix",
+    "ats": "icims",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "careers-carecentrix.icims.com"
+  },
+  {
+    "name": "CarePartners",
+    "ats": "icims",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "careers-carepartners.icims.com"
+  },
+  {
+    "name": "Collective Residential",
+    "ats": "workable",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "collectiveresidential"
+  },
+  {
+    "name": "Companial",
+    "ats": "lever",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "companial"
+  },
+  {
+    "name": "Datacom",
+    "ats": "workable",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "datacom1"
+  },
+  {
+    "name": "FarmRaise",
+    "ats": "ashby",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "farmraise"
+  },
+  {
+    "name": "Gigmo Solutions",
+    "ats": "workable",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "gigmos"
+  },
+  {
+    "name": "Gunnebo Entrance Control",
+    "ats": "workable",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "gunnebo-entrance-control"
+  },
+  {
+    "name": "Jhpiego",
+    "ats": "icims",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "jobs-jhpiego.icims.com"
+  },
+  {
+    "name": "JMP",
+    "ats": "icims",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "jmpglobal-sas.icims.com"
+  },
+  {
+    "name": "Leadership Boulevard Pvt. Ltd.",
+    "ats": "darwinbox",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "myleadschool"
+  },
+  {
+    "name": "Maker Lab",
+    "ats": "workable",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "maker-lab"
+  },
+  {
+    "name": "Marymount University",
+    "ats": "workday",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "marymount",
+    "host": "wd5",
+    "site": "careers"
+  },
+  {
+    "name": "Mindera",
+    "ats": "workable",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "minderacraft"
+  },
+  {
+    "name": "Moxie Labs",
+    "ats": "workable",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "moxie-labs"
+  },
+  {
+    "name": "Nicolab",
+    "ats": "personio",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "nicolab"
+  },
+  {
+    "name": "NIVA Health",
+    "ats": "workable",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "niva-health-2"
+  },
+  {
+    "name": "Packt",
+    "ats": "workable",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "packtpublishing"
+  },
+  {
+    "name": "RYSE Inc",
+    "ats": "workable",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "ryse"
+  },
+  {
+    "name": "SMC Group",
+    "ats": "darwinbox",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "mysmcdbx"
+  },
+  {
+    "name": "Sparkland",
+    "ats": "greenhouse",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "sparkland"
+  },
+  {
+    "name": "stelo",
+    "ats": "greenhouse",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "stelo"
+  },
+  {
+    "name": "Substance | Level Up by Substance",
+    "ats": "workable",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "getsubstance"
+  },
+  {
+    "name": "T-Tech",
+    "ats": "workable",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "ttech"
+  },
+  {
+    "name": "The Greater Change",
+    "ats": "workable",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "the-greater-change-1"
+  },
+  {
+    "name": "Tl",
+    "ats": "workday",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "tateandlyle",
+    "host": "wd3",
+    "site": "tlcareers"
+  },
+  {
+    "name": "Topicals",
+    "ats": "lever",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "topicalsrx"
+  },
+  {
+    "name": "Vaisala",
+    "ats": "successfactors",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "careers.vaisala.com"
+  },
+  {
+    "name": "Vistra",
+    "ats": "successfactors",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "careers.vistra.com"
+  },
+  {
+    "name": "Workera AI",
+    "ats": "greenhouse",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "workera"
+  },
+  {
+    "name": "Working at L3Harris Technologies",
+    "ats": "successfactors",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "jobs.l3harris.com"
+  },
+  {
+    "name": "Wrisk",
+    "ats": "workable",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "wrisk"
+  },
+  {
+    "name": "ZDHC Foundation",
+    "ats": "recruitee",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "zdhcfoundation"
+  },
+  {
+    "name": "Zimvie",
+    "ats": "successfactors",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "careers.zimvie.com"
   }
 ]
