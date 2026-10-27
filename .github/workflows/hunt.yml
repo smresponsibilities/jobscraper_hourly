@@ -395,5 +395,18 @@ jobs:
           git init -q
           git checkout -qb data
           git add jobs.json
-          git -c user.name='github-actions[bot]'               -c user.email='github-actions[bot]@users.noreply.github.com'               commit -qm "catalog: ${{ steps.hunt.outputs.new_count }} new [skip ci]"
-          git push -qf "https://x-access-token:$GITHUB_TOKEN@github.com/$GITHUB_REPOSITORY.git" data
+          git -c user.name='github-actions[bot]' \
+            -c user.email='github-actions[bot]@users.noreply.github.com' \
+            commit -qm "catalog: ${{ steps.hunt.outputs.new_count }} new [skip ci]"
+          for attempt in 1 2 3; do
+            if git push -qf "https://x-access-token:$GITHUB_TOKEN@github.com/$GITHUB_REPOSITORY.git" data; then
+              break
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "::warning::git push to data branch failed (attempt $attempt/3), retrying in 5s..."
+              sleep 5
+            else
+              echo "::error::git push to data branch failed after 3 attempts"
+              exit 1
+            fi
+          done
