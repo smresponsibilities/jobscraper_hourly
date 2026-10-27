@@ -2507,6 +2507,28 @@ pre{white-space:pre-wrap;font-size:13px;line-height:1.45;color:#ccc;border-left:
 .btn{padding:5px 12px;border-radius:6px;background:#26364a;color:#cfe3ff;text-decoration:none;font-size:13px}
 .primary{background:#1a4a2e;color:#bfe8c8}.ghost{background:#222;color:#777}
 a.refresh{color:#569;font-size:12px}
+.toolbar{border:1px solid #333;background:#161616;border-radius:8px;padding:12px;margin:16px 0 24px;display:flex;flex-direction:column;gap:10px}
+.tb-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.tb-controls{justify-content:space-between}
+#tb-search{flex:1;min-width:220px;background:#0d0d0d;border:1px solid #444;color:#eee;padding:7px 10px;border-radius:6px;font-family:inherit;font-size:13px}
+#tb-search:focus{outline:none;border-color:#5a8}
+.tb-count{color:#888;font-size:11px}
+.tb-check{color:#aaa;font-size:12px;display:flex;align-items:center;gap:5px;cursor:pointer;user-select:none}
+.tb-group{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.tb-label{color:#666;font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+.tb-btn,.tb-lane{background:#222;border:1px solid #333;color:#bbb;padding:4px 9px;border-radius:5px;cursor:pointer;font-family:inherit;font-size:11px}
+.tb-btn:hover,.tb-lane:hover{border-color:#555;color:#fff}
+.tb-btn.active,.tb-lane.active{background:#26364a;color:#cfe3ff;border-color:#3d5a7d;font-weight:bold}
+.see-more-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;background:#181818;border:1px dashed #333;border-radius:8px;margin:12px 0 24px;flex-wrap:wrap}
+.see-more-status{color:#888;font-size:12px}
+.see-more-status b{color:#ddd}
+.see-more-actions{display:flex;gap:6px;flex-wrap:wrap}
+.btn-sm{padding:5px 11px;border-radius:5px;background:#26364a;color:#cfe3ff;border:1px solid #3d5a7d;cursor:pointer;font-family:inherit;font-size:12px}
+.btn-sm:hover{background:#30435c;color:#fff}
+.btn-sm.ghost{background:#202020;border-color:#333;color:#888}
+.btn-sm.ghost:hover{background:#282828;color:#ccc}
+.card.is-hidden{display:none !important}
+.lane-section.is-lane-hidden{display:none !important}
 `;
 
 /**
@@ -2532,6 +2554,13 @@ const ACT_SCRIPT = `async function act(el,openUrl){
       el.style.opacity='';el.style.pointerEvents='';
       return;
     }
+    if(href.indexOf('refresh')!==-1){
+      var txt='Rebuild dispatched! Fresh batch is generating in GitHub Actions and will be live in ~2 minutes.';
+      try{txt=await r.text()||txt;}catch(e){}
+      alert(txt);
+      el.style.opacity='';el.style.pointerEvents='';
+      return;
+    }
     if(openUrl)window.open(openUrl,'_blank');
     var card=el.closest('.card');
     if(card){card.style.opacity='0.25';card.style.pointerEvents='none';}
@@ -2540,9 +2569,149 @@ const ACT_SCRIPT = `async function act(el,openUrl){
     el.style.opacity='';el.style.pointerEvents='';
   }
 }
+
+var currentPreset = '12';
+var activeLane = 'all';
+var verifiedOnly = false;
+var searchQuery = '';
+var sectionLimits = {
+  followups: 12,
+  triggered: 12,
+  leadership: 12,
+  random: 12
+};
+
+function applyVisibility() {
+  var isSearch = searchQuery.trim().length > 0;
+  var totalMatches = 0;
+  var sections = ['followups', 'triggered', 'leadership', 'random'];
+
+  sections.forEach(function(sec) {
+    var secEl = document.getElementById('sec-' + sec);
+    if (!secEl) return;
+    if (activeLane !== 'all' && activeLane !== sec) {
+      secEl.classList.add('is-lane-hidden');
+      return;
+    }
+    secEl.classList.remove('is-lane-hidden');
+
+    var listEl = document.getElementById('cards-' + sec);
+    if (!listEl) return;
+    var cards = listEl.getElementsByClassName('card');
+    var limit = sectionLimits[sec] || 12;
+    if (currentPreset === 'all') limit = 999999;
+    var visibleInSec = 0;
+    var matchingInSec = 0;
+
+    for (var i = 0; i < cards.length; i++) {
+      var c = cards[i];
+      var matchesSearch = true;
+      if (isSearch) {
+        var text = (c.innerText || '').toLowerCase();
+        matchesSearch = text.indexOf(searchQuery.toLowerCase()) !== -1;
+      }
+      var matchesVerified = true;
+      if (verifiedOnly) {
+        matchesVerified = c.dataset.verified === '1';
+      }
+
+      if (matchesSearch && matchesVerified) {
+        matchingInSec++;
+        if (isSearch || matchingInSec <= limit) {
+          c.classList.remove('is-hidden');
+          visibleInSec++;
+        } else {
+          c.classList.add('is-hidden');
+        }
+      } else {
+        c.classList.add('is-hidden');
+      }
+    }
+
+    totalMatches += matchingInSec;
+
+    var smb = document.getElementById('smb-' + sec);
+    var sms = document.getElementById('sms-' + sec);
+    if (smb && sms) {
+      if (isSearch) {
+        sms.innerHTML = 'Matches in section: <b>' + matchingInSec + '</b> of <b>' + cards.length + '</b>';
+      } else {
+        sms.innerHTML = 'Showing <b>' + Math.min(visibleInSec, cards.length) + '</b> of <b>' + cards.length + '</b>';
+      }
+      var moreButtons = smb.querySelectorAll('.btn-sm:not(.ghost)');
+      moreButtons.forEach(function(btn) {
+        btn.style.display = (visibleInSec >= cards.length || isSearch) ? 'none' : '';
+      });
+    }
+  });
+
+  var countEl = document.getElementById('tb-search-count');
+  if (countEl) {
+    countEl.innerText = isSearch ? totalMatches + ' matches found' : '';
+  }
+}
+
+function revealMore(sec, count) {
+  sectionLimits[sec] = (sectionLimits[sec] || 12) + count;
+  applyVisibility();
+}
+
+function revealAll(sec) {
+  sectionLimits[sec] = 999999;
+  applyVisibility();
+}
+
+function collapseSection(sec, min) {
+  sectionLimits[sec] = min || 12;
+  applyVisibility();
+  var secEl = document.getElementById('sec-' + sec);
+  if (secEl) secEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function setPreset(p) {
+  currentPreset = p;
+  try { localStorage.setItem('outreach_preset', p); } catch(e){}
+  var val = p === 'all' ? 999999 : parseInt(p, 10);
+  ['followups', 'triggered', 'leadership', 'random'].forEach(function(sec) {
+    sectionLimits[sec] = val;
+  });
+  document.querySelectorAll('.tb-btn').forEach(function(btn) {
+    btn.classList.toggle('active', btn.dataset.preset === p);
+  });
+  applyVisibility();
+}
+
+function setLane(lane) {
+  activeLane = lane;
+  try { localStorage.setItem('outreach_lane', lane); } catch(e){}
+  document.querySelectorAll('.tb-lane').forEach(function(btn) {
+    btn.classList.toggle('active', btn.dataset.lane === lane);
+  });
+  applyVisibility();
+}
+
+function onSearch(val) {
+  searchQuery = val || '';
+  applyVisibility();
+}
+
+function toggleVerified(chk) {
+  verifiedOnly = Boolean(chk);
+  applyVisibility();
+}
+
+window.addEventListener('DOMContentLoaded', function() {
+  try {
+    var p = localStorage.getItem('outreach_preset');
+    if (p) setPreset(p);
+    var l = localStorage.getItem('outreach_lane');
+    if (l) setLane(l);
+  } catch(e){}
+  applyVisibility();
+});
 `;
 
-function card(d: Draft & { firstDraftedAt?: string }): string {
+function card(d: Draft & { firstDraftedAt?: string }, idx = 0): string {
   // How long this option has been sitting in the pool. Worth showing because
   // the pool now outlives a build: without it there is no way to tell a card
   // drafted an hour ago from one that has been waiting a fortnight.
@@ -2561,7 +2730,9 @@ function card(d: Draft & { firstDraftedAt?: string }): string {
   ]
     .filter(Boolean)
     .join(' ');
-  return `<div class="card" id="c-${esc(d.id)}">
+  const laneClass = d.lane ? `lane-${d.lane}` : '';
+  const initialHide = idx >= 12 ? ' is-hidden' : '';
+  return `<div class="card ${laneClass}${initialHide}" id="c-${esc(d.id)}" data-lane="${esc(d.lane ?? '')}" data-company="${esc(d.company.toLowerCase())}" data-role="${esc(d.role.toLowerCase())}" data-addr="${esc(d.addr.toLowerCase())}" data-verified="${d.verdict === 'valid' ? '1' : '0'}" data-idx="${idx}">
   <div class="head"><b>${esc(d.company)}</b> · ${esc(d.role)} · touch ${d.touch + 1}
     ${pooledDays !== null && pooledDays > 0 ? `<span class="aged">in the pool ${pooledDays}d</span>` : ''}
     ${d.kind === 'followup' && d.overdueDays > 0 ? `<span class="late">${d.overdueDays}d overdue</span>` : ''}
@@ -2677,6 +2848,42 @@ ${cold.length ? cold.map(connectGroupBlock).join('') : `<div class="count">none 
 </body></html>`;
 }
 
+function renderSection(
+  id: string,
+  title: string,
+  sub: string,
+  items: (Draft & { firstDraftedAt?: string })[],
+  defaultLimit = 12,
+): string {
+  if (items.length === 0) {
+    return `<section class="lane-section" id="sec-${id}" data-lane="${id}">
+<h2>${title}<span class="sub">0 — ${sub}</span></h2>
+<div class="count">none right now</div>
+</section>`;
+  }
+  const cardsHtml = items.map((d, i) => card(d, i)).join('');
+  const needsMore = items.length > defaultLimit;
+  return `<section class="lane-section" id="sec-${id}" data-lane="${id}">
+<h2>${title}<span class="sub">${items.length} — ${sub}</span></h2>
+<div class="cards-list" id="cards-${id}">
+${cardsHtml}
+</div>
+${
+  needsMore
+    ? `<div class="see-more-bar" id="smb-${id}">
+  <span class="see-more-status" id="sms-${id}">Showing <b>${Math.min(defaultLimit, items.length)}</b> of <b>${items.length}</b></span>
+  <div class="see-more-actions">
+    <button type="button" class="btn-sm" onclick="revealMore('${id}', 10)">+ See 10 more</button>
+    <button type="button" class="btn-sm" onclick="revealMore('${id}', 25)">+ See 25 more</button>
+    <button type="button" class="btn-sm" onclick="revealAll('${id}')">See all (${items.length})</button>
+    <button type="button" class="btn-sm ghost" onclick="collapseSection('${id}', ${defaultLimit})">Collapse</button>
+  </div>
+</div>`
+    : ''
+}
+</section>`;
+}
+
 function page(
   b: Batch,
   recent: ReturnType<typeof recentlySent>,
@@ -2699,21 +2906,39 @@ function page(
 <h1>outreach — ${daySeed()}</h1>
 ${b.haltReason ? `<div class="halt">${esc(b.haltReason)}</div>` : ''}
 ${atCap ? `<div class="capped">${sentToday}/${SEND_CAP} sent in the last 24h — at cap. The options below keep for tomorrow; nothing is lost by stopping here.</div>` : ''}
-<div class="count">${sentToday}/${SEND_CAP} sent in the last 24h · sending as Gmail account <b>${esc(GMAIL_USER)}</b> · <a class="refresh" href="/refresh">↻ rebuild</a></div>
+<div class="count">${sentToday}/${SEND_CAP} sent in the last 24h · sending as Gmail account <b>${esc(GMAIL_USER)}</b> · <a class="refresh" href="${actionUrl('outreach/refresh')}" onclick="act(this);return false;">↻ rebuild</a></div>
 <div class="count">${savesTo}</div>
 <div class="count"><b>${total}</b> options standing. These persist across rebuilds — a card you do not send today is still here tomorrow.</div>
 
-<h2>follow-ups due<span class="sub">${b.followups.length} — time-sensitive, do these first</span></h2>
-${b.followups.length ? b.followups.map(card).join('') : `<div class="count">nothing due</div>`}
+<div class="toolbar" id="toolbar">
+  <div class="tb-row">
+    <input type="search" id="tb-search" placeholder="Quick filter by company, role, address…" oninput="onSearch(this.value)" autocomplete="off" />
+    <span id="tb-search-count" class="tb-count"></span>
+    <label class="tb-check"><input type="checkbox" id="tb-verified" onchange="toggleVerified(this.checked)" /> Verified only</label>
+  </div>
+  <div class="tb-row tb-controls">
+    <div class="tb-group">
+      <span class="tb-label">Show:</span>
+      <button type="button" class="tb-btn active" data-preset="12" onclick="setPreset('12')">Daily Focus (12)</button>
+      <button type="button" class="tb-btn" data-preset="25" onclick="setPreset('25')">25 / lane</button>
+      <button type="button" class="tb-btn" data-preset="50" onclick="setPreset('50')">50 / lane</button>
+      <button type="button" class="tb-btn" data-preset="all" onclick="setPreset('all')">See All (${total})</button>
+    </div>
+    <div class="tb-group tb-lanes">
+      <span class="tb-label">Lanes:</span>
+      <button type="button" class="tb-lane active" data-lane="all" onclick="setLane('all')">All (${total})</button>
+      <button type="button" class="tb-lane" data-lane="followups" onclick="setLane('followups')">Follow-ups (${b.followups.length})</button>
+      <button type="button" class="tb-lane" data-lane="triggered" onclick="setLane('triggered')">Roles Opened (${b.triggered.length})</button>
+      <button type="button" class="tb-lane" data-lane="leadership" onclick="setLane('leadership')">Leadership (${b.leadership.length})</button>
+      <button type="button" class="tb-lane" data-lane="random" onclick="setLane('random')">Random (${b.random.length})</button>
+    </div>
+  </div>
+</div>
 
-<h2>companies with a role just opened<span class="sub">${b.triggered.length} — posted inside ${TRIGGER_WINDOW_DAYS} days</span></h2>
-${b.triggered.length ? b.triggered.map(card).join('') : `<div class="count">none right now</div>`}
-
-<h2>leadership<span class="sub">${b.leadership.length} — named senior contact, address is a guess</span></h2>
-${b.leadership.length ? b.leadership.map(card).join('') : `<div class="count">none right now</div>`}
-
-<h2>random<span class="sub">${b.random.length} — open roles, rotating daily</span></h2>
-${b.random.length ? b.random.map(card).join('') : `<div class="count">none right now</div>`}
+${renderSection('followups', 'follow-ups due', 'time-sensitive, do these first', b.followups, 12)}
+${renderSection('triggered', 'companies with a role just opened', `posted inside ${TRIGGER_WINDOW_DAYS} days`, b.triggered, 12)}
+${renderSection('leadership', 'leadership', 'named senior contact, address is a guess', b.leadership, 12)}
+${renderSection('random', 'random', 'open roles, rotating daily', b.random, 12)}
 
 <h2>connect on LinkedIn this week<span class="sub">${connects} waiting</span></h2>
 <div class="count">A weekly sitting, not a daily one, so it has its own page:

@@ -950,12 +950,40 @@ export default function Page() {
       {view === 'outreach' && (
         <section className="panel outreach-panel">
           {outreachKey ? (
-            <iframe
-              key={outreachKey}
-              src={`/api/outreach/page?k=${encodeURIComponent(outreachKey)}`}
-              title="Outreach batch"
-              className="outreach-frame"
-            />
+            <>
+              <div className="outreach-topbar">
+                <span className="outreach-topbar-title">Cold Email Outreach Batch</span>
+                <div className="outreach-topbar-actions">
+                  <a
+                    href={`/api/outreach/page?k=${encodeURIComponent(outreachKey)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="chip"
+                    title="Open batch in dedicated browser tab"
+                  >
+                    Open full page ↗
+                  </a>
+                  <button
+                    className="chip"
+                    onClick={() => {
+                      const newKey = window.prompt('Change Outreach key', outreachKey);
+                      if (newKey) {
+                        window.localStorage.setItem('outreachKey', newKey);
+                        setOutreachKey(newKey);
+                      }
+                    }}
+                  >
+                    Key
+                  </button>
+                </div>
+              </div>
+              <iframe
+                key={outreachKey}
+                src={`/api/outreach/page?k=${encodeURIComponent(outreachKey)}`}
+                title="Outreach batch"
+                className="outreach-frame"
+              />
+            </>
           ) : (
             <div className="outreach-locked">
               <p>Outreach key needed to load today&rsquo;s batch.</p>
@@ -976,12 +1004,40 @@ export default function Page() {
       {view === 'connect' && (
         <section className="panel outreach-panel">
           {outreachKey ? (
-            <iframe
-              key={outreachKey}
-              src={`/api/outreach/connects?k=${encodeURIComponent(outreachKey)}`}
-              title="Weekly LinkedIn connections"
-              className="outreach-frame"
-            />
+            <>
+              <div className="outreach-topbar">
+                <span className="outreach-topbar-title">LinkedIn Connection Queue</span>
+                <div className="outreach-topbar-actions">
+                  <a
+                    href={`/api/outreach/connects?k=${encodeURIComponent(outreachKey)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="chip"
+                    title="Open list in dedicated browser tab"
+                  >
+                    Open full page ↗
+                  </a>
+                  <button
+                    className="chip"
+                    onClick={() => {
+                      const newKey = window.prompt('Change Outreach key', outreachKey);
+                      if (newKey) {
+                        window.localStorage.setItem('outreachKey', newKey);
+                        setOutreachKey(newKey);
+                      }
+                    }}
+                  >
+                    Key
+                  </button>
+                </div>
+              </div>
+              <iframe
+                key={outreachKey}
+                src={`/api/outreach/connects?k=${encodeURIComponent(outreachKey)}`}
+                title="Weekly LinkedIn connections"
+                className="outreach-frame"
+              />
+            </>
           ) : (
             <div className="outreach-locked">
               <p>Outreach key needed to load this week&rsquo;s list.</p>

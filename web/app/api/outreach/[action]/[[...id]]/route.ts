@@ -177,6 +177,30 @@ export async function GET(
 
   const { action, id: idParts } = await params;
 
+  if (action === 'refresh') {
+    const codeRepo = process.env.GITHUB_REPOSITORY ?? 'smresponsibilities/Jobscraper-next';
+    const dispatchRes = await fetch(`https://api.github.com/repos/${codeRepo}/actions/workflows/outreach.yml/dispatches`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${process.env.OUTREACH_GH_TOKEN}`,
+        Accept: 'application/vnd.github+json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ ref: 'main' }),
+    });
+    if (dispatchRes.ok) {
+      return new Response('Rebuild dispatched! GitHub Actions is regenerating the outreach batch (~2-3 minutes).', {
+        status: 200,
+        headers: { 'content-type': 'text/plain; charset=utf-8' },
+      });
+    }
+    const errText = await dispatchRes.text();
+    return new Response(`Rebuild dispatch failed (${dispatchRes.status}): ${errText}`, {
+      status: dispatchRes.status || 500,
+      headers: { 'content-type': 'text/plain; charset=utf-8' },
+    });
+  }
+
   // Both rendered pages are published as plain HTML by src/publish-outreach.ts
   // and served straight back: the mail batch, and the weekly LinkedIn list.
   if (action === 'page' || action === 'connects') {
