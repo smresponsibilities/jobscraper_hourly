@@ -61,3 +61,6 @@ state/volume-drops.json
 # bodies, same reason contacted.json is ignored. It round-trips through the
 # private data repo, never through this public one.
 state/drafts.json
+
+.vercel
+.env*
