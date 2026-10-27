@@ -101,11 +101,30 @@ async function gh(path: string, init?: RequestInit): Promise<Response> {
   });
 }
 
-async function getFile(path: string): Promise<{ text: string | null; sha: string | null }> {
+async function getFile(path: string): Promise<{ text: string | null; sha: string | null; status?: number; error?: string }> {
   const res = await gh(`/contents/${path}?ref=${BRANCH}`);
-  if (!res.ok) return { text: null, sha: null };
+  if (!res.ok) {
+    const errorText = await res.text().catch(() => '');
+    return { text: null, sha: null, status: res.status, error: errorText };
+  }
   const j = (await res.json()) as { content?: string; sha: string };
-  return { text: j.content ? Buffer.from(j.content, 'base64').toString('utf8') : '', sha: j.sha };
+  if (j.content) {
+    return { text: Buffer.from(j.content, 'base64').toString('utf8'), sha: j.sha, status: 200 };
+  }
+  // GitHub Contents API omits content for files > 1 MB (e.g. today.html, batch.json).
+  // Fetch blob directly via Git Blobs API to support files up to 100 MB.
+  if (j.sha) {
+    const blobRes = await gh(`/git/blobs/${j.sha}`);
+    if (blobRes.ok) {
+      const blob = (await blobRes.json()) as { content: string; encoding: string };
+      return {
+        text: Buffer.from(blob.content, blob.encoding as BufferEncoding).toString('utf8'),
+        sha: j.sha,
+        status: 200,
+      };
+    }
+  }
+  return { text: '', sha: j.sha, status: 200 };
 }
 
 async function putState(state: OutreachState, sha: string | null): Promise<boolean> {
@@ -162,8 +181,16 @@ export async function GET(
   // and served straight back: the mail batch, and the weekly LinkedIn list.
   if (action === 'page' || action === 'connects') {
     const file = action === 'page' ? 'today.html' : 'connects.html';
-    const { text } = await getFile(file);
-    if (text === null) return new Response('no batch published yet — run the outreach workflow', { status: 404 });
+    const { text, status, error } = await getFile(file);
+    if (text === null) {
+      if (status === 401) {
+        return new Response('OUTREACH_GH_TOKEN is unauthorized or expired on Vercel. Please update OUTREACH_GH_TOKEN in Vercel project environment variables.', { status: 401 });
+      }
+      if (status === 404) {
+        return new Response('no batch published yet — run the outreach workflow', { status: 404 });
+      }
+      return new Response(`GitHub API error (${status}): ${error || 'Failed to fetch batch'}`, { status: status || 500 });
+    }
     return new Response(text, {
       headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' },
     });
