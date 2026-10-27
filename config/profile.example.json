@@ -1,0 +1,76 @@
+{
+  "personal": {
+    "firstName": "Alex",
+    "lastName": "Morgan",
+    "fullName": "Alex Morgan",
+    "preferredName": "Alex",
+    "email": "alex.morgan@example.com",
+    "phone": "+91 9876543210",
+    "phoneCountryCode": "+91",
+    "address": "123 Tech Park Road",
+    "addressLine2": "Apartment 4B",
+    "city": "Bengaluru",
+    "state": "Karnataka",
+    "postalCode": "560100",
+    "country": "India",
+    "linkedinUrl": "https://linkedin.com/in/alexmorgan",
+    "githubUrl": "https://github.com/alexmorgan",
+    "portfolioUrl": "https://alexmorgan.dev"
+  },
+  "education": [
+    {
+      "school": "IIT Madras",
+      "degree": "B.Tech",
+      "fieldOfStudy": "Computer Science and Engineering",
+      "gpa": "8.9/10",
+      "graduationYear": "2026",
+      "startYear": "2022"
+    }
+  ],
+  "experience": [
+    {
+      "title": "Software Engineer Intern",
+      "company": "Acme Cloud Corp",
+      "location": "Bengaluru, India",
+      "startDate": "2025-05-01",
+      "endDate": "2025-08-01",
+      "current": false,
+      "description": "Engineered microservices in Go and Python, optimizing Kafka pipeline throughput by 35%."
+    }
+  ],
+  "professional": {
+    "totalYearsExperience": 1,
+    "currentCompany": "Acme Cloud Corp",
+    "currentTitle": "Software Engineer Intern",
+    "noticePeriodDays": 0,
+    "currentSalary": 600000,
+    "expectedSalary": 1800000,
+    "salaryCurrency": "INR",
+    "willingToRelocate": true,
+    "workPreference": "hybrid"
+  },
+  "workAuthorization": {
+    "authorizedInCountry": true,
+    "requiresSponsorshipNowOrFuture": false,
+    "formerEmployee": false,
+    "hasNonCompete": false,
+    "hasSecurityClearance": false,
+    "felonyConviction": false
+  },
+  "eeo": {
+    "gender": "Prefer not to say",
+    "raceOrEthnicity": "Asian",
+    "isHispanicLatino": false,
+    "veteranStatus": "I am not a protected veteran",
+    "disabilityStatus": "No, I do not have a disability",
+    "legalSignatureName": "Alex Morgan",
+    "signatureDate": "2026-10-22"
+  },
+  "qaBank": {
+    "18 years of age": "Yes",
+    "background check": "Yes",
+    "drug screen": "Yes",
+    "how did you hear": "LinkedIn",
+    "willing to travel": "Yes"
+  }
+}

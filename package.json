@@ -29,7 +29,9 @@
     "contact-find": "tsx src/contact-sources.ts",
     "publish-outreach": "tsx src/publish-outreach.ts",
     "yc-domains": "tsx src/yc-directory.ts",
-    "oj-slugs": "tsx src/open-jobs-slugs.ts"
+    "oj-slugs": "tsx src/open-jobs-slugs.ts",
+    "ats-tools": "tsx src/ats-tools.ts",
+    "auto-apply": "tsx src/autoapply/cli.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

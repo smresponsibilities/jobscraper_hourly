@@ -4,6 +4,21 @@ import { useEffect, useMemo, useState } from 'react';
 import { DATA_URL, REPO_URL, type Job } from '@/lib/types';
 import { AddCompany } from './add-company';
 import { YCPanel } from './yc';
+import { ResumeBuilderView } from './resume-builder';
+import { JobTrackerView } from './job-tracker';
+import { CareerJournalView } from './career-journal';
+import { FitScoreView } from './fit-score-view';
+import {
+  loadResumes,
+  saveResumes,
+  loadApplications,
+  saveApplications,
+  loadJournal,
+  saveJournal,
+  exportAllDataAsJson,
+  importAllDataFromJson
+} from '@/lib/career-storage';
+import type { TargetedResume, TrackedApplication, JournalEntry } from '@/lib/career-types';
 
 const INDUSTRIES = ['tech', 'fintech', 'quant', 'banking', 'consulting'] as const;
 
@@ -154,6 +169,7 @@ function JobRow({
   applied,
   onOpen,
   onMark,
+  onTailor,
 }: {
   job: Job;
   opened: boolean;
@@ -161,6 +177,7 @@ function JobRow({
   applied: boolean;
   onOpen: () => void;
   onMark: (kind: 'saved' | 'applied') => void;
+  onTailor: (job: Job) => void;
 }) {
   const posted = ago(job.postedAt ?? job.firstSeen);
   const band =
@@ -186,6 +203,17 @@ function JobRow({
         onClick={() => onMark('applied')}
       >
         ✓
+      </button>
+      <button
+        className="mark"
+        style={{ width: 'auto', padding: '0 6px', fontSize: '11px', display: 'inline-flex', alignItems: 'center' }}
+        title="Tailor resume & track application"
+        onClick={(e) => {
+          e.stopPropagation();
+          onTailor(job);
+        }}
+      >
+        🎯 Tailor
       </button>
       <div className="company">{job.company}</div>
       <div className="meta">
@@ -236,7 +264,11 @@ export default function Page() {
   const [error, setError] = useState<string | null>(null);
   // Top-level Jobs/Outreach switch — not to be confused with the per-day
   // browsing tabs below, which live entirely inside the Jobs view.
-  const [view, setView] = useState<'jobs' | 'outreach' | 'connect' | 'yc'>('jobs');
+  const [view, setView] = useState<'jobs' | 'resume' | 'tracker' | 'journal' | 'audit' | 'outreach' | 'connect' | 'yc'>('jobs');
+  const [resumes, setResumes] = useState<TargetedResume[]>([]);
+  const [activeResumeId, setActiveResumeId] = useState<string>('');
+  const [applications, setApplications] = useState<TrackedApplication[]>([]);
+  const [journal, setJournal] = useState<JournalEntry[]>([]);
   const [outreachKey, setOutreachKey] = useState<string | null>(null);
 
   const [query, setQuery] = useState('');
@@ -316,6 +348,11 @@ export default function Page() {
     setAppliedIds(loadIdSet(APPLIED_KEY));
     setExclude(localStorage.getItem(EXCLUDE_KEY) ?? '');
     setOutreachKey(localStorage.getItem('outreachKey'));
+    const loadedResumes = loadResumes();
+    setResumes(loadedResumes);
+    if (loadedResumes.length > 0) setActiveResumeId(loadedResumes[0].id);
+    setApplications(loadApplications());
+    setJournal(loadJournal());
   }, []);
 
   const markOpened = (id: string) =>
@@ -342,6 +379,212 @@ export default function Page() {
   const setExcludeBoth = (value: string) => {
     setExclude(value);
     localStorage.setItem(EXCLUDE_KEY, value);
+  };
+
+  const handleUpdateResume = (updated: TargetedResume) => {
+    setResumes((prev) => {
+      const next = prev.map((r) => (r.id === updated.id ? updated : r));
+      saveResumes(next);
+      return next;
+    });
+  };
+
+  const handleCreateTargetedResume = (name: string, targetRole: string, targetCompany: string, jd: string) => {
+    const baseline = resumes.find((r) => r.isDefaultBaseline) || resumes[0];
+    const newResume: TargetedResume = {
+      id: `resume-${Date.now()}`,
+      name,
+      isTargeted: true,
+      targetRole,
+      targetCompany,
+      targetJobDescription: jd,
+      profile: JSON.parse(JSON.stringify(baseline.profile)),
+      settings: JSON.parse(JSON.stringify(baseline.settings)),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    const next = [...resumes, newResume];
+    setResumes(next);
+    saveResumes(next);
+    setActiveResumeId(newResume.id);
+  };
+
+  const handleDeleteResume = (id: string) => {
+    const next = resumes.filter((r) => r.id !== id);
+    setResumes(next);
+    saveResumes(next);
+    if (activeResumeId === id && next.length > 0) {
+      setActiveResumeId(next[0].id);
+    }
+  };
+
+  const handleUpdateApp = (updated: TrackedApplication) => {
+    setApplications((prev) => {
+      const next = prev.map((a) => (a.id === updated.id ? updated : a));
+      saveApplications(next);
+      return next;
+    });
+  };
+
+  const handleAddApp = (newApp: TrackedApplication) => {
+    setApplications((prev) => {
+      const next = [newApp, ...prev];
+      saveApplications(next);
+      return next;
+    });
+  };
+
+  const handleDeleteApp = (id: string) => {
+    setApplications((prev) => {
+      const next = prev.filter((a) => a.id !== id);
+      saveApplications(next);
+      return next;
+    });
+  };
+
+  const handleAddJournal = (entry: JournalEntry) => {
+    setJournal((prev) => {
+      const next = [entry, ...prev];
+      saveJournal(next);
+      return next;
+    });
+  };
+
+  const handleDeleteJournal = (id: string) => {
+    setJournal((prev) => {
+      const next = prev.filter((j) => j.id !== id);
+      saveJournal(next);
+      return next;
+    });
+  };
+
+  const handlePromoteJournal = (entry: JournalEntry, targetResumeId: string, targetExpId: string) => {
+    // Double-promotion guard: prevent duplicate bullets from the same journal entry
+    if (entry.promotedToAchievement) return;
+
+    setJournal((prev) => {
+      const next = prev.map((j) => (j.id === entry.id ? { ...j, promotedToAchievement: true, promotedResumeId: targetResumeId } : j));
+      saveJournal(next);
+      return next;
+    });
+
+    setResumes((prev) => {
+      const next = prev.map((r) => {
+        if (r.id !== targetResumeId) return r;
+        return {
+          ...r,
+          profile: {
+            ...r.profile,
+            experiences: r.profile.experiences.map((exp) => {
+              if (exp.id !== targetExpId) return exp;
+              if (exp.achievements.some((a) => a.text === entry.impactSummary)) return exp;
+              return {
+                ...exp,
+                achievements: [
+                  ...exp.achievements,
+                  {
+                    id: `ach-${Date.now()}`,
+                    text: entry.impactSummary,
+                    sourceType: 'JOURNAL' as const
+                  }
+                ]
+              };
+            })
+          },
+          updatedAt: new Date().toISOString()
+        };
+      });
+      saveResumes(next);
+      return next;
+    });
+  };
+
+  const handleTailorJob = (job: Job) => {
+    let targetResume = resumes.find((r) => r.targetCompany === job.company && r.targetRole === job.title);
+    if (!targetResume) {
+      const baseline = resumes.find((r) => r.isDefaultBaseline) || resumes[0];
+      targetResume = {
+        id: `resume-${Date.now()}`,
+        name: `${job.company} - ${job.title}`,
+        isTargeted: true,
+        targetRole: job.title,
+        targetCompany: job.company,
+        targetJobDescription: `${job.title} at ${job.company} in ${job.location}`,
+        profile: JSON.parse(JSON.stringify(baseline.profile)),
+        settings: JSON.parse(JSON.stringify(baseline.settings)),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      const nextRes = [...resumes, targetResume];
+      setResumes(nextRes);
+      saveResumes(nextRes);
+    }
+    setActiveResumeId(targetResume.id);
+
+    const existingApp = applications.find((a) => a.jobId === job.id || (a.company === job.company && a.role === job.title));
+    if (!existingApp) {
+      const newApp: TrackedApplication = {
+        id: `app-${Date.now()}`,
+        jobId: job.id,
+        company: job.company,
+        role: job.title,
+        location: job.location,
+        url: job.url,
+        salary: job.salaryMin && job.salaryMax ? `₹${job.salaryMin}–${job.salaryMax} LPA` : job.salary || '',
+        stage: 'saved',
+        dateAdded: new Date().toISOString(),
+        resumeId: targetResume.id,
+        notes: `Discovered on Job Radar. Role posted: ${job.postedAt || job.firstSeen}`,
+        timeline: [
+          {
+            id: `t-${Date.now()}`,
+            date: new Date().toISOString(),
+            type: 'status_change',
+            note: 'Saved from Hourly Job Radar'
+          }
+        ]
+      };
+      const nextApps = [newApp, ...applications];
+      setApplications(nextApps);
+      saveApplications(nextApps);
+    }
+
+    setView('resume');
+  };
+
+  const handleExportBackup = () => {
+    const json = exportAllDataAsJson();
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `JobRadar_Soor_Backup_${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportBackup = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'application/json';
+    input.onchange = (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const text = ev.target?.result as string;
+        if (importAllDataFromJson(text)) {
+          setResumes(loadResumes());
+          setApplications(loadApplications());
+          setJournal(loadJournal());
+          alert('Backup restored successfully!');
+        } else {
+          alert('Failed to parse backup JSON.');
+        }
+      };
+      reader.readAsText(file);
+    };
+    input.click();
   };
 
   const companies = useMemo(
@@ -429,6 +672,18 @@ export default function Page() {
             <button className="chip" data-on={view === 'jobs'} onClick={() => setView('jobs')}>
               Jobs
             </button>
+            <button className="chip" data-on={view === 'tracker'} onClick={() => setView('tracker')} title="Application Kanban & Status Pipeline">
+              Tracker ({applications.length})
+            </button>
+            <button className="chip" data-on={view === 'resume'} onClick={() => setView('resume')} title="Soor / Resume Rocketfuel Builder">
+              Resume Builder ({resumes.length})
+            </button>
+            <button className="chip" data-on={view === 'journal'} onClick={() => setView('journal')} title="Log Daily Career Wins & Metrics">
+              Journal ({journal.length})
+            </button>
+            <button className="chip" data-on={view === 'audit'} onClick={() => setView('audit')} title="Recruiter Quality & Fit Score Audit">
+              Fit Score
+            </button>
             <button
               className="chip"
               data-on={view === 'outreach'}
@@ -466,6 +721,20 @@ export default function Page() {
               onClick={() => setView('yc')}
             >
               YC India
+            </button>
+            <button
+              className="chip"
+              onClick={handleExportBackup}
+              title="Export full JSON backup of resumes, applications, and journal"
+            >
+              Backup JSON
+            </button>
+            <button
+              className="chip"
+              onClick={handleImportBackup}
+              title="Restore data from JSON backup"
+            >
+              Restore
             </button>
           </nav>
         </div>
@@ -640,6 +909,7 @@ export default function Page() {
                         applied={appliedIds.has(job.id)}
                         onOpen={() => markOpened(job.id)}
                         onMark={(kind) => toggleMark(kind, job.id)}
+                        onTailor={handleTailorJob}
                       />
                     ))}
                   </ul>
@@ -662,6 +932,7 @@ export default function Page() {
                         applied={appliedIds.has(job.id)}
                         onOpen={() => markOpened(job.id)}
                         onMark={(kind) => toggleMark(kind, job.id)}
+                        onTailor={handleTailorJob}
                       />
                     ))}
                   </ul>
@@ -729,6 +1000,52 @@ export default function Page() {
       )}
 
       {view === 'yc' && <YCPanel jobs={jobs ?? []} />}
+
+      {view === 'tracker' && (
+        <section className="panel" style={{ marginTop: '22px' }}>
+          <JobTrackerView
+            applications={applications}
+            resumes={resumes}
+            onUpdateApplication={handleUpdateApp}
+            onAddApplication={handleAddApp}
+            onDeleteApplication={handleDeleteApp}
+          />
+        </section>
+      )}
+
+      {view === 'resume' && (
+        <section className="panel" style={{ marginTop: '22px' }}>
+          <ResumeBuilderView
+            resumes={resumes}
+            activeResumeId={activeResumeId}
+            onSelectResume={setActiveResumeId}
+            onUpdateResume={handleUpdateResume}
+            onCreateTargetedResume={handleCreateTargetedResume}
+            onDeleteResume={handleDeleteResume}
+          />
+        </section>
+      )}
+
+      {view === 'journal' && (
+        <section className="panel" style={{ marginTop: '22px' }}>
+          <CareerJournalView
+            entries={journal}
+            resumes={resumes}
+            onAddEntry={handleAddJournal}
+            onDeleteEntry={handleDeleteJournal}
+            onPromoteToResume={handlePromoteJournal}
+          />
+        </section>
+      )}
+
+      {view === 'audit' && (
+        <section className="panel" style={{ marginTop: '22px' }}>
+          <FitScoreView
+            resume={resumes.find(r => r.id === activeResumeId) || resumes[0]}
+            onUpdateResume={handleUpdateResume}
+          />
+        </section>
+      )}
 
       <footer>
         Data and source on <a href={REPO_URL}>GitHub</a>. Apply on the company link — direct

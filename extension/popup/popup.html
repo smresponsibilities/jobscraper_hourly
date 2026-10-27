@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Jobscraper Auto-Apply Bot</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-container">
+    <header class="popup-header">
+      <div class="brand">
+        <span class="brand-icon">⚡</span>
+        <div>
+          <span class="brand-title">Jobscraper Bot</span>
+          <span class="brand-sub">Strictly Autofill & Auto-Apply</span>
+        </div>
+      </div>
+      <span id="popup-ats-badge" class="ats-badge">Scanning...</span>
+    </header>
+
+    <div class="platform-indicators">
+      <span class="pill-chip">FastApply</span>
+      <span class="pill-chip">JobWizard</span>
+      <span class="pill-chip">Jobright</span>
+      <span class="pill-chip">AIHawk</span>
+    </div>
+
+    <div class="mode-toggle-row">
+      <label class="mode-chip">
+        <input type="radio" name="popup-mode" value="copilot" checked>
+        <span>🛡️ Copilot</span>
+      </label>
+      <label class="mode-chip">
+        <input type="radio" name="popup-mode" value="stealth">
+        <span>⚡ Stealth</span>
+      </label>
+    </div>
+
+    <div class="status-card">
+      <div class="status-row">
+        <span class="status-label">Form Inputs:</span>
+        <span id="popup-fields-count" class="status-val">Detecting...</span>
+      </div>
+      <div class="status-row">
+        <span class="status-label">Wizard Step:</span>
+        <span id="popup-step-status" class="status-val">Single Page</span>
+      </div>
+    </div>
+
+    <div class="actions-grid">
+      <button id="popup-autofill-btn" class="action-btn primary full-width">
+        <span class="btn-icon">⚡</span>
+        <span class="btn-label">Run Auto-Apply</span>
+      </button>
+
+      <button id="popup-advance-btn" class="action-btn secondary" disabled>
+        <span class="btn-icon">🧙</span>
+        <span class="btn-label">Next Step</span>
+      </button>
+
+      <button id="popup-scan-btn" class="action-btn secondary">
+        <span class="btn-icon">🎯</span>
+        <span class="btn-label">Scan Fields</span>
+      </button>
+
+      <button id="popup-sidepanel-btn" class="action-btn accent full-width">
+        <span class="btn-icon">⚙️</span>
+        <span class="btn-label">Open Bot Cockpit & Profile</span>
+      </button>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

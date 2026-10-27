@@ -1,0 +1,43 @@
+{
+  "manifest_version": 3,
+  "name": "Jobscraper Auto-Apply Bot & ATS Autofill Copilot",
+  "short_name": "Jobscraper Bot",
+  "version": "1.1.0",
+  "description": "Reverse-engineered autonomous auto-apply & autofill bot: FastApply stealth typing & copilot modes, JobWizard Workday/Taleo multi-page stepper, Jobright 60+ field classifier, AIHawk dynamic question answering, and Autoaply 4h continuous queue.",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_title": "Jobscraper Auto-Apply Bot",
+    "default_popup": "popup/popup.html"
+  },
+  "permissions": [
+    "storage",
+    "activeTab",
+    "tabs",
+    "sidePanel",
+    "scripting",
+    "contextMenus"
+  ],
+  "host_permissions": [
+    "*://*/*"
+  ],
+  "side_panel": {
+    "default_path": "sidepanel/sidepanel.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content/content.js"],
+      "css": ["content/content.css"],
+      "all_frames": true,
+      "run_at": "document_idle"
+    }
+  ]
+}

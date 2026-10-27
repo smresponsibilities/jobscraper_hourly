@@ -21,7 +21,7 @@ import type { Job } from '@/lib/types';
  */
 const APP_ID = '45BWZJ1SGC';
 const API_KEY =
-  'NzllNTY5MzJiZGM2OTY2ZTQwMDEzOTNhYWZiZGRjODlhYzVkNjBmOGRjNzJiMWM4ZTU0ZDlhYTZjOTJiMjlhMWFuYWx5dGljc1RhZ3M9eWNkYyZyZXN0cmljdEluZGljZXM9WUNDb21wYW55X3Byb2R1Y3Rpb24lMkNZQ0NvbXBhbnlfQnlfTGF1bmNoX0RhdGVfcHJvZHVjdGlvbiZ0YWdGaWx0ZXJzPSU1QiUyMnljZGNfcHVibGljJTIyJTVE';
+  'NWQwZTA5MDY0MGZhYTg5ZDQ4MzhjNGMzMWM1YzA0YmM3ZjAxODIzYmMzNmRkMTA3N2RiYjAwNDRhM2UzODFhMGFuYWx5dGljc1RhZ3M9eWNkYyZyZXN0cmljdEluZGljZXM9WUNDb21wYW55X3Byb2R1Y3Rpb24lMkNZQ0NvbXBhbnlfQnlfTGF1bmNoX0RhdGVfcHJvZHVjdGlvbiZ0YWdGaWx0ZXJzPSU1QiUyMnljZGNfcHVibGljJTIyJTVEJnZhbGlkVW50aWw9MTc5MzIxMDUxOQ==';
 const INDEX = 'YCCompany_production';
 const HITS_PER_PAGE = 1000;
 
@@ -33,6 +33,18 @@ interface YCCompany {
 }
 
 async function fetchYCIndia(): Promise<YCCompany[]> {
+  try {
+    const apiRes = await fetch('/api/yc');
+    if (apiRes.ok) {
+      const data = await apiRes.json();
+      if (Array.isArray(data) && data.length > 0) {
+        return data;
+      }
+    }
+  } catch {
+    // API route unavailable (e.g. offline or static), fallback to direct Algolia query
+  }
+
   const out: YCCompany[] = [];
   const seen = new Set<string>();
 

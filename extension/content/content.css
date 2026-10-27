@@ -1,0 +1,46 @@
+/* Jobscraper Companion - Injected Styles (FastApply, JobWizard, Jobright, AIHawk) */
+
+.jobscraper-autofilled {
+  border-color: #10b981 !important;
+  background-color: rgba(16, 185, 129, 0.08) !important;
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.3) !important;
+  transition: all 0.25s ease-in-out !important;
+}
+
+.jobscraper-field-review {
+  border-color: #f59e0b !important;
+  background-color: rgba(245, 158, 11, 0.08) !important;
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.3) !important;
+  transition: all 0.25s ease-in-out !important;
+}
+
+.jobscraper-field-error {
+  border-color: #ef4444 !important;
+  background-color: rgba(239, 68, 68, 0.08) !important;
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.3) !important;
+  transition: all 0.25s ease-in-out !important;
+}
+
+.jobscraper-field-badge {
+  display: inline-block !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  color: #a7f3d0 !important;
+  background: #064e3b !important;
+  border: 1px solid #10b981 !important;
+  border-radius: 4px !important;
+  padding: 1px 6px !important;
+  margin-bottom: 3px !important;
+  pointer-events: none !important;
+  user-select: none !important;
+  z-index: 10000 !important;
+}
+
+#jobscraper-floating-pill-host {
+  all: initial;
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 2147483647;
+}

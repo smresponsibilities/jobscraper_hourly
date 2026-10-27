@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Jobscraper Auto-Apply Bot Cockpit</title>
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="brand">
+        <span class="brand-icon">⚡</span>
+        <div>
+          <span class="brand-title">Jobscraper Bot</span>
+          <span class="brand-sub">Strictly Autofill & Auto-Apply</span>
+        </div>
+      </div>
+      <div class="header-status">
+        <span id="ats-badge" class="ats-badge">Scanning ATS...</span>
+        <button id="refresh-page-btn" class="icon-btn" title="Rescan Page">↻</button>
+      </div>
+    </header>
+
+    <!-- Platform Target Indicators (Zero Tracker Overlap) -->
+    <div class="platform-strip">
+      <span class="platform-chip active">⚡ FastApply Stealth</span>
+      <span class="platform-chip active">🧙 JobWizard Multi-Page</span>
+      <span class="platform-chip active">🎯 Jobright Classifier</span>
+      <span class="platform-chip active">🦅 AIHawk Autonomous</span>
+    </div>
+
+    <!-- Quick Navigation -->
+    <nav class="anchor-nav">
+      <a href="#sec-runner" class="anchor-chip active">🚀 Runner</a>
+      <a href="#sec-wizard" class="anchor-chip">🧙 Wizard</a>
+      <a href="#sec-fields" class="anchor-chip">🔍 Fields</a>
+      <a href="#sec-profile" class="anchor-chip">👤 Profile</a>
+      <a href="#sec-qa" class="anchor-chip">💡 Q&A</a>
+      <a href="#sec-console" class="anchor-chip">📟 Console</a>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="main-content">
+
+      <!-- SECTION 1: FastApply Runner & Mode Controller -->
+      <section id="sec-runner" class="card runner-card">
+        <div class="card-header">
+          <span class="card-title">FastApply Execution Modes</span>
+          <span id="fields-count-badge" class="stat-pill">0 Fields Found</span>
+        </div>
+
+        <div class="mode-selector-grid">
+          <label class="mode-option">
+            <input type="radio" name="runner-mode" value="copilot" checked>
+            <div class="mode-box">
+              <span class="mode-icon">🛡️</span>
+              <div class="mode-text">
+                <strong>Copilot Mode</strong>
+                <p>Interactive autofill, visual input badges & human verification per step.</p>
+              </div>
+            </div>
+          </label>
+
+          <label class="mode-option">
+            <input type="radio" name="runner-mode" value="stealth">
+            <div class="mode-box">
+              <span class="mode-icon">⚡</span>
+              <div class="mode-text">
+                <strong>Stealth Runner</strong>
+                <p>Autonomous typing with Gaussian delay jitter (35-85ms) & anti-bot evasion.</p>
+              </div>
+            </div>
+          </label>
+        </div>
+
+        <div class="runner-actions-row">
+          <button id="run-autofill-btn" class="primary-btn large-btn">⚡ Run Auto-Apply</button>
+          <button id="scan-fields-btn" class="secondary-btn">🔍 Scan Form</button>
+        </div>
+      </section>
+
+      <!-- SECTION 2: JobWizard Multi-Page Workday/Taleo Stepper -->
+      <section id="sec-wizard" class="card wizard-card">
+        <div class="card-header">
+          <span class="card-title">JobWizard Multi-Page Form Handler</span>
+          <span id="wizard-platform-badge" class="ats-badge">Workday / Taleo</span>
+        </div>
+
+        <div class="wizard-stepper-box">
+          <div class="wizard-info-row">
+            <span class="wizard-label">Active Step:</span>
+            <span id="wizard-current-step" class="wizard-step-name">Detecting...</span>
+          </div>
+
+          <div class="wizard-stepper-track">
+            <div id="step-info" class="wizard-step-pill">1. Info</div>
+            <div id="step-exp" class="wizard-step-pill">2. Experience</div>
+            <div id="step-questions" class="wizard-step-pill">3. Questions</div>
+            <div id="step-eeo" class="wizard-step-pill">4. EEO</div>
+            <div id="step-review" class="wizard-step-pill">5. Review</div>
+          </div>
+
+          <div class="wizard-controls">
+            <button id="wizard-advance-btn" class="primary-btn" disabled>🧙 Advance to Next Step</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- SECTION 3: Jobright Instant ATS Field Classifier Inspector -->
+      <section id="sec-fields" class="card classifier-card">
+        <div class="card-header">
+          <span class="card-title">Jobright Instant Field Classifier</span>
+          <div class="header-actions">
+            <button id="toggle-badges-btn" class="small-btn">🏷️ In-DOM Badges</button>
+            <span id="detected-stats" class="stat-pill">60+ Taxonomies</span>
+          </div>
+        </div>
+
+        <div class="fields-table-container">
+          <table class="fields-table">
+            <thead>
+              <tr>
+                <th>Field Category</th>
+                <th>Element</th>
+                <th>Confidence</th>
+              </tr>
+            </thead>
+            <tbody id="fields-table-body">
+              <tr>
+                <td colspan="3" class="empty-table">Click "Scan Form" to classify inputs on page.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- SECTION 4: Extended Candidate Application Profile -->
+      <section id="sec-profile" class="card profile-card">
+        <div class="card-header">
+          <span class="card-title">Candidate Profile & Answers</span>
+          <button id="save-profile-btn" class="small-btn">Save Profile</button>
+        </div>
+
+        <!-- Personal Info -->
+        <h4 class="subhead">Personal Information</h4>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>First Name</label>
+            <input type="text" id="prof-first-name" class="text-input" placeholder="Alex">
+          </div>
+          <div class="form-group">
+            <label>Last Name</label>
+            <input type="text" id="prof-last-name" class="text-input" placeholder="Morgan">
+          </div>
+          <div class="form-group full-width">
+            <label>Email</label>
+            <input type="email" id="prof-email" class="text-input" placeholder="alex@example.com">
+          </div>
+          <div class="form-group">
+            <label>Phone</label>
+            <input type="tel" id="prof-phone" class="text-input" placeholder="+91 9876543210">
+          </div>
+          <div class="form-group">
+            <label>Country</label>
+            <input type="text" id="prof-country" class="text-input" value="India">
+          </div>
+          <div class="form-group">
+            <label>City</label>
+            <input type="text" id="prof-city" class="text-input" placeholder="Bengaluru">
+          </div>
+          <div class="form-group">
+            <label>State / Province</label>
+            <input type="text" id="prof-state" class="text-input" placeholder="Karnataka">
+          </div>
+        </div>
+
+        <!-- Social Links -->
+        <h4 class="subhead">Social & Portfolio Links</h4>
+        <div class="form-grid">
+          <div class="form-group full-width">
+            <label>LinkedIn URL</label>
+            <input type="url" id="prof-linkedin" class="text-input" placeholder="https://linkedin.com/in/alex">
+          </div>
+          <div class="form-group full-width">
+            <label>GitHub URL</label>
+            <input type="url" id="prof-github" class="text-input" placeholder="https://github.com/alex">
+          </div>
+          <div class="form-group full-width">
+            <label>Portfolio / Website</label>
+            <input type="url" id="prof-website" class="text-input" placeholder="https://alexdev.me">
+          </div>
+        </div>
+
+        <!-- Education -->
+        <h4 class="subhead">Education</h4>
+        <div class="form-grid">
+          <div class="form-group full-width">
+            <label>University / School</label>
+            <input type="text" id="prof-school" class="text-input" placeholder="IIT Madras">
+          </div>
+          <div class="form-group">
+            <label>Degree</label>
+            <input type="text" id="prof-degree" class="text-input" value="B.Tech">
+          </div>
+          <div class="form-group">
+            <label>Major / Discipline</label>
+            <input type="text" id="prof-major" class="text-input" value="Computer Science">
+          </div>
+          <div class="form-group">
+            <label>GPA / Marks</label>
+            <input type="text" id="prof-gpa" class="text-input" placeholder="8.8/10">
+          </div>
+          <div class="form-group">
+            <label>Graduation Year</label>
+            <input type="text" id="prof-grad-year" class="text-input" value="2026">
+          </div>
+        </div>
+
+        <!-- Professional & Availability -->
+        <h4 class="subhead">Experience & Compensation</h4>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Total Experience (Years)</label>
+            <input type="number" id="prof-yoe" class="text-input" value="1">
+          </div>
+          <div class="form-group">
+            <label>Notice Period (Days)</label>
+            <input type="number" id="prof-notice" class="text-input" value="0">
+          </div>
+          <div class="form-group full-width">
+            <label>Expected CTC / Salary (INR)</label>
+            <input type="number" id="prof-expected-salary" class="text-input" value="1500000">
+          </div>
+          <div class="form-group">
+            <label>Willing to Relocate?</label>
+            <select id="prof-relocate" class="status-dropdown">
+              <option value="true">Yes</option>
+              <option value="false">No</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Work Preference</label>
+            <select id="prof-work-mode" class="status-dropdown">
+              <option value="hybrid">Hybrid</option>
+              <option value="remote">Remote Only</option>
+              <option value="onsite">Onsite</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Work Auth & Legal -->
+        <h4 class="subhead">Work Authorization & Legal</h4>
+        <div class="form-grid">
+          <div class="form-group full-width">
+            <label>Authorized to work in country?</label>
+            <select id="prof-auth" class="status-dropdown">
+              <option value="true">Yes (Legally Authorized)</option>
+              <option value="false">No</option>
+            </select>
+          </div>
+          <div class="form-group full-width">
+            <label>Requires Visa Sponsorship (Now or Future)?</label>
+            <select id="prof-sponsorship" class="status-dropdown">
+              <option value="false">No (Does Not Require Sponsorship)</option>
+              <option value="true">Yes (Requires Sponsorship)</option>
+            </select>
+          </div>
+          <div class="form-group full-width">
+            <label>Former Employee of Company?</label>
+            <select id="prof-former-emp" class="status-dropdown">
+              <option value="false">No</option>
+              <option value="true">Yes</option>
+            </select>
+          </div>
+          <div class="form-group full-width">
+            <label>Bound by Non-Compete Agreement?</label>
+            <select id="prof-non-compete" class="status-dropdown">
+              <option value="false">No</option>
+              <option value="true">Yes</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- EEO & Demographics -->
+        <h4 class="subhead">Voluntary Self-Identification (EEO & CC-305)</h4>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Gender</label>
+            <select id="prof-gender" class="status-dropdown">
+              <option value="Male">Male</option>
+              <option value="Female">Female</option>
+              <option value="Non-Binary">Non-Binary</option>
+              <option value="Prefer not to say">Prefer not to say</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Race / Ethnicity</label>
+            <select id="prof-race" class="status-dropdown">
+              <option value="Asian">Asian (Indian subcontinent)</option>
+              <option value="White">White</option>
+              <option value="Black">Black or African American</option>
+              <option value="Hispanic or Latino">Hispanic or Latino</option>
+              <option value="Two or More Races">Two or More Races</option>
+              <option value="Prefer not to say">Prefer not to say</option>
+            </select>
+          </div>
+          <div class="form-group full-width">
+            <label>Veteran Status</label>
+            <select id="prof-veteran" class="status-dropdown">
+              <option value="No">I am not a protected veteran</option>
+              <option value="Yes">I identify as a protected veteran</option>
+              <option value="Prefer not to say">Prefer not to say</option>
+            </select>
+          </div>
+          <div class="form-group full-width">
+            <label>Disability Status (Form CC-305)</label>
+            <select id="prof-disability" class="status-dropdown">
+              <option value="No">No, I do not have a disability</option>
+              <option value="Yes">Yes, I have a disability</option>
+              <option value="Prefer not to say">Prefer not to say</option>
+            </select>
+          </div>
+        </div>
+      </section>
+
+      <!-- SECTION 5: AIHawk Dynamic QA Bank -->
+      <section id="sec-qa" class="card qa-card">
+        <div class="card-header">
+          <span class="card-title">AIHawk Dynamic Q&A Bank</span>
+          <button id="add-qa-btn" class="small-btn">+ Add Rule</button>
+        </div>
+        <p class="qa-desc">Auto-answers custom ATS questions whenever matching keywords appear in the prompt.</p>
+        <div id="qa-list-container" class="qa-list">
+          <div class="qa-row">
+            <input type="text" class="text-input qa-keyword" placeholder="e.g. 18 years of age" value="18 years of age">
+            <input type="text" class="text-input qa-answer" placeholder="Answer" value="Yes">
+          </div>
+          <div class="qa-row">
+            <input type="text" class="text-input qa-keyword" placeholder="e.g. background check" value="background check">
+            <input type="text" class="text-input qa-answer" placeholder="Answer" value="Yes">
+          </div>
+          <div class="qa-row">
+            <input type="text" class="text-input qa-keyword" placeholder="e.g. drug screen" value="drug screen">
+            <input type="text" class="text-input qa-answer" placeholder="Answer" value="Yes">
+          </div>
+        </div>
+      </section>
+
+      <!-- SECTION 6: Bot Execution Telemetry Console -->
+      <section id="sec-console" class="card console-card">
+        <div class="card-header">
+          <span class="card-title">Bot Execution Telemetry</span>
+          <button id="clear-console-btn" class="small-btn">Clear</button>
+        </div>
+        <div id="bot-console" class="console-box">
+          <div class="console-line">[00:00:00] Jobscraper Bot Cockpit ready.</div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <script src="sidepanel.js"></script>
+</body>
+</html>

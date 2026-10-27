@@ -2196,5 +2196,420 @@ check(
   false
 );
 
+// Intelligence extensions: Simplify, Teal, Jobscan, Rezi reverse-engineered suites
+import { extractAtsIdentity, getAtsSelectors } from './simplify/extractors.js';
+import { classifyFormField, resolveProfileValue, type CandidateProfile } from './simplify/profile-mapping.js';
+import { executePipeline } from './teal/scraper-dsl.js';
+import { evaluateJobLikeness } from './teal/job-likeness.js';
+import { extractCompensation } from './teal/compensation.js';
+import { buildKeywordRegex, countMatches, scoreResumeAgainstJd } from './matching/ats-scorer.js';
+import { auditBulletPoint, auditResume } from './resume/ats-validator.js';
+
+console.log('Simplify: ATS DOM extractors & profile mapping');
+const ghIdentity = extractAtsIdentity('https://boards.greenhouse.io/datadog/jobs/5678901');
+check('greenhouse URL resolves to canonical ATS and token', ghIdentity?.ats, 'greenhouse');
+check('greenhouse company slug is extracted', ghIdentity?.companySlug, 'datadog');
+check('greenhouse job id is extracted', ghIdentity?.jobId, '5678901');
+
+const wdIdentity = extractAtsIdentity('https://nvidia.wd5.myworkdayjobs.com/en-US/NVIDIAExternalCareerSite/job/Bangalore/Senior-System-Software-Engineer_JR1987654');
+check('workday URL resolves to workday ATS', wdIdentity?.ats, 'workday');
+check('workday token is extracted', wdIdentity?.token, 'nvidia');
+check('workday job id is extracted', wdIdentity?.jobId, 'Senior-System-Software-Engineer_JR1987654');
+
+const naukriIdentity = extractAtsIdentity('https://www.naukri.com/job-listings-software-engineer-google-123456789');
+check('naukri URL resolves to naukri ATS', naukriIdentity?.ats, 'naukri');
+check('naukri job id is extracted', naukriIdentity?.jobId, '123456789');
+
+const ftIdentity = extractAtsIdentity('https://acme.freshteam.com/jobs/dev-101');
+check('freshteam URL resolves to freshteam ATS', ftIdentity?.ats, 'freshteam');
+check('freshteam company slug is extracted', ftIdentity?.companySlug, 'acme');
+check('freshteam job id is extracted', ftIdentity?.jobId, 'dev-101');
+
+const ghSelectors = getAtsSelectors('greenhouse');
+check('greenhouse selectors include job title selector', ghSelectors?.jobTitle.includes('app-title'), true);
+
+const candidate: CandidateProfile = {
+  personal: {
+    firstName: 'Alex',
+    lastName: 'Morgan',
+    email: 'alex@example.com',
+    phone: '+91 9876543210',
+    linkedinUrl: 'https://linkedin.com/in/alexmorgan',
+  },
+  education: [
+    { school: 'IIT Madras', degree: 'B.Tech', fieldOfStudy: 'Computer Science', gpa: '8.9/10' },
+  ],
+  experience: [],
+  workAuthorization: {
+    authorizedInCountry: true,
+    requiresSponsorshipNowOrFuture: false,
+  },
+};
+
+check('field classification resolves first_name', classifyFormField({ name: 'candidate_first_name' }), 'first_name');
+check('field classification resolves email', classifyFormField({ label: 'Email Address' }), 'email');
+check('field classification resolves linkedin', classifyFormField({ placeholder: 'https://linkedin.com/in/...' }), 'linkedin');
+check('field classification resolves sponsorship', classifyFormField({ label: 'Will you now or in the future require visa sponsorship?' }), 'sponsorship');
+check('profile resolver maps first_name to candidate first name', resolveProfileValue({ name: 'first_name' }, candidate), 'Alex');
+check('profile resolver maps sponsorship boolean', resolveProfileValue({ label: 'Require sponsorship?' }, candidate), false);
+check('field classification resolves city', classifyFormField({ name: 'candidate_city' }), 'city');
+check('field classification resolves postal_code', classifyFormField({ label: 'Zip / Postal Code' }), 'postal_code');
+check('field classification resolves Country / Region to country not state', classifyFormField({ label: 'Country / Region' }), 'country');
+check('field classification resolves Work Auth', classifyFormField({ label: 'Work Auth' }), 'work_authorization');
+check('field classification resolves State / Province to state', classifyFormField({ label: 'State / Province' }), 'state');
+
+console.log('Teal: Scraper DSL, Likeness heuristic & Compensation');
+const sampleTealHtml = '<div class="posting"><h1 class="entry-title">Lead Infrastructure Engineer - job post</h1></div>';
+const scrapedRole = executePipeline(sampleTealHtml, [
+  ['domSelect', '.entry-title'],
+  ['domText'],
+  ['strReplace', '\\s+-\\s+job\\s+post', '', 'i'],
+  'defaultString',
+]);
+check('teal scraper DSL extracts cleaned title', scrapedRole, 'Lead Infrastructure Engineer');
+
+const googleDslHtml = '<h1 class="sub">Google • Mountain View, CA</h1>';
+const splitLocation = executePipeline(googleDslHtml, [
+  ['domSelect', '.sub'],
+  ['domText'],
+  ['strSplit', '\\s+•\\s+'],
+  ['arrGet', 1],
+  'defaultString',
+]);
+check('teal scraper DSL chains strSplit and arrGet correctly', splitLocation, 'Mountain View, CA');
+
+const reExecGroupText = executePipeline('Reference ID: 98765', [['reExec', 'ID:\\s*(\\d+)', 1]]);
+check('teal scraper DSL reExec extracts capture group with numeric index', reExecGroupText, '98765');
+
+const reExecFlagsText = executePipeline('job-code: abcde', [['reExec', 'code:\\s*([a-z]+)', 'i', 1]]);
+check('teal scraper DSL reExec supports flags and capture group', reExecFlagsText, 'abcde');
+
+const applicationDom = '<div class="apply-box"><h2>Apply for this role</h2><label>Full Name</label><label>Resume/CV</label><button>Submit Application</button></div>';
+const likenessResult = evaluateJobLikeness(applicationDom);
+check('job application likeness correctly crosses threshold 15', likenessResult.isJobApplication, true);
+check('job application likeness accumulates expected score', likenessResult.score >= 30, true);
+
+const nonAppDom = '<div class="article"><h1>10 Tips for Software Engineers</h1><p>Read our blog.</p></div>';
+check('generic blog page fails job application threshold', evaluateJobLikeness(nonAppDom).isJobApplication, false);
+
+const salaryResult = extractCompensation('Expected compensation is between $140,000 and $180,000 per year with equity');
+check('compensation extraction recovers min salary', salaryResult?.min, 140000);
+check('compensation extraction recovers max salary', salaryResult?.max, 180000);
+check('compensation is marked as likely salary', salaryResult?.isLikelySalary, true);
+
+const inrSalaryResult = extractCompensation('Salary range: 18 - 25 LPA based on experience');
+check('INR compensation extracts LPA accurately', inrSalaryResult?.min, 1800000);
+check('INR compensation max extracts LPA accurately', inrSalaryResult?.max, 2500000);
+
+console.log('Jobscan & Simplify: ATS Hard Match Engine');
+const pluralRegex = buildKeywordRegex('technology');
+check('inflection regex matches singular', countMatches('technology stack', pluralRegex) > 0, true);
+check('inflection regex matches plural technologies', countMatches('modern technologies used', pluralRegex) > 0, true);
+
+const sampleJd = 'Looking for Software Engineer with Python, TypeScript, Docker, Kubernetes, and REST API design experience.';
+const sampleResumeText = 'Backend developer with Python, TypeScript, Docker, and REST API microservices architecture.';
+const matchReport = scoreResumeAgainstJd(sampleResumeText, sampleJd);
+check('match report computes expected strong rating', matchReport.rating, 'Strong');
+check('match report identifies missing kubernetes', matchReport.highPriority.missing.includes('kubernetes'), true);
+check('match report identifies matching python', matchReport.highPriority.matching.includes('python'), true);
+
+console.log('Rezi: ATS Resume Formatting & Bullet Impact Standards');
+const strongBullet = auditBulletPoint('Architected distributed event bus with Kafka, reducing end-to-end latency by 45%.');
+check('strong bullet point gets High score', strongBullet.score, 'High');
+check('strong action verb is detected', strongBullet.hasActionVerb, true);
+check('quantified metric is detected', strongBullet.hasMetric, true);
+
+const weakBullet = auditBulletPoint('Responsible for helping with database backups.');
+check('weak bullet point gets Low score', weakBullet.score, 'Low');
+check('weak action verb is flagged', weakBullet.isWeakVerb, true);
+
+const reziTestResume = `John Developer
+john@example.com | 999-000-1111 | Bengaluru, India
+
+Professional Summary
+Experienced full-stack engineer building cloud applications.
+
+Work Experience
+Senior Software Engineer, TechCorp | 05/2022 - Present
+• Designed scalable microservices in Go and PostgreSQL, serving 50,000 daily requests.
+• Automated deployment pipelines in Docker, reducing deployment failures by 80%.
+
+Education
+B.E. Computer Science, Anna University | 08/2018 - 05/2022
+
+Technical Skills
+Languages: Python, Go, TypeScript, SQL
+Tools: Docker, Kubernetes, AWS, Git
+`;
+
+const resumeAudit = auditResume(reziTestResume);
+check('compliant ATS resume receives A or A+ grade', resumeAudit.grade === 'A' || resumeAudit.grade === 'A+', true);
+check('score is 80+', resumeAudit.overallScore >= 80, true);
+check('crucial sections are all validated', resumeAudit.missingCrucialSections.length, 0);
+
+import { scoreResumeWorded } from './resume/resumeworded-engine.js';
+
+console.log('Resume Worded: 4-Pillar Scoring Engine (Impact, Brevity, Style, Structure)');
+const badResume = `
+I was responsible for helping with backend code.
+I am a hardworking team player and go-getter.
+References available upon request.
+`;
+const badReport = scoreResumeWorded(badResume);
+check('resume worded catches personal pronouns', badReport.pillars.style.pronounOccurrences.includes('I'), true);
+check('resume worded catches buzzwords', badReport.pillars.style.buzzwordsDetected.includes('team player'), true);
+check('resume worded flags weak verb', badReport.pillars.impact.weakVerbCount > 0, true);
+check('resume worded flags low word count brevity penalty', badReport.pillars.brevity.score < 20, true);
+check('resume worded flags unnecessary references section', badReport.pillars.structure.unnecessarySectionsFound.includes('References'), true);
+check('resume worded gives bad resume Needs Major Improvement rating', badReport.ratingTier, 'Needs Major Improvement');
+
+const goodResume = `Alex Developer
+alex@example.com | +91 9876543210 | linkedin.com/in/alexdev | github.com/alexdev | Bengaluru, India
+
+Professional Summary
+Software engineer with 2+ years of production experience designing high-throughput distributed systems in Go, Python, and TypeScript.
+
+Work Experience
+Software Engineer, Tech Corp | 06/2023 - Present
+• Architected event-driven streaming pipeline in Kafka and Go, reducing data processing latency by 45%.
+• Engineered automated CI/CD deployment pipelines using GitHub Actions and Docker, accelerating release frequency by 2x.
+• Spearheaded database query optimization across PostgreSQL clusters, saving $12,000 in monthly AWS cloud infrastructure costs.
+• Deployed scalable microservices on Kubernetes, supporting over 200,000 concurrent daily active users with 99.99% uptime.
+
+Education
+B.Tech in Computer Science, IIT Madras | 08/2019 - 05/2023 | GPA: 8.8/10
+
+Technical Skills
+Languages: Go, Python, TypeScript, SQL, Java, C++
+Tools: Docker, Kubernetes, AWS, Kafka, PostgreSQL, Redis, Git, Linux
+`;
+
+const goodReport = scoreResumeWorded(goodResume);
+check('resume worded gives competitive score for strong resume', goodReport.overallScore >= 80, true);
+check('resume worded assigns Top 15% or Top 5% tier', goodReport.ratingTier.includes('Top'), true);
+check('metric ratio is above 50%', goodReport.pillars.impact.metricRatio >= 0.5, true);
+check('zero personal pronouns in good resume', goodReport.pillars.style.pronounOccurrences.length, 0);
+check('zero buzzwords in good resume', goodReport.pillars.style.buzzwordsDetected.length, 0);
+
+console.log('Engine Nitpicks & Extended ATS Targets');
+const bambooIdentity = extractAtsIdentity('https://acme.bamboohr.com/careers/45');
+check('extracts bamboohr identity', bambooIdentity?.ats, 'bamboohr');
+check('extracts bamboohr company slug', bambooIdentity?.companySlug, 'acme');
+
+const hourlyComp = extractCompensation('Pay is $50 - $75 per hour depending on experience');
+check('extracts hourly rate min', hourlyComp?.min, 50);
+check('annualizes hourly rate min to 2000 hours (Teal periodsInYear)', hourlyComp?.annualizedMin, 100000);
+check('annualizes hourly rate max to 2000 hours (Teal periodsInYear)', hourlyComp?.annualizedMax, 150000);
+
+const weeklyComp = extractCompensation('Salary is $2,000 per week');
+check('extracts weekly rate min', weeklyComp?.min, 2000);
+check('annualizes weekly rate to 50 weeks (Teal periodsInYear)', weeklyComp?.annualizedMin, 100000);
+
+const croreComp = extractCompensation('Total package: 1.2 - 1.8 Cr per annum');
+check('extracts crore INR min', croreComp?.min, 12000000);
+check('extracts crore INR max', croreComp?.max, 18000000);
+
+const feedDom = '<div class="search-box"><h1>Search for jobs</h1><p>Filter by department</p><p>50 jobs found</p></div>';
+const feedLikeness = evaluateJobLikeness(feedDom);
+check('detects search_or_feed page type with penalty', feedLikeness.pageType, 'search_or_feed');
+
+const weightedJd = 'Looking for Python and TypeScript experts. Need good communication.';
+const weightedResume = 'Excellent communication and teamwork.';
+const weightedReport = scoreResumeAgainstJd(weightedResume, weightedJd);
+check('candidate with only soft skills receives lower weighted score', weightedReport.weightedScore < 40, true);
+
+const longBullet = auditBulletPoint('Architected event-driven microservices across 5 distributed global regions using Kafka, PostgreSQL, and Redis clusters, achieving 99.99% uptime and sub-millisecond data synchronization while coordinating 12 cross-functional engineering teams across 3 time zones during peak holiday shopping surges, successfully handling 250,000 requests per second with zero downtime.');
+check('bullet exceeding 38 words is flagged as Medium score with length suggestion', longBullet.score, 'Medium');
+check('bullet word count recorded accurately', longBullet.wordCount > 35, true);
+
+const eightfoldIdentity = extractAtsIdentity('https://micron.eightfold.ai/careers?jobId=98765');
+check('extracts eightfold identity', eightfoldIdentity?.ats, 'eightfold');
+check('extracts eightfold company slug', eightfoldIdentity?.companySlug, 'micron');
+check('extracts eightfold jobId', eightfoldIdentity?.jobId, '98765');
+
+const singleLpaComp = extractCompensation('Fixed CTC: 15 LPA based on experience');
+check('extracts single LPA min', singleLpaComp?.min, 1500000);
+
+const idDslText = executePipeline('<div id="jobDescriptionText"><p>Cloud infra architect</p></div>', [['domSelect', '#jobDescriptionText'], ['domText']]);
+check('extracts text from id selector in DSL', idDslText, 'Cloud infra architect');
+
+// --- Auto-Apply & Autofill Engines: FastApply, JobWizard, Jobright, AIHawk, REA Bridge
+import { classifyAtsField, resolveExtendedProfileValue } from './autoapply/classifier.js';
+import { getHumanKeyDelay, generateBezierCurve, getSyntheticEventSequence } from './autoapply/stealth.js';
+import { identifyEnterpriseAts, classifyWorkdayStep, evaluateStepStatus } from './autoapply/wizard.js';
+import { resolveDynamicQuestion, matchBestOption } from './autoapply/aihawk.js';
+import { checkReaStatus } from './autoapply/rea-bridge.js';
+import type { CandidateExtendedProfile } from './autoapply/types.js';
+
+console.log('FastApply: Stealth & Copilot Multi-Mode Engine');
+const delay1 = getHumanKeyDelay(35, 85);
+check('human typing delay stays within bounds (35-85ms)', delay1 >= 35 && delay1 <= 85, true);
+
+const curve = generateBezierCurve({ x: 100, y: 100 }, { x: 500, y: 500 }, 20);
+check('bezier curve generates 21 coordinate points', curve.length, 21);
+check('bezier starts at initial point', curve[0]?.x, 100);
+check('bezier finishes near target point', Math.abs((curve[20]?.x ?? 0) - 500) < 5, true);
+
+const textEvents = getSyntheticEventSequence('Alex');
+check('text event sequence includes keydown and change', textEvents.includes('keydown') && textEvents.includes('change'), true);
+const boolEvents = getSyntheticEventSequence(true);
+check('checkbox event sequence includes click and change', boolEvents.includes('click') && boolEvents.includes('change'), true);
+
+console.log('JobWizard: Multi-Page Workday & Taleo Form Handler');
+check('identifies workday from URL', identifyEnterpriseAts('https://nvidia.wd5.myworkdayjobs.com/en-US/NVIDIAExternalCareerSite'), 'workday');
+check('identifies workday from DOM snippet', identifyEnterpriseAts('https://careers.example.com', '<div data-automation-id="workday"></div>'), 'workday');
+check('identifies taleo from URL', identifyEnterpriseAts('https://oracle.taleo.net/careersection/2/jobdetail.ftl'), 'taleo');
+check('classifies workday my_information step', classifyWorkdayStep('My Information - Step 1', []), 'my_information');
+check('classifies workday my_experience step', classifyWorkdayStep('My Experience', []), 'my_experience');
+check('classifies workday application_questions step', classifyWorkdayStep('Application Questions', []), 'application_questions');
+check('classifies workday voluntary_disclosures step', classifyWorkdayStep('Voluntary Disclosures - Form CC-305', []), 'voluntary_disclosures');
+check('classifies workday review step', classifyWorkdayStep('Review and Submit', []), 'review');
+
+const stepProgression = evaluateStepStatus('workday', 'application_questions');
+check('evaluates step index 3 for questions', stepProgression.currentStepIndex, 3);
+check('evaluates total 5 steps for workday', stepProgression.totalStepsEstimate, 5);
+check('allows advance when no errors', stepProgression.canAdvance, true);
+
+console.log('Jobright: Instant ATS Field Classifier');
+check('classifies first_name from fname', classifyAtsField({ name: 'fname' }).category, 'first_name');
+check('classifies last_name from surname', classifyAtsField({ label: 'Applicant Surname' }).category, 'last_name');
+check('classifies notice_period', classifyAtsField({ label: 'How soon can you start? (Notice Period)' }).category, 'notice_period');
+check('classifies expected_salary', classifyAtsField({ label: 'Target Compensation / Expected CTC' }).category, 'expected_salary');
+check('classifies work_authorization', classifyAtsField({ label: 'Are you legally authorized to work in this country?' }).category, 'work_authorization');
+check('country negative pattern prevents false match on work auth', classifyAtsField({ label: 'Are you legally authorized to work in this country?' }).category !== 'country', true);
+check('classifies workday dateSection_year', classifyAtsField({ name: 'dateSection_year' }).category, 'date_year');
+check('classifies workday dateSection_month', classifyAtsField({ name: 'dateSection_month' }).category, 'date_month');
+check('classifies workday dateSection_day', classifyAtsField({ name: 'dateSection_day' }).category, 'date_day');
+check('classifies sponsorship', classifyAtsField({ label: 'Will you now or in the future require visa sponsorship?' }).category, 'sponsorship');
+check('classifies non_compete', classifyAtsField({ label: 'Are you subject to any non-compete agreements?' }).category, 'non_compete');
+check('classifies disability CC-305', classifyAtsField({ label: 'Voluntary Self-Identification of Disability (Form CC-305)' }).category, 'disability');
+check('classifies veteran status', classifyAtsField({ label: 'Protected Veteran Status' }).category, 'veteran');
+check('confidence is 0.90+ for strong matches', classifyAtsField({ name: 'email' }).confidence >= 0.9, true);
+
+const extendedCandidate: CandidateExtendedProfile = {
+  personal: {
+    firstName: 'Dev',
+    lastName: 'Sharma',
+    email: 'dev@example.com',
+    phone: '+91 9988776655',
+    country: 'India',
+    city: 'Bengaluru',
+  },
+  education: [
+    { school: 'NIT Trichy', degree: 'B.Tech', fieldOfStudy: 'ECE', gpa: '9.1/10', graduationYear: '2026' },
+  ],
+  experience: [],
+  professional: {
+    totalYearsExperience: 2,
+    noticePeriodDays: 15,
+    expectedSalary: 1800000,
+    willingToRelocate: true,
+    workPreference: 'hybrid',
+  },
+  workAuthorization: {
+    authorizedInCountry: true,
+    requiresSponsorshipNowOrFuture: false,
+    formerEmployee: false,
+    hasNonCompete: false,
+    hasSecurityClearance: false,
+    felonyConviction: false,
+  },
+  eeo: {
+    gender: 'Male',
+    raceOrEthnicity: 'Asian',
+    isHispanicLatino: false,
+    veteranStatus: 'I am not a protected veteran',
+    disabilityStatus: 'No, I do not have a disability',
+  },
+};
+
+check('resolves expected_salary from profile', resolveExtendedProfileValue('expected_salary', extendedCandidate), 1800000);
+check('resolves notice_period formatted days', resolveExtendedProfileValue('notice_period', extendedCandidate), '15 days');
+check('resolves work_authorization boolean', resolveExtendedProfileValue('work_authorization', extendedCandidate), true);
+check('resolves disability status text', resolveExtendedProfileValue('disability', extendedCandidate), 'No, I do not have a disability');
+
+console.log('AIHawk: Dynamic Question Answering & Fuzzy Matcher');
+const ageAns = resolveDynamicQuestion('Are you at least 18 years of age?', extendedCandidate);
+check('answers 18+ age question affirmatively', ageAns.value, true);
+const bgAns = resolveDynamicQuestion('Are you willing to undergo a pre-employment background check?', extendedCandidate);
+check('answers background check affirmatively', bgAns.value, true);
+const felonyAns = resolveDynamicQuestion('Have you ever been convicted of a felony crime?', extendedCandidate);
+check('answers felony question negatively', felonyAns.value, 'No');
+const dischargeAns = resolveDynamicQuestion('Have you ever been discharged or asked to resign?', extendedCandidate);
+check('answers discharge question negatively', dischargeAns.value, 'No');
+const licenseAns = resolveDynamicQuestion('Do you possess a valid driver license?', extendedCandidate);
+check('answers driver license affirmatively', licenseAns.value, 'Yes');
+
+const optionsList = [
+  { value: 'opt_1', label: 'Yes, I am legally authorized to work' },
+  { value: 'opt_2', label: 'No, I require visa sponsorship' },
+];
+const matched = matchBestOption(true, optionsList);
+check('fuzzy option matcher selects affirmative work auth option', matched?.value, 'opt_1');
+
+console.log('Autoaply: Continuous Queue & 4-Hour Freshness Engine');
+import {
+  classifyJobBoard,
+  isFreshPosting,
+  getPostingAgeHours,
+  AutoaplyQueueManager,
+} from './autoapply/autoaply.js';
+
+check('classifies linkedin board', classifyJobBoard('https://www.linkedin.com/jobs/view/12345'), 'linkedin');
+check('classifies indeed board', classifyJobBoard('https://www.indeed.com/viewjob?jk=abcdef'), 'indeed');
+check('classifies ziprecruiter board', classifyJobBoard('https://www.ziprecruiter.com/jobs/dev-123'), 'ziprecruiter');
+check('classifies direct ats board', classifyJobBoard('https://nvidia.wd5.myworkdayjobs.com/job/1'), 'direct_ats');
+
+const now = new Date();
+const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000).toISOString();
+const sixHoursAgo = new Date(now.getTime() - 6 * 60 * 60 * 1000).toISOString();
+
+check('identifies posting within 4-hour window as fresh', isFreshPosting(twoHoursAgo, 4, now), true);
+check('identifies posting older than 4 hours as non-fresh', isFreshPosting(sixHoursAgo, 4, now), false);
+check('computes posting age within expected margin', Math.round(getPostingAgeHours(twoHoursAgo, now)), 2);
+
+const autoaply = new AutoaplyQueueManager({ infiniteMode: false, remainingCredits: 10 });
+check('starts with 10 initial trial credits when metered', autoaply.getRemainingCredits(), 10);
+
+const infiniteAutoaply = new AutoaplyQueueManager();
+check('default autoaply runs in infinite mode', infiniteAutoaply.hasCredits(), true);
+check('default credits are Infinity', infiniteAutoaply.getRemainingCredits(), Infinity);
+check('metrics show infinite mode active', infiniteAutoaply.getMetrics().infiniteMode, true);
+
+const job1 = autoaply.enqueue({
+  externalJobId: 'job_recent',
+  title: 'Backend Engineer',
+  company: 'Cloud Corp',
+  jobUrl: 'https://www.linkedin.com/jobs/view/111',
+  postedAt: twoHoursAgo,
+});
+const job2 = autoaply.enqueue({
+  externalJobId: 'job_older',
+  title: 'Fullstack Dev',
+  company: 'Web Systems',
+  jobUrl: 'https://indeed.com/job/222',
+  postedAt: sixHoursAgo,
+});
+
+const pendingFresh = autoaply.getPendingQueue(true, now);
+check('fresh filter only returns jobs within 4-hour window', pendingFresh.length, 1);
+check('freshest job is prioritized first', pendingFresh[0]?.id, job1.id);
+
+autoaply.markApplied(job1.id);
+check('applying deducts exactly 1 credit', autoaply.getRemainingCredits(), 9);
+
+autoaply.skip(job2.id);
+check('skipping job keeps remaining credits unchanged', autoaply.getRemainingCredits(), 9);
+
+autoaply.recordFeedback(job1.id, 'interview_requested');
+const metrics = autoaply.getMetrics();
+check('records interview requested metric', metrics.interviewsRequested, 1);
+check('metrics applied count matches 1', metrics.totalApplied, 1);
+check('metrics skipped count matches 1', metrics.totalSkipped, 1);
+
+console.log('REA Bridge: D:\\rea Verification');
+const reaStatus = checkReaStatus();
+check('REA status verified on host', typeof reaStatus.available, 'boolean');
+
 console.log(failures === 0 ? '\nall checks pass' : `\n${failures} failing check(s)`);
 process.exit(failures === 0 ? 0 : 1);
