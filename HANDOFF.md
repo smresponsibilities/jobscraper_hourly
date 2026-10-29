@@ -2,6 +2,18 @@
 
 ## Company-office map, 2026-10-29
 
+Production and live-refresh acceptance are verified. GitHub refresh run
+https://github.com/smresponsibilities/jobscraper_hourly/actions/runs/40860645091
+succeeded and committed `765e91d`. Vercel deployed that generated directory;
+the public file matches its `2026-10-29T10:50:38.303Z` generation timestamp.
+It contains 746 reference, 4,425 freshly acquired Overture and 2,582 dated OSM
+fallback records. Public browser checks specifically selected fresh Overture
+offices with current jobs in all five cities, not just arbitrary visible pins.
+Original selected-office application links, mobile width, retrieval dates,
+source links and blocked-tile fallback passed. Eleven map/import tests and
+four worker tests pass. Do not substitute local preview or saved-source success
+for these two production acceptance checks.
+
 Production map is now deployed at https://jobscraper-hourly.vercel.app/.
 Public browser checks passed all five cities using employers with current jobs,
 original application URLs, mobile width and tile-failure fallback. Do not use
