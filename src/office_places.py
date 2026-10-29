@@ -10,7 +10,7 @@ def office_from_place(place, longitude, latitude, city, release):
     categories = set(taxonomy.get("hierarchy") or [])
     categories.add(taxonomy.get("primary"))
     confidence = place.get("confidence")
-    if not categories.intersection({"corporate_or_business_office", "software_development", "information_technology_company"}):
+    if not categories.intersection({"corporate_or_business_office", "software_development", "information_technology_company", "engineering_service", "research_institute"}) and taxonomy.get("primary") != "financial_service":
         return None
     if not isinstance(confidence, (int, float)) or not math.isfinite(confidence) or not .8 <= confidence <= 1:
         return None

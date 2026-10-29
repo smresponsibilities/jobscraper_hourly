@@ -16,6 +16,13 @@ provenance and marks these places approximate. A real local live run succeeded
 with 4,403 deduplicated office records, including 746 reference records and
 3,657 Overture records. Underlying address dates can be older than the release.
 The weekly GitHub workflow installs the worker dependencies automatically.
+Live source switching initially dropped older OSM records and caused a real
+Chennai coverage regression. Fixed with dated, bounded fallback retention:
+unrefreshed source records keep their original retrieval date and expire after
+30 days, while fresh data from a successful source replaces its own records.
+The map shows retrieval dates. Source company names with trailing city labels
+provide secondary employer keys; exact source names always win. No manual
+per-employer aliases or prefix matching are used.
 
 The follow-up implementation now uses a bulk office registry independent of
 the current job catalogue. Do not add offices employer by employer. The source

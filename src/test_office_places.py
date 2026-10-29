@@ -40,6 +40,11 @@ class OfficePlacesTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 office_from_place(self.place(), longitude, latitude, self.city, "2026-10-21.0")
 
+    def test_financial_office_is_accepted_but_bank_retail_and_dealers_are_not(self):
+        self.assertIsNotNone(self.convert(self.place(taxonomy={"primary": "financial_service", "hierarchy": ["services_and_business", "financial_service"]})))
+        for primary in ["commercial_bank", "auto_dealer", "insurance_agency"]:
+            self.assertIsNone(self.convert(self.place(taxonomy={"primary": primary, "hierarchy": ["services_and_business", "financial_service", primary]})))
+
 
 if __name__ == "__main__":
     unittest.main()

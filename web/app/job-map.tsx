@@ -212,6 +212,7 @@ export function JobMap({ jobs, query = '', onOpen }: { jobs: Job[]; query?: stri
             <p><strong>{active.office.officeName || active.company}</strong><br />{active.office.address || active.office.locality}</p>
             <p>{active.office.approximate ? 'Approximate area / mapped feature centre.' : 'Source-listed company office.'} Confirm the worksite in the job posting.</p>
             <a href={active.office.source} target="_blank" rel="noopener noreferrer">Location source</a>
+            {active.office.retrievedAt && <p><small>Location data retrieved {new Date(active.office.retrievedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}.</small></p>}
           </div>
           {jobList(active.jobs)}
         </> : <>

@@ -14,6 +14,7 @@ export interface Office {
   approximate: boolean;
   source: string;
   logoUrl?: string;
+  retrievedAt?: string;
 }
 export interface OfficeDirectory { version: 1; generatedAt: string; offices: Office[] }
 export interface OfficeGroup { office: Office; company: string; jobs: Job[] }
@@ -21,6 +22,12 @@ export interface OfficeGroup { office: Office; company: string; jobs: Job[] }
 export function employerKey(name: string): string {
   const key = name.normalize('NFKC').toLowerCase().replace(/(?:[\s,().]+(?:private|pvt|limited|ltd|incorporated|inc|llc|corporation|corp)\.?)+\s*$/, '').replace(/[^\p{L}\p{N}\p{M}]/gu, '');
   return key;
+}
+
+export function officeEmployerKeys(office: Pick<Office, 'company' | 'city'>): string[] {
+  const city = JOB_CITIES.find(city => city.name === office.city)!;
+  const withoutCity = office.company.replace(new RegExp(String.raw`[\s,(-]+${city.pattern.source}[\s)]*$`, 'i'), '');
+  return [...new Set([employerKey(office.company), employerKey(withoutCity)])].filter(Boolean);
 }
 
 export function parseOfficeDirectory(value: unknown): OfficeDirectory {
@@ -37,7 +44,8 @@ export function parseOfficeDirectory(value: unknown): OfficeDirectory {
       Math.abs(o.latitude - city.lat) > .65 || Math.abs(o.longitude - city.lng) > .65 ||
       typeof o.officeName !== 'string' || typeof o.locality !== 'string' || typeof o.address !== 'string' ||
       typeof o.approximate !== 'boolean' || typeof o.source !== 'string' || !/^https:\/\//.test(o.source) ||
-      (o.logoUrl !== undefined && (typeof o.logoUrl !== 'string' || !/^https:\/\//.test(o.logoUrl)))) {
+      (o.logoUrl !== undefined && (typeof o.logoUrl !== 'string' || !/^https:\/\//.test(o.logoUrl))) ||
+      (o.retrievedAt !== undefined && (typeof o.retrievedAt !== 'string' || !Number.isFinite(Date.parse(o.retrievedAt))))) {
       throw new Error('Invalid office record');
     }
     ids.add(o.id);
@@ -50,6 +58,8 @@ export function officeGroups(jobs: readonly Job[], offices: readonly Office[], c
   const byEmployer = new Map<string, Office>();
   // One sourced office per employer/city, not an assertion of every role's worksite.
   for (const office of offices) if (office.city === city && !byEmployer.has(employerKey(office.company))) byEmployer.set(employerKey(office.company), office);
+  // Exact source names win. A trailing city label is an additional, sourced name.
+  for (const office of offices) if (office.city === city) for (const key of officeEmployerKeys(office)) if (!byEmployer.has(key)) byEmployer.set(key, office);
   const groups = new Map<string, OfficeGroup>();
   const unmapped: Job[] = [];
   for (const job of jobs) {

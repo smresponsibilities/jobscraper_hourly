@@ -47,6 +47,15 @@ timeouts and missing city coverage preserve the previous directory.
 If either bulk source fails, the other in-flight acquisition is cancelled.
 An empty reference company payload or an empty city response is a failure,
 not evidence that the existing office inventory should be removed.
+When a different source succeeds, valid records from the unavailable source
+remain eligible for up to 30 days. Their original retrieval date is retained
+and shown in office details; a successful refresh never makes those records
+look newly fetched. Records from a successfully refreshed source are replaced
+by that source's current results.
+
+Exact employer names take priority. A source name ending in its recorded city
+also supplies a secondary employer key, so a place such as `Example Chennai`
+can join `Example` without a manual alias list. Prefix matches are not used.
 
 `.github/workflows/office-directory.yml` refreshes the directory weekly and can
 also be run manually. It validates map tests before committing, then fetches and

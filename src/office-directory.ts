@@ -1,7 +1,7 @@
 import { readFile, writeFile, rename, mkdir } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
-import { employerKey, parseOfficeDirectory, type Office, type OfficeCity } from '../web/lib/office-data.js';
+import { employerKey, officeEmployerKeys, parseOfficeDirectory, type Office, type OfficeCity, type OfficeDirectory } from '../web/lib/office-data.js';
 import { JOB_CITIES } from '../web/lib/job-cities.js';
 
 const REFERENCE = 'https://www.blrstartuparena.com/map';
@@ -89,6 +89,22 @@ export function buildOffices(companies: Record<string, unknown>[], osm: unknown,
   return offices;
 }
 
+export function retainOfficeFallbacks(fresh: readonly Office[], previous: OfficeDirectory | null, refreshed: 'osm:' | 'overture:', now: string): Office[] {
+  const offices = fresh.map(office => ({ ...office, retrievedAt: now }));
+  const keys = new Set(offices.flatMap(office => officeEmployerKeys(office).map(key => `${office.city}:${key}`)));
+  for (const office of previous?.offices ?? []) {
+    if ((!office.id.startsWith('osm:') && !office.id.startsWith('overture:')) || office.id.startsWith(refreshed)) continue;
+    const retrievedAt = office.retrievedAt ?? previous!.generatedAt;
+    const age = Date.parse(now) - Date.parse(retrievedAt);
+    if (age < 0 || age > 30 * 86_400_000) continue;
+    const aliases = officeEmployerKeys(office).map(key => `${office.city}:${key}`);
+    if (aliases.some(key => keys.has(key))) continue;
+    offices.push({ ...office, retrievedAt });
+    for (const key of aliases) keys.add(key);
+  }
+  return offices;
+}
+
 async function fetchText(url: string, signal?: AbortSignal): Promise<string> {
   const response = await fetch(url, { headers: { 'user-agent': 'JobscraperOfficeMap/1.0' },
     signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(55_000)]) : AbortSignal.timeout(55_000) });
@@ -147,8 +163,13 @@ async function main() {
   } finally {
     abort.abort();
   }
-  const offices = buildOffices(referenceCompanies(html), acquired.osm, acquired.places);
-  const directory = parseOfficeDirectory({ version: 1, generatedAt: new Date().toISOString(), offices });
+  let previous: OfficeDirectory | null = null;
+  try { previous = parseOfficeDirectory(JSON.parse(await readFile(OUTPUT, 'utf8'))); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+  const generatedAt = new Date().toISOString();
+  const offices = retainOfficeFallbacks(buildOffices(referenceCompanies(html), acquired.osm, acquired.places), previous,
+    acquired.places.length ? 'overture:' : 'osm:', generatedAt);
+  const directory = parseOfficeDirectory({ version: 1, generatedAt, offices });
   for (const city of JOB_CITIES) if (!offices.some(o => o.city === city.name)) throw new Error(`No sourced offices for ${city.name}; preserving existing directory`);
   await mkdir('web/public/data', { recursive: true });
   const temporary = `${OUTPUT}.${process.pid}.tmp`;

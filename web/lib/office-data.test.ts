@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { buildOffices, fetchOsmOffices, officeQuery, referenceCompanies } from '../../src/office-directory';
+import { buildOffices, fetchOsmOffices, officeQuery, referenceCompanies, retainOfficeFallbacks } from '../../src/office-directory';
 import { JOB_CITIES } from './job-cities';
 import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -38,6 +38,29 @@ test('jobs join employer offices within the advertised city, never a guessed cit
   assert.ok(employerKey('பிரம்ம ஞான சபை'));
   assert.notEqual(employerKey('प्रविण'), employerKey('प्रवीण'));
   assert.notEqual(employerKey('Hitachi Solutions'), employerKey('Hitachi'));
+});
+
+test('city suffixes join through source metadata without prefix matching or overriding exact names', () => {
+  const cityOffice = { ...office, id: 'overture:city', company: 'Example Chennai', city: 'Chennai' as const, latitude: 13.08, longitude: 80.27 };
+  assert.equal(officeGroups([job('one', 'Example', 'Chennai')], [cityOffice], 'Chennai').groups[0]?.office.id, cityOffice.id);
+  const exact = { ...cityOffice, id: 'exact', company: 'Example' };
+  assert.equal(officeGroups([job('one', 'Example', 'Chennai')], [cityOffice, exact], 'Chennai').groups[0]?.office.id, 'exact');
+  assert.equal(officeGroups([job('one', 'Example Systems', 'Chennai')], [cityOffice], 'Chennai').groups.length, 0);
+});
+
+test('successful source switches keep unexpired fallback offices without refreshing their age', () => {
+  const previous = { version: 1 as const, generatedAt: '2026-10-01T00:00:00Z', offices: [{ ...office, id: 'osm:node:1' }] };
+  const now = '2026-10-29T00:00:00Z';
+  const kept = retainOfficeFallbacks([], previous, 'overture:', now);
+  assert.equal(kept.length, 1);
+  assert.equal(kept[0]?.retrievedAt, previous.generatedAt);
+  assert.equal(retainOfficeFallbacks([], previous, 'overture:', '2026-11-02T00:00:00Z').length, 0);
+  assert.equal(retainOfficeFallbacks([], previous, 'osm:', now).length, 0);
+  const fresh = { ...office, id: 'overture:replacement' };
+  const merged = retainOfficeFallbacks([fresh], previous, 'overture:', now);
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0]?.id, fresh.id);
+  assert.equal(merged[0]?.retrievedAt, now);
 });
 
 test('office directory rejects malformed, duplicate, remote and unsafe source records', () => {
@@ -111,7 +134,7 @@ test('failed refresh preserves the prior published directory byte for byte', asy
   try {
     const target = join(directory, 'web/public/data/offices.json');
     await mkdir(join(directory, 'web/public/data'), { recursive: true });
-    const prior = '{"previous":"published directory"}\n';
+    const prior = JSON.stringify({ version: 1, generatedAt: '2026-10-01T00:00:00Z', offices: [office] }) + '\n';
     await writeFile(target, prior);
     const reference = join(directory, 'reference.html');
     const osm = join(directory, 'osm.json');
