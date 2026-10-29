@@ -52,7 +52,8 @@ header p { margin: 6px 0 0; color: var(--muted); font-size: 13px; }
   padding: 16px;
 }
 
-.controls { margin: 22px 0 18px; display: grid; gap: 14px; }
+.controls { margin: 22px 0 18px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+.controls .row > *, .controls select { min-width: 0; max-width: 100%; }
 .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 
 input[type='search'], select, input[type='text'] {
@@ -183,7 +184,7 @@ footer { margin-top: 40px; font-size: 12px; color: var(--muted); text-align: cen
 
 /* Header now carries the outreach-batch link beside the title. */
 .header-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-.tabs { display: flex; gap: 8px; flex: none; }
+.tabs { display: flex; flex-wrap: wrap; max-width: 100%; gap: 8px; flex: none; }
 
 .outreach-panel { margin-top: 22px; padding: 0; overflow: hidden; }
 .outreach-frame { display: block; width: 100%; height: 80vh; border: 0; }
@@ -244,3 +245,53 @@ footer { margin-top: 40px; font-size: 12px; color: var(--muted); text-align: cen
 .outreach-topbar { display: flex; justify-content: space-between; align-items: center; padding: 8px 14px; background: #181818; border-bottom: 1px solid #333; }
 .outreach-topbar-title { font-size: 13px; color: #888; font-family: ui-monospace, monospace; }
 .outreach-topbar-actions { display: flex; gap: 8px; }
+
+.job-display-switch { margin: 18px 0; }
+.job-map-heading { justify-content: space-between; margin-bottom: 16px; }
+.job-map-heading h2 { margin: 0; font-size: 22px; letter-spacing: -.02em; }
+.job-map-heading p, .job-map-note { color: var(--muted); font-size: 13px; }
+.job-map-heading p { margin: 5px 0 0; max-width: 560px; }
+.job-map-cities { margin-bottom: 16px; }
+.job-map-cities .chip { min-height: 44px; }
+.job-map-cities span { margin-left: 6px; font-variant-numeric: tabular-nums; }
+.job-map-layout { position: relative; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.job-map-canvas { height: min(78vh, 850px); min-height: 440px; min-width: 0; z-index: 0; background: var(--accent-soft); }
+.office-pin-label { display: grid; width: 38px; height: 38px; place-items: center; border-radius: 10px; background: var(--panel); color: var(--accent); border: 2px solid var(--accent); font: 700 13px/1 system-ui; }
+.job-office-pin:focus-visible { outline: 3px solid var(--text); outline-offset: 4px; }
+.job-map-results { position: absolute; right: 14px; top: 14px; bottom: 14px; width: 360px; max-width: calc(100% - 28px); overflow-y: auto; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 4px 20px #0003; }
+.job-map-results[data-open="false"] { display: none; }
+.office-pin-label { position: relative; overflow: hidden; }
+.office-pin-label img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: var(--panel); }
+.job-map-results h3 { position: sticky; top: 0; margin: 0; padding: 16px; background: var(--panel); border-bottom: 1px solid var(--border); font-size: 18px; }
+.job-map-results h3 span { display: block; font-size: 12px; color: var(--muted); font-weight: 400; margin-top: 3px; }
+.job-map-results ul { list-style: none; padding: 0; margin: 0; }
+.job-map-results li { padding: 16px; border-bottom: 1px solid var(--border); }
+.job-map-results li:last-child { border-bottom: 0; }
+.job-map-results li a { color: var(--accent); font-weight: 600; text-underline-offset: 3px; }
+.job-map-results li p { margin: 5px 0; font-size: 13px; overflow-wrap: anywhere; }
+.job-map-results li small { color: var(--muted); }
+.job-map-note { margin-top: 12px; }
+.office-map-toolbar { margin: 0 0 16px; }
+.office-area-picker { position: relative; }
+.office-area-picker summary { cursor: pointer; padding: 9px 14px; border: 1px solid var(--border); border-radius: var(--radius); }
+.office-area-picker fieldset { position: absolute; top: 100%; left: 0; z-index: 1001; display: grid; gap: 10px; min-width: 265px; max-width: calc(100vw - 50px); padding: 16px; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 8px 24px #0003; }
+.office-area-picker label { display: flex; gap: 9px; align-items: center; font-size: 13px; }
+.job-map-results nav { padding: 12px 16px; }
+.office-map-toolbar select { max-width: 100%; }
+.office-map-toolbar > * { min-width: 0; max-width: 100%; }
+.job-office-pin.is-selected .office-pin-label { background: var(--accent); color: var(--panel); }
+.office-map-summary { color: var(--muted); font-size: 13px; }
+.job-map-results .office-employers li { padding: 0; }
+.office-employers button { display: grid; gap: 4px; width: 100%; padding: 16px; border: 0; background: transparent; color: var(--text); text-align: left; cursor: pointer; font: inherit; }
+.office-employers button:hover, .office-employers button:focus-visible { background: var(--accent-soft); }
+.office-employers button span { font-size: 13px; color: var(--muted); }
+.office-details { padding: 16px; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; font-size: 13px; }
+.office-details a { color: var(--accent); }
+.office-unmapped summary { padding: 16px; cursor: pointer; color: var(--muted); }
+.job-map-canvas .marker-cluster { background: var(--accent-soft); }
+.job-map-canvas .marker-cluster div { background: var(--accent); color: var(--panel); }
+.job-map-results li { overflow-wrap: anywhere; }
+@media (max-width: 700px) {
+  .job-map-canvas { height: 60vh; min-height: 360px; }
+  .job-map-results { position: relative; inset: auto; width: auto; max-width: none; max-height: 420px; border: 0; border-radius: 0; box-shadow: none; }
+}

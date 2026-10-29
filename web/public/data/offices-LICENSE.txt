@@ -1,0 +1,12 @@
+Office location provenance is stored on each record as its source URL.
+
+OpenStreetMap-derived records: copyright OpenStreetMap contributors,
+available under the Open Database License 1.0:
+https://www.openstreetmap.org/copyright
+https://opendatacommons.org/licenses/odbl/1-0/
+
+Bengaluru reference office facts: https://www.blrstartuparena.com/map
+The source's approximate-location flags are preserved. Records are not
+independent verification of a company's address or of any job's worksite.
+
+The office data attribution is separate from the application's code license.

@@ -7,6 +7,8 @@
   "scripts": {
     "hunt": "tsx src/index.ts",
     "test": "tsx src/selftest.ts",
+    "test:map": "tsx --test web/lib/job-cities.test.ts web/lib/office-data.test.ts",
+    "office-directory": "tsx src/office-directory.ts",
     "test:rendered": "tsx --test src/fetchers/rendered.test.ts",
     "test:browser-worker": "python -B -m unittest discover -s src/fetchers -p test_browser_readiness.py",
     "discover": "tsx src/discover.ts",

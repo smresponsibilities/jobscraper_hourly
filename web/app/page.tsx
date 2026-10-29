@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { DATA_URL, REPO_URL, type Job } from '@/lib/types';
 import { AddCompany } from './add-company';
 import { YCPanel } from './yc';
+import { JobMap } from './job-map';
 import { ResumeBuilderView } from './resume-builder';
 import { JobTrackerView } from './job-tracker';
 import { CareerJournalView } from './career-journal';
@@ -265,6 +266,7 @@ export default function Page() {
   // Top-level Jobs/Outreach switch — not to be confused with the per-day
   // browsing tabs below, which live entirely inside the Jobs view.
   const [view, setView] = useState<'jobs' | 'resume' | 'tracker' | 'journal' | 'audit' | 'outreach' | 'connect' | 'yc'>('jobs');
+  const [jobDisplay, setJobDisplay] = useState<'list' | 'map'>('list');
   const [resumes, setResumes] = useState<TargetedResume[]>([]);
   const [activeResumeId, setActiveResumeId] = useState<string>('');
   const [applications, setApplications] = useState<TrackedApplication[]>([]);
@@ -300,6 +302,7 @@ export default function Page() {
    */
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
+    if (/^#(?:office|map-city)=/.test(window.location.hash)) setJobDisplay('map');
     if (params.get('q')) setQuery(params.get('q')!);
     if (params.get('company')) setCompany(params.get('company')!);
     if (params.get('maxYears')) setMaxYears(Number(params.get('maxYears')));
@@ -332,7 +335,7 @@ export default function Page() {
     if (exclude) params.set('exclude', exclude);
     if (day) params.set('day', day);
     const qs = params.toString();
-    window.history.replaceState(null, '', qs ? `?${qs}` : window.location.pathname);
+    window.history.replaceState(null, '', (qs ? `?${qs}` : window.location.pathname) + window.location.hash);
   }, [query, company, maxYears, industries, workMode, minSalary, internsOnly, visaOnly, showClosed, includeUnstated, hideApplied, exclude, day]);
 
   useEffect(() => {
@@ -620,13 +623,13 @@ export default function Page() {
       }
 
       const haystack = `${job.title} ${job.company} ${job.location}`.toLowerCase();
-      if (needle && !haystack.includes(needle)) return false;
+      if (jobDisplay !== 'map' && needle && !haystack.includes(needle)) return false;
       // Excluded keywords are personal junk words — same carve-out philosophy
       // as HARD_EXCLUDE in src/classify.ts, but yours, and client-side only.
       if (excludeWords.some((word) => haystack.includes(word))) return false;
       return true;
     }).sort((a, b) => crawledTime(b) - crawledTime(a));
-  }, [jobs, query, maxYears, includeUnstated, industries, internsOnly, showClosed, company, workMode, minSalary, visaOnly, hideApplied, appliedIds, exclude]);
+  }, [jobs, query, maxYears, includeUnstated, industries, internsOnly, showClosed, company, workMode, minSalary, visaOnly, hideApplied, appliedIds, exclude, jobDisplay]);
 
   // Tab counts come off `shown` (all other filters applied), the view comes
   // off `dayShown` — filtering in two steps keeps each tab's count meaningful
@@ -894,6 +897,11 @@ export default function Page() {
             <p className="empty">Nothing matches those filters.</p>
           ) : (
             <>
+              <div className="row job-display-switch" aria-label="Job display">
+                <button className="chip" aria-pressed={jobDisplay === 'list'} data-on={jobDisplay === 'list'} onClick={() => { setJobDisplay('list'); window.history.replaceState(null, '', window.location.pathname + window.location.search); }}>List</button>
+                <button className="chip" aria-pressed={jobDisplay === 'map'} data-on={jobDisplay === 'map'} onClick={() => setJobDisplay('map')}>Map · 5 cities</button>
+              </div>
+              {jobDisplay === 'map' ? <JobMap jobs={dayShown} query={query} onOpen={markOpened} /> : <>
               {groups.map(([label, jobsInGroup], index) => (
                 <details key={label} className="time-group" open={index < 2}>
                   <summary className="time-heading">
@@ -938,6 +946,7 @@ export default function Page() {
                   </ul>
                 </details>
               )}
+              </>}
             </>
           )}
         </>

@@ -1,7 +1,9 @@
 node_modules/
 .next/
 out/
-public/data/
+public/data/*
+!public/data/offices.json
+!public/data/offices-LICENSE.txt
 
 .vercel
 .env*

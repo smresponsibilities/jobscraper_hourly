@@ -7,7 +7,6 @@ import {
   MAX_YEARS,
   REGION_LOCKED,
   REMOTE,
-  ROLE_FAMILIES,
   SERVICE_COMPANIES,
 } from './config.js';
 
@@ -32,20 +31,9 @@ export function locationMatches(location: string): boolean {
   return residue.length === 0;
 }
 
-/**
- * The `finance` family only applies at actual financial firms. "Associate" and
- * "Analyst" are generic job-title filler at a tech company — matching them there
- * pulls in sales, support and warehouse roles by the hundred.
- */
-const FINANCE_INDUSTRIES = new Set<Industry>(['banking', 'consulting', 'quant']);
-
-export function roleFamily(title: string, industry: Industry): string | null {
-  for (const [family, pattern] of Object.entries(ROLE_FAMILIES)) {
-    if (family === 'finance' && !FINANCE_INDUSTRIES.has(industry)) continue;
-    if (pattern.test(title)) return family;
-  }
-  return null;
-}
+// Keep the CLI and web role filters on the same classification rules.
+import { roleFamily } from '../shared/role-family.js';
+export { roleFamily };
 
 export function isServiceCompany(name: string): boolean {
   return SERVICE_COMPANIES.test(name);

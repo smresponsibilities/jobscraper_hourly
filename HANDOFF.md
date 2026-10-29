@@ -1,5 +1,40 @@
 # Handoff
 
+## Company-office map, 2026-10-29
+
+The follow-up implementation now uses a bulk office registry independent of
+the current job catalogue. Do not add offices employer by employer. The source
+query is generated for all cities from `JOB_CITIES`; the importer accepts the
+full reference directory and OSM offices, then jobs join at render time.
+`office-areas.ts` supplies coordinate-based browsing groups. One persistent
+Leaflet map updates its cluster layer as filters change. Role filters share
+`shared/role-family.ts` with ingestion; `config.ts` still re-exports the patterns.
+Weekly refresh is defined in `.github/workflows/office-directory.yml`, pending
+publication. The reference's private geocoding/backend source is still unknown.
+Acquisition now makes bounded city POST requests with a public Overpass mirror,
+and cancels the other source on failure. On 2026-10-29 even tiny requests hit
+502/timeouts across public endpoints, so the validated saved-source registry
+remains in place. Eight map tests include mirror/cancellation behavior and a
+CLI proof that failure preserves published directory bytes. Do not interpret
+the 3,381 source records as 3,381 matched employers or verified worksites.
+
+The user rejected the original five-city-centre prototype. The requested map
+shows individual employers' offices within Bengaluru, Hyderabad, Pune, Mumbai
+and Chennai, following the company/office/job model observed through `D:\REA`.
+See `docs/blrstartuparena-research.md` for runtime and static evidence.
+
+`web/public/data/offices.json` is a separate sourced office directory. The map
+joins it to our own fetched jobs, clusters employer pins and offers locality
+filtering and employer job lists. No external jobs are imported. Records retain
+their source URLs and approximation flags; an office is not confirmation of a
+role's exact worksite. Unmatched employers stay explicitly unmapped. Coverage
+is substantially stronger in Bengaluru than in the other four cities.
+
+Refresh with `npm run office-directory`. Source failures preserve the existing
+directory. See `docs/job-map.md`; run `npm run test:map` and the web build when
+changing this view. The explicit public-data ignore exceptions are required:
+without them the office directory would disappear on deployment.
+
 ## Uber rendered acquisition repair, 2026-10-05
 
 Uber's reported dual-engine failure combined a Scrapling worker deadline with a

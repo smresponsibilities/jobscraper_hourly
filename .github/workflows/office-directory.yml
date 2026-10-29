@@ -1,0 +1,37 @@
+name: Refresh sourced office locations
+
+on:
+  schedule:
+    - cron: '41 2 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: office-directory
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run office-directory
+      - run: npm run test:map
+      - name: Save validated office locations
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add web/public/data/offices.json
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'Refresh sourced office locations'
+          git fetch origin
+          git merge origin/main
+          git push origin HEAD:main
