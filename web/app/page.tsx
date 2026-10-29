@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { DATA_URL, REPO_URL, type Job } from '@/lib/types';
 import { AddCompany } from './add-company';
 import { YCPanel } from './yc';
@@ -266,6 +266,9 @@ export default function Page() {
   // Top-level Jobs/Outreach switch — not to be confused with the per-day
   // browsing tabs below, which live entirely inside the Jobs view.
   const [view, setView] = useState<'jobs' | 'resume' | 'tracker' | 'journal' | 'audit' | 'outreach' | 'connect' | 'yc'>('jobs');
+  const urlExcludeOverride = useRef(false);
+  const jobFiltersDialog = useRef<HTMLDialogElement>(null);
+  const [mapFiltersOpen, setMapFiltersOpen] = useState(false);
   const [jobDisplay, setJobDisplay] = useState<'list' | 'map'>('list');
   const [resumes, setResumes] = useState<TargetedResume[]>([]);
   const [activeResumeId, setActiveResumeId] = useState<string>('');
@@ -294,29 +297,40 @@ export default function Page() {
   const [appliedIds, setAppliedIds] = useState<Set<string>>(new Set());
 
   /**
-   * URL is the shareable source of truth for the filter state. Read once on
-   * mount (not in the lazy initializers — the page is statically exported, so
+   * URL is the shareable source of truth for the filter state. Read on mount
+   * and history navigation (not in lazy initializers — the page is statically exported, so
    * initializers also run at build time where `location` doesn't exist), and
    * written back with replaceState so every filtered view has a bookmarkable
    * URL without polluting history on each keystroke.
    */
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (/^#(?:office|map-city)=/.test(window.location.hash)) setJobDisplay('map');
-    if (params.get('q')) setQuery(params.get('q')!);
-    if (params.get('company')) setCompany(params.get('company')!);
-    if (params.get('maxYears')) setMaxYears(Number(params.get('maxYears')));
-    if (params.get('industries')) setIndustries(params.get('industries')!.split(','));
-    if (params.get('mode')) setWorkMode(params.get('mode') as typeof workMode);
-    if (params.get('minSalary')) setMinSalary(Number(params.get('minSalary')));
-    if (params.get('interns') === '1') setInternsOnly(true);
-    if (params.get('visa') === '1') setVisaOnly(true);
-    if (params.get('closed') === '1') setShowClosed(true);
-    if (params.get('unstated') === '0') setIncludeUnstated(false);
-    if (params.get('hideApplied') === '1') setHideApplied(true);
-    if (params.get('exclude')) setExclude(params.get('exclude')!);
-    if (params.get('day')) setDay(params.get('day')!);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const restore = (event?: HashChangeEvent | PopStateEvent) => {
+      const url = event && 'newURL' in event ? new URL(event.newURL) : new URL(window.location.href);
+      const params = url.searchParams;
+      if (!event) urlExcludeOverride.current = params.has('exclude');
+      setJobDisplay(/^#(?:office|map-city)=/.test(url.hash) ? 'map' : 'list');
+      setQuery(params.get('q') ?? '');
+      setCompany(params.get('company') ?? '');
+      const years = params.has('maxYears') ? Number(params.get('maxYears')) : 3;
+      setMaxYears(Number.isInteger(years) && years >= 0 && years <= 3 ? years : 3);
+      setIndustries((params.get('industries') ?? '').split(',').filter(value => ['tech', 'fintech', 'quant', 'banking', 'consulting'].includes(value)));
+      const mode = params.get('mode');
+      setWorkMode(mode === 'remote' || mode === 'hybrid' || mode === 'onsite' ? mode : '');
+      const salary = Number(params.get('minSalary'));
+      setMinSalary(Number.isFinite(salary) && salary >= 0 ? salary : 0);
+      setInternsOnly(params.get('interns') === '1');
+      setVisaOnly(params.get('visa') === '1');
+      setShowClosed(params.get('closed') === '1');
+      setIncludeUnstated(params.get('unstated') !== '0');
+      setHideApplied(params.get('hideApplied') === '1');
+      setExclude(params.get('exclude') ?? '');
+      const savedDay = params.get('day') ?? '';
+      setDay(/^\d{4}-\d{2}-\d{2}$/.test(savedDay) ? savedDay : '');
+    };
+    restore();
+    window.addEventListener('hashchange', restore);
+    window.addEventListener('popstate', restore);
+    return () => { window.removeEventListener('hashchange', restore); window.removeEventListener('popstate', restore); };
   }, []);
 
   useEffect(() => {
@@ -349,7 +363,7 @@ export default function Page() {
     setOpened(loadOpened());
     setSavedIds(loadIdSet(SAVED_KEY));
     setAppliedIds(loadIdSet(APPLIED_KEY));
-    setExclude(localStorage.getItem(EXCLUDE_KEY) ?? '');
+    if (!urlExcludeOverride.current) setExclude(localStorage.getItem(EXCLUDE_KEY) ?? '');
     setOutreachKey(localStorage.getItem('outreachKey'));
     const loadedResumes = loadResumes();
     setResumes(loadedResumes);
@@ -666,89 +680,15 @@ export default function Page() {
       current.includes(value) ? current.filter((i) => i !== value) : [...current, value],
     );
 
-  return (
-    <main className="wrap">
-      <header>
-        <div className="header-row">
-          <h1>Job Radar</h1>
-          <nav className="tabs">
-            <button className="chip" data-on={view === 'jobs'} onClick={() => setView('jobs')}>
-              Jobs
-            </button>
-            <button className="chip" data-on={view === 'tracker'} onClick={() => setView('tracker')} title="Application Kanban & Status Pipeline">
-              Tracker ({applications.length})
-            </button>
-            <button className="chip" data-on={view === 'resume'} onClick={() => setView('resume')} title="Soor / Resume Rocketfuel Builder">
-              Resume Builder ({resumes.length})
-            </button>
-            <button className="chip" data-on={view === 'journal'} onClick={() => setView('journal')} title="Log Daily Career Wins & Metrics">
-              Journal ({journal.length})
-            </button>
-            <button className="chip" data-on={view === 'audit'} onClick={() => setView('audit')} title="Recruiter Quality & Fit Score Audit">
-              Fit Score
-            </button>
-            <button
-              className="chip"
-              data-on={view === 'outreach'}
-              title="Today's cold-email batch"
-              onClick={() => {
-                if (!outreachKey) {
-                  const key = requestOutreachKey();
-                  if (!key) return;
-                  setOutreachKey(key);
-                }
-                setView('outreach');
-              }}
-            >
-              Outreach
-            </button>
-            <button
-              className="chip"
-              data-on={view === 'connect'}
-              title="This week's LinkedIn connection requests, clubbed by company"
-              onClick={() => {
-                if (!outreachKey) {
-                  const key = requestOutreachKey();
-                  if (!key) return;
-                  setOutreachKey(key);
-                }
-                setView('connect');
-              }}
-            >
-              LinkedIn
-            </button>
-            <button
-              className="chip"
-              data-on={view === 'yc'}
-              title="YC India companies, and which of them we can see hiring"
-              onClick={() => setView('yc')}
-            >
-              YC India
-            </button>
-            <button
-              className="chip"
-              onClick={handleExportBackup}
-              title="Export full JSON backup of resumes, applications, and journal"
-            >
-              Backup JSON
-            </button>
-            <button
-              className="chip"
-              onClick={handleImportBackup}
-              title="Restore data from JSON backup"
-            >
-              Restore
-            </button>
-          </nav>
-        </div>
-        <p>
-          Fresher and entry-level roles in India and remote, read straight from company ATS
-          boards. Updated hourly.
-        </p>
-      </header>
+  useEffect(() => {
+    const dialog = jobFiltersDialog.current;
+    if (!dialog) return;
+    if (mapFiltersOpen && !dialog.open) dialog.showModal();
+    else if (!mapFiltersOpen && dialog.open) dialog.close();
+    return () => { if (dialog.open) dialog.close(); };
+  }, [mapFiltersOpen, jobDisplay, view]);
 
-      {view === 'jobs' && (
-      <>
+  const jobFilters = (
       <section className="controls panel">
         <div className="row">
           <input
@@ -854,6 +794,104 @@ export default function Page() {
           />
         </div>
       </section>
+  );
+
+  const leaveMap = () => { setMapFiltersOpen(false); setJobDisplay('list'); window.history.replaceState(null, '', window.location.pathname + window.location.search); };
+
+  if (view === 'jobs' && jobDisplay === 'map') return <main className="map-page">
+    <dialog className="map-job-filters" ref={jobFiltersDialog} aria-labelledby="map-job-filters-title" onCancel={() => setMapFiltersOpen(false)} onClose={() => setMapFiltersOpen(false)}>
+      <div className="row map-dialog-heading"><h2 id="map-job-filters-title">Job filters</h2><button className="chip" onClick={() => setMapFiltersOpen(false)}>Close job filters</button></div>
+      {jobFilters}
+      <label className="field">First seen date<select value={day} onChange={event => setDay(event.target.value)}><option value="">All dates</option>{dayCounts.map(([key, count]) => <option key={key} value={key}>{dayLabel(key)} · {count}</option>)}</select></label>
+    </dialog>
+    {error ? <div className="map-loading"><p role="alert">Jobs could not load. {error}</p><button className="chip" onClick={() => window.location.reload()}>Retry</button><button className="chip" onClick={leaveMap}>All jobs</button></div> : !jobs ? <div className="map-loading"><p role="status">Loading jobs and company offices…</p><button className="chip" onClick={leaveMap}>All jobs</button></div> :
+      <JobMap jobs={dayShown} query={query} jobFilterCount={[company, maxYears !== 3, !includeUnstated, industries.length, internsOnly, showClosed, workMode, minSalary, visaOnly, hideApplied, exclude.trim(), day].filter(Boolean).length} onQueryChange={setQuery} onFilters={() => setMapFiltersOpen(true)} onExit={leaveMap} onOpen={markOpened} />}
+  </main>;
+
+  return (
+    <main className="wrap">
+      <header>
+        <div className="header-row">
+          <h1>Job Radar</h1>
+          <nav className="tabs">
+            <button className="chip" data-on={view === 'jobs'} onClick={() => setView('jobs')}>
+              Jobs
+            </button>
+            <button className="chip" data-on={view === 'tracker'} onClick={() => setView('tracker')} title="Application Kanban & Status Pipeline">
+              Tracker ({applications.length})
+            </button>
+            <button className="chip" data-on={view === 'resume'} onClick={() => setView('resume')} title="Soor / Resume Rocketfuel Builder">
+              Resume Builder ({resumes.length})
+            </button>
+            <button className="chip" data-on={view === 'journal'} onClick={() => setView('journal')} title="Log Daily Career Wins & Metrics">
+              Journal ({journal.length})
+            </button>
+            <button className="chip" data-on={view === 'audit'} onClick={() => setView('audit')} title="Recruiter Quality & Fit Score Audit">
+              Fit Score
+            </button>
+            <button
+              className="chip"
+              data-on={view === 'outreach'}
+              title="Today's cold-email batch"
+              onClick={() => {
+                if (!outreachKey) {
+                  const key = requestOutreachKey();
+                  if (!key) return;
+                  setOutreachKey(key);
+                }
+                setView('outreach');
+              }}
+            >
+              Outreach
+            </button>
+            <button
+              className="chip"
+              data-on={view === 'connect'}
+              title="This week's LinkedIn connection requests, clubbed by company"
+              onClick={() => {
+                if (!outreachKey) {
+                  const key = requestOutreachKey();
+                  if (!key) return;
+                  setOutreachKey(key);
+                }
+                setView('connect');
+              }}
+            >
+              LinkedIn
+            </button>
+            <button
+              className="chip"
+              data-on={view === 'yc'}
+              title="YC India companies, and which of them we can see hiring"
+              onClick={() => setView('yc')}
+            >
+              YC India
+            </button>
+            <button
+              className="chip"
+              onClick={handleExportBackup}
+              title="Export full JSON backup of resumes, applications, and journal"
+            >
+              Backup JSON
+            </button>
+            <button
+              className="chip"
+              onClick={handleImportBackup}
+              title="Restore data from JSON backup"
+            >
+              Restore
+            </button>
+          </nav>
+        </div>
+        <p>
+          Fresher and entry-level roles in India and remote, read straight from company ATS
+          boards. Updated hourly.
+        </p>
+      </header>
+
+      {view === 'jobs' && (
+      <>
+      {jobFilters}
 
       {error && (
         <div className="result err">
@@ -893,15 +931,17 @@ export default function Page() {
             ))}
           </div>
 
-          {shown.length === 0 ? (
-            <p className="empty">Nothing matches those filters.</p>
-          ) : (
-            <>
               <div className="row job-display-switch" aria-label="Job display">
                 <button className="chip" aria-pressed={jobDisplay === 'list'} data-on={jobDisplay === 'list'} onClick={() => { setJobDisplay('list'); window.history.replaceState(null, '', window.location.pathname + window.location.search); }}>List</button>
                 <button className="chip" aria-pressed={jobDisplay === 'map'} data-on={jobDisplay === 'map'} onClick={() => setJobDisplay('map')}>Map · 5 cities</button>
               </div>
-              {jobDisplay === 'map' ? <JobMap jobs={dayShown} query={query} onOpen={markOpened} /> : <>
+
+          {shown.length === 0 ? (
+            <p className="empty">Nothing matches those filters.</p>
+          ) : (
+            <>
+
+              <>
               {groups.map(([label, jobsInGroup], index) => (
                 <details key={label} className="time-group" open={index < 2}>
                   <summary className="time-heading">
@@ -946,7 +986,7 @@ export default function Page() {
                   </ul>
                 </details>
               )}
-              </>}
+              </>
             </>
           )}
         </>

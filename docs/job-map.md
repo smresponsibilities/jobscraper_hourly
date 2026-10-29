@@ -99,6 +99,23 @@ Verified 2026-10-29: browser checks passed for company-office pins, clustering, 
 
 ## Shared map behavior
 
+Map mode now fills the viewport immediately. Its toolbar contains search,
+city/area/role controls, company browsing, theme selection and the city-bounds
+reset. “Job filters” opens the existing shared controls in a native keyboard
+modal; “All jobs” returns to the complete application. Company cards use five
+rows per page with one to four columns depending on the viewport. Escape closes
+menus and company details while restoring useful keyboard focus.
+
+The map and company view, search and filters restore together through browser
+history. Old office bookmarks explain missing offices or current jobs instead
+of silently dropping the selection. Job-source failures provide retry and an
+exit to the rest of the app. Geolocation permissions are not needed.
+
+`npm run test:map:browser` runs the five Playwright UI regressions. It starts
+or reuses a local web server on port 3013. Set `MAP_TEST_URL` to exercise a built
+or deployed application instead. Tests isolate job/office responses; actual
+production data is checked separately before reporting a deployment complete.
+
 All cities use the same map component and bulk office/job join. Browsing area
 anchors are city data, not separate implementations. Source locality strings
 remain visible, while coordinate grouping provides stable multi-select areas.

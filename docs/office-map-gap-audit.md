@@ -1,5 +1,43 @@
 # Office-map comparison, 2026-10-29
 
+## Second live comparison
+
+REA captured the reference again as
+`ev_31fddb413eeb71b2812f96fc432798aff77a2a3590da63e62f30e2e685137fa4`
+and our production baseline as
+`ev_c534c3e38c4cfd6bcd3a9edd00900adb2851dbdef8147ded0734604252d30634`.
+Both owned browsers reported `terminated-owned-process` cleanup.
+
+The screenshots exposed the largest remaining usability gap: the reference's
+map filled the first viewport, while our map sat below global filters and many
+date tabs. The follow-up now opens map mode directly into a full-viewport map
+with a compact floating toolbar. Existing global job filters live in a native
+modal rather than consuming the map's initial viewport. Company browsing uses
+responsive logo cards with five rows per page. Map and company views, office
+selection, areas and role filters retain history/bookmark behavior.
+
+Other corrected gaps include dark/light map styling, explicit panel closing,
+keyboard focus recovery, missing-office and no-current-job bookmark messages,
+history restoration of search and global filters, and usable retry/exit paths
+when job acquisition fails. Invalid experience URL values cannot bypass the
+original 0–3-year filter. Company/area search remains available when switching
+between map mode and a job list with no matching job text.
+
+The reference crosshair is a city-bounds reset. The runtime bundle declares it
+as “Show the whole city” and calls the bounds handler. Leaflet's bundled
+geolocation implementation is not evidence of an application geolocation
+feature. Our existing “Show city offices” action supplies the observed behavior.
+
+Five persistent Playwright browser scenarios exercise the map-first viewport,
+responsive company paging, modal/keyboard behavior, empty results, theme
+preferences, stale bookmarks, history and source-failure recovery. Run them
+with `npm run test:map:browser`. They use isolated fixture data for deterministic
+UI checks; production checks separately use actual fetched jobs and offices.
+
+The original baseline findings below are historical. Missing office coverage
+remains visible as unmapped roles; the implementation never invents employer
+coordinates to imitate the reference's company count.
+
 ## Implementation follow-up
 
 The audit below records the initial baseline. Since that baseline, the shared

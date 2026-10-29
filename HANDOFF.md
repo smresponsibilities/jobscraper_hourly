@@ -2,6 +2,15 @@
 
 ## Company-office map, 2026-10-29
 
+The second REA comparison exposed a map-first UX gap. Map mode now uses the
+full viewport with floating controls, shared job filters in a native dialog,
+dark/light styling, responsive company cards, and explicit panel closing.
+Search/global filters and map/company view restore together through history.
+Stale office bookmarks show explanations. The reference's crosshair resets
+city bounds; its bundled Leaflet geolocation code is not proof of an app
+geolocation feature, so none was added. Five persistent Playwright scenarios
+run via `npm run test:map:browser`; actual production data needs separate checks.
+
 Production and live-refresh acceptance are verified. GitHub refresh run
 https://github.com/smresponsibilities/jobscraper_hourly/actions/runs/40860645091
 succeeded and committed `765e91d`. Vercel deployed that generated directory;
