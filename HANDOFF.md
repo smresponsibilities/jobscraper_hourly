@@ -2,6 +2,21 @@
 
 ## Company-office map, 2026-10-29
 
+Production map is now deployed at https://jobscraper-hourly.vercel.app/.
+Public browser checks passed all five cities using employers with current jobs,
+original application URLs, mobile width and tile-failure fallback. Do not use
+PhonePe as a fixed live-test fixture: its jobs disappeared from the current
+catalogue, while the older local preview still contained six roles.
+
+Live acquisition now uses Overture Maps' public monthly places release through
+the pinned official Python library in `requirements-offices.txt`. The worker
+receives `JOB_CITIES` over stdin, filters corporate/technology offices with
+confidence >=0.8 and rejects closed/foreign places. It keeps feature/release
+provenance and marks these places approximate. A real local live run succeeded
+with 4,403 deduplicated office records, including 746 reference records and
+3,657 Overture records. Underlying address dates can be older than the release.
+The weekly GitHub workflow installs the worker dependencies automatically.
+
 The follow-up implementation now uses a bulk office registry independent of
 the current job catalogue. Do not add offices employer by employer. The source
 query is generated for all cities from `JOB_CITIES`; the importer accepts the
@@ -9,14 +24,14 @@ full reference directory and OSM offices, then jobs join at render time.
 `office-areas.ts` supplies coordinate-based browsing groups. One persistent
 Leaflet map updates its cluster layer as filters change. Role filters share
 `shared/role-family.ts` with ingestion; `config.ts` still re-exports the patterns.
-Weekly refresh is defined in `.github/workflows/office-directory.yml`, pending
-publication. The reference's private geocoding/backend source is still unknown.
+Weekly refresh is published in `.github/workflows/office-directory.yml`.
+The reference's private geocoding/backend source is still unknown.
 Acquisition now makes bounded city POST requests with a public Overpass mirror,
 and cancels the other source on failure. On 2026-10-29 even tiny requests hit
-502/timeouts across public endpoints, so the validated saved-source registry
-remains in place. Eight map tests include mirror/cancellation behavior and a
+502/timeouts across public endpoints, including from a real GitHub Actions run;
+this is why Overture is now primary and Overpass is fallback. Nine map tests include mirror/cancellation behavior and a
 CLI proof that failure preserves published directory bytes. Do not interpret
-the 3,381 source records as 3,381 matched employers or verified worksites.
+source-record counts as matched employers or verified worksites.
 
 The user rejected the original five-city-centre prototype. The requested map
 shows individual employers' offices within Bengaluru, Hyderabad, Pune, Mumbai

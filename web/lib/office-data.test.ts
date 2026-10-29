@@ -73,6 +73,16 @@ test('bulk office import is independent of employers currently in the job catalo
   assert.equal(officeGroups([job('new-role', 'Future Employer', 'Bengaluru')], result, 'Bengaluru').groups.length, 1);
 });
 
+test('fresh place offices merge by employer and city while reference office accuracy wins', () => {
+  const reference = { slug: 'example', name: 'Example', latitude: 12.93, longitude: 77.67, approximate: false };
+  const places = [{ ...office, id: 'overture:duplicate', approximate: true }, { ...office, id: 'overture:another', company: 'Another Employer' }];
+  const result = buildOffices([reference], { elements: [] }, places);
+  assert.equal(result.length, 2);
+  assert.equal(result[0]?.id, 'blr:example');
+  assert.equal(result[0]?.approximate, false);
+  assert.equal(result[1]?.id, 'overture:another');
+});
+
 test('bulk acquisition uses bounded city POSTs and a mirror after a source failure', async () => {
   const calls: { url: string; query: string }[] = [];
   const result = await fetchOsmOffices(async (url, options) => {
@@ -108,8 +118,8 @@ test('failed refresh preserves the prior published directory byte for byte', asy
     const payload = `6:${JSON.stringify(['$', '$L1', null, { companies: [{ slug: 'example', name: 'Example', latitude: 12.93, longitude: 77.67, approximate: false }] }])}\n`;
     await writeFile(reference, `<script>self.__next_f.push(${JSON.stringify([1, payload])})</script>`);
     await writeFile(osm, JSON.stringify({ elements: [], remark: 'Query timed out' }));
-    const run = () => spawnSync(process.execPath, ['--import', pathToFileURL(resolve('node_modules/tsx/dist/loader.mjs')).href,
-      resolve('src/office-directory.ts'), '--reference', reference, '--osm', osm], { cwd: directory, encoding: 'utf8', timeout: 180_000 });
+    const run = (source = '--osm') => spawnSync(process.execPath, ['--import', pathToFileURL(resolve('node_modules/tsx/dist/loader.mjs')).href,
+      resolve('src/office-directory.ts'), '--reference', reference, source, osm], { cwd: directory, encoding: 'utf8', timeout: 180_000 });
     const failed = run();
     assert.equal(failed.status, 1, failed.stderr);
     assert.match(failed.stderr, /Incomplete OpenStreetMap/);
@@ -118,6 +128,14 @@ test('failed refresh preserves the prior published directory byte for byte', asy
     const success = run();
     assert.equal(success.status, 0, success.stderr);
     assert.deepEqual(new Set(JSON.parse(await readFile(target, 'utf8')).offices.map((office: Office) => office.city)), new Set(JOB_CITIES.map(city => city.name)));
+    const published = await readFile(target, 'utf8');
+    await writeFile(osm, JSON.stringify({ offices: [{ ...office, id: 'overture:incomplete' }] }));
+    assert.equal(run('--places').status, 1);
+    assert.equal(await readFile(target, 'utf8'), published);
+    await writeFile(osm, JSON.stringify({ offices: JOB_CITIES.map((city, index) => ({ ...office, id: `overture:${index}`, company: `${city.name} Employer`, city: city.name, latitude: city.lat, longitude: city.lng, approximate: true })) }));
+    const places = run('--places');
+    assert.equal(places.status, 0, places.stderr);
+    assert.equal(JSON.parse(await readFile(target, 'utf8')).offices.filter((office: Office) => office.id.startsWith('overture:')).length, JOB_CITIES.length);
   } finally {
     assert.equal(resolve(directory, '..'), resolve(tmpdir()));
     assert.match(basename(directory), /^office-refresh-test-/);

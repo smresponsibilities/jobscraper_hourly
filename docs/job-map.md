@@ -33,9 +33,13 @@ without a sourced office stay in the unmapped section and List view.
 ## Refresh
 
 From the repository root, run `npm run office-directory`. It fetches the full
-public reference directory and bounded OpenStreetMap office queries generated
-from the five city definitions. Each city uses a POST request, with a second
-public Overpass endpoint on failure. No per-employer requests or job-catalogue
+public reference directory and corporate-office places from Overture Maps'
+latest public release. The official `overturemaps` Python library queries
+bounded areas generated from the five city definitions. Source taxonomy,
+confidence and operating status filter unrelated, low-confidence and closed
+places. Overture points retain their release/feature provenance and are marked
+approximate. If Overture acquisition fails, bounded OpenStreetMap POST queries
+try two public Overpass endpoints. No per-employer requests or job-catalogue
 whitelist are required. Explicit office buildings and named office tenants are
 accepted; source URLs and accuracy flags are retained. The complete result is
 validated and written atomically. HTTP failures, malformed responses, query
@@ -49,8 +53,19 @@ also be run manually. It validates map tests before committing, then fetches and
 merges current `main` before pushing. This workflow must be published to GitHub
 before its schedule can run.
 
-For a reproducible refresh, the command accepts `--reference <saved-map.html>`
-and `--osm <saved-overpass.json>`. The office registry and its attribution file
+Local Windows setup:
+
+```powershell
+python -m venv D:\Jobscraper-next\.venv-offices
+D:\Jobscraper-next\.venv-offices\Scripts\python.exe -m pip install -r D:\Jobscraper-next\requirements-offices.txt
+$env:OFFICE_PYTHON_EXE = "D:\Jobscraper-next\.venv-offices\Scripts\python.exe"
+npm run office-directory
+```
+
+The GitHub workflow installs the pinned dependency automatically. For a
+reproducible refresh, the command accepts `--reference <saved-map.html>` and
+either `--places <saved-places.json>` or `--osm <saved-overpass.json>`.
+The office registry and its attribution file
 are intentionally included in the web deployment. Job refreshes continue to
 use the existing hourly ingestion without geocoding on each run.
 

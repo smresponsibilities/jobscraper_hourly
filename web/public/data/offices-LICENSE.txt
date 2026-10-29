@@ -10,3 +10,12 @@ The source's approximate-location flags are preserved. Records are not
 independent verification of a company's address or of any job's worksite.
 
 The office data attribution is separate from the application's code license.
+
+Overture Maps places: https://docs.overturemaps.org/guides/places/
+Dataset release and feature identity are retained in each record's source URL
+and overture: feature ID. Overture places combine CDLA-Permissive-2.0 data and
+OpenStreetMap-derived data under ODbL-1.0. Applicable dataset terms:
+https://cdla.dev/permissive-2-0/
+https://opendatacommons.org/licenses/odbl/1-0/
+These source-listed place points are marked approximate. A current release
+does not independently verify an office or the date of its underlying address.

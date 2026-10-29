@@ -225,6 +225,6 @@ export function JobMap({ jobs, query = '', onOpen }: { jobs: Job[]; query?: stri
       </div>
     </div>
     {mapError && <p role="status">Map unavailable. Employer selection and original job links still work.</p>}
-    <p className="job-map-note">{cityJobs.length} matching roles in {city}. Company offices are not confirmation of a role’s exact worksite. Locations: BLR Startup Arena and OpenStreetMap contributors. Remote-only and unknown-city roles remain in List view.</p>
+    <p className="job-map-note">{cityJobs.length} matching roles in {city}. Company offices are not confirmation of a role’s exact worksite. Locations: BLR Startup Arena, Overture Maps and OpenStreetMap contributors. Remote-only and unknown-city roles remain in List view.</p>
   </section>;
 }

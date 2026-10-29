@@ -64,3 +64,4 @@ state/drafts.json
 
 .vercel
 .env*
+.venv-offices/

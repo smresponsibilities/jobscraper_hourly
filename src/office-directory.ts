@@ -1,5 +1,6 @@
 import { readFile, writeFile, rename, mkdir } from 'node:fs/promises';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { spawn } from 'node:child_process';
 import { employerKey, parseOfficeDirectory, type Office, type OfficeCity } from '../web/lib/office-data.js';
 import { JOB_CITIES } from '../web/lib/job-cities.js';
 
@@ -55,7 +56,7 @@ export function referenceCompanies(html: string): Record<string, unknown>[] {
   throw new Error('Reference map company payload missing');
 }
 
-export function buildOffices(companies: Record<string, unknown>[], osm: unknown): Office[] {
+export function buildOffices(companies: Record<string, unknown>[], osm: unknown, places: readonly Office[] = []): Office[] {
   const offices: Office[] = [];
   for (const c of companies) {
     if (typeof c.name !== 'string' || !c.name.trim()) throw new Error('Invalid reference company');
@@ -64,6 +65,9 @@ export function buildOffices(companies: Record<string, unknown>[], osm: unknown)
       officeName: typeof c.officeName === 'string' ? c.officeName : '', locality: typeof c.locality === 'string' ? c.locality : '',
       address: typeof c.address === 'string' ? c.address : '', approximate: c.approximate, source: `${REFERENCE}#${encodeURIComponent(c.slug)}`,
       ...(typeof c.logoUrl === 'string' && /^https:\/\//.test(c.logoUrl) ? { logoUrl: c.logoUrl } : {}) });
+  }
+  for (const office of places) {
+    if (!offices.some(existing => existing.city === office.city && employerKey(existing.company) === employerKey(office.company))) offices.push(office);
   }
   const response = osm as { elements?: unknown; remark?: unknown } | null;
   if (!response || !Array.isArray(response.elements) || response.remark) throw new Error('Incomplete OpenStreetMap office response');
@@ -92,6 +96,26 @@ async function fetchText(url: string, signal?: AbortSignal): Promise<string> {
   return response.text();
 }
 
+async function fetchOfficePlaces(signal: AbortSignal): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.env.OFFICE_PYTHON_EXE || 'python', [fileURLToPath(new URL('./office_places.py', import.meta.url))],
+      { stdio: ['pipe', 'pipe', 'pipe'], signal, timeout: 480_000, windowsHide: true });
+    let output = '', errors = '';
+    child.stdout.on('data', chunk => {
+      output += chunk;
+      if (output.length > 20_000_000) { child.kill(); reject(new Error('Overture office response exceeded size limit')); }
+    });
+    child.stderr.on('data', chunk => { errors = (errors + chunk).slice(-4000); process.stderr.write(chunk); });
+    child.on('error', reject);
+    child.on('close', code => {
+      if (code !== 0) { reject(new Error(`Overture office worker failed (${code}): ${errors.trim()}`)); return; }
+      try { resolve(JSON.parse(output)); } catch { reject(new Error('Malformed Overture office response')); }
+    });
+    child.stdin.on('error', () => { /* The exit/error event reports an unavailable worker. */ });
+    child.stdin.end(JSON.stringify(JOB_CITIES));
+  });
+}
+
 async function main() {
   const args = process.argv.slice(2);
   const input = async (flag: string, remote: () => Promise<string>) => {
@@ -101,16 +125,29 @@ async function main() {
     return readFile(args[index + 1]!, 'utf8');
   };
   const abort = new AbortController();
-  let html: string, osmText: string;
+  const acquireOffices = async () => {
+    if (args.includes('--osm')) return { osm: JSON.parse(await input('--osm', async () => '')), places: [] as Office[] };
+    try {
+      const value = (args.includes('--places') ? JSON.parse(await input('--places', async () => '')) : await fetchOfficePlaces(abort.signal)) as { offices?: unknown } | null;
+      const parsed = parseOfficeDirectory({ version: 1, generatedAt: new Date().toISOString(), offices: value?.offices });
+      for (const city of JOB_CITIES) if (!parsed.offices.some(office => office.city === city.name)) throw new Error(`Overture response missing ${city.name}`);
+      return { osm: { elements: [] }, places: parsed.offices };
+    } catch (error) {
+      if (abort.signal.aborted || args.includes('--places')) throw error;
+      console.error(`Overture unavailable; trying public Overpass: ${error instanceof Error ? error.message : String(error)}`);
+      return { osm: await fetchOsmOffices(fetch, abort.signal), places: [] as Office[] };
+    }
+  };
+  let html: string, acquired: { osm: unknown; places: Office[] };
   try {
-    [html, osmText] = await Promise.all([
+    [html, acquired] = await Promise.all([
       input('--reference', () => fetchText(REFERENCE, abort.signal)),
-      input('--osm', async () => JSON.stringify(await fetchOsmOffices(fetch, abort.signal))),
+      acquireOffices(),
     ]);
   } finally {
     abort.abort();
   }
-  const offices = buildOffices(referenceCompanies(html), JSON.parse(osmText));
+  const offices = buildOffices(referenceCompanies(html), acquired.osm, acquired.places);
   const directory = parseOfficeDirectory({ version: 1, generatedAt: new Date().toISOString(), offices });
   for (const city of JOB_CITIES) if (!offices.some(o => o.city === city.name)) throw new Error(`No sourced offices for ${city.name}; preserving existing directory`);
   await mkdir('web/public/data', { recursive: true });
