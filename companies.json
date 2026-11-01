@@ -114653,5 +114653,613 @@
     "source": "discovered",
     "token": "careers.zimvie.com",
     "lastIndiaAt": "2026-11-01T11:01:39.970Z"
+  },
+  {
+    "name": "Apex Technology, Inc.",
+    "ats": "ashby",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "apex-technology-inc"
+  },
+  {
+    "name": "Netic",
+    "ats": "ashby",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "netic"
+  },
+  {
+    "name": "Harrow, Inc.",
+    "ats": "greenhouse",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "harrowhealth"
+  },
+  {
+    "name": "AACI Group, Inc.",
+    "ats": "ashby",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "aacigroup"
+  },
+  {
+    "name": "Remote Positions",
+    "ats": "greenhouse",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "opremote"
+  },
+  {
+    "name": "Tint",
+    "ats": "greenhouse",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "tintai"
+  },
+  {
+    "name": "Capricor Therapeutics",
+    "ats": "lever",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "capricor"
+  },
+  {
+    "name": "Cascade Climate",
+    "ats": "lever",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "cascade-climate"
+  },
+  {
+    "name": "Medon",
+    "ats": "keka",
+    "token": "medon",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Ethos",
+    "ats": "greenhouse",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "ethos"
+  },
+  {
+    "name": "Appsilon",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "appsilon-1739358905"
+  },
+  {
+    "name": "The Associated Press",
+    "ats": "successfactors",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "careers.ap.org"
+  },
+  {
+    "name": "BHP Career Portal",
+    "ats": "successfactors",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "careers.bhp.com"
+  },
+  {
+    "name": "B3 Consulting Poland",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "b3consultingpoland"
+  },
+  {
+    "name": "Automation Consultants",
+    "ats": "personio",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "automation-consultants-ltd"
+  },
+  {
+    "name": "Dazzle: Commercial & Office Cleaning | London",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "bluestorm"
+  },
+  {
+    "name": "Datwyler",
+    "ats": "successfactors",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "careers.datwyler.com"
+  },
+  {
+    "name": "HCA Healthcare India",
+    "ats": "darwinbox",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "hcahr"
+  },
+  {
+    "name": "CI Games",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "cigames"
+  },
+  {
+    "name": "Chapter 2",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "chapter2"
+  },
+  {
+    "name": "CmdScale GmbH",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "cmdscale"
+  },
+  {
+    "name": "CoinPoker",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "coinpoker"
+  },
+  {
+    "name": "Connect Talent Solutions",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "connecttalentsolutionsjobs"
+  },
+  {
+    "name": "Dansk Industri",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "danskindustri"
+  },
+  {
+    "name": "EER Poland",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "eerpoland"
+  },
+  {
+    "name": "Niva Bupa Health Insurance (Disha)",
+    "ats": "darwinbox",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "disha"
+  },
+  {
+    "name": "Foundation Partners",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "foundationpartners"
+  },
+  {
+    "name": "Gi Group Holding",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "gigroupholding"
+  },
+  {
+    "name": "goFLUENT",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "gofluentjobs-1737148459"
+  },
+  {
+    "name": "GTE",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "gtecombv"
+  },
+  {
+    "name": "Hadron Labs",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "hadronlabs"
+  },
+  {
+    "name": "HarfangLab",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "harfanglab-1666711819"
+  },
+  {
+    "name": "HyperGrowth Recruitment",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "hypergrowthrecruitment"
+  },
+  {
+    "name": "Entergy",
+    "ats": "successfactors",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "jobs.entergy.com"
+  },
+  {
+    "name": "idealista",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "idealista"
+  },
+  {
+    "name": "GFT Technologies SE - Job Offerings",
+    "ats": "successfactors",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "jobs.gft.com"
+  },
+  {
+    "name": "Institute for Human Rights & Business",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "ihrb"
+  },
+  {
+    "name": "Let's Do This",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "letsdothis-1704821225"
+  },
+  {
+    "name": "LeTueLezioni",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "letuelezioni"
+  },
+  {
+    "name": "Liber",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "liber"
+  },
+  {
+    "name": "YES Bank",
+    "ats": "darwinbox",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "yesforyou"
+  },
+  {
+    "name": "SIEGENIA-AUBI KG",
+    "ats": "successfactors",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "jobs.siegenia.com"
+  },
+  {
+    "name": "Medefer",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "medefer"
+  },
+  {
+    "name": "CONVOTIS Iberia",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "convotisiberia"
+  },
+  {
+    "name": "Next Lotto GmbH",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "nextlottogmbh"
+  },
+  {
+    "name": "Nordic Talent",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "nordictalent"
+  },
+  {
+    "name": "OrderYOYO",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "orderyoyo"
+  },
+  {
+    "name": "Pixion Games",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "pixiongames"
+  },
+  {
+    "name": "RecruitGo",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "recruitgo"
+  },
+  {
+    "name": "Resourcify",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "resourcify"
+  },
+  {
+    "name": "Ruby Central",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "rubycentral"
+  },
+  {
+    "name": "Sales Consulting",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "salesconsulting"
+  },
+  {
+    "name": "Sparteo",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "sparteo"
+  },
+  {
+    "name": "spiderSilk",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "spidersilk"
+  },
+  {
+    "name": "Sweatcoin",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "sweatcoin"
+  },
+  {
+    "name": "Front Row Group",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "frontrowgroup"
+  },
+  {
+    "name": "Talentin",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "talentin"
+  },
+  {
+    "name": "Talentwelove",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "twlglobalservicessrl"
+  },
+  {
+    "name": "The Indie Stone",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "theindiestone-demo-demo"
+  },
+  {
+    "name": "Rpggroup",
+    "ats": "successfactors",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "jobs.rpggroup.com"
+  },
+  {
+    "name": "Upstart 13",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "upstart13"
+  },
+  {
+    "name": "Utorg",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "utorg"
+  },
+  {
+    "name": "Varnish Software",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "varnish-software"
+  },
+  {
+    "name": "Virtasant",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "virtasant"
+  },
+  {
+    "name": "Weiss Technik France",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "weisstechnikfrance-1685692485"
+  },
+  {
+    "name": "Actual Talent",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "winid"
+  },
+  {
+    "name": "Workster Jobs",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "worksterjobs"
+  },
+  {
+    "name": "Y Strategie",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "ystrategie"
+  },
+  {
+    "name": "Iagime",
+    "ats": "oracle",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "iagime",
+    "host": "fa.ocs",
+    "siteNumber": "CX_1"
+  },
+  {
+    "name": "Heidrick & Struggles",
+    "ats": "workday",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "heidrick",
+    "host": "wd1",
+    "site": "heidrickandstruggles"
+  },
+  {
+    "name": "Lanterna Education",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "lanternaeducation"
+  },
+  {
+    "name": "Owen",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "owen"
+  },
+  {
+    "name": "KLA",
+    "ats": "workday",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "kla",
+    "host": "wd1",
+    "site": "ur"
+  },
+  {
+    "name": "IOM Supplier Portal",
+    "ats": "oracle",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "fa-evlj-saasfaprod1",
+    "host": "fa.ocs",
+    "siteNumber": "CX_1001"
+  },
+  {
+    "name": "PALIG",
+    "ats": "workday",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "palig",
+    "host": "wd5",
+    "site": "PALIG"
+  },
+  {
+    "name": "Learnlight",
+    "ats": "workable",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "learnlight"
+  },
+  {
+    "name": "Tricentis",
+    "ats": "workday",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "tricentis",
+    "host": "wd1",
+    "site": "tricentis_careers"
+  },
+  {
+    "name": "Vcuhealth",
+    "ats": "workday",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "vcuhealth",
+    "host": "wd1",
+    "site": "vcuhealth_careers"
+  },
+  {
+    "name": "BCBS",
+    "ats": "workday",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "bcbskc",
+    "host": "wd1",
+    "site": "BCBS_External_Career_Site"
+  },
+  {
+    "name": "Quality, Compassionate Care For All",
+    "ats": "workday",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "loganhealth",
+    "host": "wd1",
+    "site": "logan_careers"
+  },
+  {
+    "name": "Suncor",
+    "ats": "workday",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "suncor",
+    "host": "wd1",
+    "site": "Suncor_External"
+  },
+  {
+    "name": "Pet Supplies Plus",
+    "ats": "icims",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "careers-petsuppliesplus.icims.com"
+  },
+  {
+    "name": "United Field Services, Inc.",
+    "ats": "workable",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "united-field-services-inc"
+  },
+  {
+    "name": "Wisevu",
+    "ats": "workable",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "wisevu"
   }
 ]
