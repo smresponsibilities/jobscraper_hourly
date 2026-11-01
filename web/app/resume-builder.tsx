@@ -1,6 +1,8 @@
 'use client';
 
-import React, { useState } from 'react';
+import { Modal } from './modal';
+
+import React, { useEffect, useState } from 'react';
 import type { TargetedResume, ExperienceRole, Achievement } from '@/lib/career-types';
 import { ResumePreview } from './resume-preview';
 import { exportToPlainText, downloadDocxHtml, downloadPlainText } from '@/lib/resume-export';
@@ -34,6 +36,17 @@ export function ResumeBuilderView({
   const currentResume = resumes.find(r => r.id === activeResumeId) || resumes[0];
 
   const [activeTab, setActiveTab] = useState<'editor' | 'preview' | 'designer'>('editor');
+  const [printRequested, setPrintRequested] = useState(false);
+  useEffect(() => {
+    if (!printRequested || activeTab !== 'preview') return;
+    let cancelled = false;
+    document.fonts.ready.then(() => {
+      if (cancelled) return;
+      window.print();
+      setPrintRequested(false);
+    });
+    return () => { cancelled = true; };
+  }, [activeTab, printRequested]);
   const [editorSection, setEditorSection] = useState<'contact' | 'summary' | 'experience' | 'skills' | 'projects' | 'education'>('experience');
 
   // New Targeted Resume Modal state
@@ -188,7 +201,7 @@ export function ResumeBuilderView({
           </div>
 
           <button
-            onClick={() => window.print()}
+            onClick={() => { setActiveTab('preview'); setPrintRequested(true); }}
             className="px-3 py-1.5 bg-gray-900 hover:bg-black text-white text-xs font-medium rounded transition"
             title="Print or Save as PDF"
           >
@@ -230,7 +243,7 @@ export function ResumeBuilderView({
             <span className="font-semibold">{currentResume.targetCompany || 'Target Employer'}</span>
           </div>
           <span className="text-[11px] bg-blue-100 text-blue-800 px-2 py-0.5 rounded font-medium">
-            Role-Optimized Resume
+            {currentResume.isDefaultBaseline ? 'Your baseline' : 'Targeted copy'}
           </span>
         </div>
       )}
@@ -788,7 +801,7 @@ export function ResumeBuilderView({
 
       {/* CREATE TARGETED RESUME MODAL */}
       {showNewModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <Modal label="Create targeted resume" onClose={() => setShowNewModal(false)}>
           <div className="bg-white rounded-lg shadow-2xl max-w-lg w-full p-6 space-y-4">
             <h2 className="text-base font-bold text-gray-900 border-b pb-2">
               Create Role-Targeted Resume
@@ -863,7 +876,7 @@ export function ResumeBuilderView({
               </div>
             </form>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   );

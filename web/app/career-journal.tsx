@@ -1,5 +1,7 @@
 'use client';
 
+import { Modal } from './modal';
+
 import React, { useState } from 'react';
 import type { JournalEntry, TargetedResume, Achievement } from '@/lib/career-types';
 
@@ -189,7 +191,7 @@ export function CareerJournalView({
 
       {/* LOG MODAL */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <Modal label="Log a career achievement" onClose={() => setShowAddModal(false)}>
           <div className="bg-white rounded-lg shadow-2xl max-w-lg w-full p-6 space-y-4">
             <h3 className="text-base font-bold text-gray-900 border-b pb-2">Log Career Win or Metric</h3>
             <form onSubmit={handleCreateEntry} className="space-y-3">
@@ -272,12 +274,12 @@ export function CareerJournalView({
               </div>
             </form>
           </div>
-        </div>
+        </Modal>
       )}
 
       {/* PROMOTE MODAL */}
       {promoteModalEntry && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <Modal label="Promote achievement to resume" onClose={() => setPromoteModalEntry(null)}>
           <div className="bg-white rounded-lg shadow-2xl max-w-md w-full p-6 space-y-4">
             <h3 className="text-base font-bold text-gray-900 border-b pb-2">
               Promote to Resume Achievement
@@ -343,7 +345,7 @@ export function CareerJournalView({
               </button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   );

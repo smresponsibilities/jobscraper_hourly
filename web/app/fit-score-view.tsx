@@ -42,20 +42,20 @@ export function FitScoreView({ resume, onUpdateResume }: FitScoreViewProps) {
       <div className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm flex flex-col md:flex-row items-center justify-between gap-6">
         <div className="space-y-1">
           <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">
-            Recruiter-Built Audit (Resume Rocketfuel Methodology)
+            Clarity, impact & role alignment
           </span>
           <h2 className="text-xl font-bold text-gray-900">
-            Resume Fit Score & ATS Readability
+            Your résumé, in focus
           </h2>
           <p className="text-xs text-gray-600 max-w-xl">
-            Evaluates your resume against 45+ concrete recruiter criteria: scope & scale statements, measurable metrics, active phrasing, 6-second summary scan, and job description alignment.
+            {analysis.totalCount} rule-based checks for structure, measurable impact, clear writing, and alignment with your target job description.
           </p>
         </div>
 
         <div className={`flex flex-col items-center justify-center p-4 rounded-xl border-2 w-36 h-36 ${scoreColor}`}>
           <div className="text-4xl font-extrabold tracking-tight">{analysis.score}</div>
           <div className="text-[11px] uppercase tracking-wider font-bold mt-1">
-            {analysis.score >= 85 ? 'Interview Ready' : analysis.score >= 70 ? 'Strong' : 'Needs Work'}
+            {analysis.score >= 85 ? 'Strong coverage' : analysis.score >= 70 ? 'Good foundation' : 'Room to improve'}
           </div>
           <div className="text-[10px] text-gray-500 mt-0.5">
             {analysis.passedCount} / {analysis.totalCount} rules passed
@@ -171,7 +171,7 @@ export function FitScoreView({ resume, onUpdateResume }: FitScoreViewProps) {
                   <span className="text-[10px] text-gray-400 uppercase tracking-wider font-semibold">
                     [{rule.category}]
                   </span>
-                  {rule.coachingCategory && (
+                  {!rule.passed && rule.coachingCategory && (
                     <span className={`text-[9px] px-1.5 py-0.5 rounded font-medium ${
                       rule.coachingCategory === 'needs-attention'
                         ? 'bg-rose-100 text-rose-800 border border-rose-200'
@@ -179,7 +179,7 @@ export function FitScoreView({ resume, onUpdateResume }: FitScoreViewProps) {
                         ? 'bg-blue-100 text-blue-800 border border-blue-200'
                         : 'bg-amber-100 text-amber-800 border border-amber-200'
                     }`}>
-                      {rule.coachingCategory.replace('-', ' ')}
+                      {rule.coachingCategory.replaceAll('-', ' ')}
                     </span>
                   )}
                 </div>
