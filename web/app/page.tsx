@@ -5,6 +5,10 @@ import { DATA_URL, REPO_URL, type Job } from '@/lib/types';
 import { AddCompany } from './add-company';
 import { YCPanel } from './yc';
 import { JobMap } from './job-map';
+import { WorkspaceShell, type WorkspaceView } from './workspace-shell';
+import { Icon } from './ui-icon';
+import { Modal } from './modal';
+import { OutreachFrame } from './outreach-frame';
 import { ResumeBuilderView } from './resume-builder';
 import { JobTrackerView } from './job-tracker';
 import { CareerJournalView } from './career-journal';
@@ -187,77 +191,28 @@ function JobRow({
       : undefined;
   return (
     <li className="job" data-closed={Boolean(job.closedAt)} data-opened={opened} data-applied={applied}>
-      <a className="title" href={job.url} target="_blank" rel="noreferrer" onClick={onOpen}>
-        {job.title}
-      </a>
-      <span className="company-inline">{job.company}</span>
-      <button
-        className={`mark${saved ? ' on' : ''}`}
-        title={saved ? 'Remove from saved' : 'Save for later'}
-        onClick={() => onMark('saved')}
-      >
-        {saved ? '★' : '☆'}
-      </button>
-      <button
-        className={`mark${applied ? ' on' : ''}`}
-        title={applied ? 'Unmark applied' : 'Mark applied'}
-        onClick={() => onMark('applied')}
-      >
-        ✓
-      </button>
-      <button
-        className="mark"
-        style={{ width: 'auto', padding: '0 6px', fontSize: '11px', display: 'inline-flex', alignItems: 'center' }}
-        title="Tailor resume & track application"
-        onClick={(e) => {
-          e.stopPropagation();
-          onTailor(job);
-        }}
-      >
-        🎯 Tailor
-      </button>
-      <div className="company">{job.company}</div>
-      <div className="meta">
-        <span>{job.location}</span>
-        <span className={`tag${job.isIntern ? ' intern' : ''}`}>{experience(job)}</span>
-        {posted && <span>{posted}</span>}
-        {band ? <span>{band}</span> : job.salary ? <span>{job.salary}</span> : null}
-        {job.workMode === 'remote' && <span className="tag">remote</span>}
-        {job.workMode === 'hybrid' && <span className="tag">hybrid</span>}
-        {job.visa && <span className="tag">visa sponsorship</span>}
-        {isBumped(job) && (
-          <span
-            className="tag stale"
-            title={`Posting claims ${job.postedAt?.slice(0, 10)}, but we first saw it on ${job.firstSeen.slice(0, 10)} — the date was re-stamped to look new.`}
-          >
-            date bumped
-          </span>
-        )}
-        {isGhost(job) && (
-          <span
-            className="tag stale"
-            title={`Open for about ${Math.round((effectiveAgeDays(job) ?? 0) / 30)} months. A role listed this long is often never filled.`}
-          >
-            ghost risk
-          </span>
-        )}
-        {job.closedAt && <span className="tag closed">closed</span>}
+      <span className={'company-mark mark-tone-' + (job.company.charCodeAt(0) % 6)} aria-hidden="true">{job.company.replace(/[^a-zA-Z0-9 ]/g, '').split(/\s+/).filter(Boolean).slice(0, 2).map(word => word[0]).join('').toUpperCase()}</span>
+      <div className="job-main">
+        <div className="job-eyebrow"><span className="company">{job.company}</span><span className="job-type">{job.isIntern ? 'Internship' : 'Opportunity'}</span>{opened && <span className="viewed-label">Viewed</span>}</div>
+        <a className="title" href={job.url} target="_blank" rel="noreferrer" onClick={onOpen}>{job.title}<Icon name="arrow" size={16} /></a>
+        <div className="meta">
+          <span className="job-location" title={job.location}><Icon name="pin" size={13} />{job.location}</span>
+          <span className={'tag' + (job.isIntern ? ' intern' : '')}>{experience(job)}</span>
+          {band ? <span className="salary-label">{band}</span> : job.salary ? <span className="salary-label">{job.salary}</span> : null}
+          {job.workMode && <span className="tag work-mode">{job.workMode}</span>}
+          {job.visa && <span className="tag">Visa sponsorship</span>}
+          {isBumped(job) && <span className="tag stale" title="The employer moved the posting date after we first discovered this role.">Date bumped</span>}
+          {isGhost(job) && <span className="tag stale" title="This listing has been open for over a year. Confirm that the role is actively hiring.">Older listing</span>}
+          {job.closedAt && <span className="tag closed">Closed</span>}
+        </div>
       </div>
+      <div className="job-side"><span className="posted-time">{posted || 'Date not listed'}</span><div className="job-actions">
+        <button type="button" className={'mark' + (saved ? ' on' : '')} title={saved ? 'Remove from saved' : 'Save for later'} aria-label={saved ? 'Remove from saved' : 'Save for later'} aria-pressed={saved} onClick={() => onMark('saved')}><Icon name="bookmark" size={17} /></button>
+        <button type="button" className={'mark' + (applied ? ' on' : '')} title={applied ? 'Unmark applied' : 'Mark applied'} aria-label={applied ? 'Unmark applied' : 'Mark applied'} aria-pressed={applied} onClick={() => onMark('applied')}><Icon name="check" size={17} /></button>
+        <button type="button" className="tailor-button" title="Tailor resume & track application" onClick={() => onTailor(job)}>Tailor résumé<Icon name="arrow" size={15} /></button>
+      </div></div>
     </li>
   );
-}
-
-/**
- * Ask for the outreach key once and remember it in localStorage rather than
- * compiling it into the page: the site is public, so anything in the bundle
- * is public too, and the outreach batch is keyed by real people's addresses.
- * Returns the key on success, null if the prompt was cancelled.
- */
-function requestOutreachKey(): string | null {
-  const key = window.prompt('Outreach key (asked once, then remembered on this device)');
-  if (!key) return null;
-  window.localStorage.setItem('outreachKey', key);
-  return key;
 }
 
 export default function Page() {
@@ -265,13 +220,19 @@ export default function Page() {
   const [error, setError] = useState<string | null>(null);
   // Top-level Jobs/Outreach switch — not to be confused with the per-day
   // browsing tabs below, which live entirely inside the Jobs view.
-  const [view, setView] = useState<'jobs' | 'resume' | 'tracker' | 'journal' | 'audit' | 'outreach' | 'connect' | 'yc'>('jobs');
+  const [view, setView] = useState<WorkspaceView>('jobs');
   const [jobDisplay, setJobDisplay] = useState<'list' | 'map'>('list');
+  const [collection, setCollection] = useState<'all' | 'saved' | 'applied'>('all');
+  const [sortOrder, setSortOrder] = useState('newest');
+  const [jobLimit, setJobLimit] = useState(60);
+  const [backlogLimit, setBacklogLimit] = useState(30);
   const [resumes, setResumes] = useState<TargetedResume[]>([]);
   const [activeResumeId, setActiveResumeId] = useState<string>('');
   const [applications, setApplications] = useState<TrackedApplication[]>([]);
   const [journal, setJournal] = useState<JournalEntry[]>([]);
   const [outreachKey, setOutreachKey] = useState<string | null>(null);
+  const [accessDialog, setAccessDialog] = useState<'outreach' | 'connect' | null>(null);
+  const [keyDraft, setKeyDraft] = useState('');
 
   const [query, setQuery] = useState('');
   const [maxYears, setMaxYears] = useState(3);
@@ -293,6 +254,11 @@ export default function Page() {
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
   const [appliedIds, setAppliedIds] = useState<Set<string>>(new Set());
 
+  useEffect(() => {
+    setJobLimit(60);
+    setBacklogLimit(30);
+  }, [query, maxYears, includeUnstated, industries, internsOnly, showClosed, company, workMode, minSalary, visaOnly, hideApplied, exclude, day, collection, sortOrder]);
+
   /**
    * URL is the shareable source of truth for the filter state. Read once on
    * mount (not in the lazy initializers — the page is statically exported, so
@@ -302,6 +268,9 @@ export default function Page() {
    */
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
+    const initialView = params.get('view');
+    if (initialView && ['jobs', 'resume', 'tracker', 'journal', 'audit', 'outreach', 'connect', 'yc'].includes(initialView)) setView(initialView as WorkspaceView);
+    if (params.get('display') === 'map') setJobDisplay('map');
     if (/^#(?:office|map-city)=/.test(window.location.hash)) setJobDisplay('map');
     if (params.get('q')) setQuery(params.get('q')!);
     if (params.get('company')) setCompany(params.get('company')!);
@@ -321,6 +290,8 @@ export default function Page() {
 
   useEffect(() => {
     const params = new URLSearchParams();
+    if (view !== 'jobs') params.set('view', view);
+    if (jobDisplay === 'map') params.set('display', 'map');
     if (query) params.set('q', query);
     if (company) params.set('company', company);
     if (maxYears !== 3) params.set('maxYears', String(maxYears));
@@ -336,7 +307,7 @@ export default function Page() {
     if (day) params.set('day', day);
     const qs = params.toString();
     window.history.replaceState(null, '', (qs ? `?${qs}` : window.location.pathname) + window.location.hash);
-  }, [query, company, maxYears, industries, workMode, minSalary, internsOnly, visaOnly, showClosed, includeUnstated, hideApplied, exclude, day]);
+  }, [query, company, maxYears, industries, workMode, minSalary, internsOnly, visaOnly, showClosed, includeUnstated, hideApplied, exclude, day, view, jobDisplay]);
 
   useEffect(() => {
     fetch(DATA_URL, { cache: 'no-store' })
@@ -605,6 +576,8 @@ export default function Page() {
 
     return jobs.filter((job) => {
       if (!showClosed && job.closedAt) return false;
+      if (collection === 'saved' && !savedIds.has(job.id)) return false;
+      if (collection === 'applied' && !appliedIds.has(job.id)) return false;
       if (internsOnly && !job.isIntern) return false;
       if (company && job.company !== company) return false;
       if (industries.length && !industries.includes(job.industry)) return false;
@@ -628,8 +601,8 @@ export default function Page() {
       // as HARD_EXCLUDE in src/classify.ts, but yours, and client-side only.
       if (excludeWords.some((word) => haystack.includes(word))) return false;
       return true;
-    }).sort((a, b) => crawledTime(b) - crawledTime(a));
-  }, [jobs, query, maxYears, includeUnstated, industries, internsOnly, showClosed, company, workMode, minSalary, visaOnly, hideApplied, appliedIds, exclude, jobDisplay]);
+    }).sort((a, b) => sortOrder === 'company' ? a.company.localeCompare(b.company) || crawledTime(b) - crawledTime(a) : sortOrder === 'oldest' ? crawledTime(a) - crawledTime(b) : crawledTime(b) - crawledTime(a));
+  }, [jobs, query, maxYears, includeUnstated, industries, internsOnly, showClosed, company, workMode, minSalary, visaOnly, hideApplied, appliedIds, exclude, jobDisplay, collection, savedIds, sortOrder]);
 
   // Tab counts come off `shown` (all other filters applied), the view comes
   // off `dayShown` — filtering in two steps keeps each tab's count meaningful
@@ -651,15 +624,16 @@ export default function Page() {
   const backlogJobs = useMemo(() => dayShown.filter(isBacklog), [dayShown]);
 
   const groups = useMemo(() => {
+    if (sortOrder === 'company') return freshJobs.length ? [['Companies A–Z', freshJobs.slice(0, jobLimit)] as [string, Job[]]] : [];
     const byLabel = new Map<string, Job[]>();
-    for (const job of freshJobs) {
+    for (const job of freshJobs.slice(0, jobLimit)) {
       const label = bucketLabel(job);
       const list = byLabel.get(label);
       if (list) list.push(job);
       else byLabel.set(label, [job]);
     }
     return [...byLabel.entries()];
-  }, [freshJobs]);
+  }, [freshJobs, sortOrder, jobLimit]);
 
   const toggleIndustry = (value: string) =>
     setIndustries((current) =>
@@ -667,192 +641,30 @@ export default function Page() {
     );
 
   return (
-    <main className="wrap">
-      <header>
-        <div className="header-row">
-          <h1>Job Radar</h1>
-          <nav className="tabs">
-            <button className="chip" data-on={view === 'jobs'} onClick={() => setView('jobs')}>
-              Jobs
-            </button>
-            <button className="chip" data-on={view === 'tracker'} onClick={() => setView('tracker')} title="Application Kanban & Status Pipeline">
-              Tracker ({applications.length})
-            </button>
-            <button className="chip" data-on={view === 'resume'} onClick={() => setView('resume')} title="Soor / Resume Rocketfuel Builder">
-              Resume Builder ({resumes.length})
-            </button>
-            <button className="chip" data-on={view === 'journal'} onClick={() => setView('journal')} title="Log Daily Career Wins & Metrics">
-              Journal ({journal.length})
-            </button>
-            <button className="chip" data-on={view === 'audit'} onClick={() => setView('audit')} title="Recruiter Quality & Fit Score Audit">
-              Fit Score
-            </button>
-            <button
-              className="chip"
-              data-on={view === 'outreach'}
-              title="Today's cold-email batch"
-              onClick={() => {
-                if (!outreachKey) {
-                  const key = requestOutreachKey();
-                  if (!key) return;
-                  setOutreachKey(key);
-                }
-                setView('outreach');
-              }}
-            >
-              Outreach
-            </button>
-            <button
-              className="chip"
-              data-on={view === 'connect'}
-              title="This week's LinkedIn connection requests, clubbed by company"
-              onClick={() => {
-                if (!outreachKey) {
-                  const key = requestOutreachKey();
-                  if (!key) return;
-                  setOutreachKey(key);
-                }
-                setView('connect');
-              }}
-            >
-              LinkedIn
-            </button>
-            <button
-              className="chip"
-              data-on={view === 'yc'}
-              title="YC India companies, and which of them we can see hiring"
-              onClick={() => setView('yc')}
-            >
-              YC India
-            </button>
-            <button
-              className="chip"
-              onClick={handleExportBackup}
-              title="Export full JSON backup of resumes, applications, and journal"
-            >
-              Backup JSON
-            </button>
-            <button
-              className="chip"
-              onClick={handleImportBackup}
-              title="Restore data from JSON backup"
-            >
-              Restore
-            </button>
-          </nav>
-        </div>
-        <p>
-          Fresher and entry-level roles in India and remote, read straight from company ATS
-          boards. Updated hourly.
-        </p>
-      </header>
-
+    <WorkspaceShell view={view} display={jobDisplay} onNavigate={(next, display) => {
+      if (next === 'outreach' || next === 'connect') {
+        if (!outreachKey) { setKeyDraft(''); setAccessDialog(next); }
+      }
+      setView(next);
+      if (display) setJobDisplay(display);
+      if (display === 'list') window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    }} onBackup={handleExportBackup} onRestore={handleImportBackup} counts={{
+      open: jobs ? jobs.filter(job => !job.closedAt).length : null,
+      matching: dayShown.length,
+      saved: jobs ? jobs.filter(job => !job.closedAt && savedIds.has(job.id)).length : 0,
+      applications: applications.length, resumes: resumes.length, journal: journal.length,
+    }}>
       {view === 'jobs' && (
       <>
-      <section className="controls panel">
-        <div className="row">
-          <input
-            type="search"
-            placeholder="Search title, company or location…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-          <label className="field">
-            Company
-            <select value={company} onChange={(e) => setCompany(e.target.value)}>
-              <option value="">All companies</option>
-              {companies.map((name) => (
-                <option key={name} value={name}>
-                  {name}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-
-        <div className="row">
-          <div className="slider">
-            <span>Max experience</span>
-            <input
-              type="range"
-              min={0}
-              max={3}
-              step={1}
-              value={maxYears}
-              onChange={(e) => setMaxYears(Number(e.target.value))}
-            />
-            <strong>
-              {maxYears} {maxYears === 1 ? 'year' : 'years'}
-            </strong>
-          </div>
-          <button
-            className="chip"
-            data-on={includeUnstated}
-            onClick={() => setIncludeUnstated((v) => !v)}
-          >
-            Include unstated
-          </button>
-          <button className="chip" data-on={internsOnly} onClick={() => setInternsOnly((v) => !v)}>
-            Internships only
-          </button>
-          <button className="chip" data-on={showClosed} onClick={() => setShowClosed((v) => !v)}>
-            Show closed
-          </button>
-        </div>
-
-        <div className="row">
-          {INDUSTRIES.map((value) => (
-            <button
-              key={value}
-              className="chip"
-              data-on={industries.includes(value)}
-              onClick={() => toggleIndustry(value)}
-            >
-              {value}
-            </button>
-          ))}
-        </div>
-
-        <div className="row">
-          <div className="facet-group">
-            <span className="facet-label">Work mode</span>
-            {(['', 'remote', 'hybrid', 'onsite'] as const).map((value) => (
-              <button
-                key={value || 'any'}
-                className="chip"
-                data-on={workMode === value}
-                onClick={() => setWorkMode(value)}
-              >
-                {value || 'any'}
-              </button>
-            ))}
-          </div>
-          <label className="field">
-            Min salary
-            <select value={minSalary} onChange={(e) => setMinSalary(Number(e.target.value))}>
-              {[0, 4, 6, 8, 10, 12, 15, 20].map((v) => (
-                <option key={v} value={v}>
-                  {v === 0 ? 'Any' : `₹${v}+ LPA`}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button className="chip" data-on={visaOnly} onClick={() => setVisaOnly((v) => !v)}>
-            Visa sponsorship
-          </button>
-          <button className="chip" data-on={hideApplied} onClick={() => setHideApplied((v) => !v)}>
-            Hide applied
-          </button>
-        </div>
-
-        <div className="row">
-          <input
-            type="text"
-            placeholder="Exclude keywords (comma-separated, stored locally)…"
-            value={exclude}
-            onChange={(e) => setExcludeBoth(e.target.value)}
-          />
-        </div>
+      <section className="controls panel" aria-label="Filter opportunities">
+        <div className="search-row"><label className="search-field"><Icon name="search" size={21} /><span className="sr-only">Search jobs</span><input type="search" placeholder="A role, a company, a new beginning…" value={query} onChange={e => setQuery(e.target.value)} /></label><label className="field company-field"><span className="sr-only">Company</span><select aria-label="Company" value={company} onChange={e => setCompany(e.target.value)}><option value="">All companies</option>{companies.map(name => <option key={name} value={name}>{name}</option>)}</select></label></div>
+        <div className="filter-quick-row"><div className="slider"><label htmlFor="experience-range">Experience</label><input id="experience-range" aria-label="Maximum experience" type="range" min={0} max={3} step={1} value={maxYears} onChange={e => setMaxYears(Number(e.target.value))} /><strong>{maxYears === 0 ? 'Fresher' : 'Up to ' + maxYears + (maxYears === 1 ? ' year' : ' years')}</strong></div><button type="button" className="chip" data-on={includeUnstated} aria-pressed={includeUnstated} onClick={() => setIncludeUnstated(!includeUnstated)}>Include unstated</button><button type="button" className="chip" data-on={internsOnly} aria-pressed={internsOnly} onClick={() => setInternsOnly(!internsOnly)}>Internships only</button></div>
+        <details className="advanced-filters"><summary><Icon name="filter" size={16} />Refine your search<Icon name="chevron" size={15} /></summary><div className="advanced-filter-content">
+          <div className="filter-line"><span className="facet-label">Industry</span><div className="row">{INDUSTRIES.map(value => <button type="button" className="chip industry-chip" key={value} data-on={industries.includes(value)} aria-pressed={industries.includes(value)} onClick={() => toggleIndustry(value)}>{value}</button>)}</div></div>
+          <div className="filter-line"><span className="facet-label">Work mode</span><div className="row">{(['', 'remote', 'hybrid', 'onsite'] as const).map(value => <button type="button" className="chip" key={value || 'any'} data-on={workMode === value} aria-pressed={workMode === value} onClick={() => setWorkMode(value)}>{value || 'any'}</button>)}</div></div>
+          <div className="row"><label className="field">Min salary<select value={minSalary} onChange={e => setMinSalary(Number(e.target.value))}>{[0,4,6,8,10,12,15,20].map(value => <option key={value} value={value}>{value === 0 ? 'Any salary' : '₹' + value + '+ LPA'}</option>)}</select></label><button type="button" className="chip" data-on={visaOnly} aria-pressed={visaOnly} onClick={() => setVisaOnly(!visaOnly)}>Visa sponsorship</button><button type="button" className="chip" data-on={hideApplied} aria-pressed={hideApplied} onClick={() => setHideApplied(!hideApplied)}>Hide applied</button><button type="button" className="chip" data-on={showClosed} aria-pressed={showClosed} onClick={() => setShowClosed(!showClosed)}>Show closed</button></div>
+          <label className="field exclusion-field">Leave these out<input type="text" placeholder="Exclude keywords, separated by commas" value={exclude} onChange={e => setExcludeBoth(e.target.value)} /></label>
+        </div></details>
       </section>
 
       {error && (
@@ -862,7 +674,7 @@ export default function Page() {
         </div>
       )}
 
-      {!jobs && !error && <p className="empty">Loading roles…</p>}
+      {!jobs && !error && <div className="loading-state" role="status"><span className="loading-orbit" />Finding your next possibility…</div>}
 
       {jobs && (
         <>
@@ -882,19 +694,14 @@ export default function Page() {
             })()}
           </p>
 
-          <div className="row">
-            <button className="chip" data-on={day === ''} onClick={() => setDay('')}>
-              All ({dayCounts.reduce((sum, [, n]) => sum + n, 0)})
-            </button>
-            {dayCounts.map(([key, n]) => (
-              <button key={key} className="chip" data-on={day === key} onClick={() => setDay(key)}>
-                {dayLabel(key)} ({n})
-              </button>
-            ))}
+          <div className="results-toolbar">
+            <div className="collection-tabs" role="group" aria-label="Job collection">{(['all', 'saved', 'applied'] as const).map(value => <button type="button" key={value} data-active={collection === value} aria-pressed={collection === value} onClick={() => setCollection(value)}>{value === 'all' ? 'All opportunities' : value === 'saved' ? 'Saved' : 'Applied'}{value === 'saved' && <span>{savedIds.size}</span>}</button>)}</div>
+            <label className="sort-control"><span>Sort by</span><select aria-label="Sort opportunities" value={sortOrder} onChange={e => setSortOrder(e.target.value)}><option value="newest">Newest discovered</option><option value="oldest">Oldest discovered</option><option value="company">Company A–Z</option></select></label>
           </div>
+          <div className="date-toolbar"><div className="date-shortcuts"><Icon name="clock" size={15} /><button type="button" className="date-button" data-active={!day} aria-pressed={!day} onClick={() => setDay('')}>Any time</button>{dayCounts.slice(0, 2).map(([key, n]) => <button type="button" className="date-button" key={key} data-active={day === key} aria-pressed={day === key} onClick={() => setDay(key)}>{dayLabel(key)}<span>{n}</span></button>)}</div><label className="date-select"><span className="sr-only">Discovery date</span><select aria-label="Discovery date" value={day} onChange={e => setDay(e.target.value)}><option value="">Browse by date</option>{dayCounts.map(([key,n]) => <option key={key} value={key}>{dayLabel(key)} · {n} roles</option>)}</select></label></div>
 
           {shown.length === 0 ? (
-            <p className="empty">Nothing matches those filters.</p>
+            <p className="empty">No opportunities found. Try a different search or relax your filters.</p>
           ) : (
             <>
               <div className="row job-display-switch" aria-label="Job display">
@@ -924,6 +731,8 @@ export default function Page() {
                 </details>
               ))}
 
+              {freshJobs.length > jobLimit && <div className="load-more"><span>Showing {jobLimit} of {freshJobs.length.toLocaleString('en-IN')} recent matches</span><button type="button" onClick={() => setJobLimit(limit => limit + 60)}>Show more opportunities<Icon name="chevron" size={16} /></button></div>}
+
               {backlogJobs.length > 0 && (
                 <details className="time-group backlog">
                   <summary className="time-heading">
@@ -931,7 +740,7 @@ export default function Page() {
                     over {BACKLOG_DAYS} days ago
                   </summary>
                   <ul className="jobs">
-                    {backlogJobs.map((job) => (
+                    {backlogJobs.slice(0, backlogLimit).map((job) => (
                       <JobRow
                         job={job}
                         key={job.id}
@@ -944,6 +753,7 @@ export default function Page() {
                       />
                     ))}
                   </ul>
+                  {backlogJobs.length > backlogLimit && <div className="load-more"><span>Showing {backlogLimit} of {backlogJobs.length.toLocaleString('en-IN')} older listings</span><button type="button" onClick={() => setBacklogLimit(limit => limit + 30)}>Show more older listings<Icon name="chevron" size={16} /></button></div>}
                 </details>
               )}
               </>}
@@ -975,23 +785,14 @@ export default function Page() {
                   <button
                     className="chip"
                     onClick={() => {
-                      const newKey = window.prompt('Change Outreach key', outreachKey);
-                      if (newKey) {
-                        window.localStorage.setItem('outreachKey', newKey);
-                        setOutreachKey(newKey);
-                      }
+                      setKeyDraft(outreachKey); setAccessDialog(view);
                     }}
                   >
                     Key
                   </button>
                 </div>
               </div>
-              <iframe
-                key={outreachKey}
-                src={`/api/outreach/page?k=${encodeURIComponent(outreachKey)}`}
-                title="Outreach batch"
-                className="outreach-frame"
-              />
+              <OutreachFrame accessKey={outreachKey} kind="page" title="Outreach batch" />
             </>
           ) : (
             <div className="outreach-locked">
@@ -999,8 +800,7 @@ export default function Page() {
               <button
                 className="chip"
                 onClick={() => {
-                  const key = requestOutreachKey();
-                  if (key) setOutreachKey(key);
+                  setKeyDraft(''); setAccessDialog(view);
                 }}
               >
                 Enter key
@@ -1029,23 +829,14 @@ export default function Page() {
                   <button
                     className="chip"
                     onClick={() => {
-                      const newKey = window.prompt('Change Outreach key', outreachKey);
-                      if (newKey) {
-                        window.localStorage.setItem('outreachKey', newKey);
-                        setOutreachKey(newKey);
-                      }
+                      setKeyDraft(outreachKey); setAccessDialog(view);
                     }}
                   >
                     Key
                   </button>
                 </div>
               </div>
-              <iframe
-                key={outreachKey}
-                src={`/api/outreach/connects?k=${encodeURIComponent(outreachKey)}`}
-                title="Weekly LinkedIn connections"
-                className="outreach-frame"
-              />
+              <OutreachFrame accessKey={outreachKey} kind="connects" title="Weekly LinkedIn connections" />
             </>
           ) : (
             <div className="outreach-locked">
@@ -1053,8 +844,7 @@ export default function Page() {
               <button
                 className="chip"
                 onClick={() => {
-                  const key = requestOutreachKey();
-                  if (key) setOutreachKey(key);
+                  setKeyDraft(''); setAccessDialog(view);
                 }}
               >
                 Enter key
@@ -1112,10 +902,11 @@ export default function Page() {
         </section>
       )}
 
-      <footer>
-        Data and source on <a href={REPO_URL}>GitHub</a>. Apply on the company link — direct
-        applications convert far better than aggregators.
-      </footer>
-    </main>
+      {accessDialog && <Modal label="Unlock private workspace" onClose={() => setAccessDialog(null)}><form className="access-form" onSubmit={event => {
+        event.preventDefault(); const key = keyDraft.trim(); if (!key) return;
+        try { localStorage.setItem('outreachKey', key); } catch { /* This visit still works without persistent browser storage. */ }
+        setOutreachKey(key); setView(accessDialog); setAccessDialog(null);
+      }}><div className="access-form-heading"><span className="private-empty-icon"><Icon name="lock" size={25} /></span><button type="button" className="icon-button" aria-label="Close dialog" onClick={() => setAccessDialog(null)}><Icon name="close" size={17} /></button></div><span className="eyebrow">Just for your circle</span><h2>Your conversations.<br />Your private space.</h2><p>Enter your outreach access key to open contact batches and connection lists. It is remembered only in this browser.</p><label className="field">Access key<input type="password" required autoComplete="off" placeholder="Enter your access key" value={keyDraft} onChange={event => setKeyDraft(event.target.value)} /></label><button type="submit" className="access-submit" disabled={!keyDraft.trim()}>Open private workspace<Icon name="arrow" size={17} /></button></form></Modal>}
+    </WorkspaceShell>
   );
 }

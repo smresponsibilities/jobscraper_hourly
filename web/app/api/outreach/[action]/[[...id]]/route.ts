@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { decorateOutreachHtml } from '@/lib/outreach-presentation';
 
 /**
  * Hosted click-API for the deployed outreach page. Mirrors the localhost
@@ -215,7 +216,7 @@ export async function GET(
       }
       return new Response(`GitHub API error (${status}): ${error || 'Failed to fetch batch'}`, { status: status || 500 });
     }
-    return new Response(text, {
+    return new Response(decorateOutreachHtml(text), {
       headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' },
     });
   }

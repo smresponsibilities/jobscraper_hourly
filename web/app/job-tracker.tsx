@@ -1,5 +1,7 @@
 'use client';
 
+import { Modal } from './modal';
+
 import React, { useState } from 'react';
 import type { TrackedApplication, ApplicationStage, TargetedResume } from '@/lib/career-types';
 import { generateCoverLetter } from '@/lib/cover-letter';
@@ -198,6 +200,10 @@ export function JobTrackerView({
                     return (
                       <div
                         key={app.id}
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`Open ${app.company} application`}
+                        onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedApp(app); } }}
                         onClick={() => setSelectedApp(app)}
                         className="bg-white p-3 rounded border border-gray-200 shadow-xs hover:shadow-md transition cursor-pointer space-y-2"
                       >
@@ -293,7 +299,7 @@ export function JobTrackerView({
 
       {/* APPLICATION DETAIL MODAL */}
       {selectedApp && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <Modal label="Application details" onClose={() => setSelectedApp(null)}>
           <div className="bg-white rounded-lg shadow-2xl max-w-2xl w-full p-6 space-y-5 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-start border-b pb-3">
               <div>
@@ -302,7 +308,7 @@ export function JobTrackerView({
               </div>
               <button
                 onClick={() => setSelectedApp(null)}
-                className="text-gray-400 hover:text-gray-600 text-lg"
+                aria-label="Close dialog" className="text-gray-400 hover:text-gray-600 text-lg"
               >
                 &times;
               </button>
@@ -413,12 +419,12 @@ export function JobTrackerView({
               </button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
 
       {/* ADD APPLICATION MODAL */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <Modal label="Add tracked application" onClose={() => setShowAddModal(false)}>
           <div className="bg-white rounded-lg shadow-2xl max-w-lg w-full p-6 space-y-4">
             <h3 className="text-base font-bold text-gray-900 border-b pb-2">Add Tracked Application</h3>
             <form onSubmit={handleCreateApplication} className="space-y-3">
@@ -522,18 +528,18 @@ export function JobTrackerView({
               </div>
             </form>
           </div>
-        </div>
+        </Modal>
       )}
 
       {/* COVER LETTER MODAL */}
       {coverLetterModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <Modal label="Tailored cover letter" onClose={() => setCoverLetterModal(null)}>
           <div className="bg-white rounded-lg shadow-2xl max-w-xl w-full p-6 space-y-4 max-h-[85vh] overflow-y-auto">
             <div className="flex justify-between items-center border-b pb-2">
               <h3 className="text-sm font-bold text-gray-900">Tailored Recruiter Cover Letter</h3>
               <button
                 onClick={() => setCoverLetterModal(null)}
-                className="text-gray-400 hover:text-gray-600 text-lg"
+                aria-label="Close dialog" className="text-gray-400 hover:text-gray-600 text-lg"
               >
                 &times;
               </button>
@@ -562,7 +568,7 @@ export function JobTrackerView({
               </button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   );

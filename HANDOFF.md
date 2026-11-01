@@ -1,5 +1,37 @@
 # Handoff
 
+## Workspace UI redesign, 2026-11-01 (feature branch)
+
+The user requested a full visual redesign, a local preview, and then publication
+on the `revamp-ui` feature branch. Do not merge it into `main` without a new
+instruction. The local production preview runs at http://localhost:3210.
+
+`workspace-shell.tsx` and `workspace.css` provide the ivory/ink visual system,
+sidebar, mobile navigation, locally hosted licensed fonts, light/dark themes,
+and view persistence. Tailwind 3/PostCSS now compile the existing career tools'
+previously missing utility styles. `modal.tsx` provides focus trapping, Escape,
+focus restoration, connected form labels, and nested dialog behavior.
+
+Jobs have redesigned cards, saved/applied collection views, sorting, compact
+date selection, and progressive rendering (60 recent / 30 older rows initially).
+Job filtering, catalogue IDs and existing storage keys are preserved. Résumé
+printing switches to preview first and prints the document without app controls.
+Fit Score wording now describes rule coverage and does not label passed checks
+as needing attention; the underlying scoring algorithm is unchanged.
+
+Private pages keep their access gate. The custom key dialog replaces native
+prompts; disconnected local backends show a useful error state. Generated
+private HTML gains a local presentation stylesheet without changing its data or
+action links. Local Outreach still requires its private-repo configuration.
+
+Validation: existing regression suite, all 11 map tests, web typecheck and
+production build passed. Sixteen isolated browser checks covered filters,
+collections, sorting, progressive loading, local career records, exports,
+printing, journal promotion, nested dialogs, backup/restore and theme/view
+persistence. No horizontal overflow at 360/390/768/1280/1512px; no page errors.
+Evidence is in ignored `out/ui-redesign/`. The ignored local job snapshot was
+refreshed from the public data branch. Personal browser data was not changed.
+
 ## Company-office map, 2026-10-29
 
 Production and live-refresh acceptance are verified. GitHub refresh run
