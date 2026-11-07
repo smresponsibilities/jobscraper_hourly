@@ -74,7 +74,7 @@ export async function fillWorkdaySelectInputFast(
   frame: Frame,
   containerSelector: string,
   searchTerm: string,
-  fallbackTerm?: string
+  fallbackTerm?: string | string[]
 ): Promise<boolean> {
   const container = frame.locator(containerSelector).first();
   if (!(await container.isVisible().catch(() => false))) return false;
@@ -118,7 +118,10 @@ export async function fillWorkdaySelectInputFast(
   };
 
   if (await trySearch(searchTerm)) return true;
-  if (fallbackTerm && (await trySearch(fallbackTerm))) return true;
+  const fallbacks = Array.isArray(fallbackTerm) ? fallbackTerm : (fallbackTerm ? [fallbackTerm] : []);
+  for (const fb of fallbacks) {
+    if (await trySearch(fb)) return true;
+  }
   await frame.page().keyboard.press('Escape').catch(() => {});
   return false;
 }
@@ -160,18 +163,18 @@ export async function runWorkdayStepFastPass(frame: Frame, resumePdfPath?: strin
     'LinkedIn'
   );
 
-  // 4. Education Field of Study -> "Computer Science" & School -> "Chitkara" (fallback "Other")
+  // 4. Education Field of Study -> "Computer Science" & School -> "Chitkara University" (fallback ["Chitkara", "Other", "India", "University"])
   await fillWorkdaySelectInputFast(
     frame,
     '[data-automation-id="formField-field-of-study"], [data-automation-id="formField-fieldOfStudy"]',
     'Computer Science',
-    'Engineering'
+    ['Engineering', 'Information Technology']
   );
   await fillWorkdaySelectInputFast(
     frame,
     '[data-automation-id="formField-schoolItem"], [data-automation-id="formField-school"]',
-    'Chitkara',
-    'Other'
+    'Chitkara University',
+    ['Chitkara', 'Other', 'India', 'University']
   );
 
   // 5. Fill all Workday MM/DD/YYYY spinbutton date clusters
@@ -215,6 +218,36 @@ export async function runWorkdayStepFastPass(frame: Frame, resumePdfPath?: strin
       }
     }
   }
+
+  // GEN-150: Expand collapsed Work Experience & Education sections on Workday Step 2 ("My Experience")
+  const expandWorkdaySectionIfNeeded = async (
+    sectionSelector: string,
+    existingFieldSelector: string
+  ): Promise<void> => {
+    const section = frame.locator(sectionSelector).first();
+    if (!(await section.isVisible().catch(() => false))) return;
+    const hasExpandedOrSavedItem = await section
+      .locator(existingFieldSelector)
+      .first()
+      .isVisible()
+      .catch(() => false);
+    if (hasExpandedOrSavedItem) return;
+    const addBtn = section
+      .locator('button[data-automation-id="add-button"], button[aria-label*="Add" i]')
+      .first();
+    if (await addBtn.isVisible().catch(() => false)) {
+      await addBtn.click({ timeout: 3500 }).catch(() => {});
+      await frame.waitForTimeout(550).catch(() => {});
+    }
+  };
+  await expandWorkdaySectionIfNeeded(
+    '[data-automation-id="workExperienceSection"]',
+    'input[data-automation-id="jobTitle"], [data-automation-id^="workExperience-"]'
+  );
+  await expandWorkdaySectionIfNeeded(
+    '[data-automation-id="educationSection"]',
+    'input[data-automation-id="school"], [data-automation-id="formField-schoolItem"] input, [data-automation-id="formField-school"] input, [data-automation-id^="education-"]'
+  );
 
   // 8. Workday Step 1 & 2 pre-expanded empty card fast-fill (Ticket GEN-141)
   const defaultFastFills: Array<[string, string]> = [

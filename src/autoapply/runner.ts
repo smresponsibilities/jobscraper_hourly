@@ -622,6 +622,60 @@ export class AutoApplyRunner {
   }
 
   /**
+   * Ticket GEN-153 & GEN-154: Strict numeric input unit stripper and URL input validator guard.
+   */
+  private async sanitizeValueForInputType(
+    control: Locator,
+    rawValue: string,
+    questionText: string
+  ): Promise<string> {
+    const val = String(rawValue ?? '').trim();
+    if (!val) return val;
+    const meta = await control
+      .evaluate((el) => {
+        const inp = el as HTMLInputElement;
+        return {
+          type: (inp.getAttribute('type') || inp.type || '').toLowerCase(),
+          role: (inp.getAttribute('role') || '').toLowerCase(),
+          inputMode: (inp.getAttribute('inputmode') || '').toLowerCase(),
+          placeholder: (inp.getAttribute('placeholder') || '').toLowerCase(),
+        };
+      })
+      .catch(() => ({ type: '', role: '', inputMode: '', placeholder: '' }));
+
+    // GEN-153: Strict numeric input sanitizer
+    if (meta.type === 'number' || meta.role === 'spinbutton' || meta.inputMode === 'numeric') {
+      if (/^(?:immediate|immediately|now|none|no|n\/a|false)$/i.test(val)) {
+        return '0';
+      }
+      if (/lpa|lakh/i.test(val)) {
+        const asksInLakhs = /\bin\s+(?:lpa|lakhs?)\b|\(lpa\)/i.test(questionText);
+        return asksInLakhs ? '12' : '1200000';
+      }
+      const numMatch = val.match(/-?\d+(?:\.\d+)?/);
+      if (numMatch) {
+        return numMatch[0];
+      }
+      return '1';
+    }
+
+    // GEN-154: Strict URL input sanitizer
+    const isUrlField =
+      meta.type === 'url' ||
+      /^https?:\/\//i.test(meta.placeholder) ||
+      /\b(?:url|website|portfolio\s+link|github\s+link|linkedin\s+link|profile\s+link)\b/i.test(questionText);
+    if (isUrlField) {
+      if (/^(?:n\/a|none|no|na|-)$/i.test(val) || !/^https?:\/\//i.test(val)) {
+        if (/linkedin/i.test(questionText)) return 'https://www.linkedin.com/in/mahajanshivam';
+        if (/github/i.test(questionText)) return 'https://github.com/smresponsibilities';
+        if (/^[a-z0-9.-]+\.[a-z]{2,}(?:\/.*)?$/i.test(val)) return `https://${val}`;
+        return 'https://shivammahajan.com';
+      }
+    }
+    return val;
+  }
+
+  /**
    * Ticket GEN-123: Track HTTP POST network submissions on known ATS endpoints.
    */
   private attachNetworkReceiptListener(page: Page): void {
@@ -1065,6 +1119,18 @@ export class AutoApplyRunner {
           target.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
           target.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
           target.dispatchEvent(new FocusEvent('blur', { bubbles: true, composed: true }));
+          const root = target.getRootNode?.();
+          if (root && (root as ShadowRoot).host) {
+            const host = (root as ShadowRoot).host as HTMLElement & { value?: unknown };
+            try {
+              if ('value' in host) {
+                host.value = val;
+              }
+              host.dispatchEvent(new CustomEvent('valueChange', { detail: val, bubbles: true, composed: true }));
+              host.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+              host.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+            } catch {}
+          }
         }, text)
         .catch(() => {});
       return;
@@ -1107,6 +1173,18 @@ export class AutoApplyRunner {
           target.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
           target.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
           target.dispatchEvent(new FocusEvent('blur', { bubbles: true, composed: true }));
+          const root = target.getRootNode?.();
+          if (root && (root as ShadowRoot).host) {
+            const host = (root as ShadowRoot).host as HTMLElement & { value?: unknown };
+            try {
+              if ('value' in host) {
+                host.value = val;
+              }
+              host.dispatchEvent(new CustomEvent('valueChange', { detail: val, bubbles: true, composed: true }));
+              host.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+              host.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+            } catch {}
+          }
         }, text)
         .catch(() => {});
       if (blur) await input.blur().catch(() => {});
@@ -2534,6 +2612,11 @@ export class AutoApplyRunner {
               const isGraduation = /graduat|degree|education|completion|attend/i.test(descriptor + ' ' + (info.questionTitle || ''));
               stringVal = isGraduation ? '2026-08-01' : new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10);
             }
+            stringVal = await this.sanitizeValueForInputType(
+              input,
+              stringVal,
+              descriptor + ' ' + (info.questionTitle || '') + ' ' + (action.question || '')
+            );
             if (options.mode === 'stealth') await this.humanType(input, stringVal);
             else {
               await input.fill(stringVal);
