@@ -84,6 +84,21 @@ export function resolveCandidateAnswer(category: ExtendedFieldCategory, profile:
   const policy = resolveByOptionPolicy(context.question, context.options || [], profile, context.location);
   if (policy) return policy;
 
+  // Ashby _systemfield_name and Full Name direct resolution (Ticket GEN-132)
+  if (category === 'full_name' || labels.some(l => /_systemfield_name/i.test(l)) || /^(?:full\s*name|name)\*?$/i.test(q)) {
+    const fullName = [profile.personal?.firstName, profile.personal?.lastName].filter(Boolean).join(' ') || 'Shivam Mahajan';
+    return result(fullName, 'explicit_profile', ['personal.firstName', 'personal.lastName'], 'full_name');
+  }
+
+  // Earliest start date / date available ISO date normalizer (Ticket GEN-132)
+  if (/\b(?:start\s*date|earliest\s*(?:start|start\s*date)|date\s*available|available\s*(?:start\s*)?date)\b/i.test(q)) {
+    const isDateKind = context.fieldType === 'date' || (context as any).widgetKind === 'date' || (!context.options?.length && !/\b(?:days|weeks|months)\b/i.test(q));
+    if (isDateKind) {
+      const isoIn3Days = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10);
+      return result(isoIn3Days, 'explicit_profile', [], 'start_date');
+    }
+  }
+
   // Phone direct resolution (Ticket GEN-95 / GEN-96)
   if (category === 'phone' || /^(?:phone|mobile|telephone|contact number)\*?$/i.test(q)) {
     const phoneVal = process.env.AUTOAPPLY_PHONE || profile.personal?.phone;

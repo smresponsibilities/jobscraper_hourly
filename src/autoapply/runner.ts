@@ -10,7 +10,7 @@ import { identifyApplicationAts, ATS_STRATEGIES } from './wizard.js';
 import { validateProfile } from './profile.js';
 import { getHumanKeyDelay, generateBezierCurve } from './stealth.js';
 import { completeEmailVerification, type BrowserInteractions } from './verification.js';
-import { makeGmailTenantAlias } from './imap-verifier.js';
+import { makeGmailTenantAlias, completeInPageEmailVerificationIfPrompted } from './imap-verifier.js';
 import type { ApplicationMailbox } from './mailbox.js';
 import { canonicalRequisition, canonicalEmployerKey, sameRequisition, type RequisitionIdentity } from './identity.js';
 import type { GroundedModel } from './grounded-model.js';
@@ -53,6 +53,12 @@ export async function healInvalidFieldsAndRetrySubmit(
 ): Promise<number> {
   const phone = profilePhone || process.env.AUTOAPPLY_PHONE || '9000000000';
   const healedCount = await frame.evaluate(([email, ph]) => {
+    // Ticket GEN-130: Abort healer immediately if OTP / security code inputs are visible!
+    const hasOtp = !!document.querySelector(
+      'input[id^="security-input-"], input[id^="security-code"], #security-code, .security-code-input input, input[name*="security_code" i], input[aria-label*="security code" i], input[aria-label*="verification code" i]'
+    );
+    if (hasOtp) return 0;
+
     let fixed = 0;
     const setNativeValue = (el: HTMLInputElement | HTMLTextAreaElement, val: string) => {
       const proto = el instanceof HTMLTextAreaElement ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
@@ -176,7 +182,7 @@ export interface AutoApplyOptions {
 
 const INPUTS = 'input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([data-automation-id="beecatcher"]):not([data-autoapply-skip-file="true"]), select, textarea, [role="combobox"], [role="radio"], button[aria-haspopup="listbox"], button.ashby-application-form-input-yesno-option, button[data-autoapply-btngroup-option]';
 const SUCCESS = /(?:^|[\n.!?“"']\s*|\b)(?:thank(?:s| you)? for (?:applying|your application|interest|submitting)|(?:your )?application (?:has been |was )?(?:successfully )?(?:submitted|received)|successfully applied|we['’]ve received your application|we have received your application|application received|application submitted|submission received|application complete)\b/i;
-const EXISTING_APPLICATION = /^you have already applied to this position\b/i;
+const EXISTING_APPLICATION = /(?:you have already applied to this (?:position|job)|already submitted an application for this position|application has already been received)\b/i;
 const NEXT = /(?:^|\b)(?:next|continue|save (?:and|&) continue|save & next)(?:\b|$)/i;
 const SUBMIT = /(?:^|\b)(?:submit(?: application)?|send application|apply(?: for this job)?|complete application)(?:\b|$)/i;
 
@@ -387,6 +393,72 @@ export class AutoApplyRunner {
   private learnedFields: Array<{ questionText: string; category: string; value: string }> = [];
   private activeWatchdog?: JobActivityWatchdog;
   private lastNetworkSubmissionReceipt: { url: string; status: number; timestamp: number } | null = null;
+  private profile?: CandidateExtendedProfile;
+
+  /**
+   * Ticket GEN-131: Lever Async parseResume Field-Wipe Protection.
+   * Runs right before clicking Submit on jobs.lever.co to deterministically restore core fields.
+   */
+  private async enforceLeverCoreFieldsBeforeSubmit(page: Page): Promise<void> {
+    if (!/lever\.co/i.test(page.url())) return;
+    const email = this.profile?.personal?.email || process.env.AUTOAPPLY_EMAIL || '';
+    const phone = this.profile?.personal?.phone || process.env.AUTOAPPLY_PHONE || '';
+    const fullName = this.profile?.personal?.fullName || 'Shivam Mahajan';
+    const linkedin = (this.profile as any)?.links?.linkedin || this.profile?.personal?.linkedinUrl || 'https://www.linkedin.com/in/mahajanshivam';
+    const github = (this.profile as any)?.links?.github || this.profile?.personal?.githubUrl || 'https://github.com/smresponsibilities';
+    const portfolio = (this.profile as any)?.links?.portfolio || this.profile?.personal?.portfolioUrl || 'https://shivammahajan.com';
+
+    await page
+      .evaluate(
+        (vals) => {
+          const setNative = (sel: string, val: string, forceOverride = false) => {
+            if (!val) return;
+            const el = document.querySelector<HTMLInputElement>(sel);
+            if (!el) return;
+            const curr = (el.value || '').trim();
+            if (!curr || forceOverride) {
+              const setter = Object.getOwnPropertyDescriptor(
+                window.HTMLInputElement.prototype,
+                'value'
+              )?.set;
+              if (setter) setter.call(el, val);
+              else el.value = val;
+              el.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+              el.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+            }
+          };
+
+          setNative('input[name="name"]', vals.fullName, true);
+          setNative('input[name="email"]', vals.email, true);
+          setNative('input[name="phone"]', vals.phone, true);
+          setNative('input[name="org"]', 'Morgan Stanley', true);
+          setNative('input[name="urls[LinkedIn]"], input[name="urls[linkedin]"]', vals.linkedin, false);
+          setNative('input[name="urls[GitHub]"], input[name="urls[github]"]', vals.github, false);
+          setNative(
+            'input[name="urls[Portfolio]"], input[name="urls[Website]"], input[name="urls[Other]"]',
+            vals.portfolio,
+            false
+          );
+        },
+        { fullName, email, phone, linkedin, github, portfolio }
+      )
+      .catch(() => {});
+
+    // If input[name="location"] on Lever is filled, ensure that if .itta-results .itta-item, .location-results li is visible, the first suggestion is clicked so Lever's hidden selectedLocation field is populated.
+    try {
+      const locDropdown = page.locator('.itta-results .itta-item, .location-results li').first();
+      if (await locDropdown.isVisible().catch(() => false)) {
+        await locDropdown.click().catch(() => {});
+        await page.evaluate(() => {
+          const locInput = document.querySelector<HTMLInputElement>('input[name="location"]');
+          const hiddenLoc = document.querySelector<HTMLInputElement>('input[name="selectedLocation"]');
+          if (locInput && hiddenLoc && !hiddenLoc.value) {
+            hiddenLoc.value = locInput.value;
+          }
+        }).catch(() => {});
+      }
+    } catch {}
+  }
 
   /**
    * Ticket GEN-108: Dismiss Ashby React cookie consent modal / OneTrust banners and wait for form controls hydration.
@@ -2347,11 +2419,16 @@ export class AutoApplyRunner {
                 continue;
               }
             }
-            if (options.mode === 'stealth') await this.humanType(input, String(value));
+            let stringVal = String(value);
+            if (info.type === 'date' && !/^\d{4}-\d{2}-\d{2}$/.test(stringVal.trim())) {
+              const isGraduation = /graduat|degree|education|completion|attend/i.test(descriptor + ' ' + (info.questionTitle || ''));
+              stringVal = isGraduation ? '2026-08-01' : new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10);
+            }
+            if (options.mode === 'stealth') await this.humanType(input, stringVal);
             else {
-              await input.fill(String(value));
+              await input.fill(stringVal);
               const typedVal = await input.inputValue().catch(() => '');
-              if (!retainedText(typedVal, String(value), info.type) && !typedVal.trim()) {
+              if (!retainedText(typedVal, stringVal, info.type) && !typedVal.trim()) {
                 throw new Error('Typed field did not retain the intended value');
               }
             }
@@ -2372,6 +2449,16 @@ export class AutoApplyRunner {
             await this.page!.waitForTimeout(isLargeForm ? Math.min(next.postFillWaitMs, 50) : next.postFillWaitMs);
           }
           await input.blur().catch(() => {});
+          if (info.type === 'tel' || /phone|mobile/i.test((info.id || '') + ' ' + (info.name || ''))) {
+            await frame.evaluate(`() => {
+              const list = document.querySelector('.iti__country-list:not(.iti__hide)');
+              if (list) {
+                list.classList.add('iti__hide');
+                list.dispatchEvent(new Event('blur', { bubbles: true }));
+              }
+            }`).catch(() => {});
+            await frame.page().keyboard.press('Escape').catch(() => {});
+          }
           await frame.evaluate(`() => new Promise(resolve => {
             let quiet;
             const complete = () => { clearTimeout(quiet); clearTimeout(limit); observer.disconnect(); resolve(); };
@@ -2456,10 +2543,11 @@ export class AutoApplyRunner {
         return report;
       }
       validateProfile(options.profile);
+      this.profile = options.profile;
       const timeoutConfig = getProviderTimeoutConfig(options.url);
       const watchdog = new JobActivityWatchdog(timeoutConfig.maxTotalMs, timeoutConfig.maxIdleMs);
       this.activeWatchdog = watchdog;
-      const maxSteps = options.maxSteps ?? (options.url.toLowerCase().includes('myworkdayjobs.com') ? 14 : 12);
+      const maxSteps = options.maxSteps ?? (options.url.toLowerCase().includes('myworkdayjobs.com') ? 14 : options.url.toLowerCase().includes('smartrecruiters.com') ? 6 : 12);
       if (!Number.isInteger(maxSteps) || maxSteps < 1) throw new Error('maxSteps must be a positive integer');
       if (!['http:', 'https:', 'file:'].includes(new URL(options.url).protocol)) throw new Error('Unsupported application URL');
       if (!this.page || this.page.isClosed()) {
@@ -3170,6 +3258,7 @@ export class AutoApplyRunner {
         }
         watchdog.heartbeat('submit_click');
         watchdog.checkOrThrow();
+        await this.enforceLeverCoreFieldsBeforeSubmit(this.page!);
         if (options.mode === 'stealth') await this.pacedClick(submit);
         else await submit.click();
         const deadline = Date.now() + timeout;
@@ -3211,6 +3300,16 @@ export class AutoApplyRunner {
           let validationBounce = !report.submission.requests.length && (observer.clientError() || (!this.page!.isClosed() && await this.page!.locator('html').getAttribute('data-autoapply-client-error') === 'true'));
           if (!report.submission.requests.length && !this.page!.isClosed()) for (const frame of this.page!.frames()) {
             if (await frame.locator('input:invalid,select:invalid,textarea:invalid,[aria-invalid="true"],[role="alert"]').filter({ visible: true }).count()) validationBounce = true;
+          }
+          if (!report.receipt && !this.page!.isClosed()) {
+            for (const frame of this.page!.frames()) {
+              const verified = await completeInPageEmailVerificationIfPrompted(this.page!, frame, () => this.activeWatchdog?.heartbeat('inpage_otp')).catch(() => false);
+              if (verified) {
+                await this.page!.waitForTimeout(3000);
+                report.receipt ||= await this.receipt();
+                if (report.receipt) break;
+              }
+            }
           }
           // Ticket GEN-59, GEN-60 & GEN-61: Post-Submit :invalid Surgical Healer
           if (!report.receipt && !this.page!.isClosed()) {

@@ -54,9 +54,33 @@ export function extractCleanQuestionText(box: Element, els: Element[] = []): str
     try { return root.querySelector(`[id="${id.replace(/"/g, '\\\"')}"]`); } catch { return null; }
   };
   const first = els[0] || (box.matches('input,select,textarea,[role="combobox"]') ? box : box.querySelector('input,select,textarea,[role="combobox"]'));
+  const isRadioOrCheckbox = first instanceof HTMLInputElement && (first.type === 'radio' || first.type === 'checkbox');
 
-  // 1. Explicit label for ID (reject bare Yes/No option labels on radios)
-  if (first?.id) {
+  // GEN-129: Group question prompts on Lever, Greenhouse, Workday, Ashby (prevent option labels like "0-1 years" from poisoning question prompt)
+  if (isRadioOrCheckbox && first) {
+    const leverQuestion = first.closest('.application-question')?.querySelector('.text, .application-label, label')?.textContent?.trim();
+    if (isCleanQuestionCandidate(leverQuestion)) return leverQuestion!.replace(/\s+/g, ' ').trim().slice(0, 1500);
+
+    const legend = first.closest('fieldset')?.querySelector('legend')?.textContent?.trim();
+    if (isCleanQuestionCandidate(legend)) return legend!.replace(/\s+/g, ' ').trim().slice(0, 1500);
+
+    const wdLabel = first.closest('[data-automation-id^="formField-"]')?.querySelector('label[data-automation-id*="formLabel"], legend')?.textContent?.trim();
+    if (isCleanQuestionCandidate(wdLabel)) return wdLabel!.replace(/\s+/g, ' ').trim().slice(0, 1500);
+
+    const ashbyLabel = first.closest('.ashby-application-form-field-entry, [class*="_fieldEntry_"]')?.querySelector('.ashby-application-form-question-title, label')?.textContent?.trim();
+    if (isCleanQuestionCandidate(ashbyLabel)) return ashbyLabel!.replace(/\s+/g, ' ').trim().slice(0, 1500);
+
+    const rg = first.closest('[role="radiogroup"], [role="group"]');
+    if (rg) {
+      const rgAria = (rg.getAttribute('aria-label') || '').trim();
+      if (isCleanQuestionCandidate(rgAria)) return rgAria.slice(0, 1500);
+      const rgLinked = (rg.getAttribute('aria-labelledby') || '').split(/\s+/).map(id => findById(id)?.textContent || '').join(' ').trim();
+      if (isCleanQuestionCandidate(rgLinked)) return rgLinked.slice(0, 1500);
+    }
+  }
+
+  // 1. Explicit label for ID (skip for radio/checkbox to prevent option label poisoning)
+  if (first?.id && !isRadioOrCheckbox) {
     const escapedId = typeof CSS !== "undefined" && typeof CSS.escape === "function" ? CSS.escape(first.id) : first.id.replace(/"/g, "\\\"");
     const explicitFor = (root as Document).querySelector?.(`label[for="${escapedId}"]`);
     if (isCleanQuestionCandidate(explicitFor?.textContent)) {
@@ -64,10 +88,12 @@ export function extractCleanQuestionText(box: Element, els: Element[] = []): str
     }
   }
 
-  // 2. Wrapper label
-  const wrapperLabel = first?.closest('.select-shell, .input-wrapper, .field, [class*="field"], .application-question')?.querySelector('label');
-  if (isCleanQuestionCandidate(wrapperLabel?.textContent) && !wrapperLabel!.querySelector('input[type="radio"], input[type="checkbox"]')) {
-    return wrapperLabel!.textContent!.replace(/\s+/g, ' ').trim().slice(0, 1500);
+  // 2. Wrapper label (skip if radio/checkbox)
+  if (!isRadioOrCheckbox) {
+    const wrapperLabel = first?.closest('.select-shell, .input-wrapper, .field, [class*="field"], .application-question')?.querySelector('label');
+    if (isCleanQuestionCandidate(wrapperLabel?.textContent) && !wrapperLabel!.querySelector('input[type="radio"], input[type="checkbox"]')) {
+      return wrapperLabel!.textContent!.replace(/\s+/g, ' ').trim().slice(0, 1500);
+    }
   }
 
   // 3. Linked aria-labelledby
@@ -198,16 +224,24 @@ export function annotateQuestionClusters(elements: Element[]): void {
     const elLinked = (el.getAttribute('aria-labelledby') || '').split(/\s+/).map(id => root.getElementById(id)?.textContent || '').join(' ').trim();
     const boxLinked = (box.getAttribute('aria-labelledby') || '').split(/\s+/).map(id => root.getElementById(id)?.textContent || '').join(' ').trim();
     const linked = elLinked || boxLinked;
+    const isRadioOrCheckbox = ['radio', 'checkbox'].includes(input.type) || el.getAttribute('role') === 'radio';
+    const groupPrompt = isRadioOrCheckbox
+      ? el.closest('.application-question')?.querySelector('.text, .application-label, legend')?.textContent?.trim() ||
+        el.closest('fieldset')?.querySelector('legend')?.textContent?.trim() ||
+        el.closest('[data-automation-id^="formField-"]')?.querySelector('label[data-automation-id*="formLabel"], legend')?.textContent?.trim() ||
+        el.closest('.ashby-application-form-field-entry, [class*="_fieldEntry_"]')?.querySelector('.ashby-application-form-question-title, label')?.textContent?.trim() ||
+        ''
+      : '';
     const explicitTitle = box.querySelector('legend,.ashby-application-form-question-title,[data-automation-id$="-legend"],.application-label,.field-label')?.textContent?.trim();
-    const labels = Array.from((el as HTMLInputElement).labels || []).map(label => label.textContent || '').join(' ').trim();
+    const labels = isRadioOrCheckbox ? '' : Array.from((el as HTMLInputElement).labels || []).map(label => label.textContent || '').join(' ').trim();
     const clone = box.cloneNode(true) as Element;
     clone.querySelectorAll('select, option, textarea, input, button, [role="listbox"], [role="option"], .error, [role="alert"], [class*="placeholder"], script, style').forEach(node => node.remove());
-    if (['radio', 'checkbox'].includes(input.type) || el.getAttribute('role') === 'radio') {
+    if (isRadioOrCheckbox) {
       clone.querySelectorAll('label').forEach(label => label.remove());
     }
     let candidateText = clone.textContent?.replace(/\s+/g, ' ').trim() || '';
     if (/^(?:select|choose)\b|\.{3}/i.test(candidateText)) candidateText = '';
-    let question = linked || explicitTitle || labels || candidateText;
+    let question = groupPrompt || linked || explicitTitle || labels || candidateText;
     if (!question || question === 'Field' || /^cards\[[0-9a-f-]+\]\[[^\]]+\]$/i.test(question)) {
       if (el.id) {
         const explicitFor = (root as Document).querySelector?.(`label[for="${CSS.escape(el.id)}"]`);

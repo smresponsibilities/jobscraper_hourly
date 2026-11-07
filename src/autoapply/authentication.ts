@@ -512,12 +512,22 @@ export async function authenticateWorkdayPortal(
     }
   }
 
+  const postVerifyWorkdaySignIn = async () => {
+    const signInLink = page.locator('[data-automation-id="signInLink"], a:has-text("Sign In")').filter({ visible: true }).first();
+    if (await signInLink.isVisible().catch(() => false)) {
+      await signInLink.click({ force: true, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(1000);
+      await fillAndSubmitSignIn(email, password);
+    }
+  };
+
   const updatedPwCount = await getVisiblePasswordInputs().count().catch(() => 0);
 
   // Case A: On Create Account form (>= 2 password fields or switched from Sign In)
   if (updatedPwCount >= 2) {
     await fillAndSubmitCreateAccount(email, password);
-    await completeInPageEmailVerificationIfPrompted(page, page.mainFrame());
+    const verified = await completeInPageEmailVerificationIfPrompted(page, page.mainFrame());
+    if (verified) await postVerifyWorkdaySignIn();
     const errText = await page.locator('[role="alert"], [data-automation-id="errorMessage"], .error').allTextContents().catch(() => []);
     const accountExists = errText.some(t => /already exists|already registered/i.test(t));
     if (accountExists) {
@@ -557,7 +567,8 @@ export async function authenticateWorkdayPortal(
         await createLink.click({ force: true, timeout: 5000 }).catch(() => {});
         await page.waitForTimeout(1000);
         await fillAndSubmitCreateAccount(email, password);
-        await completeInPageEmailVerificationIfPrompted(page, page.mainFrame());
+        const verified = await completeInPageEmailVerificationIfPrompted(page, page.mainFrame());
+        if (verified) await postVerifyWorkdaySignIn();
         if ((await getVisiblePasswordInputs().count().catch(() => 0)) === 0) {
           markWorkdayHostVerified(currentHost);
         }
@@ -580,7 +591,8 @@ export async function authenticateWorkdayPortal(
         await page.waitForTimeout(1000);
       }
       await fillAndSubmitCreateAccount(aliasEmail, password);
-      await completeInPageEmailVerificationIfPrompted(page, page.mainFrame());
+      const verified = await completeInPageEmailVerificationIfPrompted(page, page.mainFrame());
+      if (verified) await postVerifyWorkdaySignIn();
     }
   }
 

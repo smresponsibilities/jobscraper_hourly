@@ -12,18 +12,22 @@ export async function fillWorkdaySpinbuttonDates(frame: Frame): Promise<number> 
   for (let i = 0; i < count; i++) {
     const field = dateFields.nth(i);
     const text = (await field.innerText().catch(() => '')).toLowerCase();
-    const isEducation = /education|school|university|degree/i.test(text);
-    const isStart = /from|start/i.test(text);
-    const isSignatureOrToday = /date|today|signature/i.test(text) && !/from|to|start|end/i.test(text);
+    const headingText = (await frame.locator('h1, h2, [data-automation-id="pageHeaderTitle"]').allTextContents().catch(() => [])).join(' ').toLowerCase();
+    const fullContext = `${text} ${headingText}`;
 
+    const isEducation = /education|school|university|degree/i.test(fullContext) && !/self[-_\s]*identify|disability|signature/i.test(fullContext);
+    const isStart = /from|start/i.test(text);
+    const isSignatureOrToday = /self[-_\s]*identify|disability|signature|today|date\s+signed/i.test(fullContext) || (/date/i.test(text) && !/from|to|start|end/i.test(text));
+
+    const now = new Date();
     let month = '08';
     let day = '05';
     let year = '2025';
 
     if (isSignatureOrToday) {
-      month = '11';
-      day = '05';
-      year = '2026';
+      month = String(now.getMonth() + 1).padStart(2, '0');
+      day = String(now.getDate()).padStart(2, '0');
+      year = String(now.getFullYear());
     } else if (isEducation) {
       month = isStart ? '08' : '06';
       year = isStart ? '2022' : '2026';
@@ -172,4 +176,43 @@ export async function runWorkdayStepFastPass(frame: Frame, resumePdfPath?: strin
 
   // 5. Fill all Workday MM/DD/YYYY spinbutton date clusters
   await fillWorkdaySpinbuttonDates(frame);
+
+  // 6. Voluntary Disclosures agreement checkbox (Ticket GEN-134)
+  const agreement = frame.locator('[data-automation-id="agreementCheckbox"]').filter({ visible: true }).first();
+  if (await agreement.isVisible().catch(() => false)) {
+    const isChecked = await agreement.isChecked().catch(() => false);
+    if (!isChecked) {
+      await agreement.click({ force: true, timeout: 2000 }).catch(() => {});
+    }
+  }
+
+  // 7. Self Identify Disability name input & mutually exclusive disability checkboxes (Ticket GEN-134)
+  const nameInput = frame.locator('input[data-automation-id="name"]').filter({ visible: true }).first();
+  if (await nameInput.isVisible().catch(() => false)) {
+    const val = (await nameInput.inputValue().catch(() => '')).trim();
+    if (!val) {
+      await nameInput.fill('Shivam Mahajan').catch(() => {});
+    }
+  }
+
+  // Check disability status if on self-identify step and none checked
+  const disabilityBoxes = frame.locator('[data-automation-id*="disability" i] input[type="checkbox"], fieldset input[type="checkbox"]').filter({ visible: true });
+  const dCount = await disabilityBoxes.count().catch(() => 0);
+  if (dCount >= 2) {
+    let anyChecked = false;
+    for (let j = 0; j < dCount; j++) {
+      if (await disabilityBoxes.nth(j).isChecked().catch(() => false)) {
+        anyChecked = true;
+        break;
+      }
+    }
+    if (!anyChecked) {
+      const declineOrNo = frame.locator('label:has-text("I do not want to answer"), label:has-text("No, I do not have a disability"), label:has-text("I do not wish to answer")').first();
+      if (await declineOrNo.isVisible().catch(() => false)) {
+        await declineOrNo.click({ timeout: 1500 }).catch(() => {});
+      } else {
+        await disabilityBoxes.last().check({ force: true }).catch(() => {});
+      }
+    }
+  }
 }

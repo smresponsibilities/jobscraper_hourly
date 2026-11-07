@@ -131,7 +131,14 @@ export async function pollImapForVerificationCodeOrLink(params: {
  */
 export async function completeInPageEmailVerificationIfPrompted(page: Page, frame: Frame, onActivity?: () => void): Promise<boolean> {
   const pageText = await frame.evaluate(() => (document.body?.innerText || '').slice(0, 3000)).catch(() => '');
+  const hasSecurityInput = await frame
+    .locator('input[id^="security-input-"], input[id^="security-code"], #security-code, .security-code-input input, input[name*="security_code" i], input[aria-label*="security code" i], input[aria-label*="verification code" i]')
+    .filter({ visible: true })
+    .count()
+    .catch(() => 0);
+
   const needsVerification =
+    hasSecurityInput > 0 ||
     /\b(check your email|verify your email|verification code|security code sent to|enter the 8-character|confirm your email address to continue)\b/i.test(
       pageText
     );
@@ -160,18 +167,57 @@ export async function completeInPageEmailVerificationIfPrompted(page: Page, fram
     return true;
   }
 
-  // Case 2: 6-to-8 Character OTP Code Input (Workday / Greenhouse #security-code / SmartRecruiters)
+  // Case 2: 6-to-8 Character OTP Code Input (Workday / Greenhouse security-input-0..7 / SmartRecruiters)
   if (res.otpCode) {
     const code = res.otpCode.trim();
-    // Check if Greenhouse split 8-box security code inputs exist
-    const splitBoxes = frame.locator('input[id^="security-code-"], input[aria-label*="Character" i], input[maxlength="1"]').filter({ visible: true });
+    // Check if Greenhouse split 6-to-8 box security code inputs exist
+    const splitBoxes = frame.locator('input[id^="security-input-"], input[id^="security-code-"], .security-code-input input, input[aria-label*="Character" i], fieldset input[maxlength="1"]').filter({ visible: true });
     if ((await splitBoxes.count().catch(() => 0)) >= 6) {
+      await frame.evaluate((otpCode: string) => {
+        const boxes = Array.from(
+          document.querySelectorAll<HTMLInputElement>(
+            'input[id^="security-input-"], input[id^="security-code-"], .security-code-input input, fieldset input[maxlength="1"]'
+          )
+        );
+        const nativeSetter = Object.getOwnPropertyDescriptor(
+          window.HTMLInputElement.prototype,
+          'value'
+        )?.set;
+        if (boxes.length >= 6) {
+          const chars = otpCode.trim().split('');
+          boxes.forEach((box, idx) => {
+            const ch = chars[idx] ?? '';
+            box.focus();
+            if (nativeSetter) {
+              nativeSetter.call(box, ch);
+            } else {
+              box.value = ch;
+            }
+            box.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+            box.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+          });
+          // Also dispatch synthetic paste event on first box for React paste handlers
+          try {
+            const dt = new DataTransfer();
+            dt.setData('text/plain', otpCode.trim());
+            boxes[0]?.dispatchEvent(
+              new ClipboardEvent('paste', {
+                clipboardData: dt,
+                bubbles: true,
+                cancelable: true,
+                composed: true,
+              })
+            );
+          } catch {}
+        }
+      }, code).catch(() => {});
+
       await splitBoxes.first().click({ timeout: 2000 }).catch(() => {});
-      await page.keyboard.type(code, { delay: 50 }).catch(() => {});
+      await page.keyboard.type(code, { delay: 40 }).catch(() => {});
     } else {
       const codeInput = frame
         .locator(
-          'input[data-automation-id*="verification" i], input[name*="code" i], input[id*="code" i], input[aria-label*="code" i], input[type="text"], input[type="number"]'
+          'input[id^="security-input-"], input[id^="security-code"], #security-code, input[data-automation-id*="verification" i], input[name*="code" i], input[id*="code" i], input[aria-label*="code" i], input[type="text"], input[type="number"]'
         )
         .filter({ visible: true })
         .first();

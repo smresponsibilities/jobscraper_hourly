@@ -277,7 +277,9 @@ export async function fillAsyncLocationCombobox(frame: Frame, control: Locator, 
 
     // Wait up to 900ms for async location autocomplete options to mount
     const optionLocator = frame
-      .locator('.select__menu .select__option, [role="listbox"] [role="option"], .ui-menu-item, .itta-results .itta-item, .location-results li, .pac-item')
+      .locator(
+        '.select__menu .select__option, [role="listbox"] [role="option"], .ui-menu-item, .itta-results .itta-item, .location-results li, .pac-item, spl-select-option, .spl-autocomplete-option, li[role="option"]'
+      )
       .filter({ visible: true });
 
     await optionLocator.first().waitFor({ state: 'visible', timeout: 900 }).catch(() => {});
