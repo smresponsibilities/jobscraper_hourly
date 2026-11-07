@@ -33,7 +33,7 @@ import { runWorkdayStepFastPass } from './workday-wizard.js';
 import { recordLearnedSuccess, logUnknownFieldForLearning, resolveBySemanticSelfLearning } from './self-learning.js';
 import { resolveEmployerDomain, findFreeCompanyLeads, generateColdOutreachDraft, recordOutreachLead } from '../leads/free-email-finder.js';
 import { captureElementFingerprint, saveAdaptiveFingerprint, findAdaptiveLocator } from './adaptive-relocator.js';
-import { loadHostSessionState } from './session-pool.js';
+import { loadHostSessionState, markHostOutcome } from './session-pool.js';
 import { fastApiPreflightCheck } from './tiered-fetcher.js';
 import { createResilientBrowserContext, getResilientContextTier } from './resilient-context.js';
 import { JobActivityWatchdog, getProviderTimeoutConfig } from './watchdog-timer.js';
@@ -43,6 +43,7 @@ import { detectJobArchetype } from '../resume/deterministic-builder.js';
 import { appendJobRunHistory } from './run-history.js';
 import { capturePageDiagnostics, recordOvernightError, normalizeReasonCode } from './overnight-error-logger.js';
 import { resolveUniversalPermissiveFallback } from './permissive-fallback.js';
+import { composeGroundedNarrative } from './narrative-composer.js';
 
 export async function healInvalidFieldsAndRetrySubmit(
   frame: Frame,
@@ -1269,15 +1270,59 @@ export class AutoApplyRunner {
         }
         let value = dynamic.value;
 
-        // Ticket GEN-84: Coerce boolean true -> "Yes" and false -> "No" for all non-checkbox controls
+        // Ticket GEN-95: Resolve unmapped fields via Semantic Self-Learning & Universal Permissive Fallback BEFORE any undefined/empty checks
+        const fieldQuestionText = (info.questionTitle || info.label || info.ariaLabel || info.name || info.id || descriptor).trim();
+        const fieldWidgetKind = info.tag === 'select' ? 'SINGLE_SELECT' : info.combobox ? 'SINGLE_SELECT' : (info.type || 'TEXT').toUpperCase();
+
+        if ((value === undefined || value === '') && fieldQuestionText.length > 0 && info.type !== 'password' && info.type !== 'file') {
+          const learned = resolveBySemanticSelfLearning(
+            fieldQuestionText,
+            fieldWidgetKind,
+            harvested?.options || null,
+            null,
+            options.profile
+          );
+          if (learned?.value !== undefined && learned.value !== '') {
+            value = learned.value;
+          }
+        }
+
+        if ((value === undefined || value === '') && fieldQuestionText.length > 0 && info.type !== 'password' && info.type !== 'file') {
+          const fallbackVal = resolveUniversalPermissiveFallback({
+            questionText: fieldQuestionText,
+            widgetKind: fieldWidgetKind,
+            options: (harvested as any)?.options || null,
+            placeholder: info.placeholder,
+            inputType: info.type,
+            profileEmail: options.profile.personal.email,
+          });
+          if (fallbackVal !== undefined && fallbackVal !== '') {
+            value = fallbackVal;
+          }
+        }
+
+        // Ticket GEN-84/GEN-95: Coerce boolean true -> "Yes" and false -> "No" for all non-checkbox controls
         if (typeof value === 'boolean' && info.type !== 'checkbox') {
           value = value ? 'Yes' : 'No';
         }
 
-        // Ticket GEN-84: When a TEXTAREA resolves to a bare number ("0" or 0 from skill_experience), replace with grounded narrative
+        // Ticket GEN-95: Phone resolution verification
+        if ((classification.category === 'phone' || /^(?:phone|mobile|telephone|contact number)\*?$/i.test(fieldQuestionText)) && !value) {
+          value = process.env.AUTOAPPLY_PHONE || options.profile.personal.phone;
+        }
+
+        // Single-Option Dropdown Auto-Select (GEN-89):
+        if ((info.tag === 'select' || info.combobox) && harvested?.options?.length) {
+          const cleanOptions = harvested.options.filter(o => !/^(?:select|choose|please select|--)/i.test(o.trim()));
+          if (cleanOptions.length === 1 && (!value || value === '')) {
+            value = cleanOptions[0];
+          }
+        }
+
+        // Ticket GEN-84/GEN-96: When a TEXTAREA resolves to a bare number ("0" or 0 from skill_experience), replace with grounded narrative
         if (info.tag === 'textarea' && (value === undefined || value === '0' || value === 0 || typeof value === 'number' || (typeof value === 'string' && /^\d+$/.test(value.trim())))) {
-          value = resolveUniversalPermissiveFallback({
-            questionText: info.questionTitle || info.label || info.ariaLabel || info.name || info.id || descriptor,
+          value = composeGroundedNarrative(fieldQuestionText, options.profile) || resolveUniversalPermissiveFallback({
+            questionText: fieldQuestionText,
             widgetKind: 'TEXTAREA',
             options: null,
             placeholder: info.placeholder,
@@ -1946,7 +1991,7 @@ export class AutoApplyRunner {
       validateProfile(options.profile);
       const timeoutConfig = getProviderTimeoutConfig(options.url);
       const watchdog = new JobActivityWatchdog(timeoutConfig.maxTotalMs, timeoutConfig.maxIdleMs);
-      const maxSteps = options.maxSteps ?? 12;
+      const maxSteps = options.maxSteps ?? (options.url.toLowerCase().includes('myworkdayjobs.com') ? 14 : 12);
       if (!Number.isInteger(maxSteps) || maxSteps < 1) throw new Error('maxSteps must be a positive integer');
       if (!['http:', 'https:', 'file:'].includes(new URL(options.url).protocol)) throw new Error('Unsupported application URL');
       if (!this.page || this.page.isClosed()) {
@@ -2062,6 +2107,14 @@ export class AutoApplyRunner {
         })).catch(() => ({ text: '', title: '', headings: '' }));
 
         const combinedText = `${pageInfo.title} ${pageInfo.headings} ${pageInfo.text}`;
+        const isMaintenanceAtStart = /workday is currently unavailable|service is temporarily unavailable|undergoing scheduled maintenance/i.test(combinedText);
+        if (isMaintenanceAtStart) {
+          markHostOutcome(options.url, 'rate_limited');
+          report.status = 'queued';
+          report.reason = 'service_temporarily_unavailable';
+          return report;
+        }
+
         const isClosedOrNotFound =
           /no longer accepting applications|this position is closed|job is no longer available|requisition is closed|the page you are looking for doesn['’]?t exist|job posting (?:has )?expired|this posting is no longer active|this job is no longer open|this job has expired|position has been filled|the requisition has been closed|\bpage not found\b|\b404\s*-\s*page not found\b|this vacancy is no longer available|no longer open for applications|job post has been removed/i.test(combinedText);
 
@@ -2166,6 +2219,21 @@ export class AutoApplyRunner {
         if (await stepCookie.isVisible().catch(() => false)) {
           await stepCookie.click().catch(() => {});
           await this.page!.waitForTimeout(300);
+        }
+
+        // Ticket GEN-99: Auto-click "Are You Still With Us?" session timeout modal
+        const isSessionModal = await this.page!.evaluate(() => {
+          const txt = (document.body?.innerText || '').toLowerCase();
+          return /are you still with us\??|session is about to expire/i.test(txt);
+        }).catch(() => false);
+        if (isSessionModal) {
+          const sessionBtn = this.page!.locator(
+            'button:has-text("Continue"), button:has-text("Yes"), button:has-text("I\'m still here"), [data-automation-id="sessionTimeoutContinueButton"], [data-automation-id="dialogKeepAliveButton"]'
+          ).filter({ visible: true }).first();
+          if (await sessionBtn.isVisible().catch(() => false)) {
+            await sessionBtn.click().catch(() => {});
+            await this.page!.waitForTimeout(500);
+          }
         }
         const existingReceipt = await this.receipt();
         if (existingReceipt) {
@@ -2440,6 +2508,19 @@ export class AutoApplyRunner {
           if (isClosedOr404 || isRedirectedToSearch) {
             report.status = 'skipped';
             report.reason = 'job_closed';
+            break;
+          }
+
+          // Ticket GEN-99: Workday Maintenance Guard before missing submit control
+          const isMaintenanceNow = await this.page!.evaluate(() => {
+            const txt = (document.body?.innerText || '').toLowerCase();
+            return /workday is currently unavailable|service is temporarily unavailable|undergoing scheduled maintenance/i.test(txt);
+          }).catch(() => false);
+
+          if (isMaintenanceNow) {
+            markHostOutcome(options.url, 'rate_limited');
+            report.status = 'queued';
+            report.reason = 'service_temporarily_unavailable';
             break;
           }
 

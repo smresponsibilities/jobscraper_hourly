@@ -8,7 +8,7 @@ export interface JobRunHistoryEntry {
   provider: string;
   lane: string;
   url: string;
-  status: 'applied' | 'failed' | 'paused_for_review' | 'skipped';
+  status: 'applied' | 'failed' | 'paused_for_review' | 'skipped' | 'queued';
   reason: string;
   fieldsFilled: number;
   startedAt: string;

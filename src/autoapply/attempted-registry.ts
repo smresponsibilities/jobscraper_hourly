@@ -164,6 +164,22 @@ export function recordAttemptedJob(entry: {
   }
 }
 
+export function removeAttemptedJob(
+  jobId: string,
+  url: string,
+  filePath = DEFAULT_ATTEMPTED_REGISTRY_PATH
+): void {
+  const reg = loadAttemptedRegistry(filePath);
+  if (jobId && reg.jobIds[jobId]) {
+    delete reg.jobIds[jobId];
+  }
+  const normUrl = normalizeAttemptUrl(url);
+  if (normUrl && reg.normalizedUrls[normUrl]) {
+    delete reg.normalizedUrls[normUrl];
+  }
+  saveAttemptedRegistry(reg, filePath);
+}
+
 /**
  * Filters out all previously attempted jobs so every job runs at most ONCE.
  * Prunes/marks any still-queued duplicate rows in SQLite as failed or paused_for_review.

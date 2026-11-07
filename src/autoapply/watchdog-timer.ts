@@ -6,8 +6,8 @@ export class JobActivityWatchdog {
   private lastStage = 'init';
 
   constructor(
-    public readonly maxTotalMs = 300_000, // 5 minutes max ceiling
-    public readonly maxIdleMs = 90_000   // 90 seconds max stall without progress
+    public readonly maxTotalMs = 120_000, // 2 minutes max ceiling (GEN-98)
+    public readonly maxIdleMs = 45_000   // 45 seconds max stall without progress
   ) {}
 
   public heartbeat(stage: string): void {
@@ -38,8 +38,10 @@ export class JobActivityWatchdog {
 
 export function getProviderTimeoutConfig(urlStr: string): { maxTotalMs: number; maxIdleMs: number } {
   const u = urlStr.toLowerCase();
-  if (u.includes('myworkdayjobs.com') || u.includes('smartrecruiters.com') || u.includes('icims.com')) {
-    return { maxTotalMs: 300_000, maxIdleMs: 95_000 }; // 5 mins total, 95s idle
+  // Ticket GEN-98: Lower watchdog hard timeouts from 300s to 90s-120s fail-fast
+  if (u.includes('myworkdayjobs.com')) {
+    return { maxTotalMs: 120_000, maxIdleMs: 45_000 }; // Workday: 120s total, 45s idle
   }
-  return { maxTotalMs: 180_000, maxIdleMs: 75_000 };    // 3 mins total, 75s idle
+  // Greenhouse, Ashby, Lever, SmartRecruiters, and others: 90s total, 40s idle
+  return { maxTotalMs: 90_000, maxIdleMs: 40_000 };
 }

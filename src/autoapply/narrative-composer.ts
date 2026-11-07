@@ -22,8 +22,10 @@ export function composeGroundedNarrative(question: string, profile: CandidateExt
     return null;
   }
 
-  // Branch 0: Unfamiliar Tool/Language Adjacent-Stack Disclosure (GitLab Go/Ruby prompt)
-  if (/\b(go|golang|ruby|rust)\b/i.test(q) && /\b(release|tool|built|project|improve|experience)\b/i.test(q)) {
+  // Branch 0: Unfamiliar Tool/Language Adjacent-Stack Disclosure (GitLab Go/Ruby/Rails prompt)
+  if (/\bruby on rails\b/i.test(q) || (/\bruby\b/i.test(q) && /\b(rails|application|maintain|maintaining|production)\b/i.test(q))) {
+    narrative = "While I have not worked extensively with Ruby on Rails in production yet, during my Technology Apprenticeship at Morgan Stanley (Aug 2025 \u2013 Aug 2026) I engineered scalable enterprise backend services using Java Spring Boot REST APIs, Python/PySpark data pipelines, and Apache Kafka workflows, applying core distributed system, testing, and CI/CD patterns directly transferable to production web applications.";
+  } else if (/\b(go|golang|ruby|rust)\b/i.test(q) && /\b(release|tool|built|project|improve|experience)\b/i.test(q)) {
     narrative = "While I have not personally built a standalone release tool in Go or Ruby yet, during my Technology Apprenticeship at Morgan Stanley (Aug 2025 \u2013 Aug 2026) I automated build, test, and release workflows for Java Spring Boot APIs and Python/PySpark data pipelines using Jenkins CI/CD, Maven, and Git, and used Splunk and Grafana to verify post-release reliability and reduce manual deployment effort.";
   }
   // Branch 1: CI/CD, Release, Build, DevOps

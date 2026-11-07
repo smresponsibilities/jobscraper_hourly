@@ -360,7 +360,7 @@ export async function fillSmartRecruitersCountryCombobox(
   await frame.page().waitForTimeout(700);
 
   const optionLocator = frame
-    .locator('oc-list-item, [role="option"], li, .autocomplete-suggestion')
+    .locator('oc-list-item, spl-select-option, [role="option"], li, .autocomplete-suggestion')
     .filter({ visible: true });
 
   const count = await optionLocator.count().catch(() => 0);
@@ -372,6 +372,35 @@ export async function fillSmartRecruitersCountryCombobox(
       return true;
     }
   }
+
+  // Pierce open shadow roots if not found in light DOM (Ticket GEN-96)
+  const clickedInShadow = await frame.page().evaluate((targetCountry) => {
+    function findInRoots(root: Document | ShadowRoot): HTMLElement | null {
+      const candidates = root.querySelectorAll('oc-list-item, spl-select-option, [role="option"], li, .autocomplete-suggestion');
+      for (const el of Array.from(candidates)) {
+        const txt = el.textContent?.trim() || '';
+        if (new RegExp(`^${targetCountry}$`, 'i').test(txt)) {
+          return el as HTMLElement;
+        }
+      }
+      for (const el of Array.from(root.querySelectorAll('*'))) {
+        if (el.shadowRoot) {
+          const hit = findInRoots(el.shadowRoot);
+          if (hit) return hit;
+        }
+      }
+      return null;
+    }
+    const target = findInRoots(document);
+    if (target) {
+      target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+      target.click();
+      return true;
+    }
+    return false;
+  }, country).catch(() => false);
+
+  if (clickedInShadow) return true;
 
   // Fallback: ArrowDown + Enter
   await control.press('ArrowDown').catch(() => {});

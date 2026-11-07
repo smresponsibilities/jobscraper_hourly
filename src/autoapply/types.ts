@@ -210,7 +210,7 @@ export interface BotRunReport {
   unmappedFields: number;
   stepsTraversed: number;
   choiceFields?: Array<{ options: string[] }>;
-  status: 'completed' | 'submitted' | 'paused_for_review' | 'failed' | 'skipped';
+  status: 'completed' | 'submitted' | 'paused_for_review' | 'failed' | 'skipped' | 'queued';
   reason?: string;
   reviewKind?: 'authentication' | 'challenge' | 'answers' | 'receipt' | 'network';
   pendingFormRequests?: boolean;

@@ -30,6 +30,18 @@ export async function ensureWorkdayApplicationStarted(page: Page): Promise<Workd
       .catch(() => false);
   };
 
+  // Ticket GEN-99: Dismiss "Are You Still With Us?" session timeout modal if present
+  const isSessionModal = await page.evaluate(() => {
+    const txt = (document.body?.innerText || '').toLowerCase();
+    return /are you still with us\??|session is about to expire/i.test(txt);
+  }).catch(() => false);
+  if (isSessionModal) {
+    const sessionBtn = page.locator(
+      'button:has-text("Continue"), button:has-text("Yes"), button:has-text("I\'m still here"), [data-automation-id="sessionTimeoutContinueButton"], [data-automation-id="dialogKeepAliveButton"]'
+    ).first();
+    await sessionBtn.click({ timeout: 2000 }).catch(() => {});
+  }
+
   // 1. Wait for Workday SPA client to mount controls, posting header, or closed banner (Ticket GEN-67)
   await page.locator?.(
       '[data-automation-id="adventureButton"], [data-automation-id="applyButton"], [data-automation-id="jobPostingHeader"], [data-automation-id="signInContent"], [data-automation-id="createAccountContent"], [data-automation-id="bottom-navigation-next-button"], [data-automation-id="legalNoticeAcceptButton"], button:has-text("Apply"), button:has-text("Accept Cookies")'

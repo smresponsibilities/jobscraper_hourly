@@ -13,7 +13,7 @@ import { mailboxFromEnvironment } from '../src/autoapply/mailbox.js';
 import { CredentialVault } from '../src/autoapply/vault.js';
 import type { AutoaplyJobItem, BotRunReport } from '../src/autoapply/types.js';
 import { resolveEmployerDomain, findFreeCompanyLeads, generateColdOutreachDraft, recordOutreachLead } from '../src/leads/free-email-finder.js';
-import { isHostReadyForRequest, markHostOutcome } from '../src/autoapply/session-pool.js';
+import { isHostReadyForRequest, markHostOutcome, getRateLimitKey } from '../src/autoapply/session-pool.js';
 import { fastApiPreflightCheck } from '../src/autoapply/tiered-fetcher.js';
 import { getProviderTimeoutConfig } from '../src/autoapply/watchdog-timer.js';
 import { generateParkIssuesScoreboard } from '../src/autoapply/park-telemetry.js';
@@ -51,7 +51,7 @@ import {
   getRecommendedLaneConcurrency,
 } from '../src/autoapply/ram-and-pacing.js';
 import { startDashboardServer } from './dashboard-server.js';
-import { filterUnattemptedJobs, recordAttemptedJob } from '../src/autoapply/attempted-registry.js';
+import { filterUnattemptedJobs, recordAttemptedJob, removeAttemptedJob } from '../src/autoapply/attempted-registry.js';
 import { syncGitHubActionsPillars } from './sync-github-actions-pillars.js';
 
 // Enforce unattended overnight execution environment
@@ -82,6 +82,119 @@ export function countAutomationChrome(): number {
   } catch {
     return 0;
   }
+}
+
+/**
+ * Ticket GEN-97: Multi-lane chunk selector that enforces:
+ * 1) Max 1 job per host/company per 40-job chunk (zero same-host monopolies).
+ * 2) Skip hosts currently in cooldown before building the chunk.
+ * 3) Priority #1 fresh hourly jobs first, followed by round-robin interleaving across Greenhouse, Ashby, Other, and Workday.
+ * 4) Exclude Stripe jobs.
+ */
+export function selectDiversifiedMultiLaneChunk(
+  allSortedCandidates: AutoaplyJobItem[],
+  chunkSize = 40,
+  isReadyFn: (url: string) => boolean = () => true
+): AutoaplyJobItem[] {
+  const selected: AutoaplyJobItem[] = [];
+  const selectedRateLimitKeys = new Set<string>();
+  const selectedCompanies = new Set<string>();
+
+  const getKey = (url: string): string => {
+    try {
+      return getRateLimitKey(url).toLowerCase();
+    } catch {
+      return 'unknown';
+    }
+  };
+
+  const getCompany = (c: string): string => {
+    return (c || '').toLowerCase().trim();
+  };
+
+  const isEligible = (job: AutoaplyJobItem): boolean => {
+    if (!job || !job.jobUrl) return false;
+    // Rule 4: Exclude Stripe
+    if (/stripe/i.test(job.company) || /stripe/i.test(job.jobUrl)) return false;
+
+    const key = getKey(job.jobUrl);
+    const company = getCompany(job.company);
+
+    // Rule 1: Max 1 job per rate-limit tenant / company per chunk
+    if (selectedRateLimitKeys.has(key) || (company && selectedCompanies.has(company))) return false;
+
+    // Rule 2: Host must be ready (not in cooldown)
+    if (!isReadyFn(job.jobUrl)) return false;
+
+    return true;
+  };
+
+  const takeCandidate = (job: AutoaplyJobItem): boolean => {
+    if (!isEligible(job)) return false;
+    selected.push(job);
+    selectedRateLimitKeys.add(getKey(job.jobUrl));
+    if (job.company) selectedCompanies.add(getCompany(job.company));
+    return true;
+  };
+
+  // Rule 3: Priority #1 Fresh Hourly Candidates first
+  const hourlyQueue: AutoaplyJobItem[] = [];
+  const greenhouseQueue: AutoaplyJobItem[] = [];
+  const ashbyQueue: AutoaplyJobItem[] = [];
+  const otherQueue: AutoaplyJobItem[] = [];
+  const workdayQueue: AutoaplyJobItem[] = [];
+
+  for (const job of allSortedCandidates) {
+    if (!job || !job.jobUrl) continue;
+    if (/stripe/i.test(job.company) || /stripe/i.test(job.jobUrl)) continue;
+
+    const isFresh = (job as any).isFresh || Boolean(
+      job.postedAt &&
+      !isNaN(new Date(job.postedAt).getTime()) &&
+      Date.now() - new Date(job.postedAt).getTime() <= 24 * 60 * 60 * 1000
+    );
+
+    if (isFresh) {
+      hourlyQueue.push(job);
+    } else {
+      const u = job.jobUrl.toLowerCase();
+      if (u.includes('greenhouse.io')) {
+        greenhouseQueue.push(job);
+      } else if (u.includes('ashbyhq.com')) {
+        ashbyQueue.push(job);
+      } else if (u.includes('myworkdayjobs.com')) {
+        workdayQueue.push(job);
+      } else {
+        otherQueue.push(job);
+      }
+    }
+  }
+
+  // 1. Take 100% of eligible fresh hourly candidates up to chunkSize
+  for (const job of hourlyQueue) {
+    takeCandidate(job);
+    if (selected.length >= chunkSize) return selected;
+  }
+
+  // 2. Round-Robin interleaving across [workday, greenhouse, ashby, other]
+  const lanes = [workdayQueue, greenhouseQueue, ashbyQueue, otherQueue];
+  let progressMade = true;
+
+  while (selected.length < chunkSize && progressMade) {
+    progressMade = false;
+    for (const lane of lanes) {
+      while (lane.length > 0) {
+        const candidate = lane.shift()!;
+        if (takeCandidate(candidate)) {
+          progressMade = true;
+          break; // move to next lane for round-robin
+        }
+      }
+      if (selected.length >= chunkSize) break;
+    }
+  }
+
+  return selected;
 }
 
 export async function runOvernightMarathon(config: {
@@ -266,21 +379,12 @@ export async function runOvernightMarathon(config: {
 
       const prioritizedCandidates = [...hourlyCandidates, ...backfillCandidates];
 
-      // Select ready jobs first (avoid stalling the chunk when a host is cooling down)
-      const readyCandidates: AutoaplyJobItem[] = [];
-      const deferredCandidates: AutoaplyJobItem[] = [];
-      for (const job of prioritizedCandidates) {
-        if (isHostReadyForRequest(job.jobUrl, 45000, hostHealthPath)) {
-          readyCandidates.push(job);
-        } else {
-          deferredCandidates.push(job);
-        }
-        if (readyCandidates.length >= chunkSize) break;
-      }
-
-      const chunkJobs = readyCandidates.length > 0
-        ? readyCandidates
-        : deferredCandidates.slice(0, chunkSize);
+      // Ticket GEN-97: Select Diversified Multi-Lane Chunk (Max 1 Job Per Host/Company, Ready Hosts First, Round-Robin across Lanes)
+      const chunkJobs = selectDiversifiedMultiLaneChunk(
+        prioritizedCandidates,
+        chunkSize,
+        (url) => isHostReadyForRequest(url, 45000, hostHealthPath)
+      );
       const lanes = partitionJobsIntoProviderLanes(chunkJobs);
       const activeLanes = (Object.keys(lanes) as Array<keyof typeof lanes>).filter(
         k => (lanes[k]?.length ?? 0) > 0
@@ -496,6 +600,11 @@ export async function runOvernightMarathon(config: {
           } else {
             queue.skip(job.id, report.reason);
           }
+        } else if (report.status === 'queued' || report.reason === 'service_temporarily_unavailable') {
+          // Ticket GEN-99: Workday maintenance retry guard
+          markHostOutcome(job.jobUrl, 'rate_limited', hostHealthPath);
+          removeAttemptedJob(job.id, job.jobUrl);
+          console.log(`[MARATHON] Workday maintenance on ${job.company}; kept queued for retry with 15m host cooldown.`);
         } else {
           queue.markFailed(job.id, report.reason || 'Unknown error');
         }
@@ -507,6 +616,8 @@ export async function runOvernightMarathon(config: {
             ? 'paused_for_review'
             : report.status === 'skipped'
             ? 'skipped'
+            : report.status === 'queued' || report.reason === 'service_temporarily_unavailable'
+            ? 'queued'
             : 'failed';
 
         const provider = canonicalRequisition(job.jobUrl, job.externalJobId)?.provider || report.ats || 'ats';
@@ -527,13 +638,15 @@ export async function runOvernightMarathon(config: {
           receiptVerified: report.status === 'submitted' || !!report.receipt,
         });
 
-        // Ticket GEN-57: Record attempted job to persistent registry
-        recordAttemptedJob({
-          jobId: job.id,
-          url: job.jobUrl,
-          company: job.company,
-          status: finalStatus,
-        });
+        // Ticket GEN-57: Record attempted job to persistent registry (skip if kept queued for maintenance retry)
+        if (report.status !== 'queued' && report.reason !== 'service_temporarily_unavailable') {
+          recordAttemptedJob({
+            jobId: job.id,
+            url: job.jobUrl,
+            company: job.company,
+            status: finalStatus,
+          });
+        }
 
         // Update database payload
         try {

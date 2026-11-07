@@ -83,6 +83,33 @@ export function resolveCandidateAnswer(category: ExtendedFieldCategory, profile:
   }
   const policy = resolveByOptionPolicy(context.question, context.options || [], profile, context.location);
   if (policy) return policy;
+
+  // Phone direct resolution (Ticket GEN-95 / GEN-96)
+  if (category === 'phone' || /^(?:phone|mobile|telephone|contact number)\*?$/i.test(q)) {
+    const phoneVal = process.env.AUTOAPPLY_PHONE || profile.personal?.phone;
+    if (phoneVal) return result(phoneVal, 'explicit_profile', ['personal.phone']);
+  }
+
+  // Total years of full time experience (GitLab / Section 4 - Ticket GEN-96)
+  if (/\b(how many years of (?:full[- ]?time\s+|total\s+|overall\s+|work\s+|professional\s+)?experience|years of full[- ]?time experience|total years of experience)\b/i.test(q)) {
+    return result('1', 'explicit_profile', ['professional.totalYearsExperience']);
+  }
+  // GitLab / Company former employee or consultant (Ticket GEN-96)
+  if (/\b(previously worked at|consulted for|ever worked for|former employee|worked at or consulted for)\b/i.test(q)) {
+    return result('No', 'explicit_profile', ['workAuthorization.formerEmployee']);
+  }
+  // Sponsorship required (Ticket GEN-96 - string 'No' for text/unknown/combobox)
+  if (category !== 'sponsorship' && category !== 'work_authorization' && /\b(require.*sponsorship|visa sponsorship|immigration sponsorship)\b/i.test(q)) {
+    return result('No', 'explicit_profile', ['workAuthorization.requiresSponsorshipNowOrFuture']);
+  }
+  // Textarea narrative handling for unfamiliar stacks / Ruby on Rails (Ticket GEN-96)
+  if (context.fieldType?.toLowerCase() === 'textarea' || (context as any).widgetKind?.toLowerCase() === 'textarea') {
+    if (/\b(ruby|rails|ruby on rails)\b/i.test(q)) {
+      const narrative = composeGroundedNarrative(q, profile);
+      if (narrative) return result(narrative, 'certified_experience_excerpt', ['experience']);
+    }
+  }
+
   const learnedOvernight = resolveOvernightLearnedQuestions(context.question, context.fieldType || '', context.options || null, profile);
   if (learnedOvernight !== null) {
     return result(learnedOvernight, 'overnight_learned_question', [], category);
@@ -246,6 +273,7 @@ export function resolveCandidateAnswer(category: ExtendedFieldCategory, profile:
     if (!/\b(?:this|our|here|with us)\b/.test(q) && !` ${q} `.includes(` ${company} `)) return result(undefined, 'employer_scoped_answer_required');
     return result(` ${company} `.includes(` ${employer} `), 'explicit_employment_history', ['experience.0.company'], 'former_employee', true);
   }
+
   const employmentQuestion = /^(?:who|what) is your current or previous (employer|company|job title|title)$/.exec(q);
   if (employmentQuestion) {
     if (!profile.completeEmploymentHistory || profile.experience.length !== 1) return result(undefined, 'employment_history_not_unambiguous');
@@ -258,7 +286,7 @@ export function resolveCandidateAnswer(category: ExtendedFieldCategory, profile:
     if (subject && /\b(?:and|or)\b/.test(subject)) return result(undefined, 'multiple_skill_facts_required');
     if (skills.length === 1) return result(skills[0]![1], 'explicit_profile', [`skillYears.${skills[0]![0]}`], 'skill_experience');
     const unlisted = subject;
-    if (!skills.length && unlisted && !/\b(?:software|professional|industry|work|engineering|relevant|overall|total|india|country|company|role|position|job|field|team)\b/.test(unlisted)) {
+    if (!skills.length && unlisted && context.fieldType !== 'textarea' && !/\b(?:software|professional|industry|work|engineering|relevant|overall|total|india|country|company|role|position|job|field|team)\b/.test(unlisted)) {
       if (profile.unlistedSkillYears !== undefined) {
         if (context.options?.length) {
           const zeroOpt = context.options.find(opt => /^(?:0\b|0\s*-\s*1\b|none|less than 1|< ?1\b|no experience)/i.test(opt.trim()));
@@ -268,7 +296,7 @@ export function resolveCandidateAnswer(category: ExtendedFieldCategory, profile:
       }
     }
     if (skills.length > 1 || /\bexperience (?:with|in|using)\b/.test(q)) {
-      if ((context as any).isRequired || (context as any).permissiveFallback || /fix protocol|protocol|experience with|describe your experience/i.test(context.question || '')) {
+      if ((context as any).isRequired || (context as any).permissiveFallback || /\b(?:fix\s*protocol|financial information exchange|describe your experience)\b/i.test(context.question || '')) {
         const fallback = resolveUniversalPermissiveFallback({
           questionText: context.question,
           widgetKind: context.fieldType || 'TEXT',
@@ -300,8 +328,12 @@ export function resolveCandidateAnswer(category: ExtendedFieldCategory, profile:
     if (factor >= 100000 && profile.professional.salaryCurrency?.toUpperCase() !== 'INR') return result(undefined, 'currency_conversion_not_authorized');
     return result(amount / factor, 'explicit_profile', [`professional.${key}`, 'professional.salaryCurrency']);
   }
-  if (category === 'notice_period') {
+  if (category === 'notice_period' || /\b(join|joining|start date|how soon|notice|lead time)\b/i.test(q)) {
     const days = profile.professional.noticePeriodDays;
+    if (context.options?.length) {
+      const rightAway = context.options.find(opt => /right away|i can start right away|immediate|asap|start now/i.test(opt.trim()));
+      if (rightAway) return result(rightAway, 'explicit_profile', ['professional.noticePeriodDays']);
+    }
     if (days === undefined) return result(undefined, 'underlying_fact_missing');
     if (/\bweeks?\b/.test(q)) return result(days / 7, 'explicit_profile', ['professional.noticePeriodDays']);
     if (/\bmonths?\b/.test(q)) return result(undefined, 'notice_month_conversion_ambiguous');
@@ -319,7 +351,8 @@ export function resolveCandidateAnswer(category: ExtendedFieldCategory, profile:
   const isClosedOrFactual = /\b(?:salutation|prefix|phone\s*(?:type|device)|device\s*type|receive\s*(?:sms|messages?)|sms\b|consent|terms|waive|relative|competitor|license|clearance|felon|convict|authorized|sponsorship|notice\s*period|salary|compensation|expected|current\s*company|supervisor|manager|start\s*date|graduation)\b/i.test(context.question || '') || !!(context.aliases && context.aliases.some(a => /sms|consent|phone|salutation/i.test(a)));
   const isNarrativeEligible = !isRestrictedIdField && !isClosedOrFactual && !(context.options?.length) && (
     isExplicitNarrativeField ||
-    (category === 'unknown' && isOpenEndedPrompt)
+    (category === 'unknown' && isOpenEndedPrompt) ||
+    ((category as string) === 'skill_experience' && isExplicitNarrativeField)
   );
   if (value === undefined && isNarrativeEligible && context.question) {
     const narrative = composeGroundedNarrative(context.question, profile);
@@ -346,7 +379,7 @@ export function resolveCandidateAnswer(category: ExtendedFieldCategory, profile:
   }
 
   // Ticket GEN-76: Universal Permissive Fallback on Attempt 1 whenever strict/policy/semantic resolvers return undefined on required/permissive fields
-  if (value === undefined && context.question && ((context as any).isRequired || (context as any).permissiveFallback || (context as any).attemptNumber === 1 || (context as any).attempt === 1 || /fix protocol|protocol|experience with|describe your experience/i.test(context.question))) {
+  if (value === undefined && context.question && ((context as any).isRequired || (context as any).permissiveFallback || (context as any).attemptNumber === 1 || (context as any).attempt === 1 || /\b(?:fix\s*protocol|financial information exchange|describe your experience)\b/i.test(context.question))) {
     const fallback = resolveUniversalPermissiveFallback({
       questionText: context.question,
       widgetKind: context.fieldType || 'TEXT',

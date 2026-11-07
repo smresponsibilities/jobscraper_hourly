@@ -802,6 +802,9 @@ async function main(): Promise<void> {
         }
       } else if (report.status === 'skipped') {
         queue.skip(job.id, report.reason);
+      } else if (report.status === 'queued' || report.reason === 'service_temporarily_unavailable') {
+        markHostOutcome(job.jobUrl, 'rate_limited', hostHealthPath);
+        console.log(`[DRAIN] Maintenance/temporary unavailability on ${job.company}; kept queued with 15m host cooldown.`);
       } else {
         queue.markFailed(job.id, report.reason || 'Unknown error');
       }

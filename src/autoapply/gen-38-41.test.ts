@@ -16,12 +16,12 @@ test('JobActivityWatchdog enforces total and idle timeouts and resets heartbeat'
   assert.doesNotThrow(() => watchdog.checkOrThrow());
 
   const workdayConfig = getProviderTimeoutConfig('https://mycompany.myworkdayjobs.com/en-US/careers');
-  assert.equal(workdayConfig.maxTotalMs, 300_000);
-  assert.equal(workdayConfig.maxIdleMs, 95_000);
+  assert.equal(workdayConfig.maxTotalMs, 120_000);
+  assert.equal(workdayConfig.maxIdleMs, 45_000);
 
   const greenhouseConfig = getProviderTimeoutConfig('https://boards.greenhouse.io/stripe');
-  assert.equal(greenhouseConfig.maxTotalMs, 180_000);
-  assert.equal(greenhouseConfig.maxIdleMs, 75_000);
+  assert.equal(greenhouseConfig.maxTotalMs, 90_000);
+  assert.equal(greenhouseConfig.maxIdleMs, 40_000);
 });
 
 test('buildCoordinatedFillPlan orders cascading address and composite phone controls', () => {

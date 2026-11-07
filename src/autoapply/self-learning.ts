@@ -173,7 +173,10 @@ export function inferAnswerFromOptionSignature(
   }
   // Month signature (e.g. Ashby/Workday education/experience dates - Ticket GEN-68)
   if (/\b(january|february|march|april|may|june|july|august|september|october|november|december)\b/.test(joined)) {
-    const hit = options.find(o => /^august\b/i.test(o.trim())) || options.find(o => /^june\b/i.test(o.trim())) || options.find(o => /^may\b/i.test(o.trim())) || options.find(o => !/month|\.\.\./i.test(o.trim())) || options[0]!;
+    const isStart = /start|from|begin/i.test(questionText);
+    const hit = isStart
+      ? (options.find(o => /^june\b/i.test(o.trim())) || options.find(o => /^august\b/i.test(o.trim())) || options.find(o => !/month|\.\.\./i.test(o.trim())) || options[0]!)
+      : (options.find(o => /^august\b/i.test(o.trim())) || options.find(o => /^june\b/i.test(o.trim())) || options.find(o => !/month|\.\.\./i.test(o.trim())) || options[0]!);
     return { category: 'date_month', value: hit };
   }
   // 4-digit Year signature (e.g. graduation/start year - Ticket GEN-68)
@@ -276,15 +279,17 @@ export function resolveBySemanticSelfLearning(
 ): { category: string; value: string; confidence: number } | null {
   const key = normalizeQuestionKey(questionText);
 
-  // Step A: Check Persistent Semantic Memory first
-  const mem = loadSemanticMemory(memoryPath);
-  if (mem[key]) {
-    if (!options?.length || options.includes(mem[key]!.resolvedValue)) {
-      return {
-        category: mem[key]!.linkedCategory,
-        value: mem[key]!.resolvedValue,
-        confidence: mem[key]!.confidence,
-      };
+  // Step A: Check Persistent Semantic Memory first (unless in validation error healing)
+  if (!validationError) {
+    const mem = loadSemanticMemory(memoryPath);
+    if (mem[key]) {
+      if (!options?.length || options.includes(mem[key]!.resolvedValue)) {
+        return {
+          category: mem[key]!.linkedCategory,
+          value: mem[key]!.resolvedValue,
+          confidence: mem[key]!.confidence,
+        };
+      }
     }
   }
 
@@ -316,6 +321,60 @@ export function resolveBySemanticSelfLearning(
   // Step D: Semantic Concept Bag Linking for Custom Employer Questions
   const isNumber = widgetKind.toUpperCase() === 'NUMBER';
   const conceptRules: Array<{ category: string; pattern: RegExp; resolve: () => string }> = [
+    {
+      category: 'total_years_full_time_experience',
+      pattern: /\b(how many years of (?:full[- ]?time\s+|total\s+|overall\s+|work\s+|professional\s+)?experience|years of full[- ]?time experience|total years of experience)\b/i,
+      resolve: () => '1',
+    },
+    {
+      category: 'former_employee_or_consultant_negative',
+      pattern: /\b(previously worked at|consulted for|ever worked for|former employee|worked at or consulted for)\b/i,
+      resolve: () => 'No',
+    },
+    {
+      category: 'sponsorship_required_negative',
+      pattern: /\b(require.*sponsorship|visa sponsorship|immigration sponsorship)\b/i,
+      resolve: () => 'No',
+    },
+    {
+      category: 'ruby_on_rails_production_narrative',
+      pattern: /\b(ruby on rails|ruby|rails)\b/i,
+      resolve: () => "While I have not worked extensively with Ruby on Rails in production yet, during my Technology Apprenticeship at Morgan Stanley (Aug 2025 – Aug 2026) I engineered scalable enterprise backend services using Java Spring Boot REST APIs, Python/PySpark data pipelines, and Apache Kafka workflows, applying core distributed system, testing, and CI/CD patterns directly transferable to production web applications.",
+    },
+    {
+      category: 'educational_qualification_engineering',
+      pattern: /\b(educational qualification|highest qualification|degree qualification)\b/i,
+      resolve: () => {
+        if (options && options.length > 0) {
+          const hit = options.find(o => /b\.?e\/b\.?tech.*computer science|b\.?e\b|b\.?tech|bachelor.*engineering|computer science/i.test(o));
+          if (hit) return hit;
+        }
+        return 'BE/B.Tech / Dual Degree -  Computer Science /EE';
+      },
+    },
+    {
+      category: 'name_of_the_college',
+      pattern: /\b(name of the college|college name|name of college)\b/i,
+      resolve: () => {
+        if (options && options.length > 0) {
+          const hit = options.find(o => /chitkara/i.test(o));
+          if (hit) return hit;
+          const otherOpt = options.find(o => /^(?:other|others)\b/i.test(o.trim()));
+          if (otherOpt) return otherOpt;
+        }
+        return 'Other';
+      },
+    },
+    {
+      category: 'repetitive_tasks_affirmative',
+      pattern: /\b(comfortable with performing highly repetitive tasks|repetitive tasks|performing repetitive)\b/i,
+      resolve: () => 'Yes',
+    },
+    {
+      category: 'phone_number_direct',
+      pattern: /^(phone|mobile|telephone|contact number|phone number)\*?$/i,
+      resolve: () => process.env.AUTOAPPLY_PHONE || profile.personal?.phone || '9000000000',
+    },
     {
       category: 'compensation_expectation',
       pattern: /\b(ctc|salary|compensation|remuneration|pay expectation|expected pay|target pay|annual base|stipend)\b/i,
@@ -691,8 +750,8 @@ export function resolveOvernightLearnedQuestions(
     return 'No';
   }
 
-  // Ticket GEN-89: ERP / Accounting Systems
-  if (/\b(accounting|erp|systems|software|financial data)\b/i.test(q)) {
+  // Ticket GEN-89: ERP / Accounting Systems (YipitData)
+  if (/\b(?:accounting|erp)\b/i.test(q)) {
     if (options && options.length > 0) {
       return options.find(o => /none|none of the above|n\/a|other|sql/i.test(o)) || options[options.length - 1]!;
     }
@@ -751,9 +810,9 @@ export function resolveOvernightLearnedQuestions(
     return 'Computer Science and Engineering (B.E., Chitkara University, 9.35 CGPA)';
   }
 
-  // 7. Total / Full-Time Experience in TEXT or TEXTAREA (Dozee, Lingaro)
-  if (/\b(how many years of experience do you have in total|what is your full-time experience|total experience)\b/i.test(q)) {
-    if (widgetKind === 'NUMBER') return '1';
+  // 7. Total / Full-Time Experience in TEXT or TEXTAREA (Dozee, Lingaro, GitLab)
+  if (/\b(how many years of (?:full[- ]?time\s+|total\s+|overall\s+|work\s+|professional\s+)?experience|years of full[- ]?time experience|total years of experience|how many years of experience do you have in total|what is your full-time experience|total experience)\b/i.test(q)) {
+    if (widgetKind === 'NUMBER' || widgetKind === 'TEXT') return '1';
     return '1 year (Technology Apprentice at Morgan Stanley, Aug 2025 – Aug 2026)';
   }
 
