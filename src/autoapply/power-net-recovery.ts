@@ -64,11 +64,34 @@ export function recoverPowerOffAndNetOffJobs(sqlitePath = 'state/autoapply/porta
     if (fs.existsSync(IN_FLIGHT_JOURNAL)) {
       const raw = fs.readFileSync(IN_FLIGHT_JOURNAL, 'utf8');
       const journal = JSON.parse(raw) as Record<string, InFlightJobCheckpoint>;
+      const CONFIRMATION_REGEX = /(?:\/confirmation|\/thank(?:s|[-_]?you)|\/application[-_]?submitted|\/submitted)(?:\/|$|\?|#)|[?&](?:submitted|applied|confirmation)=(?:true|1)\b/i;
       for (const jobId of Object.keys(journal)) {
-        const res = db
-          .prepare(`UPDATE applications SET status = 'queued' WHERE id = ? AND status NOT IN ('applied', 'skipped')`)
-          .run(jobId);
-        recoveredInFlight += Number(res.changes || 0);
+        const cpFile = path.resolve('state/autoapply/portal-review/applications', jobId, 'checkpoint.json');
+        let isConfirmed = false;
+        let confirmedUrl = '';
+        if (fs.existsSync(cpFile)) {
+          try {
+            const cp = JSON.parse(fs.readFileSync(cpFile, 'utf8'));
+            if (CONFIRMATION_REGEX.test(cp.currentUrl || '') || Boolean(cp.report?.receipt)) {
+              isConfirmed = true;
+              confirmedUrl = cp.currentUrl || cp.report?.receipt?.url || '';
+            }
+          } catch {}
+        }
+        if (isConfirmed) {
+          const row = db.prepare(`SELECT payload FROM applications WHERE id = ?`).get(jobId) as { payload?: string } | undefined;
+          let p: any = {};
+          try { p = JSON.parse(row?.payload || '{}'); } catch {}
+          p.status = 'applied';
+          p.appliedAt = p.appliedAt || new Date().toISOString();
+          p.receipt = { url: confirmedUrl, text: 'Application Submitted', verifiedAt: new Date().toISOString() };
+          db.prepare(`UPDATE applications SET status = 'applied', payload = ? WHERE id = ?`).run(JSON.stringify(p), jobId);
+        } else {
+          const res = db
+            .prepare(`UPDATE applications SET status = 'queued' WHERE id = ? AND status NOT IN ('applied', 'skipped')`)
+            .run(jobId);
+          recoveredInFlight += Number(res.changes || 0);
+        }
       }
       fs.writeFileSync(IN_FLIGHT_JOURNAL, '{}', 'utf8');
     }

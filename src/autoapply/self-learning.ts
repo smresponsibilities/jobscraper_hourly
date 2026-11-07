@@ -156,10 +156,22 @@ export function inferAnswerFromOptionSignature(
     const hit = options.find(o => /website/i.test(o)) || options.find(o => /linkedin|job board|other/i.test(o)) || options[0]!;
     return { category: 'referral_source', value: hit };
   }
-  // Notice Period signature
-  if (/\b(immediate|15 days|30 days|60 days|90 days|notice)\b/.test(joined)) {
-    const hit = options.find(o => /immediate|0\s*days|0\s*-\s*15|15\s*days|1\s*week|2\s*weeks/i.test(o)) || options[0]!;
+  // Notice Period signature (Ticket GEN-120: prefer shortest bucket)
+  if (/\b(immediate|15 days|30 days|60 days|90 days|notice|serving notice)\b/i.test(joined)) {
+    const hit =
+      options.find(o => /^immediate\b/i.test(o.trim())) ||
+      options.find(o => /immediate|serving notice|0\s*days|0\s*-\s*15|less than 15|< ?15|1\s*week|2\s*weeks/i.test(o)) ||
+      options.find(o => /30\s*days|< ?30/i.test(o)) ||
+      options[0]!;
     return { category: 'notice_period', value: hit };
+  }
+  // Salary / Compensation range buckets (Ticket GEN-120: Shivam ground truth is 12 LPA -> matches "10 - 15 LPA" or "8 - 12 LPA")
+  if (/\b(lpa|lakhs?|inr|per annum|\bctc\b|\bsalary\b)\b/i.test(joined) && options.some(o => /\d+\s*[-–]\s*\d+|\d+\s*lpa/i.test(o))) {
+    const hit =
+      options.find(o => /\b1[0-2]\s*[-–]\s*1[5-9]\b/i.test(o) || /\b10\s*[-–]\s*15\b/i.test(o) || /\b8\s*[-–]\s*12\b/i.test(o) || /\b12\s*lpa\b/i.test(o)) ||
+      options.find(o => /\b1[0-5]\b/i.test(o)) ||
+      options[0]!;
+    return { category: 'expected_salary', value: hit };
   }
   // Experience Bucket signature
   if (/\b(0\s*-\s*1|1\s*-\s*3|3\s*-\s*5|5\+\s*years|entry level|<\s*1\s*year|fresher)\b/.test(joined)) {

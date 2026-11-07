@@ -26,6 +26,16 @@ export function isInteractiveChoiceReadOnly(el: Element): boolean {
   return role === 'combobox' || role === 'listbox' || uxi === 'selectinput' || !!hasPopup || !!controls || !!owns;
 }
 
+export function getParentOrShadowHost(node: Element | null): HTMLElement | null {
+  if (!node) return null;
+  if (node.parentElement) return node.parentElement;
+  const root = node.getRootNode?.();
+  if (root && (root as ShadowRoot).host) {
+    return (root as ShadowRoot).host as HTMLElement;
+  }
+  return null;
+}
+
 const BARE_OPTION_REGEX = /^(?:yes|no|true|false|male|female|other|none|i agree|select\.\.\.|month\.\.\.|year\.\.\.)$/i;
 
 function isCleanQuestionCandidate(txt: string | null | undefined): boolean {
@@ -81,9 +91,15 @@ export function extractCleanQuestionText(box: Element, els: Element[] = []): str
   const labels = first ? Array.from((first as HTMLInputElement).labels || []).map(label => label.textContent || '').join(' ').trim() : '';
   if (isCleanQuestionCandidate(labels)) return labels.replace(/\s+/g, ' ').trim().slice(0, 1500);
 
-  // 6. Ancestor Climbing (up to 4 levels) - strips child inputs/bare labels to extract true question sentence
-  let currentParent: Element | null = (first || box).parentElement;
-  for (let depth = 0; depth < 4 && currentParent && !currentParent.matches('body, form'); depth++) {
+  // 6. Ancestor Climbing (up to 5 levels) with Shadow Root boundary crossing
+  let currentParent: HTMLElement | null = getParentOrShadowHost(first || box);
+  for (let depth = 0; depth < 5 && currentParent && !currentParent.matches('body, form'); depth++) {
+    // Check custom Web Component host attributes (<spl-input label="First name *">, <oc-form-field label="City">)
+    const hostLabel = currentParent.getAttribute('label') || currentParent.getAttribute('data-label') || currentParent.getAttribute('aria-label');
+    if (isCleanQuestionCandidate(hostLabel)) {
+      return hostLabel!.replace(/\s+/g, ' ').trim().slice(0, 1500);
+    }
+
     const legend = currentParent.querySelector('legend, .ashby-application-form-question-title, [data-automation-id$="-legend"], label[data-automation-id*="formLabel"], .field-label, .application-label');
     if (isCleanQuestionCandidate(legend?.textContent)) {
       return legend!.textContent!.replace(/\s+/g, ' ').trim().slice(0, 1500);
@@ -97,7 +113,7 @@ export function extractCleanQuestionText(box: Element, els: Element[] = []): str
     if (isCleanQuestionCandidate(pText)) {
       return pText.slice(0, 1500);
     }
-    currentParent = currentParent.parentElement;
+    currentParent = getParentOrShadowHost(currentParent);
   }
 
   // 7. Box clone text
@@ -227,7 +243,7 @@ export async function distillFormStep(frame: Frame): Promise<DistilledField[]> {
       const input = el as HTMLInputElement;
       const isChoice = el.getAttribute('role') === 'combobox' || el.getAttribute('role') === 'listbox' || el.getAttribute('data-uxi-widget-type') === 'selectinput' || !!el.getAttribute('aria-haspopup') || !!el.getAttribute('aria-controls') || !!el.getAttribute('aria-owns') || el.classList.contains('ashby-application-form-input-yesno-option');
       if (input.readOnly && !isChoice) return false;
-      if (!el.getClientRects().length || el.closest('[hidden],[aria-hidden=true]')) return false;
+      if (input.type !== 'file' && (!el.getClientRects().length || el.closest('[hidden],[aria-hidden=true]'))) return false;
       const rect = el.getBoundingClientRect();
       if (rect.right < -1000 || rect.bottom < -1000) return false;
       const radio = el as HTMLInputElement;

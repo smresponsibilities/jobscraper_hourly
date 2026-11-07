@@ -1,18 +1,20 @@
 # Handoff
 
-## Marathon Runner Implementation & Diagnostic Handoff (Tickets GEN-108 through GEN-113) — 2026-11-07
+## Full-Repo Function-by-Function SOTA Upgrade (Tickets GEN-108 through GEN-122) — 2026-11-07
 
 ### 1. Executive Summary & Current Execution State
-- **Active Git HEAD**: GEN-108 through GEN-113 implemented, compiled, and verified clean with `origin/main`.
+- **Active Git HEAD**: GEN-108 through GEN-122 implemented, compiled, and verified clean with `origin/main`.
 - **Dashboard Service**: Running on `http://localhost:4321` (task-3008 active).
-- **Background Runner**: Stopped for code update; restarted with updated `out/dist/scripts/run-overnight-marathon.js --submit`.
-- **Database & Queue Recovery (GEN-113)**:
+- **Background Runner**: Running with updated `out/dist/scripts/run-overnight-marathon.js --submit`.
+- **Database & Queue Recovery (GEN-113 & GEN-121/122)**:
   - 49 jobs with confirmation receipts recovered to `status = 'applied'`.
   - 1,919 stale non-confirmation checkpoints purged.
   - Enterpret jobs recovered with verified confirmation receipts.
   - 82 target jobs from Cycles 1 & 2 re-queued to `status = 'queued'` for immediate processing.
+  - Post-job /confirmation checkpoint audit guard active in runner and marathon loop.
 - **Verification Suites**:
   - `src/autoapply/gen-108-113.test.ts`: 6/6 tests passing.
+  - `src/autoapply/gen-114-122.test.ts`: 9/9 tests passing.
   - `npm test` (`src/selftest.ts`): 58/58 selftests passing.
   - TypeScript build (`tsconfig.build.json`): 0 errors, `out/dist` rebuilt cleanly.
 - **Cycle Progress**:

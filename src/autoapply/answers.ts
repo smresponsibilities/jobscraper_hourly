@@ -224,6 +224,16 @@ export function resolveCandidateAnswer(category: ExtendedFieldCategory, profile:
     const noOpt = context.options?.length ? (context.options.find(o => /^no\b/i.test(o.trim())) || 'No') : 'No';
     return result(noOpt, 'explicit_profile', ['personal.country'], 'itar_status');
   }
+  // Ticket GEN-120: SmartRecruiters Confirm Email Address / verify email
+  if (/confirm\s*e-?mail|re-?enter\s*e-?mail|verify\s*e-?mail/i.test(q) || labels.some(l => /confirm\s*e-?mail|re-?enter\s*e-?mail/i.test(l))) {
+    return result(profile.personal.email, 'explicit_profile', ['personal.email'], 'email');
+  }
+
+  // Ticket GEN-120: Lever org / current company
+  if (/^(?:org|current\s*company|current\s*employer|present\s*company)$/i.test(q) || labels.some(l => /^(?:org|current\s*company|current\s*employer|present\s*company)$/i.test(l))) {
+    return result('Morgan Stanley', 'explicit_employment_history', ['experience.0.company'], 'current_company');
+  }
+
   if (/\b(?:linkedin|linkedln)\s*(?:profile|url)?\b/.test(q)) {
     return result(profile.personal.linkedinUrl || 'https://www.linkedin.com/in/mahajanshivam', 'explicit_profile', ['personal.linkedinUrl'], 'linkedin');
   }
@@ -406,7 +416,7 @@ export function resolveCandidateAnswer(category: ExtendedFieldCategory, profile:
 export function resolveByOptionPolicy(question: string, options: string[], profile: CandidateExtendedProfile, location = ''): ResolvedAnswer | undefined {
   const q = normalizeQuestion(question);
   const result = (value: string | boolean, fact: string): ResolvedAnswer => ({ value, confidence: 0.99, reason: 'option_policy', canonicalIntent: 'option_policy', sourceFactKeys: [fact], isEmployerSpecific: false });
-  const office = profile.professional.officeAttendance;
+  const office = profile.professional?.officeAttendance;
   if (office && /\b(?:office|onsite|on[- ]site|hybrid|in[- ]person|days a week|days per week|present in|work arrangement)\b/i.test(q)) {
     // Failure 3A: Foreign office check
     const foreignCity = /\b(new york|san francisco|london|berlin|toronto|seattle|austin|boston|dublin|singapore|tokyo|sydney)\b/i.test(`${question} ${location}`);

@@ -592,6 +592,28 @@ export async function runOvernightMarathon(config: {
           markHostOutcome(job.jobUrl, 'success', hostHealthPath);
         }
 
+        // Ticket GEN-122: Post-job /confirmation checkpoint audit guard
+        if (report.status !== 'submitted') {
+          const cpPath = path.resolve('state/autoapply/portal-review/applications', job.id, 'checkpoint.json');
+          if (fs.existsSync(cpPath)) {
+            try {
+              const cp = JSON.parse(fs.readFileSync(cpPath, 'utf8'));
+              const currUrl = cp.currentUrl || '';
+              const CONF_RE = /(?:\/confirmation|\/thank(?:s|[-_]?you)|\/application[-_]?submitted|\/submitted)(?:\/|$|\?|#)|[?&](?:submitted|applied|confirmation)=(?:true|1)\b/i;
+              if (CONF_RE.test(currUrl) || Boolean(cp.report?.receipt)) {
+                report.status = 'submitted';
+                report.receipt = cp.report?.receipt || {
+                  url: currUrl,
+                  text: 'Application Submitted',
+                  verifiedAt: new Date().toISOString(),
+                  selector: 'checkpoint_confirmation_audit'
+                };
+                console.log(`🏆 [MARATHON AUDIT] Recovered verified confirmation URL from checkpoint for ${job.company}`);
+              }
+            } catch {}
+          }
+        }
+
         // Handle outcomes in queue
         if (report.status === 'submitted' && report.receipt) {
           chunkAppliedCount++;

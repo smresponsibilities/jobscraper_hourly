@@ -59,16 +59,30 @@ export async function healInvalidFieldsAndRetrySubmit(
       const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
       if (setter) setter.call(el, val);
       else el.value = val;
-      el.dispatchEvent(new Event('input', { bubbles: true }));
-      el.dispatchEvent(new Event('change', { bubbles: true }));
-      el.dispatchEvent(new Event('blur', { bubbles: true }));
+      el.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+      el.dispatchEvent(new FocusEvent('blur', { bubbles: true, composed: true }));
     };
 
-    // 1. Heal any empty required or :invalid text / number / url / email / textarea inputs
-    const badInputs = Array.from(
-      document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
-        'input:invalid, textarea:invalid, input[aria-invalid="true"], textarea[aria-invalid="true"], input[required], textarea[required], input[aria-required="true"], textarea[aria-required="true"]'
-      )
+    const collectAllAcrossShadow = (root: Document | ShadowRoot | Element): Element[] => {
+      const results: Element[] = [];
+      const all = root.querySelectorAll('*');
+      for (const node of Array.from(all)) {
+        results.push(node);
+        const sr = (node as HTMLElement).shadowRoot;
+        if (sr) results.push(...collectAllAcrossShadow(sr));
+      }
+      return results;
+    };
+
+    // 1. Heal any empty required or :invalid text / number / url / email / textarea inputs across Light and Shadow DOM
+    const allDomNodes = collectAllAcrossShadow(document);
+    const badInputs = allDomNodes.filter(
+      (n): n is HTMLInputElement | HTMLTextAreaElement =>
+        (n instanceof HTMLInputElement || n instanceof HTMLTextAreaElement) &&
+        (n.matches('input:invalid, textarea:invalid, input[aria-invalid="true"], textarea[aria-invalid="true"], input[required], textarea[required], input[aria-required="true"], textarea[aria-required="true"]') ||
+          n.hasAttribute('invalid') ||
+          n.getAttribute('aria-invalid') === 'true')
     );
     for (const inp of badInputs) {
       if (inp.type === 'hidden' || inp.type === 'file' || inp.disabled || inp.readOnly) continue;
@@ -645,6 +659,20 @@ export class AutoApplyRunner {
     return child;
   }
 
+  private getActiveApplicationPages(): Page[] {
+    const pages = Array.from(this.applicationPages).filter((p) => {
+      try {
+        return Boolean(p && !p.isClosed());
+      } catch {
+        return false;
+      }
+    });
+    if (pages.length === 0 && this.page && !this.page.isClosed()) {
+      return [this.page];
+    }
+    return pages;
+  }
+
   private trackPage(page: Page): void {
     if (this.applicationPages.has(page)) return;
     this.applicationPages.add(page);
@@ -813,14 +841,27 @@ export class AutoApplyRunner {
     await input.press('Backspace').catch(() => {});
     const tag = (await input.evaluate(el => el.tagName.toLowerCase()).catch(() => 'input')) || 'input';
     if (text.length > 35) {
-      // Ticket GEN-104.2: Fast-chunk long text (35+ chars)
+      // Ticket GEN-104.2 / GEN-115: Fast-chunk long text with composed: true prototype setter
       await input.pressSequentially(text.slice(0, 4), { delay: 25 }).catch(() => {});
       await input.fill(text).catch(() => {});
-      await input.evaluate(el => {
-        el.dispatchEvent(new Event('input', { bubbles: true }));
-        el.dispatchEvent(new Event('change', { bubbles: true }));
-        el.dispatchEvent(new Event('blur', { bubbles: true }));
-      }).catch(() => {});
+      await input
+        .evaluate((el, val) => {
+          const target = el as HTMLInputElement | HTMLTextAreaElement;
+          const proto =
+            target instanceof HTMLTextAreaElement
+              ? window.HTMLTextAreaElement.prototype
+              : window.HTMLInputElement.prototype;
+          const nativeSetter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+          if (nativeSetter) {
+            nativeSetter.call(target, val);
+          } else {
+            target.value = val;
+          }
+          target.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+          target.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+          target.dispatchEvent(new FocusEvent('blur', { bubbles: true, composed: true }));
+        }, text)
+        .catch(() => {});
       return;
     }
 
@@ -845,6 +886,24 @@ export class AutoApplyRunner {
     const type = (await input.getAttribute('type').catch(() => ''))?.toLowerCase() || '';
     if (!clickedDropdownLocation && !retainedText(await input.inputValue().catch(() => ''), text, type)) {
       await input.fill(text).catch(() => {});
+      await input
+        .evaluate((el, val) => {
+          const target = el as HTMLInputElement | HTMLTextAreaElement;
+          const proto =
+            target instanceof HTMLTextAreaElement
+              ? window.HTMLTextAreaElement.prototype
+              : window.HTMLInputElement.prototype;
+          const nativeSetter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+          if (nativeSetter) {
+            nativeSetter.call(target, val);
+          } else {
+            target.value = val;
+          }
+          target.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+          target.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+          target.dispatchEvent(new FocusEvent('blur', { bubbles: true, composed: true }));
+        }, text)
+        .catch(() => {});
       if (blur) await input.blur().catch(() => {});
       const finalVal = await input.inputValue().catch(() => '');
       if (!retainedText(finalVal, text, type) && !finalVal.trim()) throw new Error('Typed field did not retain the intended value');
@@ -1147,7 +1206,7 @@ export class AutoApplyRunner {
   }
 
   private async receipt(): Promise<BotRunReport['receipt']> {
-    for (const page of this.applicationPages) {
+    for (const page of this.getActiveApplicationPages()) {
       if (page.isClosed()) continue;
       try {
         const pageUrl = page.url();
@@ -1758,6 +1817,23 @@ export class AutoApplyRunner {
               }
             }
             action.documentHash = sha256(bytes);
+            if (/lever\.co/i.test(frame.url())) {
+              // Wait up to 5000ms for Lever's async resume parser (.resume-upload-working / .resume-upload-success) to settle
+              const leverParseDeadline = Date.now() + 5000;
+              await frame.page().waitForTimeout(800).catch(() => {});
+              while (Date.now() < leverParseDeadline) {
+                const isParsing = await frame
+                  .evaluate(() => {
+                    const working = window.document.querySelector(
+                      '.resume-upload-working, .analyzing-resume, [class*="resume-upload-working" i]'
+                    );
+                    return Boolean(working && (working as HTMLElement).offsetParent !== null);
+                  })
+                  .catch(() => false);
+                if (!isParsing) break;
+                await frame.page().waitForTimeout(350).catch(() => {});
+              }
+            }
           }
           else if (info.tag === 'select') {
             const choices = await input.locator('option').evaluateAll(options => options.map(o => ({ value: (o as HTMLOptionElement).value, label: o.textContent || '' })));

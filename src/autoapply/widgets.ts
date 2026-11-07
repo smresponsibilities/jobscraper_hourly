@@ -106,7 +106,7 @@ export async function harvestControlOptions(
     popup = popup.last();
   }
 
-  let choices = popup.locator('[role=option],[data-automation-id="promptOption"]').filter({ visible: true });
+  let choices = popup.locator('[role=option],[data-automation-id="promptOption"],.select__option,._option_1svni_32,.itta-item').filter({ visible: true });
   await choices.first().waitFor({ state: 'visible', timeout: 800 }).catch(() => {});
   let options = [...new Set((await choices.allTextContents()).map(text => text.trim()).filter(Boolean))];
 
@@ -124,7 +124,7 @@ export async function harvestControlOptions(
       await control.fill(seed).catch(() => {});
     }
     await new Promise(resolve => setTimeout(resolve, 350));
-    choices = popup.locator('[role=option],[data-automation-id="promptOption"]').filter({ visible: true });
+    choices = popup.locator('[role=option],[data-automation-id="promptOption"],.select__option,._option_1svni_32,.itta-item').filter({ visible: true });
     options = [...new Set((await choices.allTextContents()).map(text => text.trim()).filter(Boolean))];
 
     // CRITICAL: Clear temporary seed during harvest so raw seed text never masquerades as a selected value!
@@ -248,31 +248,45 @@ export async function stealthClick(locator: Locator, timeout = 4000): Promise<vo
 }
 
 export async function fillAsyncLocationCombobox(frame: Frame, control: Locator, city = 'Bengaluru'): Promise<boolean> {
-  await control.click({ timeout: 2500 }).catch(() => {});
-  await control.fill('').catch(() => {});
-  await control.pressSequentially(city, { delay: 45 }).catch(async () => {
-    await control.fill(city).catch(() => {});
-  });
+  const seeds = city.includes('Bengaluru') || city.includes('Bangalore')
+    ? ['Bengaluru, Karnataka, India', 'Bengaluru', 'Bangalore', 'India']
+    : [city, city.split(',')[0]!.trim()];
 
-  // Wait up to 800ms for async location autocomplete options to mount
-  const optionLocator = frame
-    .locator('.select__menu .select__option, [role="listbox"] [role="option"], .ui-menu-item')
-    .filter({ visible: true });
+  for (const seed of seeds) {
+    await control.click({ timeout: 2500 }).catch(() => {});
+    await control.fill('').catch(() => {});
+    await control.pressSequentially(seed, { delay: 35 }).catch(async () => {
+      await control.fill(seed).catch(() => {});
+    });
 
-  await optionLocator.first().waitFor({ state: 'visible', timeout: 800 }).catch(() => {});
-  if ((await optionLocator.count().catch(() => 0)) > 0) {
-    const count = await optionLocator.count();
-    for (let i = 0; i < count; i++) {
-      const txt = (await optionLocator.nth(i).innerText().catch(() => '')).toLowerCase();
-      if (/bengaluru|bangalore|india/.test(txt)) {
-        await optionLocator.nth(i).click({ timeout: 1500 });
-        await frame.page().keyboard.press('Escape').catch(() => {});
-        return true;
+    // Wait up to 900ms for async location autocomplete options to mount
+    const optionLocator = frame
+      .locator('.select__menu .select__option, [role="listbox"] [role="option"], .ui-menu-item, .itta-results .itta-item, .location-results li, .pac-item')
+      .filter({ visible: true });
+
+    await optionLocator.first().waitFor({ state: 'visible', timeout: 900 }).catch(() => {});
+    const count = await optionLocator.count().catch(() => 0);
+    if (count > 0) {
+      for (let i = 0; i < count; i++) {
+        const item = optionLocator.nth(i);
+        const txt = (await item.innerText().catch(() => '')).toLowerCase();
+        if (/bengaluru|bangalore|india|karnataka/.test(txt)) {
+          await item.dispatchEvent('mousedown').catch(() => {});
+          await item.click({ force: true, timeout: 1500 }).catch(() => {});
+          await item.dispatchEvent('mouseup').catch(() => {});
+          await frame.page().keyboard.press('Enter').catch(() => {});
+          await frame.page().keyboard.press('Escape').catch(() => {});
+          return true;
+        }
       }
+      const firstItem = optionLocator.first();
+      await firstItem.dispatchEvent('mousedown').catch(() => {});
+      await firstItem.click({ force: true, timeout: 1500 }).catch(() => {});
+      await firstItem.dispatchEvent('mouseup').catch(() => {});
+      await frame.page().keyboard.press('Enter').catch(() => {});
+      await frame.page().keyboard.press('Escape').catch(() => {});
+      return true;
     }
-    await optionLocator.first().click({ timeout: 1500 });
-    await frame.page().keyboard.press('Escape').catch(() => {});
-    return true;
   }
 
   // Fallback keyboard selection if portal menu is in a detached layer

@@ -30,6 +30,7 @@ export async function pollImapForVerificationCodeOrLink(params: {
   senderOrSubjectHint?: string;
   sinceMs?: number;
   maxWaitMs?: number;
+  onActivity?: () => void;
 }): Promise<ImapVerificationResult> {
   loadDotEnvIntoProcess();
   const host = process.env.IMAP_HOST || 'imap.gmail.com';
@@ -45,6 +46,7 @@ export async function pollImapForVerificationCodeOrLink(params: {
   const start = Date.now();
 
   while (Date.now() - start < maxWaitMs) {
+    params.onActivity?.();
     const client = new ImapFlow({
       host,
       port: Number(process.env.IMAP_PORT || 993),
@@ -127,7 +129,7 @@ export async function pollImapForVerificationCodeOrLink(params: {
 /**
  * Automatically completes in-page Email OTP or Activation Link verification on Workday, Greenhouse, and SmartRecruiters.
  */
-export async function completeInPageEmailVerificationIfPrompted(page: Page, frame: Frame): Promise<boolean> {
+export async function completeInPageEmailVerificationIfPrompted(page: Page, frame: Frame, onActivity?: () => void): Promise<boolean> {
   const pageText = await frame.evaluate(() => (document.body?.innerText || '').slice(0, 3000)).catch(() => '');
   const needsVerification =
     /\b(check your email|verify your email|verification code|security code sent to|enter the 8-character|confirm your email address to continue)\b/i.test(
@@ -136,7 +138,7 @@ export async function completeInPageEmailVerificationIfPrompted(page: Page, fram
 
   if (!needsVerification) return false;
 
-  const res = await pollImapForVerificationCodeOrLink({ sinceMs: Date.now() - 60_000, maxWaitMs: 35_000 });
+  const res = await pollImapForVerificationCodeOrLink({ sinceMs: Date.now() - 60_000, maxWaitMs: 35_000, onActivity });
   if (!res.found) return false;
 
   // Case 1: Activation URL clicked via background tab
@@ -186,6 +188,18 @@ export async function completeInPageEmailVerificationIfPrompted(page: Page, fram
       .first();
     if (await submitVerifyBtn.isVisible().catch(() => false)) {
       await submitVerifyBtn.click({ force: true, timeout: 3000 }).catch(() => {});
+      await page.waitForTimeout(1500);
+    }
+
+    // Ticket GEN-118: Click post-OTP final Submit Application button on Greenhouse
+    const finalSubmit = frame
+      .locator(
+        'button[type="submit"], input[type="submit"], button:has-text("Submit Application"), button:has-text("Submit"), button:has-text("Verify and Submit")'
+      )
+      .filter({ visible: true })
+      .first();
+    if (await finalSubmit.isVisible().catch(() => false)) {
+      await finalSubmit.click({ force: true, timeout: 3000 }).catch(() => {});
       await page.waitForTimeout(3000);
     }
     return true;

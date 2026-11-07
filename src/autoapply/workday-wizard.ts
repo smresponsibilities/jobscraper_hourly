@@ -129,12 +129,12 @@ export async function runWorkdayStepFastPass(frame: Frame, resumePdfPath?: strin
       .locator('input[data-automation-id="file-upload-input-ref"], input[type="file"]')
       .first();
     const existingUpload = await frame
-      .locator('[data-automation-id="file-upload-item"], [data-automation-id="file-upload-successful"]')
+      .locator('[data-automation-id="file-upload-item"], [data-automation-id="file-upload-successful"], [data-automation-id="delete-file"]')
       .count()
       .catch(() => 0);
     if (existingUpload === 0 && (await fileInput.count().catch(() => 0)) > 0) {
       await fileInput.setInputFiles(resumePdfPath).catch(() => {});
-      await frame.waitForTimeout(1200);
+      await frame.waitForTimeout(1500);
     }
   }
 
