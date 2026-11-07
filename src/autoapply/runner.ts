@@ -596,6 +596,32 @@ export class AutoApplyRunner {
   }
 
   /**
+   * Ticket GEN-147: Ashby & Lever Anti-Spam reCAPTCHA v3 / Enterprise hCaptcha Behavioral Telemetry Pre-Submit Routine.
+   */
+  private async performHumanPreSubmitTelemetry(page: Page, submitControl?: Locator | null): Promise<void> {
+    try {
+      await page
+        .evaluate(() => {
+          window.scrollBy({ top: 180, behavior: 'smooth' });
+        })
+        .catch(() => {});
+      await page.waitForTimeout(120).catch(() => {});
+      if (submitControl) {
+        const box = await submitControl.boundingBox().catch(() => null);
+        if (box && box.width > 0 && box.height > 0) {
+          const targetX = box.x + box.width * 0.52;
+          const targetY = box.y + box.height * 0.54;
+          await page.mouse.move(Math.max(10, targetX - 140), Math.max(10, targetY - 65), { steps: 4 }).catch(() => {});
+          await page.mouse.move(targetX, targetY, { steps: 6 }).catch(() => {});
+          await page.waitForTimeout(90).catch(() => {});
+        }
+      }
+    } catch {
+      // Never block submission on telemetry helper
+    }
+  }
+
+  /**
    * Ticket GEN-123: Track HTTP POST network submissions on known ATS endpoints.
    */
   private attachNetworkReceiptListener(page: Page): void {
@@ -2542,6 +2568,31 @@ export class AutoApplyRunner {
               }
             }`).catch(() => {});
             await frame.page().keyboard.press('Escape').catch(() => {});
+
+            // GEN-146: Dual-format phone self-healer (10-digit national vs +91 E.164)
+            const isPhoneInvalid = await input
+              .evaluate((el) => {
+                const inp = el as HTMLInputElement;
+                if (inp.getAttribute('aria-invalid') === 'true') return true;
+                const wrapper = inp.closest('[class*="field" i], [class*="input" i], .field, [data-automation-id^="formField-"]');
+                if (!wrapper) return false;
+                if (wrapper.querySelector('[aria-invalid="true"], [class*="error" i], .field-error')) {
+                  const errTxt = (wrapper.textContent || '').toLowerCase();
+                  if (/valid\s+phone|invalid\s+phone|format|country\s+code/i.test(errTxt)) return true;
+                }
+                return false;
+              })
+              .catch(() => false);
+
+            if (isPhoneInvalid) {
+              const rawDigits = String(value).replace(/\D/g, '');
+              const tenDigits = rawDigits.length === 12 && rawDigits.startsWith('91') ? rawDigits.slice(2) : rawDigits.slice(-10);
+              const alternatePhone = String(value).trim().startsWith('+') ? tenDigits : `+91${tenDigits}`;
+              if (tenDigits.length === 10) {
+                await this.humanType(input, alternatePhone);
+                await input.blur().catch(() => {});
+              }
+            }
           }
           await frame.evaluate(`() => new Promise(resolve => {
             let quiet;
@@ -3143,41 +3194,67 @@ export class AutoApplyRunner {
             next = undefined;
           }
         }
-        // Ticket GEN-125: SmartRecruiters & open Shadow-DOM submit discovery
-        if (!submitControl && this.page) {
-          const shadowSubmitFound = await this.page.evaluate(() => {
-            const findShadowSubmit = (root: Document | ShadowRoot | Element): HTMLElement | null => {
-              const direct = root.querySelector('[data-test="footer-submit"], oc-button[data-test="footer-submit"], button[data-test="footer-submit"]') as HTMLElement | null;
-              if (direct) return direct;
+        // Ticket GEN-125 & GEN-144: SmartRecruiters & open Shadow-DOM submit/next discovery
+        if (this.page) {
+          const shadowBtnResult = await this.page.evaluate(() => {
+            const findShadowBtn = (root: Document | ShadowRoot | Element): { el: HTMLElement; kind: 'submit' | 'next' } | null => {
+              const nextDirect = root.querySelector('[data-test="footer-next"], oc-button[data-test="footer-next"], button[data-test="footer-next"]') as HTMLElement | null;
+              if (nextDirect) return { el: nextDirect, kind: 'next' };
+
+              const submitDirect = root.querySelector('[data-test="footer-submit"], oc-button[data-test="footer-submit"], button[data-test="footer-submit"]') as HTMLElement | null;
+              if (submitDirect) {
+                const txt = (submitDirect.textContent || '').trim();
+                if (/^(?:next|continue|save\s*(?:and|&)\s*continue|proceed)$/i.test(txt)) {
+                  return { el: submitDirect, kind: 'next' };
+                }
+                return { el: submitDirect, kind: 'submit' };
+              }
+
               const allEls = Array.from(root.querySelectorAll('*'));
               for (const el of allEls) {
                 if (el.tagName.toLowerCase() === 'oc-button' || el.tagName.toLowerCase() === 'button') {
+                  const testAttr = (el.getAttribute('data-test') || '').toLowerCase();
                   const txt = (el.textContent || '').trim();
-                  if (/^(?:submit|submit application|send application|apply|next|continue)$/i.test(txt)) {
-                    return el as HTMLElement;
+                  if (testAttr === 'footer-next' || /^(?:next|continue|save\s*(?:and|&)\s*continue|proceed)$/i.test(txt)) {
+                    return { el: el as HTMLElement, kind: 'next' };
+                  }
+                  if (testAttr === 'footer-submit' || /^(?:submit|submit application|send application|apply)$/i.test(txt)) {
+                    return { el: el as HTMLElement, kind: 'submit' };
                   }
                 }
                 const sr = (el as HTMLElement).shadowRoot;
                 if (sr) {
-                  const found = findShadowSubmit(sr);
+                  const found = findShadowBtn(sr);
                   if (found) return found;
                 }
               }
               return null;
             };
-            const btn = findShadowSubmit(document);
-            if (btn) {
-              btn.setAttribute('data-autoapply-shadow-submit', 'true');
-              const innerBtn = btn.shadowRoot?.querySelector('button') || btn.querySelector('button');
-              if (innerBtn) innerBtn.setAttribute('data-autoapply-shadow-submit', 'true');
-              return true;
+            const res = findShadowBtn(document);
+            if (res) {
+              const marker = res.kind === 'next' ? 'data-autoapply-shadow-next' : 'data-autoapply-shadow-submit';
+              res.el.setAttribute(marker, 'true');
+              const innerBtn = res.el.shadowRoot?.querySelector('button') || res.el.querySelector('button');
+              if (innerBtn) innerBtn.setAttribute(marker, 'true');
+              return res.kind;
             }
-            return false;
-          }).catch(() => false);
+            return null;
+          }).catch(() => null);
 
-          if (shadowSubmitFound) {
+          if (shadowBtnResult === 'next' && step < maxSteps) {
+            next = this.page.locator('[data-autoapply-shadow-next="true"]').first();
+            submitControl = undefined;
+          } else if (shadowBtnResult === 'submit' && !submitControl) {
             submitControl = this.page.locator('[data-autoapply-shadow-submit="true"]').first();
             next = undefined;
+          }
+        }
+        if (submitControl && step < maxSteps) {
+          const subText = (await submitControl.innerText().catch(() => '')).trim();
+          const dataTest = (await submitControl.getAttribute('data-test').catch(() => '')) || '';
+          if (dataTest === 'footer-next' || /^(?:next|continue|save\s*(?:and|&)\s*continue|proceed)$/i.test(subText)) {
+            next = submitControl;
+            submitControl = undefined;
           }
         }
         if (next) {
@@ -3221,6 +3298,9 @@ export class AutoApplyRunner {
           this.learnedFields = [];
           selfHealAttempted = false;
           watchdog.heartbeat(`advanced_step_${step}`);
+          if (report.ats === 'smartrecruiters' || this.page!.url().includes('smartrecruiters.com')) {
+            await this.page!.waitForTimeout(1800).catch(() => {});
+          }
           continue;
         }
         let submit = submitControl || (await this.button(SUBMIT, ATS_STRATEGIES[report.ats]?.submit, 'flow_submit_button'));
@@ -3351,6 +3431,7 @@ export class AutoApplyRunner {
         watchdog.heartbeat('submit_click');
         watchdog.checkOrThrow();
         await this.enforceLeverCoreFieldsBeforeSubmit(this.page!);
+        await this.performHumanPreSubmitTelemetry(this.page!, submit);
         if (options.mode === 'stealth') await this.pacedClick(submit);
         else await submit.click();
         const deadline = Date.now() + timeout;
@@ -3372,6 +3453,7 @@ export class AutoApplyRunner {
             if (capAfter.detected && capAfter.solved) {
               const retrySubmit = await this.button(SUBMIT, ATS_STRATEGIES[report.ats]?.submit, 'flow_submit_button');
               if (retrySubmit && await retrySubmit.isVisible().catch(() => false)) {
+                await this.performHumanPreSubmitTelemetry(this.page!, retrySubmit);
                 if (options.mode === 'stealth') await this.pacedClick(retrySubmit);
                 else await retrySubmit.click();
                 await this.page!.waitForTimeout(5000);
@@ -3426,6 +3508,7 @@ export class AutoApplyRunner {
             if (healed) {
               const retrySubmit = await this.button(SUBMIT, ATS_STRATEGIES[report.ats]?.submit, 'flow_submit_button');
               if (retrySubmit && await retrySubmit.isVisible().catch(() => false)) {
+                await this.performHumanPreSubmitTelemetry(this.page!, retrySubmit);
                 if (options.mode === 'stealth') await this.pacedClick(retrySubmit);
                 else await retrySubmit.click();
                 await this.page!.waitForTimeout(3000);

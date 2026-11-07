@@ -228,6 +228,7 @@ export async function runWorkdayStepFastPass(frame: Frame, resumePdfPath?: strin
     ['input[data-automation-id="addressSection_postalCode"]', '560001'],
     ['input[data-automation-id="legalNameSection_firstName"]', 'Shivam'],
     ['input[data-automation-id="legalNameSection_lastName"]', 'Mahajan'],
+    ['input[data-automation-id="school"]', 'Chitkara University'],
   ];
 
   for (const [sel, val] of defaultFastFills) {
@@ -236,6 +237,25 @@ export async function runWorkdayStepFastPass(frame: Frame, resumePdfPath?: strin
       const cur = (await loc.inputValue().catch(() => '')).trim();
       if (!cur) {
         await loc.fill(val).catch(() => {});
+      }
+    }
+  }
+
+  // 9. Workday Step 2 Education Degree listbox fast-pass (Ticket GEN-148)
+  const degreeBtn = frame.locator('button[data-automation-id="degree"], [data-automation-id="formField-degree"] button[aria-haspopup="listbox"], [data-automation-id="formField-degree"] button').filter({ visible: true }).first();
+  if (await degreeBtn.isVisible().catch(() => false)) {
+    const txt = (await degreeBtn.innerText().catch(() => '')).trim();
+    if (!txt || /^(?:select|select one|--)$/i.test(txt)) {
+      await degreeBtn.click({ force: true, timeout: 2000 }).catch(() => {});
+      await frame.waitForTimeout(400);
+      const opt = frame.locator('[role="listbox"] [role="option"], [data-automation-id="promptOption"]').filter({ hasText: /bachelor|b\.?\s*e\b|b\.?\s*tech|undergraduate|bs|ba/i }).first();
+      if (await opt.isVisible().catch(() => false)) {
+        await opt.click({ force: true, timeout: 1500 }).catch(() => {});
+      } else {
+        const firstOpt = frame.locator('[role="listbox"] [role="option"], [data-automation-id="promptOption"]').first();
+        if (await firstOpt.isVisible().catch(() => false)) {
+          await firstOpt.click({ force: true, timeout: 1500 }).catch(() => {});
+        }
       }
     }
   }

@@ -198,20 +198,41 @@ export async function selectHarvestedOption(frame: Frame, control: Locator, opti
     if (await popup.count() === 0) return false;
   }
 
-  const choice = popup.getByRole('option', { name: option, exact: true }).or(popup.locator('.select__option, [data-automation-id=promptOption], [role="option"], [class*="_option_"]').filter({ hasText: new RegExp(`^${option.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`) }));
-  if (await choice.count() > 0) {
+  const matchOptions = popup.locator('[role="option"], .select__option, [data-automation-id="promptOption"], [class*="_option_"], spl-select-option');
+  let choice = popup.getByRole('option', { name: option, exact: true }).or(
+    matchOptions.filter({ hasText: new RegExp(`^${option.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') })
+  );
+
+  let matchCount = await choice.count().catch(() => 0);
+  if (matchCount === 0) {
+    const partialChoice = matchOptions.filter({ hasText: option });
+    matchCount = await partialChoice.count().catch(() => 0);
+    if (matchCount > 0) choice = partialChoice;
+  }
+
+  // Ticket GEN-145: Virtualized Combobox Type-to-Filter Fallback
+  if (matchCount === 0) {
+    const filterSeed = option.replace(/\s*\(\+?\d+\).*$/, '').split(/[\/,]/)[0]!.trim().slice(0, 18);
+    if (filterSeed.length > 0) {
+      await control.click({ timeout: 1500 }).catch(() => {});
+      await control.fill(filterSeed).catch(async () => {
+        await control.pressSequentially(filterSeed, { delay: 25 }).catch(() => {});
+      });
+      await frame.page().waitForTimeout(350);
+
+      choice = popup.getByRole('option', { name: option, exact: true }).or(
+        matchOptions.filter({ hasText: new RegExp(filterSeed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') })
+      );
+      matchCount = await choice.count().catch(() => 0);
+    }
+  }
+
+  if (matchCount > 0) {
     const opt = choice.first();
     await opt.dispatchEvent('mousedown').catch(() => {});
     await opt.click({ force: true }).catch(() => {});
     await opt.dispatchEvent('mouseup').catch(() => {});
-  } else {
-    const partialChoice = popup.locator('[role=option], .select__option, [data-automation-id=promptOption], [class*="_option_"]').filter({ hasText: option });
-    if (await partialChoice.count() > 0) {
-      const opt = partialChoice.first();
-      await opt.dispatchEvent('mousedown').catch(() => {});
-      await opt.click({ force: true }).catch(() => {});
-      await opt.dispatchEvent('mouseup').catch(() => {});
-    }
+    await frame.page().keyboard.press('Enter').catch(() => {});
   }
 
   // Failure 2C: Workday 2-level menu closes without selecting leaf
