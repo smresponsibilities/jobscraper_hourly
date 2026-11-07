@@ -337,24 +337,24 @@ test('GEN-96: All 10 Section-4 questions resolve deterministically', () => {
   assert.equal(countryLearned?.value, 'India');
 });
 
-test('GEN-98: Watchdog timeouts capped at 90s (Greenhouse/Ashby/Lever/SmartRecruiters) and 120s (Workday)', () => {
+test('GEN-98/104: Watchdog timeouts configured for fail-fast (150s Greenhouse/Ashby/Lever/SmartRecruiters and 180s Workday)', () => {
   const workdayCfg = getProviderTimeoutConfig('https://citi.wd5.myworkdayjobs.com/en-US/2/job/pune');
-  assert.equal(workdayCfg.maxTotalMs, 120000, 'Workday total timeout must be 120s');
-  assert.equal(workdayCfg.maxIdleMs, 45000, 'Workday idle timeout must be 45s');
+  assert.equal(workdayCfg.maxTotalMs, 180000, 'Workday total timeout must be 180s');
+  assert.equal(workdayCfg.maxIdleMs, 50000, 'Workday idle timeout must be 50s');
 
   const ghCfg = getProviderTimeoutConfig('https://boards.greenhouse.io/figma/jobs/123');
-  assert.equal(ghCfg.maxTotalMs, 90000, 'Greenhouse total timeout must be 90s');
-  assert.equal(ghCfg.maxIdleMs, 40000, 'Greenhouse idle timeout must be 40s');
+  assert.equal(ghCfg.maxTotalMs, 150000, 'Greenhouse total timeout must be 150s');
+  assert.equal(ghCfg.maxIdleMs, 45000, 'Greenhouse idle timeout must be 45s');
 
   const ashbyCfg = getProviderTimeoutConfig('https://jobs.ashbyhq.com/linear/app');
-  assert.equal(ashbyCfg.maxTotalMs, 90000, 'Ashby total timeout must be 90s');
-  assert.equal(ashbyCfg.maxIdleMs, 40000, 'Ashby idle timeout must be 40s');
+  assert.equal(ashbyCfg.maxTotalMs, 150000, 'Ashby total timeout must be 150s');
+  assert.equal(ashbyCfg.maxIdleMs, 45000, 'Ashby idle timeout must be 45s');
 
   const srCfg = getProviderTimeoutConfig('https://jobs.smartrecruiters.com/miratech/123');
-  assert.equal(srCfg.maxTotalMs, 90000, 'SmartRecruiters total timeout must be 90s');
-  assert.equal(srCfg.maxIdleMs, 40000, 'SmartRecruiters idle timeout must be 40s');
+  assert.equal(srCfg.maxTotalMs, 150000, 'SmartRecruiters total timeout must be 150s');
+  assert.equal(srCfg.maxIdleMs, 45000, 'SmartRecruiters idle timeout must be 45s');
 
   const watchdog = new JobActivityWatchdog(workdayCfg.maxTotalMs, workdayCfg.maxIdleMs);
-  assert.equal(watchdog.maxTotalMs, 120000);
-  assert.equal(watchdog.maxIdleMs, 45000);
+  assert.equal(watchdog.maxTotalMs, 180000);
+  assert.equal(watchdog.maxIdleMs, 50000);
 });

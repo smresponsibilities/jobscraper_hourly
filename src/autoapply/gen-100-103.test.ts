@@ -84,16 +84,18 @@ describe('GEN-101: SmartRecruiters OneClick entry gate', () => {
     assert.strictEqual(navigated, false, 'Should not navigate if already on oneclick-ui');
   });
 
-  it('ensureSmartRecruitersApplicationStarted constructs oneclick-ui from overview URL', async () => {
+  it('ensureSmartRecruitersApplicationStarted navigates to oneclick-ui UUID URL from apply button', async () => {
     let targetUrl = '';
     const fakePage = {
       url: () => 'https://jobs.smartrecruiters.com/Miratech/744000037190000-senior-dev',
       locator: () => ({
-        isVisible: async () => false,
+        isVisible: async () => true,
         click: async () => {},
+        getAttribute: async () => 'https://jobs.smartrecruiters.com/oneclick-ui/company/Miratech/publication/3763c791-a387-4078-9ca4-00cbfbf9b1a6',
         first: () => ({
-          isVisible: async () => false,
+          isVisible: async () => true,
           click: async () => {},
+          getAttribute: async () => 'https://jobs.smartrecruiters.com/oneclick-ui/company/Miratech/publication/3763c791-a387-4078-9ca4-00cbfbf9b1a6',
           waitFor: async () => {},
         }),
       }),
@@ -104,7 +106,7 @@ describe('GEN-101: SmartRecruiters OneClick entry gate', () => {
 
     await ensureSmartRecruitersApplicationStarted(fakePage);
     assert.ok(targetUrl.includes('/oneclick-ui/'), 'Should navigate to oneclick-ui URL');
-    assert.ok(targetUrl.includes('744000037190000'), 'Should retain job ID');
+    assert.ok(targetUrl.includes('3763c791-a387-4078-9ca4-00cbfbf9b1a6'), 'Should use 36-character UUID');
   });
 });
 

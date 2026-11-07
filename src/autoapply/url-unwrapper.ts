@@ -22,6 +22,17 @@ export function unwrapDirectAtsApplicationUrl(rawUrl: string): string {
       }
     }
 
+    // 3. Ticket GEN-104: Ensure Lever job URLs jump straight to the /apply tab instead of hanging on the JD overview!
+    if (u.hostname === 'jobs.lever.co') {
+      const cleanPath = u.pathname.replace(/\/+$/, '');
+      const parts = cleanPath.split('/').filter(Boolean);
+      // Matches /{tenant}/{jobUuid} where jobUuid is a UUID (>= 20 chars with hyphens) without /apply
+      if (parts.length === 2 && /^[0-9a-f-]{20,}$/i.test(parts[1]!)) {
+        u.pathname = `/${parts[0]}/${parts[1]}/apply`;
+        return u.toString();
+      }
+    }
+
     return rawUrl;
   } catch {
     return rawUrl;

@@ -38,10 +38,10 @@ export class JobActivityWatchdog {
 
 export function getProviderTimeoutConfig(urlStr: string): { maxTotalMs: number; maxIdleMs: number } {
   const u = urlStr.toLowerCase();
-  // Ticket GEN-98: Lower watchdog hard timeouts from 300s to 90s-120s fail-fast
+  // Ticket GEN-104: Set maxTotalMs = 150_000 (150s) with 45s idle stall for Greenhouse/Ashby/Lever/SmartRecruiters, and 180_000 (180s) with 50s idle stall for Workday
   if (u.includes('myworkdayjobs.com')) {
-    return { maxTotalMs: 120_000, maxIdleMs: 45_000 }; // Workday: 120s total, 45s idle
+    return { maxTotalMs: 180_000, maxIdleMs: 50_000 }; // Workday: 180s total, 50s idle
   }
-  // Greenhouse, Ashby, Lever, SmartRecruiters, and others: 90s total, 40s idle
-  return { maxTotalMs: 90_000, maxIdleMs: 40_000 };
+  // Greenhouse, Ashby, Lever, SmartRecruiters, and others: 150s total, 45s idle
+  return { maxTotalMs: 150_000, maxIdleMs: 45_000 };
 }

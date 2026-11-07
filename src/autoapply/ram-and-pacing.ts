@@ -134,6 +134,8 @@ export async function enforceHumanSubmissionPacingFloor(
     targetDwellMs = Math.min(targetDwellMs, maxTotalDwellMs);
   }
   const elapsedMs = Date.now() - formOpenedAtMs;
+  // Ticket GEN-104: If we have already spent >= 18 seconds filling fields on the form, zero extra dwell
+  if (elapsedMs >= 18_000) return 0;
   const remainingMs = targetDwellMs - elapsedMs;
   if (remainingMs <= 0) return 0;
 

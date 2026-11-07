@@ -260,64 +260,76 @@ export async function ensureStepReadyBeforeNext(frame: Frame, resumePath?: strin
 }
 
 /**
- * Ticket GEN-101: SmartRecruiters "I'm interested" / #st-apply entry gate handler.
- * Navigates from public job description overview into the interactive form (/oneclick-ui/).
+ * Ticket GEN-101, GEN-105 & GEN-106: SmartRecruiters "I'm interested" / #st-apply entry gate handler.
+ * Navigates from public job description overview into the interactive form (/oneclick-ui/ UUID).
  */
-export async function ensureSmartRecruitersApplicationStarted(page: Page): Promise<boolean> {
-  const currentUrl = page.url().toLowerCase();
-  if (!currentUrl.includes('smartrecruiters.com')) return false;
+export async function ensureSmartRecruitersApplicationStarted(page: Page): Promise<void> {
+  const currentUrl = page.url();
+  if (!currentUrl.toLowerCase().includes('smartrecruiters.com')) return;
 
-  // 1. Dismiss OneTrust cookie banner if present
-  try {
-    const oneTrustBtn = page.locator('#onetrust-accept-btn-handler, button#onetrust-accept-btn-handler').first();
-    if (await oneTrustBtn.isVisible().catch(() => false)) {
-      await oneTrustBtn.click({ timeout: 2000 }).catch(() => {});
-      await page.waitForTimeout(500);
-    }
-  } catch {}
-
-  // 2. If already on /oneclick-ui/, form is mounted or mounting
-  if (page.url().includes('/oneclick-ui/')) {
-    return true;
+  // 1. Dismiss OneTrust / Cookie banner if present
+  const cookieBtn = page.locator('#onetrust-accept-btn-handler, button:has-text("Accept All"), button:has-text("Allow all")').first();
+  if (await cookieBtn.isVisible().catch(() => false)) {
+    await cookieBtn.click({ timeout: 2000 }).catch(() => {});
   }
 
-  // 3. Locate "I'm interested" or #st-apply entry button
-  const applySelector = 'a#st-apply, #st-apply, [data-test="job-apply-button"], button:has-text("I\'m interested"), a:has-text("I\'m interested"), oc-button:has-text("I\'m interested"), spl-button:has-text("I\'m interested"), button:has-text("Apply"), a:has-text("Apply")';
-  const applyBtn = page.locator(applySelector).first();
-
-  if (await applyBtn.isVisible().catch(() => false)) {
-    const href = await applyBtn.getAttribute('href').catch(() => null);
-    if (href && href.startsWith('http')) {
-      await page.goto(href, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
-    } else {
-      await applyBtn.click({ timeout: 3000 }).catch(() => {});
-    }
-
-    // Wait up to 6000ms for /oneclick-ui/ form inputs to mount
-    await page
-      .locator('input:not([type="hidden"]), oc-input, spl-input, input[type="file"]')
-      .first()
-      .waitFor({ state: 'visible', timeout: 6000 })
-      .catch(() => {});
-    await page.waitForTimeout(800);
-    return true;
+  // 2. If we accidentally navigated to /oneclick-ui/.../publication/<NUMERIC_ID>, go back to the overview URL!
+  if (/\/oneclick-ui\/.*\/publication\/\d{10,}/i.test(page.url())) {
+    await page.goBack({ waitUntil: 'domcontentloaded' }).catch(() => {});
+    await page.waitForTimeout(1500);
   }
 
-  // 4. Fallback: If button was not found/visible, navigate directly to oneclick-ui
-  const pageUrl = page.url();
-  const match = pageUrl.match(/jobs\.smartrecruiters\.com\/([^/]+)\/([a-zA-Z0-9_-]+)/i);
-  if (match && !pageUrl.includes('/oneclick-ui/')) {
-    const company = match[1];
-    const fullId = match[2];
-    const id = fullId ? fullId.split('-')[0] : '';
-    if (id && company) {
-      const oneClickUrl = `https://jobs.smartrecruiters.com/oneclick-ui/company/${company}/publication/${id}`;
-      await page.goto(oneClickUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
-      return true;
+  // 3. If on the Job Description Overview page (not yet in a valid /oneclick-ui/ UUID URL):
+  if (!/\/oneclick-ui\/.*\/publication\/[0-9a-f-]{20,}/i.test(page.url())) {
+    // Method A: Click or extract href from "I'm interested" button (#st-apply / [data-test="job-apply-button"] / oc-button / spl-button)
+    const applyLoc = page
+      .locator(
+        'a#st-apply, #st-apply, [data-test="job-apply-button"], a.button--primary, a:has-text("I\'m interested"), button:has-text("I\'m interested"), oc-button:has-text("I\'m interested"), spl-button:has-text("I\'m interested")'
+      )
+      .first();
+
+    if (await applyLoc.isVisible({ timeout: 6000 }).catch(() => false)) {
+      const href = await applyLoc.getAttribute('href').catch(() => null);
+      if (href && /\/oneclick-ui\//i.test(href)) {
+        const targetUrl = href.startsWith('http') ? href : new URL(href, page.url()).toString();
+        await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 25_000 }).catch(() => {});
+      } else {
+        await applyLoc.click({ timeout: 4000 }).catch(() => {});
+      }
+      await page.waitForTimeout(3000);
+    }
+
+    // Method B: If still on overview page, resolve the 36-char UUID from SmartRecruiters Public API!
+    if (!/\/oneclick-ui\//i.test(page.url())) {
+      const match = page.url().match(/smartrecruiters\.com\/([^/?#]+)\/(\d{8,})/i);
+      if (match?.[1] && match?.[2]) {
+        const companySlug = match[1];
+        const refId = match[2];
+        try {
+          const apiRes = await fetch(`https://api.smartrecruiters.com/v1/companies/${companySlug}/postings/${refId}`, {
+            headers: { Accept: 'application/json' },
+          });
+          if (apiRes.ok) {
+            const data = (await apiRes.json()) as { uuid?: string; id?: string; applyUrl?: string };
+            const applyUrl =
+              data.applyUrl ||
+              (data.uuid ? `https://jobs.smartrecruiters.com/oneclick-ui/company/${companySlug}/publication/${data.uuid}?dcr_ci=${companySlug}` : null);
+            if (applyUrl) {
+              await page.goto(applyUrl, { waitUntil: 'domcontentloaded', timeout: 25_000 }).catch(() => {});
+              await page.waitForTimeout(3000);
+            }
+          }
+        } catch {}
+      }
     }
   }
 
-  return false;
+  // 4. Wait up to 6s for SmartRecruiters form controls (including shadow-root oc-input / spl-input) to mount
+  await page
+    .locator('input:not([type="hidden"]), textarea, select, oc-input, spl-input, [role="combobox"], input[type="file"]')
+    .first()
+    .waitFor({ state: 'attached', timeout: 6000 })
+    .catch(() => {});
 }
 
 export class AutoApplyRunner {
@@ -668,14 +680,22 @@ export class AutoApplyRunner {
     await input.press('ControlOrMeta+A').catch(() => {});
     await input.press('Backspace').catch(() => {});
     const tag = (await input.evaluate(el => el.tagName.toLowerCase()).catch(() => 'input')) || 'input';
-    if (text.length > 35 || tag === 'textarea') {
+    if (text.length > 35) {
+      // Ticket GEN-104.2: Fast-chunk long text (35+ chars)
+      await input.pressSequentially(text.slice(0, 4), { delay: 25 }).catch(() => {});
       await input.fill(text).catch(() => {});
-    } else {
-      try {
-        await input.pressSequentially(text, { delay: Math.round(getHumanKeyDelay(15, 35)) });
-      } catch {
-        await input.fill(text).catch(() => {});
-      }
+      await input.evaluate(el => {
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+        el.dispatchEvent(new Event('blur', { bubbles: true }));
+      }).catch(() => {});
+      return;
+    }
+
+    try {
+      await input.pressSequentially(text, { delay: Math.round(getHumanKeyDelay(15, 35)) });
+    } catch {
+      await input.fill(text).catch(() => {});
     }
     let clickedDropdownLocation = false;
     const inputId = await input.getAttribute('id').catch(() => '');
@@ -2201,6 +2221,9 @@ export class AutoApplyRunner {
         await this.page!.goto(target, { waitUntil: 'domcontentloaded', timeout: 45000 });
         await this.page!.locator('body').waitFor({ state: 'attached' });
         await this.waitReady(Math.min(options.timeoutMs ?? 5000, 5000));
+        if (options.url.toLowerCase().includes('smartrecruiters.com') || this.page!.url().toLowerCase().includes('smartrecruiters.com')) {
+          await ensureSmartRecruitersApplicationStarted(this.page!);
+        }
       }
       // Workday can render only its public header when a saved apply route loses
       // authentication. Re-enter through the approved posting, never another job.
@@ -2281,6 +2304,13 @@ export class AutoApplyRunner {
         watchdog.heartbeat(`step_${step}`);
         watchdog.checkOrThrow();
         await this.checkpoint(options, report);
+
+        // Ticket GEN-106: Ensure SmartRecruiters is on valid /oneclick-ui/ UUID form inside Step 1
+        if (step === 1 && (options.url.toLowerCase().includes('smartrecruiters.com') || this.page!.url().toLowerCase().includes('smartrecruiters.com'))) {
+          if (!/\/oneclick-ui\/.*\/publication\/[0-9a-f-]{20,}/i.test(this.page!.url())) {
+            await ensureSmartRecruitersApplicationStarted(this.page!);
+          }
+        }
         const stepCookie = this.page!.locator('button:has-text("Accept Cookies"), button:has-text("Accept"), [data-automation-id="legalNoticeAcceptButton"]').filter({ visible: true }).first();
         if (await stepCookie.isVisible().catch(() => false)) {
           await stepCookie.click().catch(() => {});
@@ -2385,6 +2415,9 @@ export class AutoApplyRunner {
             await this.page!.goto(options.url, { waitUntil: 'domcontentloaded', timeout: 45000 });
             await this.page!.locator('body').waitFor({ state: 'attached' });
             await this.waitReady(Math.min(options.timeoutMs ?? 5000, 5000));
+            if (options.url.toLowerCase().includes('smartrecruiters.com') || this.page!.url().toLowerCase().includes('smartrecruiters.com')) {
+              await ensureSmartRecruitersApplicationStarted(this.page!);
+            }
             continue;
           }
           const cap = await attemptAutonomousCaptchaSolve(this.page!);
@@ -2608,7 +2641,13 @@ export class AutoApplyRunner {
         if (options.mode === 'stealth') {
           const currentSignature = await this.signature();
           if (reviewedSignature !== currentSignature) {
-            await this.page!.waitForTimeout(15000 + Math.random() * 15000);
+            const formOpenedAtMs = Date.parse(report.startTime) || Date.now();
+            const alreadyElapsedMs = Date.now() - formOpenedAtMs;
+            // Ticket GEN-104.1: If already spent >= 18 seconds on the form filling fields, DO NOT sleep an extra 20-30s!
+            const remainingHumanFloorMs = Math.max(0, (18_000 + Math.floor(Math.random() * 4_000)) - alreadyElapsedMs);
+            if (remainingHumanFloorMs > 0) {
+              await this.page!.waitForTimeout(remainingHumanFloorMs).catch(() => {});
+            }
             reviewedSignature = currentSignature;
             continue; // Rescan and validate after review dwell before preparing Submit.
           }
