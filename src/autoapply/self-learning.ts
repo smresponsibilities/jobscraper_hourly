@@ -354,6 +354,11 @@ export function resolveBySemanticSelfLearning(
       resolve: () => "While I have not worked extensively with Ruby on Rails in production yet, during my Technology Apprenticeship at Morgan Stanley (Aug 2025 – Aug 2026) I engineered scalable enterprise backend services using Java Spring Boot REST APIs, Python/PySpark data pipelines, and Apache Kafka workflows, applying core distributed system, testing, and CI/CD patterns directly transferable to production web applications.",
     },
     {
+      category: 'highest_degree_field_university_grad_year',
+      pattern: /\b(highest degree.*field of study|highest degree.*university|degree.*field of study.*graduation year)\b/i,
+      resolve: () => 'Bachelor of Engineering in Computer Science and Engineering, Chitkara University, Class of 2026 (9.35 CGPA)',
+    },
+    {
       category: 'educational_qualification_engineering',
       pattern: /\b(educational qualification|highest qualification|degree qualification)\b/i,
       resolve: () => {
@@ -395,7 +400,7 @@ export function resolveBySemanticSelfLearning(
     {
       category: 'notice_period_custom',
       pattern: /\b(join|joining|start date|how soon|notice|lead time|transition period|earliest date)\b/i,
-      resolve: () => (isNumber ? String(profile.professional?.noticePeriodDays ?? '0') : 'Immediate (Available to start immediately)'),
+      resolve: () => (isNumber || /\b(?:in\s+days|days)\b/i.test(key) ? String(profile.professional?.noticePeriodDays ?? '0') : 'Immediate (Available to start immediately)'),
     },
     {
       category: 'location_preference_custom',

@@ -684,10 +684,10 @@ export class AutoApplyRunner {
         const req = response.request();
         if (req.method() !== 'POST' && req.method() !== 'PUT') return;
         const status = response.status();
-        if (status < 200 || status >= 300) return;
+        if (status < 200 || status >= 400) return;
         const respUrl = response.url();
         const isAtsSubmitEndpoint =
-          /ApiSubmitApplicationForm|submitApplication|\/embed\/job_app|\/oneclick-ui\/[^?]+\/(?:candidates|applications)|\/jobs\/\d+\/applications|\/apply\/submit/i.test(
+          /ApiSubmitApplicationForm|submitApplication|\/embed\/job_app|\/oneclick-ui\/[^?]+\/(?:candidates|applications)|\/jobs\/\d+(?:\/applications)?|\/jobs\/\d+|\/apply\/submit|\/job_app/i.test(
             respUrl
           );
         if (!isAtsSubmitEndpoint) return;
@@ -1217,13 +1217,13 @@ export class AutoApplyRunner {
     if (covered && await overlay.count() === 1) await overlay.click();
     else {
       try {
-        await control.click();
-      } catch (err: any) {
-        if (/intercepts pointer events/i.test(err?.message || '')) {
-          await this.page!.keyboard.press('Escape').catch(() => {});
-          await control.click({ force: true });
-        } else {
-          throw err;
+        await control.click({ timeout: 3500 });
+      } catch {
+        await this.page!.keyboard.press('Escape').catch(() => {});
+        try {
+          await control.click({ force: true, timeout: 3000 });
+        } catch {
+          await control.dispatchEvent('click').catch(() => {});
         }
       }
     }
@@ -3517,11 +3517,12 @@ export class AutoApplyRunner {
         await this.performHumanPreSubmitTelemetry(this.page!, submit);
         if (options.mode === 'stealth') await this.pacedClick(submit);
         else await submit.click();
-        const deadline = Date.now() + timeout;
+        const deadline = Date.now() + Math.min(timeout, 25_000);
         let lastMailPoll = 0;
         let captchaCheckedAfterSubmit = false;
         const submitClickedTime = Date.now();
         do {
+          watchdog.heartbeat('post_submit_poll');
           if (options.mailbox && Date.now() - lastMailPoll >= 2000) {
             lastMailPoll = Date.now();
             const verification = await completeEmailVerification(this.page!, options.mailbox, { provider: options.requisition?.provider || canonicalRequisition(options.url)?.provider || report.ats, applicationUrl: options.url, recipient: options.profile.personal.email, since: new Date(report.startTime), company: options.company, claim: options.claimMail }, this.interactions(options));
