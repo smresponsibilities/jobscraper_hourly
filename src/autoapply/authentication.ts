@@ -6,7 +6,8 @@ import { completeEmailVerification, type BrowserInteractions } from './verificat
 import { findVerification, type ApplicationMailbox, type VerificationRequest } from './mailbox.js';
 import { isRecruitmentPrivacyAcknowledgement } from './answers.js';
 import { reserveStateAction } from './state-guard.js';
-import { resolveEnvPortalCredentials } from './env-credentials.js';
+import { resolveEnvPortalCredentials, ensureWorkdayCompliantPassword } from './env-credentials.js';
+export { ensureWorkdayCompliantPassword } from './env-credentials.js';
 import { findAdaptiveLocator } from './adaptive-relocator.js';
 import { saveHostSessionState } from './session-pool.js';
 import { makeGmailTenantAlias, completeInPageEmailVerificationIfPrompted } from './imap-verifier.js';
@@ -141,6 +142,9 @@ export async function authenticateApplication(page: Page, options: { vault: Cred
     return 'review';
   }
   const envCreds = resolveEnvPortalCredentials(options.email);
+  if (envCreds?.password) {
+    envCreds.password = ensureWorkdayCompliantPassword(envCreds.password);
+  }
   const hasEnvCreds = !!(envCreds && (envCreds.email.toLowerCase() === options.email.toLowerCase() || !options.email));
   const saved = options.vault.get(options.tenant);
   const credential = hasEnvCreds ? envCreds! : (saved || options.vault.ensure(options.tenant, options.email, options.candidateNames).credential);
@@ -315,20 +319,7 @@ export function markWorkdayHostVerified(host: string): void {
   } catch {}
 }
 
-export function ensureWorkdayCompliantPassword(rawPassword: string): string {
-  if (!rawPassword) return 'Wk#2026!Rp9';
-  const isStrong =
-    rawPassword.length >= 12 &&
-    /[A-Z]/.test(rawPassword) &&
-    /[a-z]/.test(rawPassword) &&
-    /[0-9]/.test(rawPassword) &&
-    /[!@#$%^&*]/.test(rawPassword) &&
-    !/shivam|mahajan/i.test(rawPassword);
-
-  if (isStrong) return rawPassword;
-  const cleaned = rawPassword.replace(/shivam|mahajan/gi, 'Wk').slice(0, 8);
-  return `${cleaned}Wk#2026!9`;
-}
+// ensureWorkdayCompliantPassword imported and re-exported from env-credentials.js above
 
 export async function authenticateWorkdayPortal(
   page: Page,

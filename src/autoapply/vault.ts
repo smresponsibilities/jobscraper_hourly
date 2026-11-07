@@ -2,7 +2,7 @@ import { randomBytes, createHmac, createCipheriv, createDecipheriv, createHash, 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, linkSync, unlinkSync, renameSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
-import { resolveEnvPortalCredentials } from './env-credentials.js';
+import { resolveEnvPortalCredentials, ensureWorkdayCompliantPassword } from './env-credentials.js';
 
 function publishExclusive(file: string, data: string | Buffer): boolean {
   const temporary = file + '.' + randomBytes(12).toString('hex') + '.tmp';
@@ -59,7 +59,25 @@ export class CredentialVault {
   signEvidence(value: string): string { return createHmac('sha256', this.key).update('evidence-manifest-v1\0').update(value).digest('hex'); }
   verifyEvidence(value: string, signature: string): boolean { return /^[a-f0-9]{64}$/.test(signature) && timingSafeEqual(Buffer.from(this.signEvidence(value), 'hex'), Buffer.from(signature, 'hex')); }
   get(tenant: string): VaultCredential | undefined {
-    if (!existsSync(this.file(tenant))) return;
+    if (!existsSync(this.file(tenant))) {
+      // Ticket GEN-100: Auto-provision credentials for ANY Workday (*.myworkdayjobs.com) or SmartRecruiters (*.smartrecruiters.com) tenant
+      if (
+        tenant.includes('myworkdayjobs.com') ||
+        tenant.includes('smartrecruiters.com') ||
+        tenant.startsWith('workday:') ||
+        tenant.startsWith('smartrecruiters:')
+      ) {
+        const envCreds = resolveEnvPortalCredentials();
+        if (envCreds) {
+          const email = envCreds.email;
+          const password = ensureWorkdayCompliantPassword(envCreds.password);
+          const credential = { email, password };
+          try { this.put(tenant, credential); } catch {}
+          return credential;
+        }
+      }
+      return;
+    }
     const value = JSON.parse(this.decrypt(tenant, readFileSync(this.file(tenant), 'utf8')));
     if (typeof value.email !== 'string' || typeof value.password !== 'string') throw new Error('Invalid vault entry');
     if (value.recovery && (!Number.isFinite(Date.parse(value.recovery.requestedAt)) || !Number.isInteger(value.recovery.attempts) || !Number.isInteger(value.recovery.revision) || typeof value.recovery.confirmed !== 'boolean')) throw new Error('Invalid recovery state');
@@ -98,7 +116,7 @@ export class CredentialVault {
     let password: string;
     const envCreds = resolveEnvPortalCredentials(email);
     if (envCreds?.password && (envCreds.email.toLowerCase() === email.toLowerCase() || !email)) {
-      password = envCreds.password;
+      password = ensureWorkdayCompliantPassword(envCreds.password);
     } else {
       let counter = 0;
       const excluded = [...email.split('@')[0]!.split(/[._-]/).filter(part => part.length >= 3), ...candidateNames.flatMap(name => name.trim().split(/\s+/)).filter(Boolean)].map(part => part.toLowerCase());

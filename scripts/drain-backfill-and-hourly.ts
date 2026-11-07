@@ -22,7 +22,12 @@ import { generateParkIssuesScoreboard } from '../src/autoapply/park-telemetry.js
 import { buildTailoredResumePair } from '../src/resume/deterministic-builder.js';
 import { appendJobRunHistory } from '../src/autoapply/run-history.js';
 import { isStrictlyIsolatedTenant, isEligibleEngineeringRoleTitle, computeJobPriorityScore } from '../src/autoapply/priority-scheduler.js';
-import { cleanStaleChromiumProfileLocks, recoverPowerOffAndNetOffJobs } from '../src/autoapply/power-net-recovery.js';
+import {
+  cleanStaleChromiumProfileLocks,
+  recoverPowerOffAndNetOffJobs,
+  isOfflineDinoOrNetworkError,
+  waitUntilNetworkOnline,
+} from '../src/autoapply/power-net-recovery.js';
 import { startDashboardServer } from './dashboard-server.js';
 import { filterUnattemptedJobs, recordAttemptedJob } from '../src/autoapply/attempted-registry.js';
 import { scrubBrowserProfileCaches } from '../src/autoapply/ram-and-pacing.js';
@@ -737,9 +742,15 @@ async function main(): Promise<void> {
       const jobStartedAt = new Date().toISOString();
       const jobStartMs = Date.now();
       let report: BotRunReport;
+      // Ticket GEN-102: Wait until network online BEFORE starting hard timeout clock
+      await waitUntilNetworkOnline();
+
       try {
         report = await runWithHardTimeout(childRunner.run(options), timeoutConfig.maxTotalMs, `Job ${job.company}`);
       } catch (err: any) {
+        const isNetDrop = isOfflineDinoOrNetworkError(err?.message || '') ||
+          /\b(Wi-Fi \/ DNS drop|ERR_INTERNET_DISCONNECTED|ERR_NAME_NOT_RESOLVED|ERR_NETWORK_CHANGED|ERR_CONNECTION_TIMED_OUT|network.*offline)\b/i.test(err?.message || '');
+
         report = {
           mode: 'stealth',
           url: job.jobUrl,
@@ -751,11 +762,15 @@ async function main(): Promise<void> {
           fieldsFilled: 0,
           unmappedFields: 0,
           stepsTraversed: 0,
-          status: 'failed',
-          reason: err?.message || 'Execution failed',
+          status: isNetDrop ? 'queued' : 'failed',
+          reason: isNetDrop ? 'wifi_drop_requeued' : (err?.message || 'Execution failed'),
           actions: [],
           logs: [],
         };
+        if (isNetDrop) {
+          console.log(`[DRAIN] Wi-Fi / DNS drop detected during ${job.company}; kept queued for retry.`);
+          await waitUntilNetworkOnline();
+        }
       } finally {
         await childRunner.close().catch(() => {});
       }
@@ -802,9 +817,11 @@ async function main(): Promise<void> {
         }
       } else if (report.status === 'skipped') {
         queue.skip(job.id, report.reason);
-      } else if (report.status === 'queued' || report.reason === 'service_temporarily_unavailable') {
-        markHostOutcome(job.jobUrl, 'rate_limited', hostHealthPath);
-        console.log(`[DRAIN] Maintenance/temporary unavailability on ${job.company}; kept queued with 15m host cooldown.`);
+      } else if (report.status === 'queued' || report.reason === 'service_temporarily_unavailable' || report.reason === 'wifi_drop_requeued') {
+        if (report.reason === 'service_temporarily_unavailable') {
+          markHostOutcome(job.jobUrl, 'rate_limited', hostHealthPath);
+        }
+        console.log(`[DRAIN] Maintenance/network retry on ${job.company}; kept queued with 0 attempt penalty.`);
       } else {
         queue.markFailed(job.id, report.reason || 'Unknown error');
       }

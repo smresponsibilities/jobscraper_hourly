@@ -10,6 +10,7 @@ import { identifyApplicationAts, ATS_STRATEGIES } from './wizard.js';
 import { validateProfile } from './profile.js';
 import { getHumanKeyDelay, generateBezierCurve } from './stealth.js';
 import { completeEmailVerification, type BrowserInteractions } from './verification.js';
+import { makeGmailTenantAlias } from './imap-verifier.js';
 import type { ApplicationMailbox } from './mailbox.js';
 import { canonicalRequisition, canonicalEmployerKey, sameRequisition, type RequisitionIdentity } from './identity.js';
 import type { GroundedModel } from './grounded-model.js';
@@ -256,6 +257,67 @@ export async function ensureStepReadyBeforeNext(frame: Frame, resumePath?: strin
     await inlineSaves.nth(i).click({ timeout: 2000 }).catch(() => {});
     await frame.waitForTimeout(400);
   }
+}
+
+/**
+ * Ticket GEN-101: SmartRecruiters "I'm interested" / #st-apply entry gate handler.
+ * Navigates from public job description overview into the interactive form (/oneclick-ui/).
+ */
+export async function ensureSmartRecruitersApplicationStarted(page: Page): Promise<boolean> {
+  const currentUrl = page.url().toLowerCase();
+  if (!currentUrl.includes('smartrecruiters.com')) return false;
+
+  // 1. Dismiss OneTrust cookie banner if present
+  try {
+    const oneTrustBtn = page.locator('#onetrust-accept-btn-handler, button#onetrust-accept-btn-handler').first();
+    if (await oneTrustBtn.isVisible().catch(() => false)) {
+      await oneTrustBtn.click({ timeout: 2000 }).catch(() => {});
+      await page.waitForTimeout(500);
+    }
+  } catch {}
+
+  // 2. If already on /oneclick-ui/, form is mounted or mounting
+  if (page.url().includes('/oneclick-ui/')) {
+    return true;
+  }
+
+  // 3. Locate "I'm interested" or #st-apply entry button
+  const applySelector = 'a#st-apply, #st-apply, [data-test="job-apply-button"], button:has-text("I\'m interested"), a:has-text("I\'m interested"), oc-button:has-text("I\'m interested"), spl-button:has-text("I\'m interested"), button:has-text("Apply"), a:has-text("Apply")';
+  const applyBtn = page.locator(applySelector).first();
+
+  if (await applyBtn.isVisible().catch(() => false)) {
+    const href = await applyBtn.getAttribute('href').catch(() => null);
+    if (href && href.startsWith('http')) {
+      await page.goto(href, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+    } else {
+      await applyBtn.click({ timeout: 3000 }).catch(() => {});
+    }
+
+    // Wait up to 6000ms for /oneclick-ui/ form inputs to mount
+    await page
+      .locator('input:not([type="hidden"]), oc-input, spl-input, input[type="file"]')
+      .first()
+      .waitFor({ state: 'visible', timeout: 6000 })
+      .catch(() => {});
+    await page.waitForTimeout(800);
+    return true;
+  }
+
+  // 4. Fallback: If button was not found/visible, navigate directly to oneclick-ui
+  const pageUrl = page.url();
+  const match = pageUrl.match(/jobs\.smartrecruiters\.com\/([^/]+)\/([a-zA-Z0-9_-]+)/i);
+  if (match && !pageUrl.includes('/oneclick-ui/')) {
+    const company = match[1];
+    const fullId = match[2];
+    const id = fullId ? fullId.split('-')[0] : '';
+    if (id && company) {
+      const oneClickUrl = `https://jobs.smartrecruiters.com/oneclick-ui/company/${company}/publication/${id}`;
+      await page.goto(oneClickUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+      return true;
+    }
+  }
+
+  return false;
 }
 
 export class AutoApplyRunner {
@@ -2159,6 +2221,10 @@ export class AutoApplyRunner {
           return report;
         }
       }
+      // Ticket GEN-101: SmartRecruiters "I'm interested" / #st-apply entry gate
+      if (options.url.toLowerCase().includes('smartrecruiters.com') || this.page!.url().toLowerCase().includes('smartrecruiters.com')) {
+        await ensureSmartRecruitersApplicationStarted(this.page!);
+      }
       if (!options.dryRun) {
         const applyName = /^(?:apply(?: now| manually| for (?:this|the) (?:job|role))?|i['’]m interested)[\s\u200b-\u200d\u2060\ufeff]*$/i;
         for (let entryStep = 0; entryStep < 3; entryStep++) {
@@ -2267,6 +2333,16 @@ export class AutoApplyRunner {
           .count()
           .catch(() => 0);
         if (remainingPwCount > 0) {
+          // Ticket GEN-100: If password input remains visible on Workday, attempt Create Account / Sign In with Gmail alias before parking
+          if (report.ats === 'workday' || this.page!.url().toLowerCase().includes('myworkdayjobs.com')) {
+            const envPw = process.env.AUTOAPPLY_WORKDAY_PASSWORD || process.env.AUTOAPPLY_PASSWORD || 'Wk#2026!Rp9';
+            const aliasEmail = makeGmailTenantAlias(options.profile.personal.email, this.page!.url());
+            const authRetry = await authenticateWorkdayPortal(this.page!, aliasEmail, envPw);
+            if (authRetry.authenticated) {
+              await this.page!.waitForTimeout(1000);
+              continue;
+            }
+          }
           report.status = 'paused_for_review';
           report.reason = 'Login needs browser review';
           report.reviewKind = 'authentication';

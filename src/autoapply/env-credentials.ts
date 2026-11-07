@@ -117,3 +117,18 @@ export function resolveEnvPortalCredentials(fallbackProfileEmail?: string): Port
   if (!email || !password) return null;
   return { email, password, sourceKeyEmail, sourceKeyPassword };
 }
+
+export function ensureWorkdayCompliantPassword(rawPassword: string): string {
+  if (!rawPassword) return 'Wk#2026!Rp9';
+  const isStrong =
+    rawPassword.length >= 12 &&
+    /[A-Z]/.test(rawPassword) &&
+    /[a-z]/.test(rawPassword) &&
+    /[0-9]/.test(rawPassword) &&
+    /[!@#$%^&*]/.test(rawPassword) &&
+    !/shivam|mahajan/i.test(rawPassword);
+
+  if (isStrong) return rawPassword;
+  const cleaned = rawPassword.replace(/shivam|mahajan/gi, 'Wk').slice(0, 8);
+  return `${cleaned}Wk#2026!9`;
+}

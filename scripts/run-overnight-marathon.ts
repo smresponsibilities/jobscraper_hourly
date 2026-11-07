@@ -517,10 +517,16 @@ export async function runOvernightMarathon(config: {
           lastStep: 1,
         });
 
+        // Ticket GEN-102: Wait until network online BEFORE starting hard timeout clock
+        await waitUntilNetworkOnline();
+
         try {
           report = await runWithHardTimeout(childRunner.run(options), timeoutConfig.maxTotalMs, `Job ${job.company}`);
         } catch (err: any) {
           const measuredDurationMs = Date.now() - jobStartMs;
+          const isNetDrop = isOfflineDinoOrNetworkError(err?.message || '') ||
+            /\b(Wi-Fi \/ DNS drop|ERR_INTERNET_DISCONNECTED|ERR_NAME_NOT_RESOLVED|ERR_NETWORK_CHANGED|ERR_CONNECTION_TIMED_OUT|network.*offline)\b/i.test(err?.message || '');
+
           report = {
             mode: 'stealth',
             url: job.jobUrl,
@@ -532,31 +538,36 @@ export async function runOvernightMarathon(config: {
             fieldsFilled: 0,
             unmappedFields: 0,
             stepsTraversed: 1,
-            status: 'failed',
-            reason: err?.message || 'Execution failed',
+            status: isNetDrop ? 'queued' : 'failed',
+            reason: isNetDrop ? 'wifi_drop_requeued' : (err?.message || 'Execution failed'),
             actions: [],
             logs: [],
           };
 
-          // Record timeout diagnostic error
-          recordOvernightError({
-            timestamp: new Date().toISOString(),
-            jobId: job.id,
-            company: job.company,
-            title: job.title,
-            provider: report.ats,
-            lane: laneKey,
-            url: job.jobUrl,
-            durationMs: measuredDurationMs,
-            status: /timed out/i.test(err?.message || '') ? 'timeout' : 'failed',
-            reasonCode: normalizeReasonCode(err?.message || '', 'timeout'),
-            errorMessage: err?.message || 'Execution timeout',
-            stepNumber: 1,
-            stepHeading: '',
-            unmappedFields: [],
-            validationErrorsOnPage: [],
-            visibleButtonsOnPage: [],
-          });
+          if (isNetDrop) {
+            console.log(`[MARATHON] Wi-Fi / DNS drop detected during ${job.company}; kept queued for retry.`);
+            await waitUntilNetworkOnline();
+          } else {
+            // Record timeout diagnostic error
+            recordOvernightError({
+              timestamp: new Date().toISOString(),
+              jobId: job.id,
+              company: job.company,
+              title: job.title,
+              provider: report.ats,
+              lane: laneKey,
+              url: job.jobUrl,
+              durationMs: measuredDurationMs,
+              status: /timed out/i.test(err?.message || '') ? 'timeout' : 'failed',
+              reasonCode: normalizeReasonCode(err?.message || '', 'timeout'),
+              errorMessage: err?.message || 'Execution timeout',
+              stepNumber: 1,
+              stepHeading: '',
+              unmappedFields: [],
+              validationErrorsOnPage: [],
+              visibleButtonsOnPage: [],
+            });
+          }
         } finally {
           clearJobInFlightCheckpoint(job.id);
           await childRunner.close().catch(() => {});
@@ -600,11 +611,13 @@ export async function runOvernightMarathon(config: {
           } else {
             queue.skip(job.id, report.reason);
           }
-        } else if (report.status === 'queued' || report.reason === 'service_temporarily_unavailable') {
-          // Ticket GEN-99: Workday maintenance retry guard
-          markHostOutcome(job.jobUrl, 'rate_limited', hostHealthPath);
+        } else if (report.status === 'queued' || report.reason === 'service_temporarily_unavailable' || report.reason === 'wifi_drop_requeued') {
+          // Ticket GEN-99 / GEN-102: Workday maintenance & Wi-Fi drop retry guard
+          if (report.reason === 'service_temporarily_unavailable') {
+            markHostOutcome(job.jobUrl, 'rate_limited', hostHealthPath);
+          }
           removeAttemptedJob(job.id, job.jobUrl);
-          console.log(`[MARATHON] Workday maintenance on ${job.company}; kept queued for retry with 15m host cooldown.`);
+          console.log(`[MARATHON] ${job.company} kept queued for retry (${report.reason}); 0 attempt recorded.`);
         } else {
           queue.markFailed(job.id, report.reason || 'Unknown error');
         }
@@ -616,7 +629,7 @@ export async function runOvernightMarathon(config: {
             ? 'paused_for_review'
             : report.status === 'skipped'
             ? 'skipped'
-            : report.status === 'queued' || report.reason === 'service_temporarily_unavailable'
+            : report.status === 'queued' || report.reason === 'service_temporarily_unavailable' || report.reason === 'wifi_drop_requeued'
             ? 'queued'
             : 'failed';
 
@@ -638,8 +651,8 @@ export async function runOvernightMarathon(config: {
           receiptVerified: report.status === 'submitted' || !!report.receipt,
         });
 
-        // Ticket GEN-57: Record attempted job to persistent registry (skip if kept queued for maintenance retry)
-        if (report.status !== 'queued' && report.reason !== 'service_temporarily_unavailable') {
+        // Ticket GEN-57: Record attempted job to persistent registry (skip if kept queued for maintenance/network retry)
+        if (report.status !== 'queued' && report.reason !== 'service_temporarily_unavailable' && report.reason !== 'wifi_drop_requeued') {
           recordAttemptedJob({
             jobId: job.id,
             url: job.jobUrl,
