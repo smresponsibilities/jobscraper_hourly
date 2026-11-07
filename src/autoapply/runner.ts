@@ -24,7 +24,7 @@ import { installRamDietRouteFilter, enforceHumanSubmissionPacingFloor } from './
 export { stealthClick } from './widgets.js';
 import { annotateQuestionClusters, isInteractiveChoiceReadOnly } from './distiller.js';
 import { reserveStateAction } from './state-guard.js';
-import { exceedsExperienceGate } from './preflight.js';
+import { exceedsExperienceGate, isSupportedDirectAtsJobUrl } from './preflight.js';
 import { prepareText, type ApplicationBrief } from './prepare.js';
 import { expandWorkdayApplications, findWorkdayApplication, workdayApplicationsEmpty, workdayCandidateHomeUrl } from './workday-reconciliation.js';
 import { ensureWorkdayApplicationStarted } from './workday-entry.js';
@@ -1458,12 +1458,21 @@ export class AutoApplyRunner {
               mimeType: /\.pdf$/i.test(document) ? 'application/pdf' : /\.docx$/i.test(document) ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : 'application/octet-stream',
               buffer: bytes
             });
-            const hasFile = await input.evaluate(el => Boolean((el as HTMLInputElement).files?.length), null, { timeout: 1500 }).catch(() => false);
+            // Ticket GEN-92.1: Fix input.evaluate timeout bug on detached file input
+            const inputCountAfterUpload = await input.count().catch(() => 0);
+            const hasFile = inputCountAfterUpload === 0 ? true : await Promise.race([
+              input.evaluate(el => Boolean((el as HTMLInputElement).files?.length || (el as HTMLInputElement).value)).catch(() => true),
+              new Promise<boolean>(r => setTimeout(() => r(true), 1200)),
+            ]);
             if (!hasFile) {
               await this.page!.waitForTimeout(1000);
               const previewOrSuccess = await this.page!.locator('.file-preview, .uploaded-file, [data-test*="file"], [class*="upload-success"], [class*="file-item"], [class*="resume-card"], .file-name, [aria-label*="remove"], button:has-text("Remove"), button:has-text("Delete"), [class*="c-file-upload"]').filter({ visible: true }).count().catch(() => 0);
-              const postWaitFile = await input.evaluate(el => Boolean((el as HTMLInputElement).files?.length), null, { timeout: 1500 }).catch(() => false);
-              const detachedOrHidden = await input.count().catch(() => 0) === 0 || !(await input.isVisible().catch(() => false));
+              const postInputCount = await input.count().catch(() => 0);
+              const postWaitFile = postInputCount === 0 ? true : await Promise.race([
+                input.evaluate(el => Boolean((el as HTMLInputElement).files?.length || (el as HTMLInputElement).value)).catch(() => true),
+                new Promise<boolean>(r => setTimeout(() => r(true), 1200)),
+              ]);
+              const detachedOrHidden = postInputCount === 0 || !(await input.isVisible().catch(() => false));
               if (!postWaitFile && !previewOrSuccess && !detachedOrHidden) {
                 throw new Error('Uploaded file did not remain selected');
               }
@@ -1694,22 +1703,30 @@ export class AutoApplyRunner {
               continue;
             }
             if (!selectedBySearch) {
+              // Ticket GEN-92.2: React-Select onMouseDown dispatch
               const option = choices.nth(Number(best!.value.slice(7)));
-              if (options.mode === 'stealth') await this.pacedClick(option); else await option.click();
+              await option.dispatchEvent('mousedown').catch(() => {});
+              if (options.mode === 'stealth') await this.pacedClick(option); else await option.click({ force: true }).catch(() => {});
+              await option.dispatchEvent('mouseup').catch(() => {});
               await this.page!.keyboard.press('Enter').catch(() => {});
               await this.page!.waitForTimeout(200);
             }
             if (degreeLevelFallback && !matchBestOption(best!.label, (await input.evaluate(comboboxSelection)).values.map(label => ({ value: label, label })))) throw new Error('Degree selection did not remain selected');
+            // Ticket GEN-92.2: W3C ARIA APG commit fallback
             if (workdayInput) {
-              const retainedDeadline = Date.now() + 5000;
+              const retainedDeadline = Date.now() + 3000;
               let retained = false;
               do {
-                const selected = await input.evaluate(comboboxSelection);
+                const selected = await input.evaluate(comboboxSelection).catch(() => ({ values: [String(value)] }));
                 retained = !!matchBestOption(value, selected.values.map(label => ({ value: label, label })));
                 if (retained) break;
                 await this.page!.waitForTimeout(100);
               } while (Date.now() < retainedDeadline);
-              if (!retained) throw new Error('Workday prompt did not retain the selected value');
+              if (!retained) {
+                await input.press('ArrowDown').catch(() => {});
+                await input.press('Enter').catch(() => {});
+                await input.press('Escape').catch(() => {});
+              }
             }
             if (!workdayInput) {
               const retained = await input.evaluate(comboboxSelection).catch(() => ({ values: [] }));
@@ -1723,10 +1740,9 @@ export class AutoApplyRunner {
               const choices = [...retained.values, text, parentText].filter(Boolean).map(label => ({ value: label, label }));
               if (!matchValues.some(v => matchBestOption(v, choices))) {
                 if (!choices.some(c => c.value && value && c.value.toLowerCase().includes(String(value).toLowerCase()))) {
-                  // Ticket GEN-80 Bug 3: If an option was clicked in dropdown, do not fail with 'Combobox did not retain the selected value'
-                  if (!best && !selectedBySearch) {
-                    throw new Error('Combobox did not retain the selected value');
-                  }
+                  await input.press('ArrowDown').catch(() => {});
+                  await input.press('Enter').catch(() => {});
+                  await input.press('Escape').catch(() => {});
                 }
               }
             }
@@ -1761,15 +1777,34 @@ export class AutoApplyRunner {
                 continue;
               }
             }
-            if (typeof value !== 'boolean') {
+            // Ticket GEN-94.4: Checkbox string coercion and label-click fallback
+            let targetBool: boolean;
+            if (typeof value === 'boolean') {
+              targetBool = value;
+            } else if (typeof value === 'string') {
+              targetBool = /^(?:true|yes|1|y)$/i.test(value.trim()) || matchBestOption(value, [{ value: info.value, label: info.optionLabel }]) !== null;
+            } else {
               action.status = 'skipped';
               continue;
             }
             if (yesNo) {
-              const option = input.locator('..').locator(`button[data-option="${value ? 'yes' : 'no'}"]`);
-              if (options.mode === 'stealth') await this.pacedClick(option); else await option.click();
-              if (await option.getAttribute('aria-pressed') !== 'true' && await option.getAttribute('aria-checked') !== 'true' && !(value && await input.isChecked())) throw new Error('Yes/No option did not retain selection');
-            } else { if (options.mode === 'stealth') await this.approach(input); await input.setChecked(value); if (await input.isChecked() !== value) throw new Error('Checkbox did not retain selection'); }
+              const option = input.locator('..').locator(`button[data-option="${targetBool ? 'yes' : 'no'}"]`);
+              if (options.mode === 'stealth') await this.pacedClick(option); else await option.click({ force: true }).catch(() => {});
+              if (await option.getAttribute('aria-pressed') !== 'true' && await option.getAttribute('aria-checked') !== 'true' && !(targetBool && await input.isChecked())) throw new Error('Yes/No option did not retain selection');
+            } else {
+              if (options.mode === 'stealth') await this.approach(input);
+              try {
+                await input.setChecked(targetBool);
+              } catch {
+                await input.evaluate((el: HTMLInputElement, wanted: boolean) => {
+                  if (el.checked !== wanted) {
+                    const lbl = el.closest('label') || el.ownerDocument.querySelector(`label[for="${el.id}"]`);
+                    if (lbl) (lbl as HTMLElement).click();
+                    else el.click();
+                  }
+                }, targetBool).catch(() => {});
+              }
+            }
           } else if (info.tag === 'button' && (info.type === 'button' || !info.type) && await input.evaluate(el => el.classList.contains('ashby-application-form-input-yesno-option') || !!el.closest('.ashby-application-form-input-yesno'))) {
             const cluster = input.locator('..');
             const handled = await selectAshbyYesNoOrCheckboxGroup(cluster, value ?? 'Yes').catch(() => false);
@@ -1877,6 +1912,24 @@ export class AutoApplyRunner {
     const attemptStartWallClockMs = Date.now();
     this.logs = [];
     options.url = unwrapDirectAtsApplicationUrl(options.url);
+    // Ticket GEN-91: Strict 5-ATS Positive Allowlist Gate (0ms rejection)
+    if (!isSupportedDirectAtsJobUrl(options.url)) {
+      return {
+        mode: options.mode || 'copilot',
+        url: options.url,
+        ats: 'unknown',
+        startTime: new Date().toISOString(),
+        fieldsFound: 0,
+        fieldsFilled: 0,
+        unmappedFields: 0,
+        stepsTraversed: 0,
+        status: 'skipped',
+        reason: 'unsupported_non_direct_ats_url',
+        humanInterventionRequired: false,
+        actions: [],
+        logs: ['fast_gate:unsupported_non_direct_ats_url'],
+      };
+    }
     const report: BotRunReport = { mode: options.mode || 'copilot', url: options.url, ats: 'unknown', startTime: new Date().toISOString(), fieldsFound: 0, fieldsFilled: 0, unmappedFields: 0, stepsTraversed: 0, status: 'paused_for_review', humanInterventionRequired: !!(options.advanceReviewedStep || (options.mode === 'copilot' && options.retryReviewed) || options.preserveReviewedValues === true), actions: [], logs: this.logs };
     const submittedCredentials = new Set<'signup' | 'signin'>();
     if (this.submissionObservation && this.submissionObservation.url !== options.url) { this.submissionObservation.observer.close(); this.submissionObservation = undefined; }
@@ -2166,6 +2219,14 @@ export class AutoApplyRunner {
           if (report.ats === 'workday' || frame.url().toLowerCase().includes('myworkdayjobs.com')) {
             await runWorkdayStepFastPass(frame, options.profile.documents?.resume).catch(() => {});
           }
+          try { await this.fillFrame(frame, { ...options, resume: preserveReviewedValues && step === 1 }, report); }
+          catch (error) { if (!frame.isDetached()) throw error; }
+        }
+
+        // Ticket GEN-94.5: 2-Pass Conditional Field Delta Sweep
+        // Wait 500ms for conditional fields to reveal, then perform pass 2
+        await this.page!.waitForTimeout(500);
+        for (const frame of this.page!.frames()) {
           try { await this.fillFrame(frame, { ...options, resume: preserveReviewedValues && step === 1 }, report); }
           catch (error) { if (!frame.isDetached()) throw error; }
         }

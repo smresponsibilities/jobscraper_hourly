@@ -285,6 +285,35 @@ export async function authenticateApplication(page: Page, options: { vault: Cred
 }
 
 export const WORKDAY_ACCOUNTS_FILE = path.resolve('state/autoapply/portal-review/workday-accounts.json');
+export const VERIFIED_WORKDAY_HOSTS_FILE = path.resolve('state/autoapply/portal-review/verified-workday-hosts.json');
+
+export function isWorkdayHostVerified(host: string): boolean {
+  try {
+    if (fs.existsSync(VERIFIED_WORKDAY_HOSTS_FILE)) {
+      const list = JSON.parse(fs.readFileSync(VERIFIED_WORKDAY_HOSTS_FILE, 'utf8'));
+      if (Array.isArray(list) && list.includes(host)) return true;
+    }
+    if (fs.existsSync(WORKDAY_ACCOUNTS_FILE)) {
+      const accounts = JSON.parse(fs.readFileSync(WORKDAY_ACCOUNTS_FILE, 'utf8'));
+      if (accounts && accounts[host]) return true;
+    }
+  } catch {}
+  return false;
+}
+
+export function markWorkdayHostVerified(host: string): void {
+  try {
+    let list: string[] = [];
+    if (fs.existsSync(VERIFIED_WORKDAY_HOSTS_FILE)) {
+      list = JSON.parse(fs.readFileSync(VERIFIED_WORKDAY_HOSTS_FILE, 'utf8'));
+    }
+    if (!list.includes(host)) {
+      list.push(host);
+      fs.mkdirSync(path.dirname(VERIFIED_WORKDAY_HOSTS_FILE), { recursive: true });
+      fs.writeFileSync(VERIFIED_WORKDAY_HOSTS_FILE, JSON.stringify(list, null, 2), 'utf8');
+    }
+  } catch {}
+}
 
 export function ensureWorkdayCompliantPassword(rawPassword: string): string {
   if (!rawPassword) return 'Wk#2026!Rp9';
@@ -459,17 +488,32 @@ export async function authenticateWorkdayPortal(
     recordWorkdayAccount(targetEmail, pwToUse);
   };
 
-  // Case A: Page opened directly on Create Account (2 password inputs: Password + Verify Password)
-  if (pwCount >= 2) {
+  const currentHost = new URL(page.url()).hostname;
+  const isVerifiedHost = isWorkdayHostVerified(currentHost);
+
+  // Ticket GEN-93.2: Jobops-style Create Account First on unverified hosts
+  if (!isVerifiedHost && pwCount === 1) {
+    const createLink = page
+      .locator('[data-automation-id="createAccountLink"], button:has-text("Create Account"), a:has-text("Create Account")')
+      .filter({ visible: true })
+      .first();
+    if (await createLink.isVisible().catch(() => false)) {
+      await createLink.click({ timeout: 2500 }).catch(() => {});
+      await page.waitForTimeout(1200);
+    }
+  }
+
+  const updatedPwCount = await getVisiblePasswordInputs().count().catch(() => 0);
+
+  // Case A: On Create Account form (>= 2 password fields or switched from Sign In)
+  if (updatedPwCount >= 2) {
     await fillAndSubmitCreateAccount(email, password);
     await completeInPageEmailVerificationIfPrompted(page, page.mainFrame());
-    // If account already exists on this tenant, switch to Sign In!
-    const stillHasPw = (await getVisiblePasswordInputs().count().catch(() => 0)) > 0;
-    if (stillHasPw) {
-      const signInLink = page
-        .locator('[data-automation-id="signInLink"], a:has-text("Sign In")')
-        .filter({ visible: true })
-        .first();
+    const errText = await page.locator('[role="alert"], [data-automation-id="errorMessage"], .error').allTextContents().catch(() => []);
+    const accountExists = errText.some(t => /already exists|already registered/i.test(t));
+    if (accountExists) {
+      markWorkdayHostVerified(currentHost);
+      const signInLink = page.locator('[data-automation-id="signInLink"], a:has-text("Sign In")').filter({ visible: true }).first();
       if (await signInLink.isVisible().catch(() => false)) {
         await signInLink.click({ timeout: 2500 }).catch(() => {});
         await page.waitForTimeout(1000);
@@ -479,9 +523,11 @@ export async function authenticateWorkdayPortal(
         }
         await completeInPageEmailVerificationIfPrompted(page, page.mainFrame());
       }
+    } else if ((await getVisiblePasswordInputs().count().catch(() => 0)) === 0) {
+      markWorkdayHostVerified(currentHost);
     }
   } else {
-    // Case B: Page opened on Sign In (1 password input)
+    // Case B: Sign In form
     if (rawPassword) {
       await fillAndSubmitSignIn(email, rawPassword);
     }
@@ -490,12 +536,12 @@ export async function authenticateWorkdayPortal(
     }
     await completeInPageEmailVerificationIfPrompted(page, page.mainFrame());
 
-    // If Sign In failed (account not yet registered on this Workday tenant), click Create Account!
-    if ((await getVisiblePasswordInputs().count().catch(() => 0)) > 0) {
+    if ((await getVisiblePasswordInputs().count().catch(() => 0)) === 0) {
+      markWorkdayHostVerified(currentHost);
+    } else {
+      // If Sign In failed, click Create Account
       const createLink = page
-        .locator(
-          '[data-automation-id="createAccountLink"], button:has-text("Create Account"), a:has-text("Create Account")'
-        )
+        .locator('[data-automation-id="createAccountLink"], button:has-text("Create Account"), a:has-text("Create Account")')
         .filter({ visible: true })
         .first();
       if (await createLink.isVisible().catch(() => false)) {
@@ -503,6 +549,9 @@ export async function authenticateWorkdayPortal(
         await page.waitForTimeout(1000);
         await fillAndSubmitCreateAccount(email, password);
         await completeInPageEmailVerificationIfPrompted(page, page.mainFrame());
+        if ((await getVisiblePasswordInputs().count().catch(() => 0)) === 0) {
+          markWorkdayHostVerified(currentHost);
+        }
       }
     }
   }

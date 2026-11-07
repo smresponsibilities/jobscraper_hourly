@@ -139,6 +139,10 @@ export function groupKeyFor(el: Element): string | null {
 export function collectControls(elements: Element[]): Element[] {
   return elements.filter(el => {
     if (/beecatcher|honey-?pot|bot-trap/i.test([el.id, el.getAttribute('name'), el.getAttribute('data-automation-id')].join(' '))) return false;
+    // Ticket GEN-93.3: Exclude elements inside navigation, header, footer, cookies
+    if (el.closest('header, nav, footer, [role="navigation"], [role="banner"], [role="contentinfo"], [id*="cookie" i], [class*="cookie" i]')) {
+      return false;
+    }
     if (el.classList.contains('select__input') && !!el.closest('.select__control')?.querySelector('.select__single-value, .select__multi-value')) {
       return false;
     }
@@ -152,6 +156,10 @@ export function collectControls(elements: Element[]): Element[] {
 export function annotateQuestionClusters(elements: Element[]): void {
   const controls = elements.filter(el => {
     if (/beecatcher|honey-?pot|bot-trap/i.test([el.id, el.getAttribute('name'), el.getAttribute('data-automation-id')].join(' '))) return false;
+    // Ticket GEN-93.3: Exclude elements inside navigation, header, footer, cookies
+    if (el.closest('header, nav, footer, [role="navigation"], [role="banner"], [role="contentinfo"], [id*="cookie" i], [class*="cookie" i]')) {
+      return false;
+    }
     const input = el as HTMLInputElement;
     const isChoice = el.getAttribute('role') === 'combobox' || el.getAttribute('role') === 'listbox' || el.getAttribute('data-uxi-widget-type') === 'selectinput' || !!el.getAttribute('aria-haspopup') || !!el.getAttribute('aria-controls') || !!el.getAttribute('aria-owns');
     if (input.readOnly && !isChoice) return false;

@@ -1,6 +1,7 @@
 // src/autoapply/priority-scheduler.ts
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { isSupportedDirectAtsJobUrl } from './preflight.js';
 
 export interface QueuedJobCandidate {
   id: string;
@@ -79,7 +80,7 @@ export const FILLABLE_ATS_REGEX = /greenhouse\.io|gh_jid=|ashbyhq\.com|lever\.co
 
 export function isFillableAtsUrl(url?: string): boolean {
   if (!url) return false;
-  return FILLABLE_ATS_REGEX.test(url);
+  return isSupportedDirectAtsJobUrl(url);
 }
 
 export function computeJobPriorityScore(job: QueuedJobCandidate, nowMs = Date.now()): number {

@@ -6,7 +6,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { AutoaplyQueueManager } from '../src/autoapply/autoaply.js';
 import { AutoApplyRunner, type AutoApplyOptions } from '../src/autoapply/runner.js';
 import { CatalogueIntake, HOURLY_CATALOGUE_URL } from '../src/autoapply/intake.js';
-import { preflightJob, isAtsRootUrl } from '../src/autoapply/preflight.js';
+import { preflightJob, isAtsRootUrl, isSupportedDirectAtsJobUrl } from '../src/autoapply/preflight.js';
 import { canonicalRequisition, canonicalEmployerKey } from '../src/autoapply/identity.js';
 import { loadProfile } from '../src/autoapply/profile.js';
 import { mailboxFromEnvironment } from '../src/autoapply/mailbox.js';
@@ -556,6 +556,11 @@ async function main(): Promise<void> {
     const eligible: AutoaplyJobItem[] = [];
     for (const job of allJobs) {
       if (job.status !== 'queued') continue;
+      // Ticket GEN-91: Fast-fail non-direct ATS jobs
+      if (!isSupportedDirectAtsJobUrl(job.jobUrl)) {
+        queue.skip(job.id, 'unsupported_non_direct_ats_url');
+        continue;
+      }
       if (isStrictlyIsolatedTenant(job.company, job.jobUrl)) {
         queue.skip(job.id, 'strictly_isolated_tenant');
         continue;

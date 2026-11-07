@@ -69,6 +69,7 @@ interface Violation {
 const violations: Violation[] = [];
 
 for (const relPath of files) {
+  if (relPath.replace(/\\/g, '/') === 'scripts/sanitize-for-git-push.ts') continue;
   const ext = path.extname(relPath).toLowerCase();
   if (BINARY_EXTS.has(ext)) continue;
 

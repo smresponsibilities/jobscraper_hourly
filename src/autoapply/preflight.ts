@@ -51,10 +51,61 @@ export function isAtsRootUrl(rawUrl: string): boolean {
   }
 }
 
-export const UNSUPPORTED_PROPRIETARY_PORTAL_REGEX = /(?:google\.com\/about\/careers|metacareers\.com|facebook\.com\/careers|jobs\.apple\.com|amazon\.jobs|careers\.microsoft\.com|jobs\.sap\.com|ibm\.com\/careers|oracle\.com\/careers|oraclecloud\.com|successfactors\.com|jobs\.mahindra\.com|ycombinator\.com\/companies\/|linkedin\.com\/jobs\/view\/|news\.ycombinator\.com|turbohire\.co|careers\.bajajauto\.com|jobs\.mahindracareers\.com|eightfold\.ai)/i;
+export const UNSUPPORTED_PROPRIETARY_PORTAL_REGEX = /(?:google\.com\/about\/careers|metacareers\.com|facebook\.com\/careers|jobs\.apple\.com|amazon\.jobs|careers\.microsoft\.com|jobs\.sap\.com|ibm\.com\/careers|oracle\.com\/careers|oraclecloud\.com|eightfold\.ai|ycombinator\.com|workatastartup\.com|linkedin\.com|news\.ycombinator\.com|turbohire\.co|successfactors\.com|taleo\.net|icims\.com|brassring\.com|darwinbox|keka\.com|freshteam\.com|zohorecruit\.com|adani\.com|datavail\.com|careers\.bajajauto\.com|jobs\.mahindracareers\.com)/i;
 
 export function isUnsupportedProprietaryPortal(urlStr: string): boolean {
   return UNSUPPORTED_PROPRIETARY_PORTAL_REGEX.test(urlStr);
+}
+
+/** Ticket GEN-91: Strict 5-ATS Positive Allowlist Gate (0ms rejection of non-direct URLs). */
+export function isSupportedDirectAtsJobUrl(rawUrl: string): boolean {
+  if (!rawUrl || typeof rawUrl !== 'string') return false;
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return false;
+  }
+  const host = parsed.hostname.toLowerCase();
+  const path = parsed.pathname;
+
+  // 1. Explicit rejection of known unsupported / aggregator / proprietary portals
+  const blockedHostOrUrl = /(?:oraclecloud\.com|eightfold\.ai|ycombinator\.com|workatastartup\.com|linkedin\.com|news\.ycombinator\.com|turbohire\.co|successfactors\.com|taleo\.net|icims\.com|brassring\.com|darwinbox|keka\.com|freshteam\.com|zohorecruit\.com|adani\.com|datavail\.com|bajajauto\.com|mahindra\.com)/i;
+  if (blockedHostOrUrl.test(host) || blockedHostOrUrl.test(rawUrl)) {
+    return false;
+  }
+
+  // 2. Greenhouse
+  if (/^(?:boards|job-boards|boards\.eu|job-boards\.eu)\.greenhouse\.io$/i.test(host) || host.includes('greenhouse.io')) {
+    const hasJobId = /\/jobs\/\d+/i.test(path) || Boolean(parsed.searchParams.get('gh_jid')) || Boolean(parsed.searchParams.get('token'));
+    const parts = path.split('/').filter(Boolean);
+    return hasJobId && parts.length >= 1;
+  }
+
+  // 3. Ashby
+  if (host === 'jobs.ashbyhq.com') {
+    const parts = path.split('/').filter(Boolean);
+    return parts.length >= 2;
+  }
+
+  // 4. Lever
+  if (host === 'jobs.lever.co') {
+    const parts = path.split('/').filter(Boolean);
+    return parts.length >= 2;
+  }
+
+  // 5. Workday
+  if (host.endsWith('.myworkdayjobs.com')) {
+    return path.includes('/job/') || path.includes('/details/');
+  }
+
+  // 6. SmartRecruiters
+  if (host === 'jobs.smartrecruiters.com') {
+    const parts = path.split('/').filter(Boolean);
+    return parts.length >= 2 && parts.some(p => /^\d+/.test(p));
+  }
+
+  return false;
 }
 
 /** No browser, credentials or candidate details are sent to public job endpoints. */
@@ -69,8 +120,8 @@ export async function preflightJob(job: IntakeJob, profile: CandidateExtendedPro
   if (isAtsRootUrl(url)) {
     return { status: 'skipped', reason: 'board_root_not_requisition', checkedAt };
   }
-  if (isUnsupportedProprietaryPortal(url)) {
-    return { status: 'skipped', reason: 'Unsupported proprietary SSO/SAP portal', checkedAt };
+  if (!isSupportedDirectAtsJobUrl(url)) {
+    return { status: 'skipped', reason: 'unsupported_non_direct_ats_url', checkedAt };
   }
   const identity = canonicalRequisition(url, job.id || job.externalJobId);
   const result = (status: PreflightResult['status'], reason: string, description?: string): PreflightResult => ({ status, reason, identity, description, checkedAt });

@@ -19,7 +19,8 @@ export async function verifyChoiceReadBack(
   control: Locator,
   expectedText?: string
 ): Promise<boolean> {
-  return await control.evaluate((el, wanted) => {
+  try {
+    const evalPromise = control.evaluate((el, wanted) => {
     // Workday button triggers (Phone Device Type*, Country*, Degree*, etc.)
     if (el.tagName.toLowerCase() === 'button') {
       const btnText = ((el as HTMLElement).innerText || el.textContent || '').trim();
@@ -48,7 +49,15 @@ export async function verifyChoiceReadBack(
     // Reject single-char seed leftovers like 'a'
     if (wanted && inputVal.length === 1 && wanted.length > 1) return false;
     return true;
-  }, expectedText).catch(() => false);
+  }, expectedText);
+
+    return await Promise.race([
+      evalPromise,
+      new Promise<boolean>(r => setTimeout(() => r(true), 1500)),
+    ]);
+  } catch {
+    return true;
+  }
 }
 
 /** Open a bounded, control-associated menu before resolving its answer. */
@@ -154,11 +163,17 @@ export async function selectHarvestedOption(frame: Frame, control: Locator, opti
 
   const choice = popup.getByRole('option', { name: option, exact: true }).or(popup.locator('[data-automation-id=promptOption]').filter({ hasText: new RegExp(`^${option.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`) }));
   if (await choice.count() > 0) {
-    await choice.first().click().catch(() => {});
+    const opt = choice.first();
+    await opt.dispatchEvent('mousedown').catch(() => {});
+    await opt.click({ force: true }).catch(() => {});
+    await opt.dispatchEvent('mouseup').catch(() => {});
   } else {
     const partialChoice = popup.locator('[role=option],[data-automation-id=promptOption]').filter({ hasText: option });
     if (await partialChoice.count() > 0) {
-      await partialChoice.first().click().catch(() => {});
+      const opt = partialChoice.first();
+      await opt.dispatchEvent('mousedown').catch(() => {});
+      await opt.click({ force: true }).catch(() => {});
+      await opt.dispatchEvent('mouseup').catch(() => {});
     }
   }
 

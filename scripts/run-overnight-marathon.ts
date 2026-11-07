@@ -6,7 +6,7 @@ import { execSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 import { AutoaplyQueueManager } from '../src/autoapply/autoaply.js';
 import { AutoApplyRunner, type AutoApplyOptions } from '../src/autoapply/runner.js';
-import { preflightJob, isAtsRootUrl } from '../src/autoapply/preflight.js';
+import { preflightJob, isAtsRootUrl, isSupportedDirectAtsJobUrl } from '../src/autoapply/preflight.js';
 import { canonicalRequisition } from '../src/autoapply/identity.js';
 import { loadProfile } from '../src/autoapply/profile.js';
 import { mailboxFromEnvironment } from '../src/autoapply/mailbox.js';
@@ -195,6 +195,11 @@ export async function runOvernightMarathon(config: {
       // Filter isolated tenants and ineligible non-engineering / senior roles (Ticket GEN-48)
       const eligibleQueued: AutoaplyJobItem[] = [];
       for (const j of allQueued) {
+        // Ticket GEN-91: Fast-fail non-direct ATS jobs
+        if (!isSupportedDirectAtsJobUrl(j.jobUrl)) {
+          queue.skip(j.id, 'unsupported_non_direct_ats_url');
+          continue;
+        }
         if (isStrictlyIsolatedTenant(j.company, j.jobUrl)) {
           queue.skip(j.id, 'strictly_isolated_tenant');
           continue;
