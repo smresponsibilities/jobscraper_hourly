@@ -1,8 +1,9 @@
 # Morning Autonomous Marathon & Drain Status Report
 
-**Generated**: 2026-11-08 (Live Overnight Autonomous Marathon)
-**Git HEAD**: `b54a2bd` (synced with `origin/main`)
+**Generated**: 2026-11-08 04:30 IST (Live Overnight Autonomous Marathon)
+**Git HEAD**: `7c1b85b` (synced with `origin/main`)
 **Dashboard**: http://localhost:4321
+**Periodic Monitor**: Active (`*/10 * * * *` recurring cron)
 
 ---
 
@@ -11,36 +12,36 @@
 | Metric | Count | Status Notes |
 | :--- | :--- | :--- |
 | **Applied (Confirmed Receipts)** | **61** | Verified employer receipts (including Sarvam AI, Enterpret, Point72, Truveta, etc.) |
-| **Queued (Active Draining)** | **7,787** | 4 parallel provider lanes active (`greenhouse`, `ashby`, `workday`, `other`) |
-| **Skipped (Pre-filtered)** | **10,967** | Closed / expired / YOE mismatch (> 2 YOE) |
-| **Failed (True 404s Only)** | **27** | Only genuinely closed / 404 postings retained; zero false stalls |
-| **Paused for Review** | **0** | All missing fields auto-healed via semantic memory & concept bags |
+| **Queued (Active Draining)** | **7,752** | 4 parallel provider lanes active (`greenhouse`, `ashby`, `workday`, `other`) |
+| **Skipped (Pre-filtered)** | **10,996** | Closed / expired / YOE mismatch (> 2 YOE) |
+| **Failed (True 404s Only)** | **33** | Only genuinely closed / 404 postings retained; zero false stalls |
+| **Paused for Review** | **0** | All recoverable timeout jobs resurrected and auto-healed |
 
 ---
 
-## 2. Forensic Fixes Deployed (GEN-157 through GEN-160)
+## 2. Forensic Fixes Deployed & Synced
 
-1. **GEN-157: `pacedClick` Actionability Timeout Protection**:
-   - Fixed 30s Playwright pointer-interception hangs by capping actionability click to 3500ms.
-   - Fallback executes `Escape` press, followed by `control.click({ force: true, timeout: 3000 })` and `control.dispatchEvent('click')`.
-   - Verified on Ashby and Greenhouse submit buttons.
+1. **`waitChanged` 12s Hard Ceiling**:
+   - Fixed 240s hard timeout when "Next" button failed to advance due to validation errors.
+   - Replaced unbounded `timeout` with `Math.min(timeout, 12_000)` in `AutoApplyRunner.waitChanged`.
+   - Now triggers `selfHealValidationErrors` and fast review exit in 12s instead of 240s.
 
-2. **GEN-158: Post-Submit Receipt Polling Ceiling & Heartbeat**:
-   - Replaced unbounded 240s polling loop (`timeoutMs`) with `Math.min(timeout, 25_000)` (25-second ceiling).
-   - Injected `watchdog.heartbeat('post_submit_poll')` per cycle, preventing `drain-backfill-and-hourly.ts` hard timeout aborts.
+2. **Ashby & Greenhouse PacedClick Capping (3500ms)**:
+   - Wrapped actionability click with 3500ms timeout + Escape + force click + dispatchEvent fallback.
 
-3. **GEN-159: Greenhouse Submit Regex & HTTP Status Codes**:
-   - Expanded submit endpoint pattern to `/ApiSubmitApplicationForm|submitApplication|\/embed\/job_app|\/oneclick-ui\/[^?]+\/(?:candidates|applications)|\/jobs\/\d+(?:\/applications)?|\/jobs\/\d+|\/apply\/submit|\/job_app/i`.
-   - Permitted HTTP status codes 200 through 399 (including 302/303 redirect confirmations).
+3. **Post-Submit Receipt 25s Ceiling & Heartbeat**:
+   - Capped post-submit loop to 25s with `watchdog.heartbeat('post_submit_poll')`.
 
-4. **GEN-160: Semantic Concept Learning & Memory Refresh**:
-   - Added `highest_degree_field_university_grad_year` rule: resolves "Bachelor of Engineering in Computer Science and Engineering, Chitkara University, Class of 2026 (9.35 CGPA)".
-   - Added `notice_period_custom` day parsing: resolves numeric "0" when question specifies "in days" or expects integer.
-   - Refreshed persistent `semantic-memory.json` entries.
+4. **Greenhouse Submit Regex & 200-399 Status**:
+   - Accepts modern Greenhouse Remix endpoints and 302/303 redirect receipts.
+
+5. **SQLite WAL Mode & 10s Busy Timeout**:
+   - `queue.sqlite` configured in WAL mode (`journal_mode = WAL`), eliminating concurrent lock contention.
 
 ---
 
-## 3. Running Daemons
+## 3. Running Daemons & Monitor
 
-- **Overnight Marathon Runner**: Running unattended in background with `--submit` across 4 lanes.
-- **Dashboard Server**: Live at http://localhost:4321 (`task-4944`).
+- **Overnight Marathon Runner**: Active in background (`task-6253`), executing 40-job chunks across 4 isolated provider lanes with `--submit`.
+- **Periodic Monitor**: Standing recurring schedule (`task-6263`, `*/10 * * * *`) inspecting progress, reconciling transient stalls, and reporting status every 10 minutes.
+- **Operations Dashboard**: Live at http://localhost:4321 (PID 28516).
