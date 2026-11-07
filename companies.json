@@ -114772,5 +114772,103 @@
     "source": "discovered",
     "token": "careers.zimvie.com",
     "lastIndiaAt": "2026-10-29T10:02:08.021Z"
+  },
+  {
+    "name": "BioRender",
+    "ats": "lever",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "biorender"
+  },
+  {
+    "name": "FamPay",
+    "ats": "lever",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "fampay"
+  },
+  {
+    "name": "Datafold",
+    "ats": "ashby",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "datafold"
+  },
+  {
+    "name": "Jiga",
+    "ats": "ashby",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "jiga"
+  },
+  {
+    "name": "Serif Health",
+    "ats": "ashby",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "serifhealth"
+  },
+  {
+    "name": "Rivia.AI",
+    "ats": "ashby",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "rivia"
+  },
+  {
+    "name": "IMT Care",
+    "ats": "greenhouse",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "imt"
+  },
+  {
+    "name": "Rally",
+    "ats": "ashby",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "rallyuxr"
+  },
+  {
+    "name": "Invopop",
+    "ats": "ashby",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "invopop"
+  },
+  {
+    "name": "ControlPlane",
+    "ats": "greenhouse",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "controlplane"
+  },
+  {
+    "name": "EggAI",
+    "ats": "greenhouse",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "eggai"
+  },
+  {
+    "name": "Enclave",
+    "ats": "ashby",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "enclave"
+  },
+  {
+    "name": "Spade",
+    "ats": "ashby",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "spade"
+  },
+  {
+    "name": "Mastra",
+    "ats": "ashby",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "mastra"
   }
 ]

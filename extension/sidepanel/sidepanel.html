@@ -164,7 +164,7 @@
           </div>
           <div class="form-group">
             <label>Country</label>
-            <input type="text" id="prof-country" class="text-input" value="India">
+            <input type="text" id="prof-country" class="text-input">
           </div>
           <div class="form-group">
             <label>City</label>
@@ -202,11 +202,11 @@
           </div>
           <div class="form-group">
             <label>Degree</label>
-            <input type="text" id="prof-degree" class="text-input" value="B.Tech">
+            <input type="text" id="prof-degree" class="text-input">
           </div>
           <div class="form-group">
             <label>Major / Discipline</label>
-            <input type="text" id="prof-major" class="text-input" value="Computer Science">
+            <input type="text" id="prof-major" class="text-input">
           </div>
           <div class="form-group">
             <label>GPA / Marks</label>
@@ -214,7 +214,7 @@
           </div>
           <div class="form-group">
             <label>Graduation Year</label>
-            <input type="text" id="prof-grad-year" class="text-input" value="2026">
+            <input type="text" id="prof-grad-year" class="text-input">
           </div>
         </div>
 
@@ -223,19 +223,20 @@
         <div class="form-grid">
           <div class="form-group">
             <label>Total Experience (Years)</label>
-            <input type="number" id="prof-yoe" class="text-input" value="1">
+            <input type="number" id="prof-yoe" class="text-input">
           </div>
           <div class="form-group">
             <label>Notice Period (Days)</label>
-            <input type="number" id="prof-notice" class="text-input" value="0">
+            <input type="number" id="prof-notice" class="text-input">
           </div>
           <div class="form-group full-width">
             <label>Expected CTC / Salary (INR)</label>
-            <input type="number" id="prof-expected-salary" class="text-input" value="1500000">
+            <input type="number" id="prof-expected-salary" class="text-input">
           </div>
           <div class="form-group">
             <label>Willing to Relocate?</label>
             <select id="prof-relocate" class="status-dropdown">
+              <option value="">Unknown / leave unanswered</option>
               <option value="true">Yes</option>
               <option value="false">No</option>
             </select>
@@ -243,6 +244,7 @@
           <div class="form-group">
             <label>Work Preference</label>
             <select id="prof-work-mode" class="status-dropdown">
+              <option value="">Unknown / leave unanswered</option>
               <option value="hybrid">Hybrid</option>
               <option value="remote">Remote Only</option>
               <option value="onsite">Onsite</option>
@@ -256,6 +258,7 @@
           <div class="form-group full-width">
             <label>Authorized to work in country?</label>
             <select id="prof-auth" class="status-dropdown">
+              <option value="">Unknown / leave unanswered</option>
               <option value="true">Yes (Legally Authorized)</option>
               <option value="false">No</option>
             </select>
@@ -263,6 +266,7 @@
           <div class="form-group full-width">
             <label>Requires Visa Sponsorship (Now or Future)?</label>
             <select id="prof-sponsorship" class="status-dropdown">
+              <option value="">Unknown / leave unanswered</option>
               <option value="false">No (Does Not Require Sponsorship)</option>
               <option value="true">Yes (Requires Sponsorship)</option>
             </select>
@@ -270,6 +274,7 @@
           <div class="form-group full-width">
             <label>Former Employee of Company?</label>
             <select id="prof-former-emp" class="status-dropdown">
+              <option value="">Unknown / leave unanswered</option>
               <option value="false">No</option>
               <option value="true">Yes</option>
             </select>
@@ -277,6 +282,7 @@
           <div class="form-group full-width">
             <label>Bound by Non-Compete Agreement?</label>
             <select id="prof-non-compete" class="status-dropdown">
+              <option value="">Unknown / leave unanswered</option>
               <option value="false">No</option>
               <option value="true">Yes</option>
             </select>
@@ -289,6 +295,7 @@
           <div class="form-group">
             <label>Gender</label>
             <select id="prof-gender" class="status-dropdown">
+              <option value="">Unknown / leave unanswered</option>
               <option value="Male">Male</option>
               <option value="Female">Female</option>
               <option value="Non-Binary">Non-Binary</option>
@@ -298,6 +305,7 @@
           <div class="form-group">
             <label>Race / Ethnicity</label>
             <select id="prof-race" class="status-dropdown">
+              <option value="">Unknown / leave unanswered</option>
               <option value="Asian">Asian (Indian subcontinent)</option>
               <option value="White">White</option>
               <option value="Black">Black or African American</option>
@@ -309,20 +317,23 @@
           <div class="form-group full-width">
             <label>Veteran Status</label>
             <select id="prof-veteran" class="status-dropdown">
-              <option value="No">I am not a protected veteran</option>
-              <option value="Yes">I identify as a protected veteran</option>
+              <option value="">Unknown / leave unanswered</option>
+              <option value="I am not a protected veteran">I am not a protected veteran</option>
+              <option value="I identify as a protected veteran">I identify as a protected veteran</option>
               <option value="Prefer not to say">Prefer not to say</option>
             </select>
           </div>
           <div class="form-group full-width">
             <label>Disability Status (Form CC-305)</label>
             <select id="prof-disability" class="status-dropdown">
-              <option value="No">No, I do not have a disability</option>
-              <option value="Yes">Yes, I have a disability</option>
+              <option value="">Unknown / leave unanswered</option>
+              <option value="No, I do not have a disability">No, I do not have a disability</option>
+              <option value="Yes, I have a disability">Yes, I have a disability</option>
               <option value="Prefer not to say">Prefer not to say</option>
             </select>
           </div>
         </div>
+        <div id="additional-profile"></div>
       </section>
 
       <!-- SECTION 5: AIHawk Dynamic QA Bank -->
@@ -333,18 +344,6 @@
         </div>
         <p class="qa-desc">Auto-answers custom ATS questions whenever matching keywords appear in the prompt.</p>
         <div id="qa-list-container" class="qa-list">
-          <div class="qa-row">
-            <input type="text" class="text-input qa-keyword" placeholder="e.g. 18 years of age" value="18 years of age">
-            <input type="text" class="text-input qa-answer" placeholder="Answer" value="Yes">
-          </div>
-          <div class="qa-row">
-            <input type="text" class="text-input qa-keyword" placeholder="e.g. background check" value="background check">
-            <input type="text" class="text-input qa-answer" placeholder="Answer" value="Yes">
-          </div>
-          <div class="qa-row">
-            <input type="text" class="text-input qa-keyword" placeholder="e.g. drug screen" value="drug screen">
-            <input type="text" class="text-input qa-answer" placeholder="Answer" value="Yes">
-          </div>
         </div>
       </section>
 

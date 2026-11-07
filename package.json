@@ -7,6 +7,7 @@
   "scripts": {
     "hunt": "tsx src/index.ts",
     "test": "tsx src/selftest.ts",
+    "test:autoapply": "node --import ./scripts/test-temp.mjs --import tsx --test --test-concurrency=1 src/autoapply/autoapply.test.ts src/autoapply/workflow.test.ts src/autoapply/portals.test.ts src/autoapply/portal-snapshots.test.ts src/autoapply/workday-auth.test.ts src/autoapply/intake.test.ts src/autoapply/store.test.ts src/autoapply/answers.test.ts src/autoapply/grounded-model.test.ts src/autoapply/mailbox.test.ts src/autoapply/dynamic-form.test.ts src/autoapply/submission.test.ts src/autoapply/authentication.test.ts src/autoapply/mail-evidence.test.ts src/autoapply/worker.test.ts src/autoapply/recovery.test.ts src/autoapply/network-proof.test.ts src/autoapply/acceptance.test.ts src/autoapply/interactions.test.ts src/autoapply/workday-experience.test.ts src/autoapply/ats-strategies.test.ts src/autoapply/company-batches.test.ts",
     "test:map": "tsx --test web/lib/job-cities.test.ts web/lib/office-data.test.ts",
     "test:map:browser": "playwright test --config web/playwright.config.mjs",
     "office-directory": "tsx src/office-directory.ts",
@@ -34,15 +35,30 @@
     "yc-domains": "tsx src/yc-directory.ts",
     "oj-slugs": "tsx src/open-jobs-slugs.ts",
     "ats-tools": "tsx src/ats-tools.ts",
+    "build:extension": "node scripts/build-extension.mjs",
+    "auto-apply:worker": "tsx src/autoapply/worker.ts",
     "auto-apply": "tsx src/autoapply/cli.ts"
   },
   "devDependencies": {
+    "@types/mailparser": "^3.9.0",
     "@types/node": "^22.10.0",
+    "esbuild": "^0.28.2",
     "playwright": "^1.62.1",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.16"
+  },
+  "dependencies": {
+    "@crawlee/core": "^3.18.2",
+    "docx": "^9.15.2",
+    "fingerprint-generator": "^2.1.89",
+    "fingerprint-injector": "^2.1.89",
+    "got-scraping": "^4.2.2",
+    "header-generator": "^2.1.89",
+    "imapflow": "^2.10.0",
+    "mailparser": "^3.14.1",
+    "patchright": "^1.64.2"
   }
 }

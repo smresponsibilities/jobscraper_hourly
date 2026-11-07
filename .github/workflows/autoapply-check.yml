@@ -1,0 +1,40 @@
+name: Autoapply checks
+on:
+  pull_request:
+    paths:
+      - 'src/autoapply/**'
+      - 'extension/**'
+      - 'scripts/*extension*'
+      - 'scripts/cdp-diagnostic.ts'
+      - 'scripts/test-temp.mjs'
+      - 'scripts/verify-autoapply-evidence.ts'
+      - 'scripts/audit-autoapply-acceptance.ts'
+      - 'scripts/install-mailpit.ps1'
+      - 'package*.json'
+      - '.github/workflows/autoapply-check.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16'
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install chromium
+      - run: npm run build:extension
+      - run: npx tsc --noEmit
+      - run: npm run test:autoapply
+      - run: ./scripts/install-mailpit.ps1
+      - run: node --import ./scripts/test-temp.mjs --import tsx --test src/autoapply/otp.integration.test.ts
+      - run: node --import tsx scripts/cdp-diagnostic.ts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cdp-diagnostic
+          path: out/cdp-diagnostic.json

@@ -75,13 +75,38 @@ export interface FieldClassificationResult {
   category: ExtendedFieldCategory;
   confidence: number; // 0.0 to 1.0
   matchedKeyword?: string;
-  source: 'name' | 'id' | 'placeholder' | 'label' | 'aria' | 'fuzzy';
+  source: 'autocomplete' | 'name' | 'id' | 'placeholder' | 'label' | 'aria' | 'fuzzy';
+}
+
+export interface ScopedAnswer {
+  question: string;
+  value: string | boolean | number;
+  scope: 'GLOBAL_FACT' | 'JURISDICTION_SCOPED' | 'EMPLOYER_SCOPED';
+  country?: string;
+  employerKey?: string;
+  requisitionKey?: string;
 }
 
 export interface CandidateExtendedProfile {
+  recruitmentPrivacyConsent?: boolean;
+  adult?: boolean;
+  completeEmploymentHistory?: boolean;
+  indiaOnlyWorkAuthorization?: boolean;
+  declarations?: { termsAndAccuracyConsent?: boolean; talentPoolConsent?: boolean; backgroundCheckConsent?: boolean; relativesAtCompany?: boolean; governmentOfficial?: boolean; big4Auditor?: boolean };
+  answers?: ScopedAnswer[];
+  skillYears?: Record<string, number>;
+  unlistedSkillYears?: number;
+  referralSources?: string[];
+  workAuthorizationByCountry?: Record<string, { authorizedInCountry?: boolean; requiresSponsorshipNowOrFuture?: boolean }>;
+  skills?: string[];
+  coverLetterText?: string;
+  documents?: { resume?: string; coverLetter?: string };
   personal: {
     firstName: string;
     lastName: string;
+    age?: number;
+    prefix?: string;
+    phoneDeviceType?: string;
     fullName?: string;
     preferredName?: string;
     email: string;
@@ -106,6 +131,8 @@ export interface CandidateExtendedProfile {
     gpa?: string;
     graduationYear?: string;
     startYear?: string;
+    startDate?: string;
+    endDate?: string;
   }>;
   experience: Array<{
     title: string;
@@ -126,6 +153,7 @@ export interface CandidateExtendedProfile {
     salaryCurrency?: string;
     willingToRelocate: boolean;
     workPreference: 'remote' | 'hybrid' | 'onsite';
+    officeAttendance?: { city: string; maxDaysPerWeek: number };
   };
   workAuthorization: {
     authorizedInCountry: boolean;
@@ -144,10 +172,13 @@ export interface CandidateExtendedProfile {
     legalSignatureName?: string;
     signatureDate?: string;
   };
-  qaBank?: Record<string, string>; // Custom Question-Answer bank
+  qaBank?: Record<string, string | boolean>; // Custom Question-Answer bank
 }
 
 export interface AutofillFieldAction {
+  documentHash?: string;
+  controlKey?: string;
+  question?: string;
   category: ExtendedFieldCategory;
   confidence: number;
   selector: string;
@@ -178,7 +209,22 @@ export interface BotRunReport {
   fieldsFilled: number;
   unmappedFields: number;
   stepsTraversed: number;
-  status: 'completed' | 'paused_for_review' | 'failed';
+  choiceFields?: Array<{ options: string[] }>;
+  status: 'completed' | 'submitted' | 'paused_for_review' | 'failed' | 'skipped';
+  reason?: string;
+  reviewKind?: 'authentication' | 'challenge' | 'answers' | 'receipt' | 'network';
+  pendingFormRequests?: boolean;
+  automaticVerificationPending?: boolean;
+  reconcileAfter?: string;
+  preflightAfter?: string;
+  submissionAttempted?: boolean;
+  credentialAttempts?: Array<'signup' | 'signin'>;
+  humanInterventionRequired?: boolean;
+  submission?: { phase: 'prepared' | 'clicked' | 'dispatched' | 'confirmed'; clickedAt?: string; requests: Array<{ url: string; method: string; dispatchedAt: string; payloadHash: string; status?: number; responseHash?: string; headersHash?: string }> };
+  evidenceDir?: string;
+  submittedFields?: Array<{ label: string; selector: string; value: string | boolean }>;
+  verificationMessageId?: string;
+  receipt?: { url: string; text: string; verifiedAt: string; existing?: boolean; selector?: string; applicationId?: string; evidenceDir?: string; emailConfirmationId?: string; domEvidenceDir?: string };
   actions: AutofillFieldAction[];
   logs: string[];
 }
@@ -208,6 +254,11 @@ export type AutoaplyFeedbackType =
   | 'rejected';
 
 export interface AutoaplyJobItem {
+  description?: string;
+  fitCheckedAt?: string;
+  reasonCode?: 'SUBMITTED_VERIFIED' | 'SKIPPED_CLOSED' | 'SKIPPED_YOE' | 'PARKED_MISSING_FACT' | 'PARKED_CAPTCHA' | 'PARKED_AUTH' | 'AMBIGUOUS_DISPATCH' | 'TRANSIENT_RETRY' | 'UNKNOWN';
+  canonicalKey?: string;
+  receipt?: BotRunReport['receipt'];
   id: string;
   externalJobId: string;
   title: string;
@@ -220,9 +271,13 @@ export interface AutoaplyJobItem {
   feedbackType?: AutoaplyFeedbackType;
   appliedAt?: string;
   error?: string;
+  nextAttemptAt?: string;
+  retryCount?: number;
 }
 
 export interface AutoaplyQueueConfig {
+  statePath?: string;
+  candidateId?: string;
   maxAgeHours: number; // e.g. 4 for 4-hour high-priority window, 24 for standard
   maxDailyCredits?: number;
   remainingCredits?: number; // Infinity for unmetered continuous execution
@@ -240,3 +295,4 @@ export interface AutoaplyQueueMetrics {
   creditsRemaining: number;
   infiniteMode: boolean;
 }
+

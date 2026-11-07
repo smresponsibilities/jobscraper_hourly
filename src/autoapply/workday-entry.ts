@@ -1,0 +1,167 @@
+// src/autoapply/workday-entry.ts
+import type { Page } from 'patchright';
+
+export interface WorkdayEntryResult {
+  enteredWizard: boolean;
+  jobClosed: boolean;
+  entryMethod:
+    | 'already_in_wizard'
+    | 'use_last_app'
+    | 'apply_manually_btn'
+    | 'autofill_resume_btn'
+    | 'direct_url_fallback'
+    | 'closed';
+}
+
+export async function ensureWorkdayApplicationStarted(page: Page): Promise<WorkdayEntryResult> {
+  const currentUrl = page.url();
+  if (!currentUrl.toLowerCase().includes('myworkdayjobs.com')) {
+    return { enteredWizard: true, jobClosed: false, entryMethod: 'already_in_wizard' };
+  }
+
+  const checkJobClosed = async (): Promise<boolean> => {
+    return await page
+      .evaluate(() => {
+        const txt = (document.body?.innerText || '').toLowerCase();
+        return /job is no longer available|page you are looking for doesn't exist|position has been filled|no longer accepting applications|job requisition has been closed|this job has expired|requisition is closed/i.test(
+          txt
+        );
+      })
+      .catch(() => false);
+  };
+
+  // 1. Wait for Workday SPA client to mount controls, posting header, or closed banner (Ticket GEN-67)
+  await page.locator?.(
+      '[data-automation-id="adventureButton"], [data-automation-id="applyButton"], [data-automation-id="jobPostingHeader"], [data-automation-id="signInContent"], [data-automation-id="createAccountContent"], [data-automation-id="bottom-navigation-next-button"], [data-automation-id="legalNoticeAcceptButton"], button:has-text("Apply"), button:has-text("Accept Cookies")'
+    )
+    .first()
+    .waitFor({ state: 'visible', timeout: 8000 })
+    .catch(() => {});
+
+  if (await checkJobClosed()) {
+    return { enteredWizard: false, jobClosed: true, entryMethod: 'closed' };
+  }
+
+  // 2. Check if we are already on the auth screen or form wizard
+  const hasWizardOrAuth = async (): Promise<boolean> => {
+    // If on /apply page and utilityButtonSignIn is present but inputs not yet mounted (Barclays & Citi), click it!
+    const isApplyRoute = /\/apply/i.test(page.url());
+    const utilitySignIn = page.locator('[data-automation-id="utilityButtonSignIn"]').first();
+    if (isApplyRoute && (await utilitySignIn.isVisible().catch(() => false))) {
+      const existingInputs = await page.locator('input[type="email"], input[type="password"]').count().catch(() => 0);
+      if (existingInputs === 0) {
+        await utilitySignIn.click({ timeout: 2500 }).catch(() => {});
+        await page.waitForTimeout(1500);
+      }
+    }
+
+    const count = await page
+      .locator(
+        '[data-automation-id="signInContent"], [data-automation-id="createAccountContent"], [data-automation-id="SignInWithEmailButton"], [data-automation-id="bottom-navigation-next-button"], [data-automation-id^="formField-"], input[type="email"], input[type="password"]'
+      )
+      .count()
+      .catch(() => 0);
+    return count > 0;
+  };
+
+  if (await hasWizardOrAuth()) {
+    return { enteredWizard: true, jobClosed: false, entryMethod: 'already_in_wizard' };
+  }
+
+  // 3. Dismiss any Workday cookie / legal notice banner first
+  const cookieAccept = page
+    .locator(
+      'button[data-automation-id="legalNoticeAcceptButton"], button:has-text("Accept Cookies"), button:has-text("Accept All")'
+    )
+    .first();
+  if (await cookieAccept.isVisible().catch(() => false)) {
+    await cookieAccept.click({ timeout: 2000 }).catch(() => {});
+    await page.waitForTimeout(1200);
+  }
+
+  // 4. Click "Apply" button on Job Overview page
+  const applyBtn = page
+    .locator(
+      '[data-automation-id="adventureButton"], [data-automation-id="applyButton"], a[data-automation-id="adventureButton"], button:has-text("Apply")'
+    )
+    .first();
+
+  if (await applyBtn.isVisible().catch(() => false)) {
+    await applyBtn.scrollIntoViewIfNeeded().catch(() => {});
+    await applyBtn.click({ timeout: 4000 }).catch(() => {});
+    await page.waitForTimeout(1500);
+  } else {
+    // If no Apply button is visible on a Workday overview page, check again if closed
+    if (await checkJobClosed()) {
+      return { enteredWizard: false, jobClosed: true, entryMethod: 'closed' };
+    }
+  }
+
+  // 5. Handle "Start Your Application" Modal (Use My Last Application -> Apply Manually -> Autofill with Resume)
+  const modalOptions: Array<{ selector: string; method: WorkdayEntryResult['entryMethod'] }> = [
+    {
+      selector:
+        '[data-automation-id="useMyLastApplication"], a:has-text("Use My Last Application"), button:has-text("Use My Last Application")',
+      method: 'use_last_app',
+    },
+    {
+      selector:
+        '[data-automation-id="applyManually"], a:has-text("Apply Manually"), button:has-text("Apply Manually")',
+      method: 'apply_manually_btn',
+    },
+    {
+      selector:
+        '[data-automation-id="autofillWithResume"], a:has-text("Autofill with Resume"), button:has-text("Autofill with Resume")',
+      method: 'autofill_resume_btn',
+    },
+  ];
+
+  for (const opt of modalOptions) {
+    const loc = page.locator(opt.selector).first();
+    if (await loc.isVisible().catch(() => false)) {
+      await loc.click({ timeout: 4000 }).catch(() => {});
+      await page.waitForTimeout(2500);
+      const wizardCookie = page
+        .locator('button[data-automation-id="legalNoticeAcceptButton"], button:has-text("Accept Cookies")')
+        .first();
+      if (await wizardCookie.isVisible().catch(() => false)) {
+        await wizardCookie.click({ timeout: 2000 }).catch(() => {});
+        await page.waitForTimeout(1500);
+      }
+      if (await hasWizardOrAuth()) {
+        return { enteredWizard: true, jobClosed: false, entryMethod: opt.method };
+      }
+    }
+  }
+
+  // 6. Direct URL Fallback: navigate straight to <jobUrl>/apply/applyManually
+  if (!(await hasWizardOrAuth())) {
+    const cleanBase = currentUrl.split('?')[0]!.replace(/\/apply(?:\/.*)?$/i, '').replace(/\/+$/, '');
+    if (/\/job\//i.test(cleanBase)) {
+      const directManualUrl = `${cleanBase}/apply/applyManually`;
+      await page.goto(directManualUrl, { waitUntil: 'load', timeout: 20_000 }).catch(async () => {
+        await page.goto(directManualUrl, { waitUntil: 'domcontentloaded', timeout: 10_000 }).catch(() => {});
+      });
+      await page.waitForTimeout(2000);
+      const directCookie = page
+        .locator('button[data-automation-id="legalNoticeAcceptButton"], button:has-text("Accept Cookies")')
+        .first();
+      if (await directCookie.isVisible().catch(() => false)) {
+        await directCookie.click({ timeout: 2000 }).catch(() => {});
+        await page.waitForTimeout(1500);
+      }
+      if (await checkJobClosed()) {
+        return { enteredWizard: false, jobClosed: true, entryMethod: 'closed' };
+      }
+      if (await hasWizardOrAuth()) {
+        return { enteredWizard: true, jobClosed: false, entryMethod: 'direct_url_fallback' };
+      }
+    }
+  }
+
+  if (await checkJobClosed()) {
+    return { enteredWizard: false, jobClosed: true, entryMethod: 'closed' };
+  }
+
+  return { enteredWizard: await hasWizardOrAuth(), jobClosed: false, entryMethod: 'direct_url_fallback' };
+}

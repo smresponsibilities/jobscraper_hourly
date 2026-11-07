@@ -1,0 +1,303 @@
+import type { Frame } from 'patchright';
+import { createHash } from 'node:crypto';
+
+export type WidgetKind = 'TEXT' | 'NUMBER' | 'TEXTAREA' | 'BOOLEAN_TOGGLE' | 'SINGLE_SELECT' | 'MULTI_SELECT' | 'DATE_SPLIT' | 'DATE_NATIVE' | 'FILE_UPLOAD';
+
+export interface DistilledField {
+  refKey: string;
+  widgetKind: WidgetKind;
+  questionText: string;
+  sectionHeading: string;
+  isRequired: boolean;
+  isFilled: boolean;
+  currentValue: string;
+  options: string[];
+  validationError: string | null;
+  containerSelector: string;
+  controlSelector: string;
+}
+
+export function isInteractiveChoiceReadOnly(el: Element): boolean {
+  const role = el.getAttribute('role');
+  const uxi = el.getAttribute('data-uxi-widget-type');
+  const hasPopup = el.getAttribute('aria-haspopup');
+  const controls = el.getAttribute('aria-controls');
+  const owns = el.getAttribute('aria-owns');
+  return role === 'combobox' || role === 'listbox' || uxi === 'selectinput' || !!hasPopup || !!controls || !!owns;
+}
+
+const BARE_OPTION_REGEX = /^(?:yes|no|true|false|male|female|other|none|i agree|select\.\.\.|month\.\.\.|year\.\.\.)$/i;
+
+function isCleanQuestionCandidate(txt: string | null | undefined): boolean {
+  if (!txt) return false;
+  const clean = txt.replace(/\s+/g, ' ').trim();
+  if (!clean || clean.length < 2) return false;
+  if (BARE_OPTION_REGEX.test(clean)) return false;
+  return true;
+}
+
+export function extractCleanQuestionText(box: Element, els: Element[] = []): string {
+  const root = box.getRootNode() as Document | ShadowRoot;
+  const findById = (id: string): Element | null => {
+    if (!id) return null;
+    if (typeof (root as Document).getElementById === 'function') return (root as Document).getElementById(id);
+    try { return root.querySelector(`[id="${id.replace(/"/g, '\\\"')}"]`); } catch { return null; }
+  };
+  const first = els[0] || (box.matches('input,select,textarea,[role="combobox"]') ? box : box.querySelector('input,select,textarea,[role="combobox"]'));
+
+  // 1. Explicit label for ID (reject bare Yes/No option labels on radios)
+  if (first?.id) {
+    const escapedId = typeof CSS !== "undefined" && typeof CSS.escape === "function" ? CSS.escape(first.id) : first.id.replace(/"/g, "\\\"");
+    const explicitFor = (root as Document).querySelector?.(`label[for="${escapedId}"]`);
+    if (isCleanQuestionCandidate(explicitFor?.textContent)) {
+      return explicitFor!.textContent!.replace(/\s+/g, ' ').trim().slice(0, 1500);
+    }
+  }
+
+  // 2. Wrapper label
+  const wrapperLabel = first?.closest('.select-shell, .input-wrapper, .field, [class*="field"], .application-question')?.querySelector('label');
+  if (isCleanQuestionCandidate(wrapperLabel?.textContent) && !wrapperLabel!.querySelector('input[type="radio"], input[type="checkbox"]')) {
+    return wrapperLabel!.textContent!.replace(/\s+/g, ' ').trim().slice(0, 1500);
+  }
+
+  // 3. Linked aria-labelledby
+  const elLinked = first && typeof first.getAttribute === 'function' ? (first.getAttribute('aria-labelledby') || '').split(/\s+/).map(id => findById(id)?.textContent || '').join(' ').trim() : '';
+  const boxLinked = typeof box.getAttribute === 'function' ? (box.getAttribute('aria-labelledby') || '').split(/\s+/).map(id => findById(id)?.textContent || '').join(' ').trim() : '';
+  const linked = elLinked || boxLinked;
+  if (isCleanQuestionCandidate(linked)) return linked.replace(/\s+/g, ' ').trim().slice(0, 1500);
+
+  // 4. Explicit legends / Ashby titles / single question labels
+  const explicitTitle = box.querySelector(
+    'legend, .ashby-application-form-question-title, [data-automation-id$="-legend"], label[data-automation-id*="formLabel"], .field-label, .application-label'
+  )?.textContent?.trim();
+  if (isCleanQuestionCandidate(explicitTitle)) return explicitTitle!.replace(/\s+/g, ' ').trim().slice(0, 1500);
+
+  // 5. Single label in box that doesn't wrap radio/checkbox
+  const singleLabels = Array.from(box.querySelectorAll('label')).filter(l => !l.querySelector('input[type="radio"], input[type="checkbox"]'));
+  if (singleLabels.length === 1 && isCleanQuestionCandidate(singleLabels[0]?.textContent)) {
+    return singleLabels[0]!.textContent!.replace(/\s+/g, ' ').trim().slice(0, 1500);
+  }
+
+  const labels = first ? Array.from((first as HTMLInputElement).labels || []).map(label => label.textContent || '').join(' ').trim() : '';
+  if (isCleanQuestionCandidate(labels)) return labels.replace(/\s+/g, ' ').trim().slice(0, 1500);
+
+  // 6. Ancestor Climbing (up to 4 levels) - strips child inputs/bare labels to extract true question sentence
+  let currentParent: Element | null = (first || box).parentElement;
+  for (let depth = 0; depth < 4 && currentParent && !currentParent.matches('body, form'); depth++) {
+    const legend = currentParent.querySelector('legend, .ashby-application-form-question-title, [data-automation-id$="-legend"], label[data-automation-id*="formLabel"], .field-label, .application-label');
+    if (isCleanQuestionCandidate(legend?.textContent)) {
+      return legend!.textContent!.replace(/\s+/g, ' ').trim().slice(0, 1500);
+    }
+    const pClone = currentParent.cloneNode(true) as Element;
+    pClone.querySelectorAll('select, option, textarea, input, button, [role="listbox"], [role="option"], .error, [role="alert"], [class*="placeholder"], script, style').forEach(n => n.remove());
+    pClone.querySelectorAll('label').forEach(l => {
+      if (!isCleanQuestionCandidate(l.textContent)) l.remove();
+    });
+    const pText = pClone.textContent?.replace(/\s+/g, ' ').trim() || '';
+    if (isCleanQuestionCandidate(pText)) {
+      return pText.slice(0, 1500);
+    }
+    currentParent = currentParent.parentElement;
+  }
+
+  // 7. Box clone text
+  const clone = box.cloneNode(true) as Element;
+  clone.querySelectorAll('select, option, textarea, input, button, [role="listbox"], [role="option"], .error, [role="alert"], [class*="placeholder"], script, style').forEach(node => node.remove());
+  if (els.length > 1 && els.some(e => (e as HTMLInputElement).type === 'radio' || e.getAttribute('role') === 'radio')) {
+    clone.querySelectorAll('label').forEach(label => label.remove());
+  }
+  const text = clone.textContent?.replace(/\s+/g, ' ').trim() || '';
+  if (isCleanQuestionCandidate(text) && !/^(?:select|choose)\b|\.{3}/i.test(text)) return text.slice(0, 1500);
+
+  if (first) {
+    const fallback = labels || first.getAttribute('aria-label') || first.getAttribute('placeholder') || first.getAttribute('name') || first.id || 'Field';
+    if (isCleanQuestionCandidate(fallback)) return fallback.replace(/\s+/g, ' ').trim().slice(0, 1500);
+  }
+  return 'Field';
+}
+
+export function groupKeyFor(el: Element): string | null {
+  const input = el as HTMLInputElement;
+  const workdayDate = el.closest('[data-automation-id^="formField-"]');
+  if (workdayDate && workdayDate.querySelector('[data-automation-id="dateSectionMonth-input"]')) {
+    return `workday-split-date:${workdayDate.getAttribute('data-automation-id')}`;
+  }
+  const ashbyField = el.closest('.ashby-application-form-field-entry');
+  if (ashbyField && ashbyField.querySelector('.ashby-application-form-input-yesno, [role="radiogroup"]')) {
+    return `ashby-field:${ashbyField.getAttribute('data-field-path') || ashbyField.className}`;
+  }
+  if (input.type === 'radio' && input.name) {
+    return `radio:${input.name}`;
+  }
+  if (el.getAttribute('role') === 'radio' && el.closest('[role="radiogroup"]')) {
+    const rg = el.closest('[role="radiogroup"]');
+    return `radiogroup:${rg?.id || rg?.getAttribute('aria-labelledby') || rg?.getAttribute('name') || 'group'}`;
+  }
+  return null;
+}
+
+export function collectControls(elements: Element[]): Element[] {
+  return elements.filter(el => {
+    if (/beecatcher|honey-?pot|bot-trap/i.test([el.id, el.getAttribute('name'), el.getAttribute('data-automation-id')].join(' '))) return false;
+    if (el.classList.contains('select__input') && !!el.closest('.select__control')?.querySelector('.select__single-value, .select__multi-value')) {
+      return false;
+    }
+    const input = el as HTMLInputElement;
+    if (input.readOnly && !isInteractiveChoiceReadOnly(el)) return false;
+    return true;
+  });
+}
+
+/** Runs inside each frame; Playwright locators already pierce open shadow roots. */
+export function annotateQuestionClusters(elements: Element[]): void {
+  const controls = elements.filter(el => {
+    if (/beecatcher|honey-?pot|bot-trap/i.test([el.id, el.getAttribute('name'), el.getAttribute('data-automation-id')].join(' '))) return false;
+    const input = el as HTMLInputElement;
+    const isChoice = el.getAttribute('role') === 'combobox' || el.getAttribute('role') === 'listbox' || el.getAttribute('data-uxi-widget-type') === 'selectinput' || !!el.getAttribute('aria-haspopup') || !!el.getAttribute('aria-controls') || !!el.getAttribute('aria-owns');
+    if (input.readOnly && !isChoice) return false;
+    return true;
+  });
+
+  for (const el of controls) {
+    const input = el as HTMLInputElement;
+    const structural = el.closest('[data-automation-id^="formField-"],[data-field-path],.ashby-application-form-field-entry,li.application-question,fieldset,[role="radiogroup"]');
+    let box: Element = structural || el;
+    if (!structural) {
+      while (box.parentElement && !box.parentElement.matches('body,form')) {
+        const parent: Element = box.parentElement;
+        const peers = controls.filter(other => parent.contains(other));
+        if (peers.some(other => other !== el && !(input.name && (other as HTMLInputElement).name === input.name && ['radio', 'checkbox'].includes(input.type)))) break;
+        box = parent;
+      }
+    }
+    const root = el.getRootNode() as Document | ShadowRoot;
+    const elLinked = (el.getAttribute('aria-labelledby') || '').split(/\s+/).map(id => root.getElementById(id)?.textContent || '').join(' ').trim();
+    const boxLinked = (box.getAttribute('aria-labelledby') || '').split(/\s+/).map(id => root.getElementById(id)?.textContent || '').join(' ').trim();
+    const linked = elLinked || boxLinked;
+    const explicitTitle = box.querySelector('legend,.ashby-application-form-question-title,[data-automation-id$="-legend"],.application-label,.field-label')?.textContent?.trim();
+    const labels = Array.from((el as HTMLInputElement).labels || []).map(label => label.textContent || '').join(' ').trim();
+    const clone = box.cloneNode(true) as Element;
+    clone.querySelectorAll('select, option, textarea, input, button, [role="listbox"], [role="option"], .error, [role="alert"], [class*="placeholder"], script, style').forEach(node => node.remove());
+    if (['radio', 'checkbox'].includes(input.type) || el.getAttribute('role') === 'radio') {
+      clone.querySelectorAll('label').forEach(label => label.remove());
+    }
+    let candidateText = clone.textContent?.replace(/\s+/g, ' ').trim() || '';
+    if (/^(?:select|choose)\b|\.{3}/i.test(candidateText)) candidateText = '';
+    let question = linked || explicitTitle || labels || candidateText;
+    if (!question || question === 'Field' || /^cards\[[0-9a-f-]+\]\[[^\]]+\]$/i.test(question)) {
+      if (el.id) {
+        const explicitFor = (root as Document).querySelector?.(`label[for="${CSS.escape(el.id)}"]`);
+        if (explicitFor?.textContent?.trim()) question = explicitFor.textContent.trim();
+      }
+      if (!question || question === 'Field') {
+        const wrapperLabel = el.closest('.select-shell, .input-wrapper, .field, [class*="field"], .application-question')?.querySelector('label');
+        if (wrapperLabel?.textContent?.trim() && !wrapperLabel.querySelector('input[type="radio"], input[type="checkbox"]')) {
+          question = wrapperLabel.textContent.trim();
+        }
+      }
+      if (!question || question === 'Field') {
+        const parentLabel = el.closest('.application-question,.custom-question,[class*="application-question"]')?.querySelector('.application-label,.field-label,.text,legend')?.textContent?.trim();
+        const fallback = parentLabel || labels || el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.getAttribute('name') || el.id || 'Field';
+        question = fallback.replace(/\s+/g, ' ').trim();
+      }
+    }
+    el.setAttribute('data-autoapply-question', question.slice(0, 1500));
+    el.setAttribute('data-autoapply-target', String(controls.indexOf(el)));
+    box.setAttribute('data-autoapply-cluster', String(controls.indexOf(el)));
+  }
+}
+
+export async function distillFormStep(frame: Frame): Promise<DistilledField[]> {
+  const controls = frame.locator('input:not([type=hidden]):not([type=submit]):not([type=button]):not([type=reset]),select,textarea,[role=combobox],button[aria-haspopup=listbox],button.ashby-application-form-input-yesno-option');
+  await controls.evaluateAll(annotateQuestionClusters);
+  const fields = await controls.evaluateAll(elements => {
+    const splitDates = new Set<Element>();
+    const radioGroups = new Set<string>();
+    const ashbyGroups = new Set<Element>();
+    return elements.filter(el => {
+      if (/beecatcher|honey-?pot|bot-trap/i.test([el.id, el.getAttribute('name'), el.getAttribute('data-automation-id')].join(' '))) return false;
+      const input = el as HTMLInputElement;
+      const isChoice = el.getAttribute('role') === 'combobox' || el.getAttribute('role') === 'listbox' || el.getAttribute('data-uxi-widget-type') === 'selectinput' || !!el.getAttribute('aria-haspopup') || !!el.getAttribute('aria-controls') || !!el.getAttribute('aria-owns') || el.classList.contains('ashby-application-form-input-yesno-option');
+      if (input.readOnly && !isChoice) return false;
+      if (!el.getClientRects().length || el.closest('[hidden],[aria-hidden=true]')) return false;
+      const rect = el.getBoundingClientRect();
+      if (rect.right < -1000 || rect.bottom < -1000) return false;
+      const radio = el as HTMLInputElement;
+      if (radio.type === 'radio' && radio.name) {
+        const key = `${elements.findIndex(peer => peer.getRootNode() === el.getRootNode() && (peer as HTMLInputElement).form === radio.form)}:${radio.name}`;
+        if (radioGroups.has(key)) return false;
+        radioGroups.add(key);
+      }
+      const ashbyBox = el.closest('.ashby-application-form-input-yesno');
+      if (ashbyBox) {
+        if (ashbyGroups.has(ashbyBox)) return false;
+        ashbyGroups.add(ashbyBox);
+      }
+      const date = el.closest('[data-automation-id^="formField-"]');
+      if (date?.querySelector('[data-automation-id="dateSectionMonth-input"]')) {
+        if (splitDates.has(date)) return false;
+        splitDates.add(date);
+      }
+      return true;
+    }).map(el => {
+      const input = el as HTMLInputElement;
+      const isAshbyBtn = el.classList.contains('ashby-application-form-input-yesno-option');
+      const isGreenhouseSelect = el.classList.contains('select__input') ||
+        el.getAttribute('role') === 'combobox' ||
+        !!el.closest('.select-shell, .select__control')?.querySelector('button[aria-label="Toggle flyout"]') ||
+        !!el.parentElement?.querySelector('button[aria-label="Toggle flyout"]');
+
+      const widgetKind: WidgetKind = isAshbyBtn
+        ? 'BOOLEAN_TOGGLE'
+        : input.type === 'file'
+        ? 'FILE_UPLOAD'
+        : el.tagName === 'TEXTAREA'
+        ? 'TEXTAREA'
+        : el.closest('[data-automation-id^="formField-"]')?.querySelector('[data-automation-id="dateSectionMonth-input"]')
+        ? 'DATE_SPLIT'
+        : ['radio', 'checkbox'].includes(input.type)
+        ? 'BOOLEAN_TOGGLE'
+        : el.tagName === 'SELECT' || el.getAttribute('role') === 'combobox' || el.getAttribute('aria-haspopup') === 'listbox' || el.getAttribute('data-uxi-widget-type') === 'selectinput' || isGreenhouseSelect
+        ? ((el as HTMLSelectElement).multiple ? 'MULTI_SELECT' : 'SINGLE_SELECT')
+        : input.type === 'number'
+        ? 'NUMBER'
+        : input.type === 'date'
+        ? 'DATE_NATIVE'
+        : 'TEXT';
+      const root = el.getRootNode() as Document | ShadowRoot;
+      const choices = input.type === 'radio' ? elements.filter(peer => (peer as HTMLInputElement).type === 'radio' && (peer === el || input.name && (peer as HTMLInputElement).name === input.name && peer.getRootNode() === root && (peer as HTMLInputElement).form === input.form)) : [];
+      const options = isAshbyBtn ? ['Yes', 'No'] : el.tagName === 'SELECT' ? Array.from((el as HTMLSelectElement).options).map(option => option.textContent || '') : choices.map(peer => Array.from((peer as HTMLInputElement).labels || []).map(label => label.textContent || '').join(' ') || (peer as HTMLInputElement).value);
+      const box = el.closest('[data-autoapply-cluster]');
+      const target = el.getAttribute('data-autoapply-target');
+      const question = el.getAttribute('data-autoapply-question') || el.getAttribute('aria-label') || Array.from(input.labels || []).map(label => label.textContent).join(' ') || input.name || el.id || 'Field';
+      return {
+        refKey: [el.id, input.name, target, question].join('|'),
+        questionText: question.trim(),
+        widgetKind,
+        isRequired: isAshbyBtn ? true : (input.required || el.getAttribute('aria-required') === 'true'),
+        sectionHeading: el.closest('fieldset')?.querySelector('legend')?.textContent || '',
+        isFilled: (() => {
+          if (isAshbyBtn) {
+            return !!box?.querySelector('.ashby-application-form-input-yesno button[aria-pressed="true"], .ashby-application-form-input-yesno button[class*="selected"], .ashby-application-form-input-yesno button[class*="active"]');
+          }
+          const singleVal = box?.querySelector('.select__single-value, [data-automation-id="selectedItem"], [class*="singleValue"]');
+          if (singleVal && (singleVal.textContent || '').trim().length > 0) return true;
+          return choices.length ? choices.some(peer => (peer as HTMLInputElement).checked) : input.type === 'checkbox' ? input.checked : !!input.value;
+        })(),
+        currentValue: (() => {
+          if (isAshbyBtn) {
+            return (box?.querySelector('.ashby-application-form-input-yesno button[aria-pressed="true"], .ashby-application-form-input-yesno button[class*="selected"], .ashby-application-form-input-yesno button[class*="active"]')?.textContent?.trim() || '');
+          }
+          const singleVal = box?.querySelector('.select__single-value, [data-automation-id="selectedItem"], [class*="singleValue"]');
+          if (singleVal && (singleVal.textContent || '').trim().length > 0) return (singleVal.textContent || '').trim();
+          return input.value || '';
+        })(),
+        options,
+        validationError: root.getElementById(el.getAttribute('aria-errormessage') || '')?.textContent || null,
+        controlSelector: `[data-autoapply-target=${JSON.stringify(target)}]`,
+        containerSelector: `[data-autoapply-cluster=${JSON.stringify(box?.getAttribute('data-autoapply-cluster'))}]`
+      };
+    });
+  });
+  return fields.map(field => ({ ...field, refKey: createHash('sha256').update(`${frame.url()}|${field.refKey}`).digest('hex') }));
+}

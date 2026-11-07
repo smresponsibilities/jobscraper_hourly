@@ -27,9 +27,9 @@ export function getHumanKeyDelay(minMs = 35, maxMs = 95): number {
   const u2 = Math.random() || 0.0001;
   const randStdNormal = Math.sqrt(-2.0 * Math.log(u1)) * Math.sin(2.0 * Math.PI * u2);
 
-  const mean = (minMs + maxMs) / 2;
-  const stdDev = (maxMs - minMs) / 4;
-  const delay = Math.round(mean + randStdNormal * stdDev);
+  const median = Math.sqrt(minMs * maxMs);
+  const sigma = Math.log(maxMs / minMs) / 4;
+  const delay = Math.round(Math.exp(Math.log(median) + randStdNormal * sigma));
 
   return Math.max(minMs, Math.min(maxMs, delay));
 }

@@ -1,5 +1,349 @@
 # Handoff
 
+## Google Elephant–Goldfish Model (EGM) GEN-00 through GEN-08 Certified Execution (2026-11-03)
+
+### Executive Summary
+Phase GEN-00 through Ticket GEN-08 are complete and certified according to the EGM Master Specification:
+- **Phase GEN-00 (Prerequisites & Clones)**: Reference repositories (`egm`, `applypilot`, `jobappagent`, `jobapplyai`, `browseruse`) cloned shallowly (`--depth 1 --filter=blob:none`) in `out/refs/`. Worker lock verified clean; isolated tenants (`stripe`, `avoca`, `ssctech`, `paypal`) remained strictly untouched.
+- **Ticket GEN-01 (LCA Question Distiller & Readonly Combobox Preservation)**: `isInteractiveChoiceReadOnly` correctly preserves combobox and listbox inputs; question text extraction strips controls and child labels; split dates grouped cleanly. Test `distiller.test.ts` passed 100% (4/4).
+- **Ticket GEN-02 (3-Physics Interactive Option Harvester & Typeahead)**: Static options, React-Select portals, Workday 2-level `selectinput`, and typeahead seeded with Bangalore/Chitkara/etc. pass read-back verification. Test `dynamic-form.test.ts` verified.
+- **Ticket GEN-03 (Semantic Classifier & Policy Scorer)**: 30 semantic categories and Zero-Info Fallbacks active. Boolean toggles gated against text facts; domestic office/hybrid scored; unverified skill YOE returns `'0'`. Tests `answers.test.ts` passed 100% (13/13).
+- **Ticket GEN-04 (Adjacent-Stack Disclosure & Truthful Narrative Composer)**: Implemented 5 grounded narrative branches including Branch 0 (Honest negative + adjacent-stack transfer for GitLab Go/Ruby prompt citing Morgan Stanley Jenkins/Maven/Git CI/CD). Updated `verifyTruthfulNarrative` with boundary checks without modifying `candidate.json`. Tests `narrative-composer.test.ts` passed 100% (6/6).
+- **Tickets GEN-05 & GEN-06 (State-Hash Guard & >3 YOE Auto-Skipper)**: State hashing guards against infinite loops; >3 YOE job postings auto-skipped during preflight/intake. Tests `recovery.test.ts` and `intake.test.ts` passed 100% (29/29 combined with answers).
+- **Ticket GEN-07 (2-Stage Dry-Run Gate & 5-Pass Goldfish Loop)**:
+  - *Stage A (Offline Manifest Replay)*: `scan-manifest-replay.test.ts` passed 100% (64 captures, 0 unresolved required fields) output to `out/scan-manifest-replay-report.json`.
+  - *Stage B (Live Browser Read-Only Canaries)*: Multi-round traversal across active providers certified 5 distinct live tenants (`Jobgether` on Lever, `EisnerAmper`, `Eli Lilly`, `FNZ`, `Airbus` on Workday) with `unmappedFields: []`, `submissionAttempted: false`, and `passed: true`. Output verified by gate command: `out/dryrun-canary-report.json` certifiedPassCount: 5.
+- **Ticket GEN-08 (JS Compilation & Windows Startup Daemon)**: TypeScript compiled cleanly via `tsc -p tsconfig.build.json` generating `out/dist/src/autoapply/worker.js`, `out/dist/scripts/verify-autoapply-evidence.js`, and `out/dist/scripts/audit-autoapply-acceptance.js`. Windows scheduled task `Jobscraper Autoapply` verified registered in `Ready` state.
+
+---
+
+## Generalized autofill GEN tickets, 2026-11-02
+
+Read `docs/autoapply-gen-tickets.md` for the current GEN-01 through GEN-08
+implementation and remaining acceptance. Shared question clustering, option
+harvesting before resolution, widget-aware classification, scoped office policy,
+grounded narrative excerpts, state-hash click guards, locale-aware requisition
+identity and loaded-description experience skipping were added. Compiled startup
+now uses `tsconfig.build.json`. Existing uncommitted work remains intact.
+
+The prior SPAN Yes was recovered from chat and saved with exact role scope and
+a reusable Bengaluru five-day office policy. Profile backups remain protected.
+Automatic review rejected adding unverified technology/employment assertions;
+that write was not performed or bypassed. Narrative composition uses existing
+certified descriptions and separately identified certified skills.
+
+GEN-07 is not passed for live submission. Stage A replay (`scan-manifest-replay.test.ts`)
+passed 100% (10 replayable manifest jobs, 5 empty shells marked SKIPPED_EMPTY_SHELL,
+64/64 captures with 0 missing labels) in `out/scan-manifest-replay-report.json`.
+Workday `selectinput` option harvesting was refined in `src/autoapply/widgets.ts` to
+prevent premature search execution before runner answer resolution.
+Stage B live dry-runs checked 35 sources across active providers; five-provider readiness
+is not established due to portal login gates, CAPTCHA review, and eligibility constraints.
+All sampled tenants recorded `submissionAttempted: false`. Fresh independent audit
+re-confirmed 0/50 verified applications (`state/autoapply/portal-review/production-acceptance.json`),
+excluding three existing records. Unattended live submissions and startup installation
+remain gated off. Stripe, Avoca, SS&C and PayPal stay isolated. No commit or push.
+
+
+## Terra high execution transfer, 2026-11-02
+
+The owner requested a new GPT-6.1 Terra high chat incorporating the new Gemini
+conversation and explicit measures against repeated investigation. Read
+`docs/autoapply-terra-high-handoff-2026-11-02.md` for the current evidence,
+attachment paths, authorization, protected-state constraints, proposed-code
+pitfalls and concrete execution order. Prioritize a truthful scorecard, mixed
+tenant progression proof, batch missing-question harvest and fresh unlocked
+tenant canaries. Stripe, Avoca and SS&C remain ambiguous and must not be retried.
+Do not invent profile facts or weaken identity, quota, privacy or receipt proof
+to increase throughput. No commit or push. The new chat owns further execution.
+
+## Avoca evidence, 2026-11-02
+
+Historical queued descriptions now backfill from live source checks in batches
+of at most 24 per intake poll, with a 24-hour retry interval and atomic updates
+that do not overwrite claimed jobs. Definitively ineligible roles are skipped;
+transient failures remain queued. Focused intake and race checks passed. A
+limited live intake check recovered three descriptions and skipped 21 roles:
+ten out-of-scope titles, eight identity mismatches and three with unconfirmed
+India remote eligibility. No applications were submitted in that check. Before
+the refresh, 399 of 407 description-less queued rows were in the saved catalogue;
+rows absent from it remain outside this backfill. Broader live backfill remains
+unfinished.
+
+Restricted workers now block an approved role when another paused role at the
+same tenant has an ambiguous submit outside the approved list. The block uses
+the durable journal or checkpoint and remains for that worker's lifetime.
+Queued and parked sibling fixtures passed, including one-shot termination;
+TypeScript compilation passed. This does not reconcile the prior submission.
+
+A subsequent Stripe canary filled 23 fields and recorded no failed actions,
+then dispatched Submit without observing a receipt. Its checkpoint records nine
+POST observations with mixed response statuses; none establishes acceptance.
+It remains paused with its click preserved. A one-shot worker run without
+submission saved no email receipt. A subsequent read-only mailbox check
+succeeded and found no matching authenticated Greenhouse confirmation; absence
+does not prove failure. One observed Greenhouse request returned HTTP 428 but
+did not match the existing terminal endpoint recognizer, so its role in the
+submission is unproven. Do not retry Stripe Submit.
+The owner-confirmed availability was saved for all four listed quarters, with
+the prior profile retained. Exact current-or-previous employer/title questions
+now use a single, explicitly complete employment history. Phone read-back
+accepts formatting only when digits and international prefix match. Synthetic
+browser checks, public Stripe phone-field probe, answer tests and typecheck pass.
+The worker now records a privacy-safe confirmation-check status and timestamp;
+the status reader accepts only known states. Success, failure and redaction
+fixtures passed. This records the most recent check, not per-job mail history.
+
+A Stripe-only headless canary revalidated the role and parked on form validation:
+17 fills, seven failed field actions, no submit attempt or receipt. Remaining
+failures include phone interaction, grouped start-quarter options, and current
+or previous employment fields. Investigate the actual form structure and
+confirmed profile facts before another run; do not infer missing values. The
+single-role worker exited normally and its protected checkpoint is retained.
+
+Fresh owner-protected backups verified 3,479 state files and 1,798 source files.
+They remain same-disk snapshots; DPAPI recovery remains tied to the owner.
+A fresh acceptance audit found zero independently verified applications toward
+the 50-application gate. It excluded three existing records. This audit does
+not establish whether the ambiguous Avoca or SS&C submissions were received.
+
+Reviewed-step resume previously treated every ordinary checkbox as a retained
+answer, including unchecked required controls. Resume now preserves checked
+controls only; an unknown unchecked required control parks before submission.
+Explicitly required checkbox groups now park when no visible enabled option is
+selected, without requiring every option. Options sharing a name have separate
+attempt keys. Four focused browser checks and TypeScript compilation passed.
+These fixtures cover ARIA-required fieldsets and groups; live Stripe markup and
+behavior remain unverified.
+
+The protected Avoca checkpoint records one POST with HTTP 200, but no receipt.
+This response alone does not establish application acceptance. A read-only
+check through the worker's configured private mailbox succeeded and found no
+matching authenticated Ashby confirmation. That is not proof of nonreceipt;
+that check used the old 50-message-per-folder limit. The IMAP reader now scans
+all search results in batches of 50; a 101-message fixture and the mailbox and
+receipt regressions passed. The expanded scan has not been run live for Avoca.
+Do not retry the application. The
+direct ATS requisition-identity preflight guard passed its focused tests, and
+TypeScript compilation passed. No startup task was installed in this follow-up.
+
+## Autoapply live canaries and safety, 2026-11-01
+
+The Stripe Greenhouse canary reached the application after entry matching was
+fixed for a decorative Unicode word joiner. It filled fields and parked without
+attempting submission or producing a receipt. Two owner-confirmed Stripe-scoped
+answers were saved, with a previous profile retained. Remaining issues include phone
+interaction, degree selection and grouped start-quarter checkboxes. A focused
+fixture confirms checkbox options can resolve separately without selecting
+siblings; it does not prove grouped required-field handling.
+
+The Diagrid Ashby and Warner Music Lever canaries also reached their forms and
+parked without a submission attempt or receipt. They ask for personal narratives,
+compensation or work preferences; do not invent answers. The SS&C Workday
+canary recorded `submit_clicked` on a zero-field page, then reset its checkpoint
+to `prepared` after a client-side error. No request or receipt was observed.
+Treat this as ambiguous and reconcile it before retrying. Recovery now honors
+the durable click event even if the checkpoint says prepared.
+The checkpoint records the ambiguity, with its original retained. Autoapply later
+authenticated and observed Workday's explicit empty application-list control;
+the latest stable-empty-list check has not yet run against the live page. Absence
+alone does not prove the click had no delayed effect. A tenant vault credential
+now exists; do not print it. Zero-field and journal-based restart tests passed.
+ABB remains out of scope, and Jobgether's unnamed hiring
+employer has not been checked against the service-firm exclusion. Public evidence
+shows Brillio is an IT services firm; it was added to the shared exclusion filter.
+
+Bare `Remote` now requires explicit India or global location in autoapply
+preflight; source-location changes can reopen those skipped roles. Recovery
+retains claims owned by a live process even after heartbeat expiry, preventing
+sleep from releasing an active submission. Focused tests passed for these changes,
+dead-process recovery and entry matching. A SQLite-backed single-worker lock
+passed local exclusivity, killed-worker recovery and one-shot startup fixtures.
+A bachelor's-level option fallback passed a focused browser fixture. `npm test`
+passed after an explicit Workday marker detection correction. The restricted
+account cannot start tsx; the successful regression run used reviewed owner
+access. Provider rotation now persists across restarts; focused fit and warm
+company-batch checks passed. Journal-based recovery also preserves an ambiguous
+click when its checkpoint is missing; both missing and stale checkpoint fixtures
+passed. Reconciliation attempts have a durable one-hour cooldown across restarts.
+Candidate Home matching rejects statuses from neighbouring or hidden rows.
+Unsubmitted parked roles now undergo live preflight before resuming; closed roles
+are skipped and transient failures wait five minutes. Focused closed-source,
+transient-restart and ambiguous-click fixtures passed. Historical queue rows
+still lack descriptions.
+
+Observed employer challenges now impose a durable one-hour tenant cooldown for
+queued and parked roles. The cooldown, restart persistence and simultaneous
+login/challenge classification passed focused fixtures. Confirmation emails now
+require an exact requisition ID when a tenant has multiple jobs with the same
+title; partial employer names and requisition IDs are rejected. Mail fixtures
+passed. A clicked submit remains ambiguous even after client validation errors.
+
+An owner-protected local state backup passed SHA-256 comparison for all 3,120
+files; its restored queue passed SQLite integrity checking. It includes recent
+SS&C account and reconciliation state. A protected source snapshot verified
+1,798 files but predates the latest mail-reconciliation edit. Both backups are
+on the same disk; DPAPI vault recovery remains tied to the owner account, and
+independent disaster recovery is unproven.
+The master tracker lists outstanding work. No startup task was installed, no
+application receipt was produced, and no commit or push occurred.
+
+## Terra transfer, 2026-11-01
+
+Read `docs/autoapply-terra-handoff-2026-11-01.md` for the latest complete transfer.
+The owner requested a new GPT-6.1 Terra medium chat, with caveman ultra replies.
+Existing checkout and uncommitted work must be preserved. Latest fit/provider
+rotation implementation compiled and passed two new focused tests plus the
+existing company-batch dispatch regression. Historical queue descriptions and
+restart fairness remain incomplete. Canary planning checked four roles: ABB
+failed the current role gate; one Greenhouse, Lever and Ashby role passed public
+preflight. `out/autoapply-canary-plan.json` holds public role details. No live
+submission or startup installation occurred. Owner-preserving ACL change did
+succeed. All remaining work and authorization details are in the transfer.
+
+## Autoapply local checks and owner approval, 2026-11-01
+
+The owner explicitly approved live applications, the Windows logon task, and
+the state-folder permission change through applicable review, with the condition
+that their account must retain access. This supersedes the pending-approval
+restriction in the initial continuation request. Do not bypass automatic review.
+No commit or push is authorized.
+
+The no-op Next fixture passed using compiled JavaScript: two clicks, then halt.
+Source tsx startup still fails under the restricted account at `uv_os_get_passwd`.
+Status summaries now allowlist numeric counters/provider keys and normalize
+timestamps, tolerate malformed worker JSON and incomplete final history lines.
+IMAP now searches INBOX plus available All Mail/Spam or special-use archive/junk
+folders read-only, deduplicates Message-ID, and stops reconnect attempts after an
+authentication rejection without retaining raw server diagnostics. Nine focused
+mailbox/status checks passed, and TypeScript compilation passed. Live mailbox
+coverage and employer outcome tracking remain unproven.
+
+`scripts/protect-autoapply-state.ps1` ran successfully after automatic review.
+The state root retains its original owner, with explicit full control for that
+owner, SYSTEM and Administrators. Owner read/write was exercised successfully.
+Original root ACL is saved in an ignored timestamped `out/autoapply-root-acl-*.txt`.
+Existing child browser rules remain intact. This is a Windows ACL restriction,
+not a claim that every child has POSIX 0600 semantics. Restricted agent access to
+state now fails as expected; protected-state operations require reviewed owner
+access. Do not loosen permissions just to accommodate agent access.
+
+Public preflight planning for sequential canaries is in progress. Its sanitized
+output is `out/autoapply-canary-plan.json`; inspect the actual result before live
+dispatch. No live application or startup task has been established by this note.
+
+## Autoapply continuation and handoff, 2026-11-01
+
+For the current architecture, proofs and remaining work, read
+`docs/autoapply-continuation-2026-11-01.md` and
+`docs/autoapply-master-tickets.md`. Both describe local uncommitted work.
+They supersede older autoapply notes where those conflict.
+
+The owner requested a separate GPT-6.1 Sol low-reasoning chat, with the full
+remaining work set as its goal. Keep the existing checkout and changes. No
+commit or push. Inspect state before live work and never invent candidate facts.
+
+## Autoapply master specification, 2026-11-01
+
+The owner requested the full master specification in attachment
+`b7412d72-e2fc-48dd-bc51-46d39c36a5d5/pasted-text-1.txt`, including OBS tickets,
+then live canaries and Windows startup. The current tracker is
+`docs/autoapply-master-tickets.md`; unchecked means not yet proven complete.
+This supersedes older statements waiving OBS-02 through OBS-05. Rolling approval
+for the defined eligible role class is explicit. Never invent candidate facts.
+
+The certified profile was updated and validated with the supplied facts, including
+age 22, India-only authorization, a single employment entry, and the supplied
+skill-years map. The previous profile was preserved locally in the same state
+directory. Both are sensitive. Answer resolution now covers confirmed employer
+history, India-only authorization, salutation, phone type and some explicitly
+confirmed declarations; the full semantics remain open. Tests cover known
+positive, negative and scoped cases. Review `answers.ts` before extending them.
+
+The worker no longer constructs a model, even if environment settings request
+one. It defaults to a durable 50-attempt daily submission budget, configurable
+with `--max-daily-submissions`; SQLite reserves before the click, so a crash can
+conservatively consume a slot. The day boundary is Asia/Kolkata. Existing applied
+rows with an application timestamp are seeded into the budget at first upgrade.
+Focused fixtures passed for concurrent store instances, restart persistence,
+next-day reset and blocking Submit. Tenant budgets and pacing remain open.
+
+`scripts/run-autoapply.ps1` now builds and runs compiled JavaScript, rather than
+tsx. A compiled-worker local fixture passed. The Windows scheduled task was not
+installed, and no live canary or new receipt occurred. A working-tree source
+archive is `out/autoapply-working-tree-backup.zip`; it includes uncommitted source
+and documents but not candidate state. A git bundle was started separately;
+verify its completion before relying on it. No commit or push was made.
+
+Focused answer, intake and eligibility checks passed; typecheck passed after the
+daily-cap change. Continue the remaining unchecked tickets and verify the actual
+requested live outcomes. Check for an existing worker before starting another.
+
+## Autoapply owner override, 2026-11-01
+
+The owner explicitly authorized rolling applications from the published catalogue
+for open India/eligible remote software, data, ML, backend, full-stack and graduate
+engineering roles requiring 0–3 years. The earlier exact-URL-only approval is
+superseded for this class. The owner waived OBS-02 through OBS-05 as prerequisites.
+See the attached override in the chat for the complete declared facts and request.
+
+Local work is incomplete. Preflight now applies the existing India/remote and
+service-company filters plus a software/data title gate, and the worker polls
+every 15 minutes by default. Unsubmitted parked network requests no longer block
+company siblings or restart recovery. A recorded clicked/dispatched/confirmed
+submission still blocks and is reconciled even if `submissionAttempted` is absent.
+The focused clicked-submission restart fixture passed. No ABB live recovery has
+been attempted, and the phase/flag does not itself prove the outcome of every
+historical mutation.
+
+The profile now records the owner's declared adult status, India authorization,
+no India sponsorship, recruitment privacy consent, no non-compete or felony,
+and one year total experience. Adult resolution covers positive 18+/majority
+questions; other declarations, employer-specific facts, source selection and
+skill-specific years still need implementation and verification. Do not replace
+unknown values with general guesses. Focused eligibility and age checks and
+typecheck passed. The profile update did not print personal values.
+
+Direct `node --experimental-strip-types src/autoapply/worker.ts` failed because
+source imports reference `.js` files that do not exist beside `.ts` sources.
+Startup still uses tsx; a working build or resolver must be verified before
+changing it. No scheduled task was installed, no live canary or ABB run was
+started, and no new receipt was established. A transient node process observed
+during inspection was absent on recheck; check again before any live worker.
+Complete the requested declarations, startup proof and sequential live canaries
+before enabling unattended submission. Older autoapply notes below are historical
+where they conflict with this override.
+
+## Autoapply continuation, 2026-10-31
+
+The focused local browser fixture `same-company completed applications reuse one
+browser owner and retain separate receipts` passed on current runner code: A1,
+A2, B1 order, tenant cookie reuse and isolation, three POSTs and three distinct
+receipt directories. This is local fixture evidence, not a live submission.
+
+Restart recovery now leaves an unfinished form request or attempted submission
+parked until explicit review, even if the profile changes. The legacy ABB timeout
+is recognized as unfinished and blocks its company siblings. The focused restart
+fixture passed, confirming the parked role and queued sibling stay untouched.
+Mail reconciliation still runs before this guard. Do not blindly resume ABB: its
+POST outcome remains unknown. The dashboard's explicit resume initiates recovery;
+opening alone does not reopen an ambiguous application.
+
+Worker state now records `startedAt` and refreshes `heartbeatAt` / `observedAt`
+every 15 seconds while the event loop runs, including during browser work. This
+is only part of OBS-04: no reader yet validates PID, process start time and
+heartbeat, and no predecessor crash record is written. Historical worker.json
+still says running for PID 30372; that PID was absent when checked. Never infer
+liveness from the file alone.
+
+Typecheck passed after the worker changes; rerun it after subsequent edits. Both
+focused fixtures ran with normal Windows account access; restricted tsx startup
+failed at `uv_os_get_passwd` with ENOMEM. No full suite, live worker, employer
+submission, or new production receipt occurred in this continuation. OBS-02,
+OBS-03, OBS-05, intake decision retention, stale-park revalidation, live canaries
+and remaining audit work are still open. Approved submission scope remains the
+exact URLs in `out/campaign-proposal.json`; reconcile ambiguous requests first.
+
 ## Company-office map, 2026-10-29
 
 The second REA comparison exposed a map-first UX gap. Map mode now uses the
@@ -1974,3 +2318,859 @@ Don't assume — verify:
 git fetch origin -q
 git rev-parse HEAD origin/main | uniq -c   # should print "2 <same-hash>"
 ```
+
+## Autoapply repair and reference audit, 2026-10-29
+
+REA public-browser captures of JobWizard and Autoaply are summarized in
+`docs/autoapply-gap-audit.md`, with evidence IDs and remaining work in build
+order. Public marketing establishes advertised features only; it does not
+validate older source comments claiming proprietary internals were recovered.
+
+Autoapply CLI now requires an explicit profile. Unknown consent, credentials,
+compensation and date answers are not fabricated. Dry runs never advance a
+wizard or count hypothetical fills as completed fills. Negative radio and
+checkbox answers work; text typing uses its original locator. Empty pages and
+missing Next buttons pause for review. The queue requires a `submitted` result
+before recording an applied job. Current runner has no submission/receipt path
+and never emits that result. Do not describe it as completed autonomous apply.
+Extension defaults and answer resolution received corresponding guess-removal
+fixes. Existing saved profiles remain intact and need their owner's review.
+
+Run `npx tsx --test src/autoapply/autoapply.test.ts`, `npm test` and
+`npx tsc --noEmit` when changing this behavior. Focused browser checks use local
+fixtures and synthetic data; no real employer application was submitted.
+
+## Autoapply executable workflow, 2026-10-30
+
+The CLI now supports opt-in submission with observed receipts, resume/document
+uploads, persistent candidate sessions, headed review/continue, catalogue queue
+import, durable URL deduplication and interrupted-run recovery. It checkpoints
+before submitting and blocks ambiguous retries. Copilot review advances exactly
+one step per confirmation. Unmatched required custom options block submission.
+Extension profile editing supports unknown answers, zero values and actual file
+uploads. Draft preparation produces a resume PDF and cover letter from supplied
+facts. See extension/README.md for commands and docs/autoapply-gap-audit.md for
+verification scope. Earlier descriptions of missing submission/session support
+are superseded by this section. Unsupported ATS structures still need review;
+local tests are not proof of universal or live employer compatibility.
+
+Run npm run test:autoapply, npm test and npx tsc --noEmit. On this machine the
+user npm/npx shim can be broken; node --import tsx invokes the installed loader.
+
+## Autoapply portal cross-check, 2026-10-30
+
+See docs/autoapply-portals.md for the eleven-portal result matrix and REA
+identities. Live inspection found real Greenhouse, Lever, Ashby, Workable and
+Recruitee forms, plus registration/authentication gates on Taleo, SuccessFactors,
+iCIMS and Oracle. SmartRecruiters presented DataDome. Workday live application
+verification remains open; browser loading/Apply capture failed despite a
+working public jobs API. Do not call this universal ATS compatibility.
+
+Repairs cover hidden/ID-only uploads, required upload groups, scoped exact
+comboboxes, editable typeaheads, delayed forms, multiple Apply entry steps,
+DataDome, email-only login gates and preserved owner-reviewed radio/checkbox/file
+answers. Portal snapshots are structural reductions with provenance. No real
+employer application was submitted. npm run test:autoapply includes both portal
+test files; run npm test and typecheck too.
+
+## Authorized live submission, 2026-10-30
+
+AiPrise Software Engineer I in Bengaluru was submitted with the owner's confirmed
+profile and corrected resume. The employer displayed "Your application was
+successfully submitted. We'll contact you if there are next steps." The private
+queue now records applied with that receipt. Do not submit this role again.
+Candidate profile, corrected PDF, browser session, queue and checkpoint remain
+under ignored state/autoapply/portal-review. Never expose .env credentials.
+
+Fixed transient empty iframe URLs interrupting login detection, paragraph-based
+submission receipts, receipt-only reconciliation of a previous attempt without
+clicking Submit again, and classification precedence so field identifiers beat
+incidental group text. All 39 autoapply tests, project selftest and typecheck pass.
+
+Authenticated Nvidia Workday structures were inspected after owner sign-in and
+covered by local regressions. That senior UK test role was never submitted.
+Celonis was not submitted: its required February 2026 start-date confirmation
+conflicts with its February 2027 posting. Greenhouse dynamic dropdown locator
+stability and additional required candidate answers remain unresolved; do not
+claim universal autonomous portal coverage. Earlier no-submission and unverified
+Workday statements above are superseded by this section and docs/autoapply-portals.md.
+
+## Major portal follow-up and manual completion, 2026-10-30
+
+Revisited eleven major ATS families through public read-only browser checks.
+See docs/autoapply-portals.md for the current matrix and
+out/portal-audit/major-readonly-current.json for raw observations. Reviewed actual
+source from workday-autofill and ApplyAI; source identities and implementation
+limits are recorded in docs/autoapply-open-source-review.md. No third-party code
+was executed or copied.
+
+The user explicitly approved UiPath Software Engineer I, Abacus Insights Associate
+SRE and Emerson Backend Developer. Emerson's actual page says the job is closed.
+The user provided a current address, confirmed the permanent address is identical,
+no prior UiPath employment, and explicitly approved SMS, WhatsApp, interview
+recording and recruitment privacy processing for one year. These answers are
+saved privately in candidate.json. Do not ask them again or print the profile.
+
+The user then manually completed the applications. Abacus now has a confirmed
+/confirmation receipt. UiPath says "You have already applied to this position";
+that is evidence of an existing application, not a new submission success.
+Reconciled both without clicking Submit again. Queue has three applied roles:
+AiPrise, UiPath and Abacus. All have retained employer evidence. Multiple tabs
+existed per role; inspect all matching tabs for confirmation, not only the newest.
+
+Repairs bind controls before widgets shift input indices, read Ashby field-group
+titles and required markers, handle hidden Yes/No controls through their buttons,
+match explicit country/calling-code and city/state/country options, support typed
+boolean QA answers, preserve explicit new QA choices on resume, distinguish an
+invisible reCAPTCHA badge from an actionable challenge, and reconcile confirmation
+routes or existing-application responses without duplicate submission clicks.
+Required unanswered fields and CAPTCHA still block automatic completion.
+
+## Autonomous CLI handoff repair, 2026-10-30
+
+Retested after the user asked for autonomous operation and current open-source
+comparison. All 49 autoapply tests, project selftest and typecheck pass. Two new
+CLI integration tests use real local POSTs and delayed receipts to prove both
+single and queued headed runs keep the browser open after an unconfirmed Submit,
+then reconcile a confirmation without another submission click.
+
+CLI queue processing now honors --headed. Single and queued flows share the
+review loop, including post-submit CAPTCHA/receipt handoff. Enter after a submit
+attempt performs receipt-only reconciliation; retryReviewed is reset so a
+previous explicit retry cannot accidentally enable another click. Automatic
+known-field navigation already uses --mode stealth --submit; --headed supports
+human gates while retaining the same run. No new live applications were submitted
+in this repair; the three existing applied statuses remain authoritative.
+
+The runner also recognizes the observed DataDome text restriction without an
+iframe and Cloudflare challenge iframes. This is detection and handoff, not a
+CAPTCHA bypass. Old fingerprint/mouse helpers in stealth.ts are not imported by
+the actual runner; do not claim they provide active or proven bot evasion.
+
+Rechecked repository freshness and inspected current AutoCVApply validation,
+field inventory and page-health source. See docs/autoapply-open-source-review.md
+for dated source identities and limitations. No third-party code was copied or
+executed. The saved core profile and explicit consent answers are reusable;
+current salary and unprovided employer-specific answers remain unknown.
+
+## Automatic browser-gate recovery, 2026-10-30
+
+Headed CLI runs now watch login/challenge clearance and delayed employer receipts.
+The owner no longer needs to press Enter after completing a browser gate.
+Receipt watching never clicks Submit again. q still cancels review and saves.
+The runner owns one shared gate detector used both during application execution
+and while waiting, covering visible reCAPTCHA, hCaptcha, DataDome and Cloudflare
+structures, authentication paths/password controls, and observed text walls.
+Invisible reCAPTCHA badges remain distinct from actionable challenges.
+
+Reports include a structured reviewKind and missing-question labels. Unknown
+required questions are displayed together. Candidate JSON is reloaded between
+review steps so confirmed answers can be added without restarting. Candidate
+email changes are rejected, and single-run error cleanup closes the browser.
+No unknown personal facts, screening answers or consents are generated.
+
+Focused tests prove all four synthetic vendor handoffs, login handoff, delayed
+receipt recovery without Enter for single and queued runs, bundled questions,
+profile reload and identity-change rejection. These test handoff automation,
+not actual CAPTCHA solving or guaranteed bot-detection evasion. No new live
+applications or repeat submissions were made in this follow-up.
+
+## Chain-Code model reuse and form regression repair, 2026-10-30
+
+Confirmed D:\Chain-Code\backend\middleware\uniqueSubmissionCheck.js uses
+Z.ai, OpenRouter, Groq and Gemini with provider timeouts and circuit breaking.
+Autoapply's grounded-model.ts follows that ordering. Default routes remain
+Z.ai Flash and OpenRouter free; Groq/Gemini require explicit account-tier opt-in.
+Credentials remain private in ignored .env. No Cloudflare model service is used.
+
+Fixed browser-side mutation settling referencing tsx's unavailable __name helper.
+Dynamic remount and open shadow-root tests now both pass. Typecheck and all 14
+scoped-answer/grounded-model tests pass. Worker one-shot mode now finishes after
+failed initial intake; dashboard preserves unsaved question drafts on refresh.
+Those worker/UI changes still need behavioral acceptance. Mailpit startup wait
+is bounded at 15 seconds and reports nonzero process exits. Latest mailbox
+integration rerun must be inspected before claiming success.
+
+Full completion remains tracked in docs/autoapply-completion-plan.md. Do not
+claim universal automation or resubmit the three existing applied jobs.
+
+## Submission proof, authentication and shared resolver progress, 2026-10-30
+
+Added submission.ts context-wide request/response observer restricted to each
+application's related pages. Report tracks prepared/clicked/dispatched/confirmed,
+payload and response hashes/status. Known Ashby/Workday structured success can
+supply receipt; arbitrary HTTP 200 cannot. Visible client validation plus zero
+observed mutations permits safe review retry; ambiguous dispatch retains guard.
+Restarted receipt-only recovery now navigates saved URL without a submit click.
+Related popup/parent receipt search excludes footer/nav/aside text. Three local
+fault tests passed: validation bounce, dispatched/no-receipt guard, and popup
+closing while parent confirms. Observer matching and crash/restart acceptance
+still need broader coverage; do not claim full transaction completion.
+
+Added evidence.ts unique write-once receipt directories with SHA-256 manifest,
+receipt metadata/network hashes, sanitized confirmation DOM and screenshot.
+Runner captures submitted visible values and hashes exact uploaded byte buffer.
+No email reconciliation yet. Missing screenshot/DOM causes explicit evidence
+capture warning; receipt remains retained. No new live applications submitted.
+
+Added AES-256-GCM per-tenant CredentialVault. Windows master key protected by
+CurrentUser DPAPI; non-Windows requires AUTOAPPLY_VAULT_KEY. Synthetic tests prove
+ciphertext secrecy, tenant isolation/tamper rejection, wrong-key failure,
+candidate mismatch and normal signup/sign-in. Authentication flow integrated for
+Workday/iCIMS only when worker supplies vault; unknown consent remains review.
+Activation support exists but actual tenant activation/restart not accepted yet.
+
+Extension now generated by scripts/build-extension.mjs from content.source.js
+plus bundled shared answers/classifier. Rebuild after shared resolver edits.
+Removed independent profile/substring QA resolution. Ten Workday/scoped-answer
+tests pass. Runner now prioritizes accessible radio-group question over Yes/No
+option labels. Older fixture employer/privacy answers migrated to explicit scopes.
+
+Single/split real local Mailpit SMTP-to-OTP submission acceptance both pass:
+out/mailpit-current.log. Project selftest passes, out/selftest-current.log.
+Worker --once failed-intake termination test passes. Default worker state now
+profile's parent directory, retaining this user's existing queue/dedupe.
+Package includes build:extension and auto-apply:worker scripts and expanded tests.
+Latest full suite currently running exec session 50825 -> out/autoapply-latest.log;
+inspect completion instead of restarting. Typecheck session 94366 pending.
+Remaining full scope stays docs/autoapply-completion-plan.md, especially worker
+park/restart concurrency, mailbox claims/reconciliation, diagnostics and operations.
+
+## Local completion acceptance and pending remote CI, 2026-10-30
+
+The complete local implementation now passes 97 autoapply tests, with all three
+real local SMTP/Mailpit OTP tests passing separately, including browser restart.
+See out/autoapply-verified.log, out/otp-completion.log. Typecheck passed after the
+last code changes. Project selftest passes at out/selftest-completion.log.
+Pinned upstream rebrowser diagnostic passed on actual headed branded Chrome:
+out/cdp-diagnostic.json and out/cdp-completion.log. This establishes only those
+local probes, not universal bot evasion. New CI workflow includes browser suite,
+pinned Mailpit provisioning/OTP integration, extension build, typecheck and CDP.
+
+Worker acceptance now processes four jobs, evicts parked live tabs above three,
+preserves every review, shuts down, restarts and fills a newly supplied scoped
+answer without submission. Real public catalogue fetch had 18,313 rows; bounded
+six-row live preflight produced 3 imports, 2 skips, 1 retry. Full feed shape audit
+found one nullable postedAt; intake now normalizes nullable optional fields and
+regression fixture covers this. Real Oracle/Workable tenant IDs were checked and
+loaded-identity matching corrected accordingly.
+
+Added durable mail ownership and role-specific authenticated email confirmation.
+Worker polls parked OTPs after timeout, restores them after restart and upgrades
+applied receipt evidence asynchronously without changing applied date/count.
+Company-only OTP messages are refused when another unresolved submission exists
+at the same tenant. Auth/OTP browser errors cannot propagate secrets into logs.
+Actual Windows DPAPI reopening, three-process vault race, signup and same-context
+tenant activation all pass synthetic acceptance. Credential publication uses
+exclusive hardlink publication of a fully written encrypted temporary file.
+
+Submission torture tests now cover a real killed worker after dispatched POST,
+visible client validation bounce, uncaught client JS failure without POST,
+ambiguous dispatch protection, footer exclusion and popup closure/parent receipt.
+Receipt enumeration catches transient closed-page/navigation races. Client error
+instrumentation uses a main-world boolean DOM marker because patched Runtime
+omits pageerror events; strict CSP falls back to conservative review. No error
+message or entered secret is stored by that marker.
+
+Document proof hashes exact uploaded bytes, including files already selected
+when a reviewed application resumes. The browser-upload/proof fixture verifies
+its SHA-256 in submitted_payload.json. Receipt bundles use exclusive file writes
+and SHA-256 manifests. Existing real private queue was reopened read-only and
+still has exactly 3 applied jobs, all with receipts. No real job was resubmitted.
+
+Review architecture is docs/autoapply-architecture.md. Startup PowerShell scripts
+are written and syntax checked, but no startup task was installed and no new
+live autonomous worker was launched. This goal requested runnable startup config;
+these files provide it. Existing browser sessions were not terminated.
+
+Goal remains active only because original attachment requests CI execution and
+saved instructions prohibit commits/pushes. Asked one async approval to commit
+relevant autoapply changes on separate codex/autoapply-completion branch and push
+for remote CI. Await answer; do not push without override. Do not call complete
+while CI requirement remains unverified unless user explicitly waives remote CI.
+No commit/push has occurred. Local implementation and architecture are reviewable.
+
+## Local-only completion audit, 2026-10-30
+
+User answered the remote-CI branch proposal: "Keep changes local". This supersedes
+the earlier pending push-approval gate. No commit or push is authorized. Remote CI
+is explicitly unrun; workflow remains reviewable locally. No startup task was
+installed, no live unattended worker launched, and no new real applications sent.
+
+Final requirement audit added browser-level opposite sponsorship/authorization
+and distinct Java/JavaScript years. Five dynamic-form tests pass. Vault now uses
+versioned HMAC tenant/email password derivation from its protected master key,
+with mandatory classes and candidate-name/email substring exclusions. Recreating
+a lost encrypted credential entry produces the same password. Existing saved
+credentials remain unchanged. Five auth/vault tests pass, including actual DPAPI,
+concurrent writers, deterministic recovery, names, signup and activation.
+
+Receipt bundles now explicitly label DOM_VERIFIED / NETWORK_VERIFIED; email
+bundles label EMAIL_RECONCILED. Employer application IDs from confirmation URLs
+are retained. Six submission tests pass, including structured API-only proof,
+ID/manifest retention, client JS error, validation bounce, killed dispatched
+worker and popup/parent confirmation.
+
+Authoritative final focused logs: out/requirements-verified.log (10 pass),
+out/vault-requirements-verified.log (5 pass),
+out/submission-requirements-verified.log (6 pass), out/application-id-verified.log.
+The prior full current-feature regression was out/autoapply-verified.log (97 pass).
+Out/otp-completion.log has 3 real SMTP/OTP tests passing; project selftest and
+pinned detector passed. Typecheck passed after final implementation changes.
+Docs/autoapply-completion-plan.md records the full requirement/evidence matrix;
+docs/autoapply-architecture.md has architecture, changes and local-only limits.
+All requested local implementation work is complete under the user's local-only
+constraint. External provider/portal behavior and owner-only hard challenges
+remain documented dependencies rather than claims of universal autonomy.
+
+## Ticket continuation, 2026-10-31
+
+Current ticket regression log reports 111/112 passing. The sole failure was a
+5-second local navigation timeout in shared browser-session persistence. Its
+isolated rerun passed, 1/1, without changing that test. Typecheck passed before
+intake changes. Public intake then exposed five empty application URLs among
+18,373 rows. Intake now omits empty-link postings before queueing; all five
+intake tests pass, including an empty-link regression fixture.
+
+No live campaign started. Automatic approval review rejected the proposed
+50-application launch because broader destinations lacked specific approval.
+Do not bypass that rejection. out/campaign-proposal.json contains 50 public
+role candidates for user approval, still requiring live eligibility checks.
+Approval question is pending. Any approved execution must be restricted to
+those listed roles, not an unrestricted rolling catalogue campaign. Existing
+three applied jobs remain protected. Production acceptance remains 0/50.
+
+User subsequently approved exactly the 50 listed roles. Worker now accepts
+--approved-jobs and gates queue selection and recovered reviews by exact URL.
+Typecheck passes. Scoped campaign launched as process 19924, logs
+out/live-campaign.log and out/live-campaign-error.log. Verify process is live
+before any restart; never launch a second worker solely from this saved note.
+No submission success is established by launch alone.
+
+## Scoped campaign continuation, 2026-10-31
+
+Process 19924 confirmed live again. No new verified success yet. ABB and
+eClinical Solutions parked on field validation, Plane on missing Submit.
+Two PayPal jobs failed loaded-requisition identity checks; do not bypass these
+or retry a possibly dispatched application without checking checkpoint state.
+ABB checkpoint 07c4048d5cb729a9759d shows account password controls were discovered
+as generic fields after initial gate inspection. Investigate delayed auth-form
+mounting before changing authentication behavior. Do not infer missing passwords
+are candidate screening answers. No secret values were printed during diagnosis.
+
+Added worker role-boundary test. It passed and exposed one-shot termination
+ignoring approval scope; predicate now respects approved URLs. Typecheck passed
+after adding required postedAt to fixture. Running process predates termination
+fix but already contains submission/parked-review allowlist. Do not restart just
+to load this one-shot-only fix. Architecture documents approved-job behavior.
+
+## Delayed authentication repair, 2026-10-31
+
+Reproduced delayed-account bug with local dynamic-form fixture. Before fix it
+failed with Validation or field errors require review. fillFrame now stops when
+visible password controls mount, and runner rechecks browser gates after filling
+before validating answers. Password controls remain owned by authentication.
+Fixture now completes signup then fills the actual application without recording
+passwords as candidate questions. All 16 dynamic-form/Workday-auth tests pass in
+out/delayed-auth-regression.log. Typecheck sessions 63630 and 60459 were running;
+inspect their terminal results before claiming latest typecheck success.
+
+Campaign 19924 confirmed live; last applying job observed was Airbus AH Industrial
+System Engineer. It still uses pre-repair runner code. Do not kill/restart while
+an application is active just to load this patch; inspect submission checkpoint
+and dispatch evidence before any retry. Production acceptance remains unproven.
+Ticket matrix now distinguishes implemented local features from production gates.
+Both typecheck sessions subsequently completed with exit code 0.
+
+## Screenshot/input integrity repair and consent, 2026-10-31
+
+User screenshot showed reordered Airbus signup email and unchecked required
+Privacy Information Notice. humanType now verifies exact value after blur,
+repairs once with native fill, and throws a secret-free error if not retained.
+Local corruption/rejection fixture failed before fix and passed afterward.
+User explicitly instructed standard privacy acknowledgements to be automatic.
+Saved recruitmentPrivacyConsent=true in private profile. Shared matcher requires
+privacy notice/policy/statement plus affirmative acknowledgement wording and
+excludes marketing, recording, background checks and negated wording. Auth checks
+only matching checkbox labels. Scoped saved answers still override defaults.
+Privacy fixture proves default remains unchecked, explicit authorization checks
+privacy, and marketing remains unchecked. Typecheck passed.
+
+User confirmed NOT EMPLOYED and requested remaining experience answers be based
+on resume. Saved currentSalary=0 and six eClinical employer-scoped responses
+accurately describing Morgan Stanley apprenticeship without claiming unsupported
+Microsoft 365/network administration. Kept unknown optional declarations separate.
+Observed excepected CTC typo is classified as expected salary with passing test.
+
+Stopped owned worker 19924 because it retained faulty typing code. No active
+applying row was returned by immediate read-only audit. Restarted approved-role
+campaign as process 13908 with logs out/live-campaign-repaired.log and
+out/live-campaign-repaired-error.log. Verify live handle before any restart.
+Original approval remains limited to out/campaign-proposal.json URLs. No new
+verified submission is established yet; acceptance remains incomplete.
+
+## Sequential execution requested, 2026-10-31
+
+User explicitly requested one application at a time to learn from failures.
+Stopped batch worker 13908; queue audit showed no applying row. New scoped run
+is ABB only, out/sequential-abb.json, existing approved role. Started foreground
+exec session 88337 with log out/sequential-abb.log. Inspect that handle before any
+new run. Do not launch another employer until this role's outcome is understood.
+
+ABB snapshot exposed a login loading shell without actual credential controls.
+Added bounded readiness wait inside authenticateApplication. New delayed-shell
+fixture failed before fix. All 11 authentication/recovery tests now pass in
+out/auth-shell-regression.log, and typecheck passes. Intake now accepts approved
+URLs so single-role execution never probes other employers; focused fixture and
+latest typecheck pass. Current ABB run includes these fixes. Production acceptance
+still has no newly verified submission.
+
+## ABB sequential learning result, 2026-10-31
+
+First single-role exec 88337 completed with no submission. ABB displayed the
+inline Workday message Verify your account before you sign in or request a
+verification email. Runner previously missed this and repeated sign-in until
+step limit. Added shared email-authentication gate recognition for this inline
+message as well as headings. Authentication checks scoped mailbox, resends once
+per current document if needed, and activates a matching tenant email before
+reloading. Worker --once now waits for bounded automatic verification reviews
+instead of exiting immediately. Synthetic unverified-account fixture passes:
+one resend across repeated checks, delayed activation, no repeated sign-in.
+Typecheck passes. No unrelated employer is active.
+
+Second ABB-only execution is exec session 25251, log
+out/sequential-abb-verification.log. Inspect this exact handle before any retry.
+Do not run another employer in parallel. Live acceptance remains unproven.
+
+ABB second single-role execution 25251 completed without submission. Resend
+succeeded and real portal displayed An email has been sent to you. Added this
+exact inline message, paired with Resend Account Verification control, to shared
+email-auth gate. Extended fixture transitions to actual sent-message wording;
+test and typecheck pass. Third ABB-only execution is session 70536, log
+out/sequential-abb-mail.log. It waits for scoped email activation, with bounded
+15-minute automatic review. Do not launch another employer or a duplicate ABB
+runner while this handle is live. No new application confirmation exists yet.
+
+## Real ABB mail root cause, 2026-10-31
+
+User correctly reported email visible. Read-only counts initially found no
+recent mail because ATS allowlist omitted otp.workday.com. Envelope metadata
+identified three actual verification emails from that exact domain. Added it;
+all three authenticate successfully. Generic message body lacks ABB branding,
+but HTML activation links use exact abb.wd3.myworkdayjobs.com hostname. Parser
+now accepts authenticated, recipient/time-valid activation links on the exact
+Workday tenant hostname without requiring company-name body text. Generic codes
+still require company correlation. Other-tenant and shared ATS-host mismatches
+remain rejected. Four mailbox tests pass after final narrowing; typecheck passed
+on the preceding parser changes. No email bodies or tokens were printed.
+
+Historical human-review flag no longer prevents bounded automatic verification:
+report.automaticVerificationPending is separate from historical audit status.
+Activation fixture with historical flag passes; latest typecheck passed then.
+Third ABB run 70536 completed without submission. New ABB-only run is session
+91617, log out/sequential-abb-domain-fixed.log. Inspect exact handle before retry.
+Other employers remain stopped. Production acceptance remains unproven.
+
+## ABB activation/navigation progress, 2026-10-31
+
+Session 91617 completed, exit 0. Actual checkpoint URL advanced past login to
+ABB application/applyManually, but report failed with locator.all: Frame was
+detached. No submissionAttempted or dispatched submission was present. No other
+employer ran. Account sign-in progressed; no application success is established.
+
+Delayed activation fixture exposed immediate tab closure before client-side
+activation request. It failed before repair. Consolidated activation tab handling
+now waits bounded network quiet before close/reload. Two auth activation fixtures
+pass afterward. Gate inspection now ignores only genuinely detached frames;
+surviving password controls remain gates and unrelated errors still throw.
+Actual iframe-removal fixture passes. Typecheck session 54221 pending; inspect
+completion before next live ABB run. No live worker currently running.
+
+Typecheck 54221 subsequently completed with exit code 0. New ABB-only live
+execution is session 60931, log out/sequential-abb-application.log. Inspect exact
+handle before retry; do not run another employer in parallel. No new submission
+confirmation is established at launch.
+
+## ABB My Information reached, 2026-10-31
+
+Session 60931 completed without submission. Authenticated My Information form
+showed missing source, prior ABB employment, Prefix, Phone Device Type and a
+phone-code click timeout. User confirmed prefix Mr and resume phone Mobile.
+Saved those explicit facts, and employer-scoped prior ABB employment=false based
+on user's statement Morgan Stanley apprenticeship was their only employment.
+Inspected actual source options; ABB Careers Website is available and accurately
+matches the employer listing intake. Saved it scoped to workday:abb.
+
+Actual Workday source/phone-code inputs lack role=combobox and instead expose
+data-uxi-widget-type=selectinput. Runner now recognizes that structure for scans,
+value retention and selection. Shared widget reader recognizes Workday selected
+pills. Exact +91 matching accepts India (+91) and rejects +1 substrings and
+ambiguous country-code options. Focused unit/browser fixtures pass; typecheck
+passes. Step-level checkpoints now persist before each navigation/form step.
+
+New ABB-only execution is session 20804, log out/sequential-abb-information.log.
+Inspect exact handle before retry; no other employer may run in parallel.
+Source-option inspection 45265 completed. No application submission confirmed.
+
+## ABB first-step source timing repair, 2026-10-31
+
+Session 20804 completed without submission. Prefix, prior-employment, phone type
+and phone-code failures are resolved. Only How Did You Hear About Us remained:
+Required option could not be matched. Existing visible India (+91) selected pill
+was incorrectly treated as dropdown readiness before source results arrived.
+Option resolution now excludes Workday selectedItem pills and waits up to five
+seconds for a matching choice, retaining scoped popup handling and prior country/
+city matching rules. Delayed source search with unrelated selected phone pill and
+phone-code retention fixtures pass, two tests. Typecheck passes. Local fixture
+counter now uses DOM data attribute, because Patchright's isolated evaluation
+world cannot read the page script's window.selections global.
+
+Scoped country and delayed editable-combobox regressions are session 47420.
+Inspect terminal result before next ABB-only attempt. No live worker running.
+New source fixture is in dynamic-form.test.ts and should remain in full suite.
+
+## Structural review implementation, 2026-10-31
+
+User supplied attachment d632249d-da8c-4875-879c-50016f3796b1 plus five structural
+requests. Read that attachment before treating its proposed defaults as facts.
+No live application is running. Prior scoped dropdown regressions 47420 passed.
+
+Worker now owns a browser/profile per canonical tenant, closes idle owners and
+retains contexts for live reviews. No legacy shared profile is copied into tenant
+profiles. Same-host cross-port cookie test passes. Same-origin cookie/localStorage
+isolation plus profile reopening test also passes. Review docs reflect isolation.
+
+Connected controls are screened for computed ancestor visibility/opacity and
+far-off-screen absolute/fixed placement. Robot-only labels are skipped. Visible
+fixed and below-fold controls remain fillable; file uploads keep their own path.
+ARIA radios are supported with native clicks and retained aria-checked validation.
+Existing Ashby Yes/No buttons also require retained state. Visual-only fake radio
+fixture is rejected. Positive hidden-control and native Ashby fixtures pass.
+
+Stealth mode has randomized 4–8 second minimum step dwell, bounded log-normal
+between-field pauses, and 15–30 second review dwell followed by a fresh scan and
+validation before Submit. Native timestamp fixture passes. No vendor integrity-
+score or undetectability claim is established by these timings.
+
+Actual ABB popup inspection proved activeListContainer inside responsiveMonikerPrompt.
+Workday selectinput handling is now scoped to the active list, sends Enter for
+search, and checks retained selected pills. Its fixture requires Enter, includes
+an unrelated selected phone pill, and passes. Relevant proof logs are
+out/structural-controls.log (cookie test pass; earlier fixture failure retained),
+out/structural-visibility.log (3 pass), out/structural-dwell.log (1 pass),
+out/structural-workday-prompt.log (3 pass), out/structural-final.log (3 pass).
+Latest typecheck passed after these changes. docs/autoapply-structural-review.md
+records scope and remaining work. Confirmed personal facts remain private;
+blanket proposed relatives/conflict/export/skill defaults were not fabricated.
+
+Combined dynamic-form, worker and interaction regression is running in exec
+session 47688, output out/structural-regression.log. Inspect exact handle before
+restarting or claiming full regression. Preserve sequential real applications.
+Remaining attachment work includes Workday experience/split dates/resume fixture
+preparation before another ABB attempt, and improved warm-step debugging workflow.
+Production 50-application acceptance remains incomplete; no new live submissions.
+
+## Warm-step continuation and ABB recovery, 2026-10-31
+
+Workday experience/date/resume fixtures pass in out/workday-experience.log.
+Confirmed Chitkara startDate=2022-08 and endDate=2026-08 are saved through profile
+validation. No months were inferred for year-only fixture records.
+
+Dashboard POST /api/step uses existing host/origin/token/card authorization. Worker
+--review-steps and explicit step requests force maxSteps=1 and submit=false even
+with global --submit. Existing tabs remain open. scripts/reconcile-current-step.ts
+requests one step and waits for its completed checkpoint; timeout means inspect
+the existing worker, never launch a duplicate. Same-tab/zero-submission browser
+fixture passes in out/warm-step-regression.log. Latest typecheck passes.
+
+ABB cold recovery exposed an empty Workday public header at the saved apply URL.
+Runner now requires attached body rather than visible body, then returns to the
+same approved posting only for that Workday shell with sign-in header, no form
+controls and no detected challenge. Intercepted-browser recovery fixture passes
+in out/workday-expired-route.log. ABB successfully signed in afterward. One
+authentication step took over two minutes and completed after observer timeout;
+no duplicate worker was launched while it was pending.
+
+ABB My Information retained source ABB Careers Website, Mr, Mobile and India +91.
+It then exposed a visibility regression: transparent native radio inputs with
+visible labels were skipped. isVisibleApplicationControl now allows own-element
+opacity zero only for native radio/checkbox inputs with a visible associated
+label. Hidden ancestors, offscreen controls and robot-only labels remain excluded.
+Positive labeled-radio and hidden-group browser fixtures pass, alongside existing
+invisible-trap regression, in out/labeled-radio-regression.log.
+
+Current ABB-only persistent worker is exec session 37074, log
+out/sequential-abb-radio.log. Earlier workers 63665 and 58095 stopped. Current
+worker remains in --review-steps --submit mode, so continuation steps cannot
+submit. Inspect its checkpoint before requesting another step. ABB job remains
+autoaply_1793386531960_i5daq7, session applications/07c4048d5cb729a9759d.
+Architecture and structural-review docs updated. No new live receipt confirmed;
+50-application production acceptance remains incomplete. Keep changes local.
+
+ABB subsequently reached My Experience. Actual sections are role=group with
+accessible names Work Experience/Education, without the assumed automation IDs.
+Repeated-section lookup now accepts those named groups. Actual Resume/CV heading
+also sits outside attachments-FileUpload; upload description now includes the
+enclosing group's aria-labelledby text, avoiding broad instructional text that
+mentions both resume and cover letter. Fixtures now use these real structures.
+Both experience/date/exact-upload fixtures pass in
+out/workday-experience-live-markup.log, and latest typecheck passes.
+
+Worker 37074 stopped. Current ABB-only worker is exec session 68083, log
+out/sequential-abb-experience.log, still --review-steps --submit. Inspect its
+existing checkpoint before any continuation or restart. No final submission.
+Computer-use read attempt timed out on app approval; no desktop input occurred.
+
+Live My Experience exposed noncontiguous row IDs: first workExperience-7 and
+education-6. Numeric ID minus one was wrong. Mapping now uses distinct row IDs
+in document order per section kind. Fixtures start at workExperience-7/education-6
+and cover second records, date separation and upload. Both pass in
+out/workday-row-order.log; typecheck passes. Resume was recognized in live flow.
+
+Worker 68083 stopped. Current ABB-only worker is exec session 32755, log
+out/sequential-abb-autonomous.log. It now uses normal --submit without
+--review-steps to proceed autonomously until required unknown answers, a gate,
+or a verified submission. Only the approved ABB URL is authorized in this run.
+Inspect this existing worker before any restart. No new live receipt yet.
+
+ABB autonomous run reached Voluntary Disclosures; Workday marks My Information,
+My Experience and Application Questions complete. Required gender choice was
+unknown. Saved employer-scoped exact question "How would you describe your
+gender?*" = "Not disclosed", the page's explicit nondisclosure option, without
+inferring candidate gender. Explicit one-step continuation selected it successfully
+(one filled action, no failed actions) but still failed convergence after 300
+iterations. Latest checkpoint ends 2026-10-31T11:39:11.281Z with reason
+"Application controls did not stabilize; review the current form". No Submit.
+
+Likely next diagnostic is dependentRequests: fillFrame has only two field visits
+yet exhausts 300 iterations, so it appears to be waiting on outstanding requests,
+not repeatedly filling controls. Do not assume request identity; inspect pending
+request host/path without query strings or secrets before changing filtering.
+Current worker 32755 remains parked in the same tab. Last step helper 19607 is
+complete, output out/abb-disclosure-step.log. Do not send another submission or
+start another worker without inspecting existing state.
+
+## Requested universal ATS and Workday review, 2026-10-31
+
+Read attachment 8038c955-b28a-4317-b046-169082d18eaa/Pasted text.txt. Its default
+personal/legal/skill declarations are suggestions, not confirmed candidate facts.
+Do not invent relatives/criminal/disability/veteran answers, gender, arbitrary
+schools, distinct degree types, dates or zero experience for unknown skills.
+
+wizard.ts now owns ATS_STRATEGIES for all eleven requested platforms, including
+seven alternative ATS form contracts. Existing host detection is consolidated;
+DOM markers recognize custom career domains. Generic data-automation-id no longer
+misidentifies every custom component as Workday. Native frame/shadow traversal
+is reused. Root-local labels/popups and hidden shadow-host visibility repaired.
+New ats-strategies.test.ts has eight passing tests: safe domain detection and one
+observed local submission for each of iCIMS, SmartRecruiters, Workable, Oracle,
+SuccessFactors, Taleo and Recruitee. out/ats-strategies.log. These are synthetic
+contracts, not live certifications. Added to test:autoapply.
+
+Workday field scans now scope to formField-* containers and exclude popup inputs
+and beecatcher. Stable field attempts are capped at two per fill pass; required
+exhaustion still blocks, other fields continue. Hierarchical source fallback only
+traverses a matching category to the requested leaf. Empty prompts receive Enter
+before option readiness. Equivalent option aliases preserve facts and reject
+unrelated source/school/degree choices. Local hierarchy and remount-cap fixtures
+pass in out/workday-container-regression.log.
+
+Live ABB diagnostics in worker 33959 exposed click timeouts, including education
+Add intercepted by the sticky pageFooter. Control approach and repeater Add now
+scroll to center before native clicks. Verified owned click_filter overlays can
+receive one native click. Workday active-step changes now wait for loading
+markers and disabled Next footer to clear. Four focused tests pass in
+out/workday-navigation-regression.log. Root-local shadow and updated Workday
+recovery fixtures pass in out/universal-targeted-repair.log. Earlier combined
+31-test run had two fixture failures now repaired; retain its log honestly.
+
+Broader major-ATS regression is exec session 50623, output
+out/major-ats-regression.log. It covers autoapply, dynamic forms, experience,
+strategies, portals, snapshots, workflow and intake. Do not duplicate it or claim
+it passed before completion. Latest typecheck is exec session 69450; inspect
+terminal result. Previous typecheck passed before latest scrolling/readiness edits.
+
+Old ABB worker 33959 stopped. Current single ABB-only normal --submit worker is
+exec session 34461, log out/abb-universal-final.log. Existing exact approved URL
+boundary remains. No new receipt confirmed. Before any restart inspect current
+checkpoint and existing worker. Failure diagnostics now include pending request
+methods/hostnames only, never query strings or credentials, if convergence fails.
+Outstanding-request cause remains a hypothesis until that diagnostic appears.
+Docs: autoapply-architecture.md and new autoapply-ats-coverage.md. Keep local.
+
+### Universal ATS continuation and current process state
+
+Scoped strategy contracts rerun after actually using each strategy's form selector:
+all eight pass in out/ats-strategies-scoped.log. Native readiness/signature scans
+also pierce shadow roots. Typecheck passed after these changes.
+
+Actual ABB failure confirmed an outstanding same-origin POST with no failed field
+answer. Pending form requests now park with reviewKind=network and status
+paused_for_review. The retained runner resumes only after pending requests finish
+and no login/challenge remains; fifteen minutes converts the wait to durable review.
+Tenant blocking includes these waits even if historical manual review is recorded.
+Held-response fixture proves safe pause, automatic readiness and required dependent
+field filling after response completion. out/network-resume-regression.log passed.
+Newest diagnostics include sanitized route, response status/content type when
+headers arrived, and no query strings, request bodies or credentials.
+
+ABB also exposed an element removed between locator lookup and descriptor read.
+Field extraction now reacquires only when that keyed control disappeared; errors
+on connected controls still propagate, and genuinely detached frames are skipped.
+Exact race, conditional-remount and removed-frame tests pass in
+out/stale-control-regression.log. Sticky-footer, overlay and loading transition
+fixtures pass in out/workday-navigation-regression.log. Exact retained text values
+are now skipped rather than retyped during post-dwell validation.
+
+Broader suite 50623 completed: 86/93 passed, log out/major-ats-regression.log.
+Two observed Taleo/SuccessFactors login identity failures were repaired: initial
+unsupported login forms fill known identity while credential controls remain with
+authentication; newly mounted password gates still stop normal filling. Both
+repaired tests pass in out/login-identity-regression.log. Five CLI failures were
+kill-timeout budgets that excluded mandatory 15–30-second review dwell. Test
+budgets now allow bounded 120 seconds, retaining all state/receipt/duplicate checks.
+Isolated unchanged-candidate CLI passes in out/cli-budget-regression.log (~64s).
+Remaining CLI rerun is session 26608, out/cli-remaining-regression.log. At last read,
+both pending-receipt queue modes and changed-candidate check pass; final upload/
+duplicate-prevention workflow still running. Do not claim full repair until it ends.
+
+Final observed-form snapshot rerun is session 68242, out/ats-snapshots-final.log;
+four snapshots passed at last read, remainder running. Latest typecheck 21031
+passed. Current ABB-only worker is 55753, out/abb-universal-completion.log. Workers
+34461 and 63981 stopped. ABB checkpoint starts 12:17:20Z, parked at 12:20:00Z in
+network review on a same-origin POST, no submissionAttempted and no receipt.
+This live worker predates the newest diagnostic metadata/login-identity/retained-
+text refinements; the core network pause and stale-control repair are loaded.
+No new live application receipt. Keep changes local; do not duplicate this worker.
+
+### Final verification for universal ATS review
+
+All remaining CLI reruns completed successfully: out/cli-remaining-regression.log
+is 4/4, including the upload/receipt/session/ambiguous-retry workflow. Session
+26608 ended exit 0. Together with out/cli-budget-regression.log and the repaired
+login fixtures, all seven original combined-suite failures have passing targeted
+reruns. Do not describe the original 86/93 command as a single passing suite.
+Observed snapshots are 9/9 in out/ats-snapshots-final.log; session 68242 exit 0.
+Scoped ATS contracts remain 8/8. Latest final typecheck passed after all source
+changes. Updated autoapply-tickets.md with current evidence and live limits.
+
+Pending-request diagnostics hash route paths instead of logging them, and omit
+query strings, bodies and credentials. Response metadata remains available for
+future diagnosis. Active ABB worker remains 55753 with loaded core fixes, no
+final Submit attempt or new receipt. Preserve exact approved-role boundary and
+sequential applications. No commits or pushes.
+
+Last live check: ABB exceeded the fifteen-minute network wait. Worker converted
+reviewKind to answers with reason "Automatic request wait timed out; saved for
+review without retrying Submit". It remains saved in worker 55753, with
+submissionAttempted=false and no receipt. Do not imply it is still automatically
+waiting to resume after that timeout, or retry the unfinished mutation blindly.
+
+### Latest audit follow-up, 2026-10-31
+
+Read audit sections 14 and 15 before continuing: owner chose deterministic/no-AI,
+no suite, and a 0-3 target band. Worker now constructs GroundedModel only with
+explicit AUTOAPPLY_NO_MODEL=0; default is disabled regardless of API keys, and
+worker.json records model state. Preflight reuses config MAX_YEARS=3 rather than
+candidate actual years. Profile facts unchanged; skipped rows not requeued.
+Queue failures and review pauses now retain report.reason. Typecheck passed.
+Direct preflight replay failed before execution in tsx uv_os_get_passwd ENOMEM;
+no runtime verification claimed. No suite or live worker started this follow-up.
+
+Company grouping changes from prior continuation remain local. Earlier grouping
+and prefill fixtures passed, but latest company-session integration rerun is
+still outstanding after strong-label fix. Pending form requests block siblings,
+including legacy ABB timeout recovery. No new receipt. Exact approved URLs still
+bound submissions. Do not infer rolling approval or retry ABB unfinished POST.
+Research reports: docs/autoapply-open-source-research.md and
+ docs/autoapply-rea-findings.md. Latest disposition and remaining priorities:
+docs/autoapply-audit-followup-2026-10-31.md. OBS-02/04 and status/journal remain
+open. Keep all changes local; no commits or pushes.
+## Autoapply execution continuation, 2026-11-02
+
+The 14:55 UTC acceptance audit verified 0/50; three raw applied rows remain
+excluded. Queue status was 374 queued, 24 parked, 1,095 skipped and seven
+failed; the worker was stopped. The opening status had 382 queued and 16
+parked. No final application submission occurred during this continuation.
+Stripe, Avoca and SS&C remain ambiguous and must not be resubmitted. Preserve
+their tenant locks; do not make reconciliation a prerequisite for other work.
+
+Eight distinct tenants were scanned with final submission disabled. Flexera
+reached one step and parked on source selection and prior-employment questions.
+Cisco reached one step and parked on source and state selection. Qualys, NXP and
+Lloyds reached no application fields. Wolters Kluwer reached the step limit with
+no fields. Marvell reached a zero-field submit-like page. PayPal initially
+reported ready despite zero fields. A protected trace showed its Apply link
+appearing after the entry visibility check; a bounded wait and local replay now
+cover that structure. One post-fix PayPal scan reached one filled field, then
+parked at the step limit. It made no final application submission.
+
+The post-fix PayPal trace and checkpoint revealed eleven repeated account
+creation clicks in one run. The runner now writes a credential-attempt marker
+before each click and reloads it from the job checkpoint, including older
+diagnostic logs. Local fixtures prove that checkpoint failure prevents the click
+and that an unchanged account form is not submitted again after restart. This
+guard is job-scoped; tenant-wide sibling protection and PayPal's actual account
+outcome remain unresolved. Do not resume PayPal or its sibling roles automatically.
+Raw traces remain under owner-protected application state and can contain secrets.
+The redaction-checked `out/autoapply-scan-manifest.json` covers only reachable
+steps; missing option lists are explicitly null, not complete observations.
+
+Preflight now rejects empty descriptions and normalizes the observed “4 or more
+years” requirement. The Movado listing failed the latter check. NXP's public
+description exists but does not state a minimum; do not claim its eligibility is
+fully established. The observed Flexera employment wording now resolves only
+from confirmed complete employment history with employer context. Zero-field
+pages no longer report ready when submission is disabled. Confirmed owner
+answers were saved to their specific roles with protected backups; no narrative
+experience was invented. CEA and Headout remain parked pending their other
+constraints and must not be automatically reopened solely because facts changed.
+
+Focused compiled tests passed for preflight, role-scoped employment wording,
+tenant isolation, zero-field submit barriers, delayed entry and one credential
+submit per run. The tenant-isolation test uses synthetic worker results; it is
+not proof of a live application. No startup task was installed. Continue with
+fresh eligible tenants, sanitized trace-derived replays, durable authentication
+retry protection and independently verified receipts. Keep all master tickets
+open unless their full acceptance criteria are met.
+
+Two further distinct scans reached GitLab and SPAN forms. GitLab parked on
+required questions, including a personal release-tool example. The owner
+confirmed several scoped facts; they were saved with a protected backup, but
+the example remains unanswered and its location options need inspection. SPAN
+parked on location and office preference; its posting combines junior and senior
+requirements, so the intended level remains unverified. Roche also parked with
+no fields. GitLab's employment-restriction question previously matched the
+current-company classifier; a targeted negative pattern and local test now
+prevent that misclassification. These scans made no final submissions.
+
+Final batch status at 15:15 UTC: 369 queued, 28 parked, 1,095 skipped,
+eight failed, three raw applied, and 0/50 independently verified. Thirteen
+distinct tenants were scanned; twelve parked and Infineon timed out before its
+first form step. Caterpillar parked at login. One catalogue row was imported
+during the batch, so queue changes are not solely scan outcomes. The manifest
+now includes all thirteen, with uncaptured options marked null. No role reached
+a verified submission-ready state, so the five-tenant live-submit sprint was
+not run. Do not treat status labels or a zero-field button as readiness.
+
+Owner confirmed additional role-scoped answers, saved with protected backups.
+GitLab still requires a truthful personal example; SPAN's senior/junior level
+and onsite preference need resolution. No user answer was fabricated. The
+single-worker lock, daily cap and ambiguous-tenant exclusions remain in force.
+
+The batch then reached its 15-distinct-tenant cap. A different, live NielsenIQ
+posting stopped before form entry on requisition mismatch; do not conflate it
+with the earlier closed posting or relax identity checks. Barclays' software
+technical analyst role parked at login; its minimum years and Pune availability
+remain unconfirmed. A separate Barclays posting called itself a senior software
+engineer despite its data-engineer title. Preflight now returns a retry for that
+specific title/description conflict, with a focused regression test.
+
+Final audit at 15:23 UTC: 0/50 verified; three raw applied rows excluded.
+Queue: 367 queued, 29 parked, 1,095 skipped, nine failed; worker stopped.
+Fifteen distinct tenants were scanned with final submission disabled: thirteen
+parked and two failed before reaching a form. No scanned role was verified
+ready, so no live-submit canary was attempted. The redaction-checked manifest
+contains all fifteen outcomes; its option lists remain incomplete. Keep the
+remaining acceptance and startup tickets open.
+

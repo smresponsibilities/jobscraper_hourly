@@ -111,7 +111,7 @@ function loadProfile() {
     el.profLastName.value = pers.lastName || '';
     el.profEmail.value = pers.email || '';
     el.profPhone.value = pers.phone || '';
-    el.profCountry.value = pers.country || 'India';
+    el.profCountry.value = pers.country || '';
     el.profCity.value = pers.city || '';
     el.profState.value = pers.state || '';
 
@@ -121,29 +121,29 @@ function loadProfile() {
 
     const edu = (p.education && p.education[0]) || {};
     el.profSchool.value = edu.school || '';
-    el.profDegree.value = edu.degree || 'B.Tech';
-    el.profMajor.value = edu.fieldOfStudy || 'Computer Science';
+    el.profDegree.value = edu.degree || '';
+    el.profMajor.value = edu.fieldOfStudy || '';
     el.profGpa.value = edu.gpa || '';
-    el.profGradYear.value = edu.graduationYear || '2026';
+    el.profGradYear.value = edu.graduationYear || '';
 
     const prof = p.professional || {};
-    el.profYoe.value = prof.totalYearsExperience ?? 1;
-    el.profNotice.value = prof.noticePeriodDays ?? 0;
-    el.profExpectedSalary.value = prof.expectedSalary || 1500000;
-    el.profRelocate.value = prof.willingToRelocate ? 'true' : 'false';
-    el.profWorkMode.value = prof.workPreference || 'hybrid';
+    el.profYoe.value = prof.totalYearsExperience ?? '';
+    el.profNotice.value = prof.noticePeriodDays ?? '';
+    el.profExpectedSalary.value = prof.expectedSalary ?? '';
+    el.profRelocate.value = prof.willingToRelocate === undefined ? '' : String(prof.willingToRelocate);
+    el.profWorkMode.value = prof.workPreference || '';
 
     const auth = p.workAuthorization || {};
-    el.profAuth.value = auth.authorizedInCountry ? 'true' : 'false';
-    el.profSponsorship.value = auth.requiresSponsorshipNowOrFuture ? 'true' : 'false';
-    el.profFormerEmp.value = auth.formerEmployee ? 'true' : 'false';
-    el.profNonCompete.value = auth.hasNonCompete ? 'true' : 'false';
+    el.profAuth.value = auth.authorizedInCountry === undefined ? '' : String(auth.authorizedInCountry);
+    el.profSponsorship.value = auth.requiresSponsorshipNowOrFuture === undefined ? '' : String(auth.requiresSponsorshipNowOrFuture);
+    el.profFormerEmp.value = auth.formerEmployee === undefined ? '' : String(auth.formerEmployee);
+    el.profNonCompete.value = auth.hasNonCompete === undefined ? '' : String(auth.hasNonCompete);
 
     const eeo = p.eeo || {};
-    el.profGender.value = eeo.gender || 'Prefer not to say';
-    el.profRace.value = eeo.raceOrEthnicity || 'Asian';
-    el.profVeteran.value = eeo.veteranStatus || 'No';
-    el.profDisability.value = eeo.disabilityStatus || 'No';
+    el.profGender.value = eeo.gender || '';
+    el.profRace.value = eeo.raceOrEthnicity || '';
+    el.profVeteran.value = eeo.veteranStatus || '';
+    el.profDisability.value = eeo.disabilityStatus || '';
 
     // QA Bank
     if (p.qaBank) {
@@ -153,6 +153,7 @@ function loadProfile() {
       }
     }
 
+    loadAdditionalProfile(p);
     logToConsole('Profile loaded from storage.');
   });
 }
@@ -167,6 +168,7 @@ function saveProfile() {
   });
 
   const profile = {
+    ...currentProfile,
     personal: {
       firstName: el.profFirstName.value.trim(),
       lastName: el.profLastName.value.trim(),
@@ -189,34 +191,37 @@ function saveProfile() {
       },
     ],
     professional: {
-      totalYearsExperience: parseInt(el.profYoe.value, 10) || 1,
-      noticePeriodDays: parseInt(el.profNotice.value, 10) || 0,
-      expectedSalary: parseInt(el.profExpectedSalary.value, 10) || 1500000,
-      willingToRelocate: el.profRelocate.value === 'true',
-      workPreference: el.profWorkMode.value,
+      totalYearsExperience: el.profYoe.value === '' ? undefined : Number(el.profYoe.value),
+      noticePeriodDays: el.profNotice.value === '' ? undefined : Number(el.profNotice.value),
+      expectedSalary: el.profExpectedSalary.value === '' ? undefined : Number(el.profExpectedSalary.value),
+      willingToRelocate: el.profRelocate.value === '' ? undefined : el.profRelocate.value === 'true',
+      workPreference: el.profWorkMode.value || undefined,
     },
     workAuthorization: {
-      authorizedInCountry: el.profAuth.value === 'true',
-      requiresSponsorshipNowOrFuture: el.profSponsorship.value === 'true',
-      formerEmployee: el.profFormerEmp.value === 'true',
-      hasNonCompete: el.profNonCompete.value === 'true',
-      hasSecurityClearance: false,
-      felonyConviction: false,
+      authorizedInCountry: el.profAuth.value === '' ? undefined : el.profAuth.value === 'true',
+      requiresSponsorshipNowOrFuture: el.profSponsorship.value === '' ? undefined : el.profSponsorship.value === 'true',
+      formerEmployee: el.profFormerEmp.value === '' ? undefined : el.profFormerEmp.value === 'true',
+      hasNonCompete: el.profNonCompete.value === '' ? undefined : el.profNonCompete.value === 'true',
+
     },
     eeo: {
       gender: el.profGender.value,
       raceOrEthnicity: el.profRace.value,
       veteranStatus: el.profVeteran.value,
       disabilityStatus: el.profDisability.value,
-      legalSignatureName: `${el.profFirstName.value.trim()} ${el.profLastName.value.trim()}`,
-      signatureDate: new Date().toISOString().slice(0, 10),
+
     },
     qaBank,
   };
 
+  readAdditionalProfile(profile);
+  if (!profile.personal.firstName || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(profile.personal.email)) {
+    alert('Enter your first name and a valid email.'); return;
+  }
   currentProfile = profile;
   chrome.storage.local.set({ profile }, () => {
     logToConsole('Profile successfully saved.');
+    if (chrome.runtime.lastError) { alert(chrome.runtime.lastError.message); return; }
     alert('Candidate profile saved!');
   });
 }
@@ -224,10 +229,11 @@ function saveProfile() {
 function appendQaRow(keyword = '', answer = '') {
   const row = document.createElement('div');
   row.className = 'qa-row';
-  row.innerHTML = `
-    <input type="text" class="text-input qa-keyword" placeholder="Question pattern" value="${keyword}">
-    <input type="text" class="text-input qa-answer" placeholder="Answer" value="${answer}">
-  `;
+  for (const [className, placeholder, value] of [['qa-keyword', 'Question pattern', keyword], ['qa-answer', 'Answer', answer]]) {
+    const input = document.createElement('input');
+    input.type = 'text'; input.className = `text-input ${className}`;
+    input.placeholder = placeholder; input.value = value; row.appendChild(input);
+  }
   el.qaListContainer.appendChild(row);
 }
 
@@ -405,3 +411,97 @@ document.addEventListener('DOMContentLoaded', () => {
   loadProfile();
   setTimeout(scanPageFields, 500);
 });
+// Additional fields use the same candidate structure as the CLI.
+const extraSchema = {
+  personal: [['phoneCountryCode', 'Phone country code'], ['address', 'Street address'], ['addressLine2', 'Address line 2'], ['postalCode', 'Postal code'], ['preferredName', 'Preferred name'], ['twitterUrl', 'Twitter URL'], ['leetcodeUrl', 'LeetCode URL']],
+  professional: [['currentCompany', 'Current company'], ['currentTitle', 'Current title'], ['currentSalary', 'Current salary', 'number'], ['salaryCurrency', 'Salary currency']],
+  workAuthorization: [['hasSecurityClearance', 'Security clearance', 'boolean'], ['felonyConviction', 'Felony conviction', 'boolean']],
+  eeo: [['isHispanicLatino', 'Hispanic or Latino', 'boolean'], ['legalSignatureName', 'Signature name'], ['signatureDate', 'Signature date', 'date']],
+};
+let uploadedDocuments = {};
+
+function profileControl(parent, key, label, type = 'text', value) {
+  const container = document.createElement('div'); container.className = 'form-group';
+  const caption = document.createElement('label'); caption.textContent = label;
+  const input = document.createElement(type === 'boolean' ? 'select' : 'input');
+  input.id = `extra-${key}-${Math.random().toString(36).slice(2)}`;
+  caption.htmlFor = input.id;
+  input.className = 'text-input'; input.dataset.key = key;
+  if (type === 'boolean') {
+    for (const [value, text] of [['', 'Unknown / leave unanswered'], ['true', 'Yes'], ['false', 'No']]) {
+      const option = document.createElement('option'); option.value = value; option.textContent = text; input.appendChild(option);
+    }
+  } else { input.type = type; if (type === 'number') { input.min = '0'; input.step = 'any'; } }
+  input.value = value === undefined ? '' : String(value);
+  container.append(caption, input); parent.appendChild(container);
+}
+
+function historyRow(kind, entry = {}) {
+  const holder = document.querySelector(`#extra-${kind}`);
+  const row = document.createElement('fieldset'); row.dataset.history = kind;
+  const legend = document.createElement('legend'); legend.textContent = kind === 'education' ? 'Additional education' : 'Employment'; row.appendChild(legend);
+  const fields = kind === 'education'
+    ? [['school', 'School'], ['degree', 'Degree'], ['fieldOfStudy', 'Field of study'], ['gpa', 'GPA'], ['startYear', 'Start year'], ['graduationYear', 'Graduation year']]
+    : [['title', 'Title'], ['company', 'Company'], ['location', 'Location'], ['startDate', 'Start date', 'date'], ['endDate', 'End date', 'date'], ['current', 'Currently employed here', 'boolean'], ['description', 'Responsibilities']];
+  for (const [key, label, type] of fields) profileControl(row, key, label, type, entry[key]);
+  const remove = document.createElement('button'); remove.type = 'button'; remove.textContent = 'Remove entry'; remove.onclick = () => row.remove();
+  row.appendChild(remove); holder.appendChild(row);
+}
+
+function loadAdditionalProfile(profile = {}) {
+  const root = document.getElementById('additional-profile'); root.replaceChildren();
+  for (const [section, fields] of Object.entries(extraSchema)) {
+    const group = document.createElement('div'); group.dataset.section = section; group.className = 'form-grid';
+    for (const [key, label, type] of fields) profileControl(group, key, label, type, profile[section]?.[key]);
+    root.appendChild(group);
+  }
+  for (const kind of ['education', 'experience']) {
+    const group = document.createElement('div'); group.id = `extra-${kind}`; root.appendChild(group);
+    for (const entry of (profile[kind] || []).slice(kind === 'education' ? 1 : 0)) historyRow(kind, entry);
+    const add = document.createElement('button'); add.type = 'button'; add.className = 'small-btn';
+    add.textContent = kind === 'education' ? 'Add education' : 'Add employment'; add.onclick = () => historyRow(kind); root.appendChild(add);
+  }
+  profileControl(root, 'skills', 'Skills, separated by commas', 'text', (profile.skills || []).join(', '));
+  profileControl(root, 'coverLetterText', 'Cover letter text', 'text', profile.coverLetterText);
+  profileControl(root, 'educationStartYear', 'First education start year', 'text', profile.education?.[0]?.startYear);
+  uploadedDocuments = profile.documentUploads || {};
+  for (const [kind, title] of [['resume', 'Resume'], ['coverLetter', 'Cover letter']]) {
+    profileControl(root, kind, `${title} file`, 'file');
+    const input = root.querySelector(`input[data-key="${kind}"]`); input.accept = '.pdf,.doc,.docx,.txt';
+    const name = document.createElement('span'); name.textContent = uploadedDocuments[kind]?.name || 'No file selected'; input.after(name);
+    const clear = document.createElement('button'); clear.type = 'button'; clear.textContent = `Remove ${title.toLowerCase()}`;
+    clear.onclick = () => { delete uploadedDocuments[kind]; input.value = ''; name.textContent = 'No file selected'; }; name.after(clear);
+    input.onchange = async () => {
+      const file = input.files[0]; if (!file) return;
+      const other = Object.entries(uploadedDocuments).filter(([key]) => key !== kind).reduce((sum, [, item]) => sum + (item.size || 0), 0);
+      if (file.size + other > 6 * 1024 * 1024) { alert('Combined documents must be under 6 MB.'); input.value = ''; return; }
+      const reader = new FileReader();
+      reader.onload = () => { uploadedDocuments[kind] = { name: file.name, type: file.type, size: file.size, base64: String(reader.result).split(',')[1] }; name.textContent = file.name; };
+      reader.onerror = () => alert('File could not be read'); reader.readAsDataURL(file);
+    };
+  }
+}
+
+function readAdditionalProfile(profile) {
+  const read = control => control.value === '' ? undefined : control.tagName === 'SELECT' ? control.value === 'true' : control.type === 'number' ? Number(control.value) : control.value;
+  for (const group of document.querySelectorAll('#additional-profile [data-section]')) {
+    for (const control of group.querySelectorAll('[data-key]')) profile[group.dataset.section][control.dataset.key] = read(control);
+  }
+  profile.skills = document.querySelector('[data-key=skills]').value.split(',').map(skill => skill.trim()).filter(Boolean);
+  profile.coverLetterText = document.querySelector('[data-key=coverLetterText]').value || undefined;
+  profile.education[0].startYear = document.querySelector('[data-key=educationStartYear]').value || undefined;
+  const firstEducation = { ...currentProfile?.education?.[0], ...profile.education[0] };
+  profile.education = Object.values(firstEducation).some(Boolean) ? [firstEducation] : [];
+  profile.experience = [];
+  for (const row of document.querySelectorAll('[data-history]')) {
+    const entry = {};
+    for (const control of row.querySelectorAll('[data-key]')) entry[control.dataset.key] = read(control);
+    profile[row.dataset.history].push(entry);
+  }
+  profile.documentUploads = uploadedDocuments;
+}
+
+loadAdditionalProfile();
+for (const control of document.querySelectorAll('#sec-profile input[id], #sec-profile select[id]')) {
+  const label = control.parentElement.querySelector('label'); if (label) label.htmlFor = control.id;
+}

@@ -30,7 +30,7 @@ export const CLASSIFICATION_RULES: FieldRuleDef[] = [
     mediumPatterns: [
       /candidate[_\-\s]?first/i,
     ],
-    negativePatterns: [/middle/i, /last/i, /full/i, /company/i],
+    negativePatterns: [/middle/i, /last/i, /full/i, /company/i, /\blocal\b|nameLocal/i],
   },
   {
     category: 'last_name',
@@ -44,13 +44,13 @@ export const CLASSIFICATION_RULES: FieldRuleDef[] = [
     mediumPatterns: [
       /candidate[_\-\s]?last/i,
     ],
-    negativePatterns: [/first/i, /middle/i, /full/i, /company/i],
+    negativePatterns: [/first/i, /middle/i, /full/i, /company/i, /\blocal\b|nameLocal/i],
   },
   {
     category: 'full_name',
     strongPatterns: [
       /\bfull[_\-\s]?name\b/i,
-      /\bcandidate[_\-\s]?name\b/i,
+      /\bcandidate[._\-\s]?name\b/i,
       /^name$/i,
       /\byour[_\-\s]?name\b/i,
     ],
@@ -58,7 +58,7 @@ export const CLASSIFICATION_RULES: FieldRuleDef[] = [
       /legal[_\-\s]?name/i,
       /applicant[_\-\s]?name/i,
     ],
-    negativePatterns: [/first/i, /last/i, /middle/i, /company/i, /school/i],
+    negativePatterns: [/first/i, /last/i, /middle/i, /company/i, /school/i, /prefix/i, /salutation/i, /\btitle\b/i],
   },
   {
     category: 'preferred_name',
@@ -86,6 +86,7 @@ export const CLASSIFICATION_RULES: FieldRuleDef[] = [
     category: 'phone_country_code',
     strongPatterns: [
       /\bcountry[_\-\s]?code\b/i,
+      /\bcountry[_\-\s]?phone[_\-\s]?code\b/i,
       /\bdialing[_\-\s]?code\b/i,
       /\bphone[_\-\s]?prefix\b/i,
     ],
@@ -105,7 +106,7 @@ export const CLASSIFICATION_RULES: FieldRuleDef[] = [
     mediumPatterns: [
       /\bprimary[_\-\s]?phone\b/i,
     ],
-    negativePatterns: [/country[_\-\s]?code/i],
+    negativePatterns: [/country[_\-\s]?code/i, /phone[_\-\s]?(?:device|type)/i, /extension/i],
   },
   {
     category: 'address_line_2',
@@ -137,10 +138,15 @@ export const CLASSIFICATION_RULES: FieldRuleDef[] = [
       /\bcity\b/i,
       /\btown\b/i,
       /\bmunicipality\b/i,
+      /\bcurrent[_\-\s]?location\b/i,
+      /\bwhere\s+are\s+you\s+based\b/i,
+      /\byour[_\-\s]?location\b/i,
+      /\bpresent[_\-\s]?location\b/i,
     ],
     mediumPatterns: [
       /suburb/i,
     ],
+    negativePatterns: [/relocat/i, /previously|employed|worked/i],
   },
   {
     category: 'state',
@@ -153,7 +159,7 @@ export const CLASSIFICATION_RULES: FieldRuleDef[] = [
     mediumPatterns: [
       /territory/i,
     ],
-    negativePatterns: [/united\s+states/i, /statement/i, /authorized|eligible|right\s+to\s+work/i],
+    negativePatterns: [/united\s+states/i, /statement/i, /authorized|eligible|right\s+to\s+work/i, /country/i],
   },
   {
     category: 'postal_code',
@@ -342,9 +348,27 @@ export const CLASSIFICATION_RULES: FieldRuleDef[] = [
     ],
   },
 
+  // Non-compete and restrictive covenants must be evaluated before current_company and former_employee
+  {
+    category: 'non_compete',
+    strongPatterns: [
+      /\bnon[_\-\s]?compete\b/i,
+      /\bnon[_\-\s]?solicitation\b/i,
+      /\brestrictive[_\-\s]?covenant\b/i,
+      /\bemployment[_\-\s]?restriction\b/i,
+      /\bagreement[_\-\s]?preventing\b/i,
+      /\bbound[_\-\s]?by[_\-\s]?.*obligation\b/i,
+    ],
+    mediumPatterns: [
+      /agreement[_\-\s]?prevent/i,
+      /restrictive/i,
+    ],
+  },
+
   // 4. Experience & Employment
   {
     category: 'current_company',
+    negativePatterns: [/\bemployment agreements?\b/i, /\bpost[-\s]employment restrictions?\b/i, /\brestrictive\b/i, /\bnon[-\s]?compete\b/i, /\bnon[-\s]?solicitation\b/i],
     strongPatterns: [
       /\bcurrent[_\-\s]?company\b/i,
       /\bcurrent[_\-\s]?employer\b/i,
@@ -406,6 +430,7 @@ export const CLASSIFICATION_RULES: FieldRuleDef[] = [
     category: 'expected_salary',
     strongPatterns: [
       /\bexpected[_\-\s]?(?:ctc|salary|compensation|package)\b/i,
+      /\bexcepected\s+ctc\b/i,
       /\bsalary[_\-\s]?expectations?\b/i,
       /\btarget[_\-\s]?(?:compensation|salary)\b/i,
       /\bdesired[_\-\s]?(?:salary|pay)\b/i,
@@ -478,23 +503,12 @@ export const CLASSIFICATION_RULES: FieldRuleDef[] = [
   {
     category: 'former_employee',
     strongPatterns: [
-      /\bpreviously[_\-\s]?(?:employed|worked)\b/i,
+      /\bpreviously[_\-\s]?(?:been[_\-\s]?)?(?:employed|worked)\b/i,
       /\bformer[_\-\s]?employee\b/i,
       /\bhave[_\-\s]?you[_\-\s]?(?:ever)?[_\-\s]?worked[_\-\s]?for\b/i,
     ],
     mediumPatterns: [
       /past[_\-\s]?employee/i,
-    ],
-  },
-  {
-    category: 'non_compete',
-    strongPatterns: [
-      /\bnon[_\-\s]?compete\b/i,
-      /\bnon[_\-\s]?solicitation\b/i,
-      /\brestrictive[_\-\s]?covenant\b/i,
-    ],
-    mediumPatterns: [
-      /agreement[_\-\s]?preventing/i,
     ],
   },
   {
@@ -602,12 +616,14 @@ export const CLASSIFICATION_RULES: FieldRuleDef[] = [
   {
     category: 'hear_about_us',
     strongPatterns: [
-      /\bhow[_\-\s]?did[_\-\s]?you[_\-\s]?(?:hear|learn)[_\-\s]?about[_\-\s]?(?:us|this[_\-\s]?role|position)\b/i,
+      /\bhow[_\-\s]?did[_\-\s]?you[_\-\s]?(?:hear|learn|come[_\-\s]?to[_\-\s]?know|find[_\-\s]?out)[_\-\s]?about[_\-\s]?(?:us|this[_\-\s]?(?:role|position)|[a-z0-9_-]+)\b/i,
+      /\bwhere[_\-\s]?did[_\-\s]?you[_\-\s]?(?:hear|learn|find|come[_\-\s]?across)\b/i,
       /\breferral[_\-\s]?source\b/i,
       /\bsource[_\-\s]?(?:of[_\-\s]?application)?\b/i,
     ],
     mediumPatterns: [
       /where[_\-\s]?did[_\-\s]?you[_\-\s]?find/i,
+      /come[_\-\s]?to[_\-\s]?know/i,
     ],
   },
   {
@@ -626,6 +642,8 @@ export const CLASSIFICATION_RULES: FieldRuleDef[] = [
     strongPatterns: [
       /\bcover[_\-\s]?letter\b/i,
       /\bwhy[_\-\s]?(?:do[_\-\s]?you[_\-\s]?want[_\-\s]?to[_\-\s]?work|join)\b/i,
+      /\bwhy\s+[a-z0-9]+/i,
+      /\bwhy\b/i,
       /\badditional[_\-\s]?information\b/i,
       /\bstatement[_\-\s]?of[_\-\s]?interest\b/i,
     ],
@@ -639,12 +657,41 @@ export const CLASSIFICATION_RULES: FieldRuleDef[] = [
  * Instant field classification matching name, id, placeholder, label, and aria-labels.
  */
 export function classifyAtsField(descriptor: {
+  autocomplete?: string;
   name?: string;
   id?: string;
   placeholder?: string;
   label?: string;
   ariaLabel?: string;
+  type?: string;
+  widgetKind?: string;
+  options?: string[];
 }): FieldClassificationResult {
+  const autocomplete = (descriptor.autocomplete || '').trim().toLowerCase().split(/\s+/).at(-1);
+  const standard: Record<string, ExtendedFieldCategory> = {
+    'given-name': 'first_name', 'family-name': 'last_name', name: 'full_name',
+    email: 'email', tel: 'phone', 'tel-national': 'phone', 'tel-country-code': 'phone_country_code',
+    'street-address': 'address', 'address-line1': 'address', 'address-line2': 'address_line_2',
+    'address-level1': 'state', 'address-level2': 'city', 'postal-code': 'postal_code',
+    country: 'country', 'country-name': 'country', 'organization-title': 'current_title',
+  };
+  const isYesNoRadio =
+    descriptor.type === 'radio' &&
+    Array.isArray(descriptor.options) &&
+    descriptor.options.length === 2 &&
+    descriptor.options.every(o => /^(?:yes|no|true|false|i agree|i do not agree)$/i.test(o.trim()));
+
+  const booleanWidget =
+    descriptor.widgetKind === 'BOOLEAN_TOGGLE' ||
+    descriptor.type === 'checkbox' ||
+    isYesNoRadio;
+  const booleanCategories = new Set<ExtendedFieldCategory>(['relocate', 'work_authorization', 'sponsorship', 'former_employee', 'non_compete', 'security_clearance', 'felony_conviction', 'hispanic_latino']);
+  const category = autocomplete && !booleanWidget ? standard[autocomplete] : undefined;
+  if (autocomplete === 'one-time-code') return { category: 'unknown', confidence: 0, matchedKeyword: autocomplete, source: 'autocomplete' };
+  const context = [descriptor.name, descriptor.id, descriptor.label, descriptor.ariaLabel, descriptor.placeholder].filter(Boolean).join(' ');
+  const rule = category ? CLASSIFICATION_RULES.find(entry => entry.category === category) : undefined;
+  if (category && category !== 'current_title' && /\b(?:referrer|referral|manager|supervisor|reference|emergency contact)\b/i.test(context)) return { category: 'unknown', confidence: 0, source: 'autocomplete' };
+  if (category && !rule?.negativePatterns?.some(pattern => pattern.test(context))) return { category, confidence: 1, matchedKeyword: autocomplete, source: 'autocomplete' };
   const parts = [
     { text: descriptor.name || '', source: 'name' as const },
     { text: descriptor.id || '', source: 'id' as const },
@@ -655,13 +702,10 @@ export function classifyAtsField(descriptor: {
 
   const fullText = parts.map(p => p.text).filter(Boolean).join(' ');
 
-  for (const rule of CLASSIFICATION_RULES) {
-    if (rule.negativePatterns && rule.negativePatterns.some(np => np.test(fullText))) {
-      continue;
-    }
-
-    // Check strong patterns per source
-    for (const p of parts) {
+  // Prefer field identifiers over incidental text inherited from a group.
+  const eligible = CLASSIFICATION_RULES.filter(rule => (!booleanWidget || booleanCategories.has(rule.category)) && !rule.negativePatterns?.some(np => np.test(fullText)));
+  for (const p of parts) {
+    for (const rule of eligible) {
       if (!p.text) continue;
       for (const sp of rule.strongPatterns) {
         if (sp.test(p.text)) {
@@ -675,7 +719,10 @@ export function classifyAtsField(descriptor: {
       }
     }
 
-    // Check medium patterns across full combined text
+  }
+
+  for (const rule of eligible) {
+    // Check medium patterns only after all strong sources.
     for (const mp of rule.mediumPatterns) {
       if (mp.test(fullText)) {
         return {
@@ -702,20 +749,21 @@ export function resolveExtendedProfileValue(
   category: ExtendedFieldCategory,
   profile: CandidateExtendedProfile
 ): string | boolean | number | undefined {
-  const p = profile.personal;
-  const edu = profile.education[0];
-  const prof = profile.professional;
-  const auth = profile.workAuthorization;
-  const eeo = profile.eeo;
+  const p = profile.personal || ({} as any);
+  const edu = profile.education?.[0];
+  const prof = profile.professional || ({} as any);
+  const exp = profile.experience?.[0];
+  const auth = profile.workAuthorization || ({} as any);
+  const eeo = profile.eeo || ({} as any);
 
   switch (category) {
     case 'first_name': return p.firstName;
     case 'last_name': return p.lastName;
-    case 'full_name': return p.fullName || `${p.firstName} ${p.lastName}`.trim();
+    case 'full_name': return p.fullName || `${p.firstName || ''} ${p.lastName || ''}`.trim();
     case 'preferred_name': return p.preferredName || p.firstName;
     case 'email': return p.email;
     case 'phone': return p.phone;
-    case 'phone_country_code': return p.phoneCountryCode || '+91';
+    case 'phone_country_code': return p.phoneCountryCode;
     case 'address': return p.address;
     case 'address_line_2': return p.addressLine2;
     case 'city': return p.city;
@@ -735,17 +783,17 @@ export function resolveExtendedProfileValue(
     case 'gpa': return edu?.gpa;
     case 'graduation_year': return edu?.graduationYear;
     case 'start_year': return edu?.startYear;
-    case 'date_year': return edu?.graduationYear || '2026';
-    case 'date_month': return '05';
-    case 'date_day': return '15';
+    case 'date_year': return undefined;
+    case 'date_month': return undefined;
+    case 'date_day': return undefined;
 
-    case 'current_company': return prof.currentCompany;
-    case 'current_title': return prof.currentTitle;
+    case 'current_company': return prof.currentCompany || exp?.company;
+    case 'current_title': return prof.currentTitle || exp?.title;
     case 'total_experience': return prof.totalYearsExperience;
-    case 'notice_period': return `${prof.noticePeriodDays} days`;
+    case 'notice_period': return prof.noticePeriodDays === undefined ? undefined : `${prof.noticePeriodDays} days`;
     case 'current_salary': return prof.currentSalary;
     case 'expected_salary': return prof.expectedSalary;
-    case 'salary_currency': return prof.salaryCurrency || 'INR';
+    case 'salary_currency': return prof.salaryCurrency;
     case 'relocate': return prof.willingToRelocate;
     case 'work_preference': return prof.workPreference;
 
@@ -761,12 +809,12 @@ export function resolveExtendedProfileValue(
     case 'hispanic_latino': return eeo.isHispanicLatino;
     case 'veteran': return eeo.veteranStatus;
     case 'disability': return eeo.disabilityStatus;
-    case 'disability_signature_name': return eeo.legalSignatureName || `${p.firstName} ${p.lastName}`.trim();
-    case 'disability_signature_date': return eeo.signatureDate || new Date().toISOString().slice(0, 10);
+    case 'disability_signature_name': return eeo.legalSignatureName;
+    case 'disability_signature_date': return eeo.signatureDate;
 
-    case 'hear_about_us': return 'LinkedIn';
+    case 'hear_about_us': return profile.referralSources?.[0] || 'Company Careers Website';
     case 'referral_name': return '';
-    case 'cover_letter': return '';
+    case 'cover_letter': return profile.coverLetterText;
     default: return undefined;
   }
 }

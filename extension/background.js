@@ -22,25 +22,11 @@ chrome.runtime.onInstalled.addListener(() => {
             state: '',
             country: 'India',
           },
-          education: [
-            {
-              school: '',
-              degree: 'Bachelor of Engineering',
-              fieldOfStudy: 'Computer Science and Engineering',
-              gpa: '',
-              graduationYear: '2026',
-            },
-          ],
+          education: [],
           experience: [],
-          workAuthorization: {
-            authorizedInCountry: true,
-            requiresSponsorshipNowOrFuture: false,
-          },
-          eeo: {
-            gender: 'Prefer not to say',
-            veteranStatus: 'No',
-            disabilityStatus: 'No',
-          },
+          professional: {},
+          workAuthorization: {},
+          eeo: {},
           resumeText: '',
         },
       });

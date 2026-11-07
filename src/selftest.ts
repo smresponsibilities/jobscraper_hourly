@@ -2530,15 +2530,15 @@ check('resolves disability status text', resolveExtendedProfileValue('disability
 
 console.log('AIHawk: Dynamic Question Answering & Fuzzy Matcher');
 const ageAns = resolveDynamicQuestion('Are you at least 18 years of age?', extendedCandidate);
-check('answers 18+ age question affirmatively', ageAns.value, true);
+check('leaves unprovided age confirmation unanswered', ageAns.value, undefined);
 const bgAns = resolveDynamicQuestion('Are you willing to undergo a pre-employment background check?', extendedCandidate);
-check('answers background check affirmatively', bgAns.value, true);
+check('does not invent background-check consent', bgAns.value, undefined);
 const felonyAns = resolveDynamicQuestion('Have you ever been convicted of a felony crime?', extendedCandidate);
-check('answers felony question negatively', felonyAns.value, 'No');
+check('uses explicit felony profile answer', felonyAns.value, false);
 const dischargeAns = resolveDynamicQuestion('Have you ever been discharged or asked to resign?', extendedCandidate);
-check('answers discharge question negatively', dischargeAns.value, 'No');
+check('leaves unprovided discharge history unanswered', dischargeAns.value, undefined);
 const licenseAns = resolveDynamicQuestion('Do you possess a valid driver license?', extendedCandidate);
-check('answers driver license affirmatively', licenseAns.value, 'Yes');
+check('leaves unprovided driving credentials unanswered', licenseAns.value, undefined);
 
 const optionsList = [
   { value: 'opt_1', label: 'Yes, I am legally authorized to work' },

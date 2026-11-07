@@ -65,3 +65,17 @@ state/drafts.json
 .vercel
 .env*
 .venv-offices/
+
+# Candidate profiles, browser sessions and application receipts are private.
+state/autoapply/
+state/autoapply/sessions/
+state/autoapply/browser-profile*/
+state/autoapply/crawlee-storage/
+state/autoapply/resumes/
+state/autoapply/evidence/
+state/autoapply/portal-review/candidate.json
+state/autoapply/portal-review/workday-accounts.json
+state/autoapply/portal-review/outreach-leads.json
+state/autoapply/portal-review/applications/
+scratch/
+scripts/test-temp.mjs
