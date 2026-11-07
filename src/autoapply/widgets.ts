@@ -14,6 +14,27 @@ export function inferTypeaheadSeed(questionText: string, candidateCity = 'Bengal
   return 'a';
 }
 
+/**
+ * Ticket GEN-138: Recursive shadow-piercing helper to find elements tagged with data-autoapply-ref
+ * across open Shadow Roots (<spl-input>, <spl-select>, <spl-autocomplete>, etc.)
+ */
+export function findByRefDeep(root: Document | ShadowRoot | Element, targetRef: string): HTMLElement | null {
+  try {
+    const escaped = typeof CSS !== 'undefined' && typeof CSS.escape === 'function' ? CSS.escape(targetRef) : targetRef.replace(/"/g, '\\"');
+    const direct = (root as Element).querySelector?.(`[data-autoapply-ref="${escaped}"], [data-autoapply-target="${escaped}"], [data-autoapply-control="${escaped}"]`) as HTMLElement | null;
+    if (direct) return direct;
+    const all = (root as Element).querySelectorAll?.('*') || [];
+    for (const node of Array.from(all)) {
+      const sr = (node as HTMLElement).shadowRoot;
+      if (sr) {
+        const found = findByRefDeep(sr, targetRef);
+        if (found) return found;
+      }
+    }
+  } catch {}
+  return null;
+}
+
 export async function verifyChoiceReadBack(
   cluster: Locator,
   control: Locator,

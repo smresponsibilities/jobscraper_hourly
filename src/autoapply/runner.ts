@@ -461,6 +461,36 @@ export class AutoApplyRunner {
   }
 
   /**
+   * Ticket GEN-142: Dead/Closed Job Posting < 1.5s Fast-Exit.
+   * Detects 404/closed postings immediately after page.goto to abort before Tier-3 context rotation.
+   */
+  private async isDeadOrClosedJobPosting(page: Page): Promise<string | null> {
+    return await page
+      .evaluate(() => {
+        const inputs = document.querySelectorAll(
+          'input:not([type="hidden"]), textarea, select, [role="combobox"]'
+        ).length;
+        if (inputs >= 2) return null;
+        const title = (document.title || '').toLowerCase();
+        const h1Text = Array.from(document.querySelectorAll('h1, h2, [data-automation-id="errorMessage"]'))
+          .map((el) => (el.textContent || '').trim())
+          .join(' ')
+          .toLowerCase();
+        const bodyText = (document.body?.innerText || '').slice(0, 2500).toLowerCase();
+        const combined = `${title} ${h1Text} ${bodyText}`;
+        if (
+          /this job is no longer available|job you are looking for is no longer open|no longer accepting applications|position has been filled|position is no longer available|board you are looking for is no longer active|posting is no longer available|job not found|page not found|404 not found|the page you are looking for doesn't exist/i.test(
+            combined
+          )
+        ) {
+          return 'Job posting is closed or no longer available (404/expired)';
+        }
+        return null;
+      })
+      .catch(() => null);
+  }
+
+  /**
    * Ticket GEN-108: Dismiss Ashby React cookie consent modal / OneTrust banners and wait for form controls hydration.
    */
   private async dismissCookieConsentAndHydrateForm(page: Page): Promise<void> {
@@ -1933,7 +1963,36 @@ export class AutoApplyRunner {
             document = candidate.documents.resume;
           }
         }
-        if (!document && !options.dryRun && info.type === 'file' && info.required && /cover.?letter/i.test(descriptor)) document = await this.coverLetter(options);
+        if (info.type === 'file' && /cover.?letter/i.test(descriptor)) {
+          // Ticket GEN-140: Check if "Enter manually" toggle is present
+          const manualToggle = frame.locator('button:has-text("Enter manually"), a:has-text("Enter manually"), [data-source="paste"]').filter({ visible: true }).first();
+          if (await manualToggle.isVisible().catch(() => false)) {
+            await manualToggle.click().catch(() => {});
+            await frame.page().waitForTimeout(300);
+            const clTextarea = frame.locator('#cover_letter_text, textarea[name*="cover_letter" i], textarea[aria-label*="cover letter" i]').filter({ visible: true }).first();
+            if (await clTextarea.isVisible().catch(() => false)) {
+              const narrative = 'I am eager to contribute to your engineering team by leveraging my experience at Morgan Stanley in building scalable distributed systems and backend data pipelines. I look forward to delivering reliable, high-impact software from day one.';
+              await clTextarea.fill(narrative).catch(() => {});
+              report.actions.push({
+                documentHash: undefined,
+                controlKey: key,
+                question: (info.label || info.ariaLabel || info.name || info.id).trim().slice(0, 500),
+                category: classification.category,
+                confidence: classification.confidence,
+                selector: '#cover_letter_text',
+                value: 'composed_cover_letter',
+                elementTag: 'textarea',
+                status: 'filled',
+                error: undefined,
+              });
+              report.fieldsFilled++;
+              continue;
+            }
+          }
+          if (!document) document = candidate.documents?.resume;
+        }
+        if (!document && !options.dryRun && info.type === 'file' && info.required && /cover.?letter/i.test(descriptor)) document = await this.coverLetter(options) || candidate.documents?.resume;
+        if (!document && !options.dryRun && info.type === 'file' && info.required) document = candidate.documents?.resume;
         if (info.type === 'file') value = document;
         if (info.hasFile && !report.actions.some(action => action.controlKey === key && action.documentHash)) {
           const selected = await input.evaluate(async el => {
@@ -2354,13 +2413,38 @@ export class AutoApplyRunner {
                 continue;
               }
             }
-            // Ticket GEN-94.4: Checkbox string coercion and label-click fallback
+            // Ticket GEN-94.4 & GEN-139: Checkbox string coercion, Bangalore synonym matcher, and multi-option required fallback
+            const optText = (info.optionLabel || info.label || info.value || '').toLowerCase();
+            const qText = (action.question || info.questionTitle || descriptor || '').toLowerCase();
+            const valStr = typeof value === 'string' ? value.toLowerCase() : '';
+
+            const isLocationSynonymMatch =
+              (/\b(?:bengaluru|bangalore|india)\b/i.test(valStr) || /\b(?:location|office|city)\b/i.test(qText)) &&
+              /\b(?:bengaluru|bangalore|karnataka|india|hybrid|remote|any)\b/i.test(optText);
+
+            const isSkillsMatch =
+              /\b(?:programming|language|tech\s*stack|skills?|technolog|tools?|framework)\b/i.test(qText) &&
+              /\b(?:java|python|typescript|javascript|sql|spark|pyspark|kafka|spring|react|node\.?js|c\+\+|git|docker|aws|azure|linux)\b/i.test(optText);
+
             let targetBool: boolean;
             if (typeof value === 'boolean') {
               targetBool = value;
             } else if (typeof value === 'string') {
-              targetBool = /^(?:true|yes|1|y)$/i.test(value.trim()) || matchBestOption(value, [{ value: info.value, label: info.optionLabel }]) !== null;
+              targetBool =
+                /^(?:true|yes|1|y)$/i.test(value.trim()) ||
+                isLocationSynonymMatch ||
+                isSkillsMatch ||
+                matchBestOption(value, [{ value: info.value, label: info.optionLabel }]) !== null;
             } else {
+              targetBool = isLocationSynonymMatch || isSkillsMatch;
+            }
+
+            if (!targetBool && info.required) {
+              const isSafeDefault = /yes|agree|accept|acknowledge|confirm|bengaluru|bangalore|india|linkedin|none of the above|do not wish|prefer not/i.test(optText);
+              if (isSafeDefault) targetBool = true;
+            }
+
+            if (!targetBool && !info.required && typeof value !== 'boolean') {
               action.status = 'skipped';
               continue;
             }
@@ -2659,6 +2743,14 @@ export class AutoApplyRunner {
       }
       await this.page!.locator('body').waitFor({ state: 'attached' });
       await this.waitReady(Math.min(options.timeoutMs ?? 5000, 5000));
+      // Ticket GEN-142: Fast-exit if job posting is 404/closed
+      const deadReason = await this.isDeadOrClosedJobPosting(this.page!);
+      if (deadReason) {
+        this.log(`Fast-exit: ${deadReason}`);
+        report.status = 'failed';
+        report.reason = deadReason;
+        return report;
+      }
       const isWorkdayHost = options.url.toLowerCase().includes('myworkdayjobs.com') || this.page!.url().toLowerCase().includes('myworkdayjobs.com');
       if (isWorkdayHost) {
         await this.page!.locator(

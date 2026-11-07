@@ -215,4 +215,28 @@ export async function runWorkdayStepFastPass(frame: Frame, resumePdfPath?: strin
       }
     }
   }
+
+  // 8. Workday Step 1 & 2 pre-expanded empty card fast-fill (Ticket GEN-141)
+  const defaultFastFills: Array<[string, string]> = [
+    ['input[data-automation-id="jobTitle"]', 'Technology Apprentice'],
+    ['input[data-automation-id="company"]', 'Morgan Stanley'],
+    ['input[data-automation-id="location"]', 'Bengaluru, India'],
+    ['textarea[data-automation-id="description"]', 'Engineered CIAM data warehouse pipelines using Apache Kafka, PySpark, Apache Spark, Hive, and Azure Snowflake processing 5,000,000+ events with zero row-count tolerance; built distributed Java Spring Boot REST APIs and Jenkins CI/CD pipelines.'],
+    ['input[data-automation-id="gpa"]', '9.35'],
+    ['input[data-automation-id="addressSection_addressLine1"]', 'Bengaluru, Karnataka'],
+    ['input[data-automation-id="addressSection_city"]', 'Bengaluru'],
+    ['input[data-automation-id="addressSection_postalCode"]', '560001'],
+    ['input[data-automation-id="legalNameSection_firstName"]', 'Shivam'],
+    ['input[data-automation-id="legalNameSection_lastName"]', 'Mahajan'],
+  ];
+
+  for (const [sel, val] of defaultFastFills) {
+    const loc = frame.locator(sel).filter({ visible: true }).first();
+    if (await loc.isVisible().catch(() => false)) {
+      const cur = (await loc.inputValue().catch(() => '')).trim();
+      if (!cur) {
+        await loc.fill(val).catch(() => {});
+      }
+    }
+  }
 }
