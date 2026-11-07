@@ -1689,7 +1689,7 @@ export class AutoApplyRunner {
   }
 
   private async waitChanged(before: string, timeout: number, workdayStep?: string): Promise<boolean> {
-    const deadline = Date.now() + timeout;
+    const deadline = Date.now() + Math.min(timeout, 12_000);
     while (Date.now() < deadline) {
       const busy = this.page!.locator('[data-automation-id="loadingSpinner"],[data-automation-id="wd-LoadingPanel"],[data-automation-id="applyFlowLoadingPage"],[data-automation-id="pageFooterNextButton"]:disabled').filter({ visible: true });
       if (!await busy.count()) {

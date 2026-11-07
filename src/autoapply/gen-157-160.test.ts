@@ -39,9 +39,10 @@ test('GEN-157: pacedClick has 3500ms timeout and Escape + dispatchEvent fallback
   assert.ok(runnerSrc.includes("dispatchEvent('click')"), 'Must fallback to dispatchEvent click');
 });
 
-test('GEN-158: post-submit receipt polling deadline is capped at 25s with watchdog heartbeat', () => {
+test('GEN-158: post-submit receipt polling deadline is capped at 25s and waitChanged capped at 12s', () => {
   const runnerSrc = fs.readFileSync('src/autoapply/runner.ts', 'utf8');
   assert.ok(runnerSrc.includes('Math.min(timeout, 25_000)'), 'Must cap post-submit receipt polling deadline to 25s');
+  assert.ok(runnerSrc.includes('Math.min(timeout, 12_000)'), 'Must cap waitChanged deadline to 12s');
   assert.ok(runnerSrc.includes("watchdog.heartbeat('post_submit_poll')"), 'Must heartbeat in receipt loop');
 });
 
