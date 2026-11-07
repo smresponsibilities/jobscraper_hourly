@@ -33,6 +33,21 @@ export function unwrapDirectAtsApplicationUrl(rawUrl: string): string {
       }
     }
 
+    // 4. Ticket GEN-111: SmartRecruiters overview URL purity (never rewrite to /oneclick-ui/)
+    if (u.hostname === 'jobs.smartrecruiters.com') {
+      // Strip trailing /apply so it points to the overview page
+      if (u.pathname.endsWith('/apply') || u.pathname.endsWith('/apply/')) {
+        u.pathname = u.pathname.replace(/\/apply\/?$/i, '');
+        return u.toString();
+      }
+      // If broken numeric /oneclick-ui/company/{company}/publication/{numericId}, rewrite back to /{company}/{numericId}
+      const numMatch = u.pathname.match(/\/oneclick-ui\/company\/([^/]+)\/publication\/(\d{8,})/i);
+      if (numMatch?.[1] && numMatch?.[2]) {
+        u.pathname = `/${numMatch[1]}/${numMatch[2]}`;
+        return u.toString();
+      }
+    }
+
     return rawUrl;
   } catch {
     return rawUrl;

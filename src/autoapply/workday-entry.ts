@@ -175,5 +175,133 @@ export async function ensureWorkdayApplicationStarted(page: Page): Promise<Workd
     return { enteredWizard: false, jobClosed: true, entryMethod: 'closed' };
   }
 
+  // GEN-109: If Workday landed on /applyManually or /apply without opening the Sign In modal,
+  // click [data-automation-id="utilityButtonSignIn"] so the auth fields mount immediately.
+  const utilitySignInVisible = await page
+    .locator('[data-automation-id="utilityButtonSignIn"]')
+    .first()
+    .isVisible()
+    .catch(() => false);
+  const authOrFormMounted = await page
+    .locator(
+      '[data-automation-id="formField-email"] input, [data-automation-id="email"], input[type="password"], [data-automation-id="bottom-navigation-next-button"]'
+    )
+    .first()
+    .isVisible()
+    .catch(() => false);
+
+  if (utilitySignInVisible && !authOrFormMounted) {
+    await page
+      .locator('[data-automation-id="utilityButtonSignIn"]')
+      .first()
+      .click({ timeout: 5000 })
+      .catch(() => {});
+    await page
+      .locator(
+        '[data-automation-id="formField-email"] input, [data-automation-id="email"], input[type="password"], [data-automation-id="createAccountLink"]'
+      )
+      .first()
+      .waitFor({ state: 'visible', timeout: 7000 })
+      .catch(() => {});
+  }
+
   return { enteredWizard: await hasWizardOrAuth(), jobClosed: false, entryMethod: 'direct_url_fallback' };
+}
+
+/**
+ * GEN-111: SmartRecruiters "I'm interested" / #st-apply entry gate handler with trusted CDP click and Referer.
+ */
+export async function ensureSmartRecruitersApplicationStarted(
+  page: Page,
+  originalEntryUrl?: string
+): Promise<boolean> {
+  const url = page.url();
+  if (!/smartrecruiters\.com/i.test(url)) {
+    return false;
+  }
+
+  const countShadowAndLightInputs = async (): Promise<number> => {
+    return await page
+      .evaluate(() => {
+        const countInRoot = (root: Document | ShadowRoot | Element): number => {
+          let total = root.querySelectorAll(
+            'input:not([type="hidden"]), textarea, select, [role="combobox"], input[type="file"]'
+          ).length;
+          const all = root.querySelectorAll('*');
+          for (const el of Array.from(all)) {
+            const sr = (el as HTMLElement).shadowRoot;
+            if (sr) total += countInRoot(sr);
+          }
+          return total;
+        };
+        return countInRoot(document);
+      })
+      .catch(() => 0);
+  };
+
+  const waitForOneClickInputs = async (timeoutMs = 10000): Promise<boolean> => {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if ((await countShadowAndLightInputs()) >= 2) {
+        return true;
+      }
+      await page.waitForTimeout(350).catch(() => {});
+    }
+    return false;
+  };
+
+  // If already on /oneclick-ui/ and inputs are mounted (no DataDome block), we are ready
+  if (/\/oneclick-ui\//i.test(page.url())) {
+    const hasDataDome = await page
+      .locator('iframe[src*="captcha-delivery.com"], iframe[src*="datadome"]')
+      .first()
+      .isVisible()
+      .catch(() => false);
+    if (!hasDataDome && (await waitForOneClickInputs(4000))) {
+      return true;
+    }
+    // If DataDome blocked a direct /oneclick-ui/ load and we have the public overview URL, go back to overview
+    if (originalEntryUrl && !/\/oneclick-ui\//i.test(originalEntryUrl)) {
+      await page.goto(originalEntryUrl, { waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => {});
+    }
+  }
+
+  // Dismiss cookie banner if present so it doesn't intercept the click on a#st-apply
+  const cookieBtn = page.locator('#onetrust-accept-btn-handler, button:has-text("Accept All")').first();
+  if (await cookieBtn.isVisible().catch(() => false)) {
+    await cookieBtn.click({ timeout: 2500 }).catch(() => {});
+  }
+
+  // Ensure a#st-apply opens in the SAME tab to preserve Referer and cookies
+  await page
+    .evaluate(() => {
+      const links = document.querySelectorAll(
+        'a#st-apply, a[data-test="apply-button"], a[href*="/oneclick-ui/"]'
+      );
+      for (const a of Array.from(links)) {
+        a.removeAttribute('target');
+      }
+    })
+    .catch(() => {});
+
+  // Click a#st-apply or "I'm interested" with native Playwright trusted click (isTrusted: true + Referer)
+  const applySelectors = [
+    'a#st-apply',
+    '[data-test="apply-button"]',
+    'a[href*="/oneclick-ui/"]',
+    'a:has-text("I\'m interested")',
+    'button:has-text("I\'m interested")',
+    'oc-button:has-text("I\'m interested")',
+  ];
+
+  for (const sel of applySelectors) {
+    const loc = page.locator(sel).first();
+    if (await loc.isVisible().catch(() => false)) {
+      await loc.scrollIntoViewIfNeeded().catch(() => {});
+      await loc.click({ timeout: 6000 }).catch(() => {});
+      break;
+    }
+  }
+
+  return await waitForOneClickInputs(10000);
 }

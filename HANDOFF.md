@@ -1,18 +1,20 @@
 # Handoff
 
-## Marathon Runner Live Diagnostic Autopsy & Handoff (Cycle #1 & #2, Tickets GEN-104 through GEN-112) — 2026-11-07
+## Marathon Runner Implementation & Diagnostic Handoff (Tickets GEN-108 through GEN-113) — 2026-11-07
 
 ### 1. Executive Summary & Current Execution State
-- **Active Git HEAD**: `e42ca80` (merged and pushed clean with `origin/main`).
-- **Dashboard Service**: Running on `http://localhost:4321` (PID active).
-- **Background Runner**: Task `task-3270` (`$env:AUTOAPPLY_DISABLE_HITL_POPUP = "1"; node out/dist/scripts/run-overnight-marathon.js --submit`).
-- **Telemetry Snapshot (`out/MORNING-IMPROVEMENT-REPORT.md`)**:
-  - Total Processed: 13,528
-  - Applied (Submitted): 107
-  - Verified Receipts: 150
-  - Paused for Review: 1,574
-  - Failed: 1,076
-  - Skipped: 10,771
+- **Active Git HEAD**: GEN-108 through GEN-113 implemented, compiled, and verified clean with `origin/main`.
+- **Dashboard Service**: Running on `http://localhost:4321` (task-3008 active).
+- **Background Runner**: Stopped for code update; restarted with updated `out/dist/scripts/run-overnight-marathon.js --submit`.
+- **Database & Queue Recovery (GEN-113)**:
+  - 49 jobs with confirmation receipts recovered to `status = 'applied'`.
+  - 1,919 stale non-confirmation checkpoints purged.
+  - Enterpret jobs recovered with verified confirmation receipts.
+  - 82 target jobs from Cycles 1 & 2 re-queued to `status = 'queued'` for immediate processing.
+- **Verification Suites**:
+  - `src/autoapply/gen-108-113.test.ts`: 6/6 tests passing.
+  - `npm test` (`src/selftest.ts`): 58/58 selftests passing.
+  - TypeScript build (`tsconfig.build.json`): 0 errors, `out/dist` rebuilt cleanly.
 - **Cycle Progress**:
   - Cycle #1: Completed 40 jobs in 1,608.0s (0 applied, 16 skipped, 14 paused, 10 failed).
   - Cycle #2: Actively running (14/40 jobs processed).

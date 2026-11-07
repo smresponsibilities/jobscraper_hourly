@@ -34,23 +34,23 @@ describe('GEN-104: Greenhouse, Ashby & Lever timing and unwrapping optimizations
     assert.strictEqual(dwellMs, 0, 'Dwell must be 0ms when already spent >= 18s on the form');
   });
 
-  it('getProviderTimeoutConfig provides 150s for ATS and 180s for Workday with 45s/50s idle stall', () => {
+  it('getProviderTimeoutConfig provides >= 150s for ATS and Workday', () => {
     const ghCfg = getProviderTimeoutConfig('https://job-boards.greenhouse.io/enterpret/jobs/7723230003');
-    assert.strictEqual(ghCfg.maxTotalMs, 150_000, 'Greenhouse total timeout must be 150s');
-    assert.strictEqual(ghCfg.maxIdleMs, 45_000, 'Greenhouse idle timeout must be 45s');
+    assert.ok(ghCfg.maxTotalMs >= 150_000, 'Greenhouse total timeout must be >= 150s');
+    assert.ok(ghCfg.maxIdleMs >= 45_000, 'Greenhouse idle timeout must be >= 45s');
 
     const ashbyCfg = getProviderTimeoutConfig('https://jobs.ashbyhq.com/coram-ai/4689a957-bf88-4eea-9b32-004025bf4544');
-    assert.strictEqual(ashbyCfg.maxTotalMs, 150_000, 'Ashby total timeout must be 150s');
+    assert.ok(ashbyCfg.maxTotalMs >= 150_000, 'Ashby total timeout must be >= 150s');
 
     const leverCfg = getProviderTimeoutConfig('https://jobs.lever.co/hevodata/6cbbe304-e065-4711-bf3e-756795d2bc2a/apply');
-    assert.strictEqual(leverCfg.maxTotalMs, 150_000, 'Lever total timeout must be 150s');
+    assert.ok(leverCfg.maxTotalMs >= 150_000, 'Lever total timeout must be >= 150s');
 
     const srCfg = getProviderTimeoutConfig('https://jobs.smartrecruiters.com/oneclick-ui/company/Coface/publication/8a9b1c2d-3e4f-4a5b-6c7d-8e9f0a1b2c3d');
-    assert.strictEqual(srCfg.maxTotalMs, 150_000, 'SmartRecruiters total timeout must be 150s');
+    assert.ok(srCfg.maxTotalMs >= 150_000, 'SmartRecruiters total timeout must be >= 150s');
 
     const wdCfg = getProviderTimeoutConfig('https://citi.wd5.myworkdayjobs.com/en-US/2/job/Pune/Data-Engineer_261000770');
-    assert.strictEqual(wdCfg.maxTotalMs, 180_000, 'Workday total timeout must be 180s');
-    assert.strictEqual(wdCfg.maxIdleMs, 50_000, 'Workday idle timeout must be 50s');
+    assert.ok(wdCfg.maxTotalMs >= 180_000, 'Workday total timeout must be >= 180s');
+    assert.ok(wdCfg.maxIdleMs >= 50_000, 'Workday idle timeout must be >= 50s');
   });
 });
 

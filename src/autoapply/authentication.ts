@@ -346,16 +346,24 @@ export async function authenticateWorkdayPortal(
     await page.waitForTimeout(1000);
   }
 
-  // 2.5 Header Sign In button for Citi-style Workday portals
-  const utilitySignIn = page
-    .locator('[data-automation-id="utilityButtonSignIn"]')
-    .first();
-  if (
-    (await page.locator('input[type="password"]:not([data-automation-id="beecatcher"])').count().catch(() => 0)) === 0 &&
-    (await utilitySignIn.isVisible().catch(() => false))
-  ) {
-    await utilitySignIn.click({ timeout: 3000 }).catch(() => {});
-    await page.waitForTimeout(1500);
+  // GEN-109: Open Sign In modal via utilityButtonSignIn if Workday rendered the unauthenticated shell
+  const hasAuthInputs = await page
+    .locator('[data-automation-id="formField-email"] input, [data-automation-id="email"], input[type="password"]')
+    .first()
+    .isVisible()
+    .catch(() => false);
+  if (!hasAuthInputs) {
+    const utilityBtn = page.locator('[data-automation-id="utilityButtonSignIn"]').first();
+    if (await utilityBtn.isVisible().catch(() => false)) {
+      await utilityBtn.click({ timeout: 5000 }).catch(() => {});
+      await page
+        .locator(
+          '[data-automation-id="formField-email"] input, [data-automation-id="email"], input[type="password"], [data-automation-id="createAccountLink"]'
+        )
+        .first()
+        .waitFor({ state: 'visible', timeout: 7000 })
+        .catch(() => {});
+    }
   }
 
   // Wait briefly for auth inputs to mount

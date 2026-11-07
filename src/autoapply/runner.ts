@@ -260,76 +260,102 @@ export async function ensureStepReadyBeforeNext(frame: Frame, resumePath?: strin
 }
 
 /**
- * Ticket GEN-101, GEN-105 & GEN-106: SmartRecruiters "I'm interested" / #st-apply entry gate handler.
- * Navigates from public job description overview into the interactive form (/oneclick-ui/ UUID).
+ * Ticket GEN-101, GEN-105, GEN-106 & GEN-111: SmartRecruiters "I'm interested" / #st-apply entry gate handler.
+ * Navigates from public job description overview into the interactive form (/oneclick-ui/ UUID) using trusted in-page click with Referer.
  */
-export async function ensureSmartRecruitersApplicationStarted(page: Page): Promise<void> {
-  const currentUrl = page.url();
-  if (!currentUrl.toLowerCase().includes('smartrecruiters.com')) return;
-
-  // 1. Dismiss OneTrust / Cookie banner if present
-  const cookieBtn = page.locator('#onetrust-accept-btn-handler, button:has-text("Accept All"), button:has-text("Allow all")').first();
-  if (await cookieBtn.isVisible().catch(() => false)) {
-    await cookieBtn.click({ timeout: 2000 }).catch(() => {});
+export async function ensureSmartRecruitersApplicationStarted(
+  page: Page,
+  originalEntryUrl?: string
+): Promise<boolean> {
+  const url = page.url();
+  if (!/smartrecruiters\.com/i.test(url)) {
+    return false;
   }
 
-  // 2. If we accidentally navigated to /oneclick-ui/.../publication/<NUMERIC_ID>, go back to the overview URL!
-  if (/\/oneclick-ui\/.*\/publication\/\d{10,}/i.test(page.url())) {
-    await page.goBack({ waitUntil: 'domcontentloaded' }).catch(() => {});
-    await page.waitForTimeout(1500);
-  }
-
-  // 3. If on the Job Description Overview page (not yet in a valid /oneclick-ui/ UUID URL):
-  if (!/\/oneclick-ui\/.*\/publication\/[0-9a-f-]{20,}/i.test(page.url())) {
-    // Method A: Click or extract href from "I'm interested" button (#st-apply / [data-test="job-apply-button"] / oc-button / spl-button)
-    const applyLoc = page
-      .locator(
-        'a#st-apply, #st-apply, [data-test="job-apply-button"], a.button--primary, a:has-text("I\'m interested"), button:has-text("I\'m interested"), oc-button:has-text("I\'m interested"), spl-button:has-text("I\'m interested")'
-      )
-      .first();
-
-    if (await applyLoc.isVisible({ timeout: 6000 }).catch(() => false)) {
-      const href = await applyLoc.getAttribute('href').catch(() => null);
-      if (href && /\/oneclick-ui\//i.test(href)) {
-        const targetUrl = href.startsWith('http') ? href : new URL(href, page.url()).toString();
-        await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 25_000 }).catch(() => {});
-      } else {
-        await applyLoc.click({ timeout: 4000 }).catch(() => {});
-      }
-      await page.waitForTimeout(3000);
-    }
-
-    // Method B: If still on overview page, resolve the 36-char UUID from SmartRecruiters Public API!
-    if (!/\/oneclick-ui\//i.test(page.url())) {
-      const match = page.url().match(/smartrecruiters\.com\/([^/?#]+)\/(\d{8,})/i);
-      if (match?.[1] && match?.[2]) {
-        const companySlug = match[1];
-        const refId = match[2];
-        try {
-          const apiRes = await fetch(`https://api.smartrecruiters.com/v1/companies/${companySlug}/postings/${refId}`, {
-            headers: { Accept: 'application/json' },
-          });
-          if (apiRes.ok) {
-            const data = (await apiRes.json()) as { uuid?: string; id?: string; applyUrl?: string };
-            const applyUrl =
-              data.applyUrl ||
-              (data.uuid ? `https://jobs.smartrecruiters.com/oneclick-ui/company/${companySlug}/publication/${data.uuid}?dcr_ci=${companySlug}` : null);
-            if (applyUrl) {
-              await page.goto(applyUrl, { waitUntil: 'domcontentloaded', timeout: 25_000 }).catch(() => {});
-              await page.waitForTimeout(3000);
-            }
+  const countShadowAndLightInputs = async (): Promise<number> => {
+    return await page
+      .evaluate(() => {
+        const countInRoot = (root: Document | ShadowRoot | Element): number => {
+          let total = root.querySelectorAll(
+            'input:not([type="hidden"]), textarea, select, [role="combobox"], input[type="file"]'
+          ).length;
+          const all = root.querySelectorAll('*');
+          for (const el of Array.from(all)) {
+            const sr = (el as HTMLElement).shadowRoot;
+            if (sr) total += countInRoot(sr);
           }
-        } catch {}
+          return total;
+        };
+        return countInRoot(document);
+      })
+      .catch(() => 0);
+  };
+
+  const waitForOneClickInputs = async (timeoutMs = 10000): Promise<boolean> => {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if ((await countShadowAndLightInputs()) >= 2) {
+        return true;
       }
+      await page.waitForTimeout(350).catch(() => {});
+    }
+    return false;
+  };
+
+  // If already on /oneclick-ui/ and inputs are mounted (no DataDome block), we are ready
+  if (/\/oneclick-ui\//i.test(page.url())) {
+    const hasDataDome = await page
+      .locator('iframe[src*="captcha-delivery.com"], iframe[src*="datadome"]')
+      .first()
+      .isVisible()
+      .catch(() => false);
+    if (!hasDataDome && (await waitForOneClickInputs(4000))) {
+      return true;
+    }
+    // If DataDome blocked a direct /oneclick-ui/ load and we have the public overview URL, go back to overview
+    if (originalEntryUrl && !/\/oneclick-ui\//i.test(originalEntryUrl)) {
+      await page.goto(originalEntryUrl, { waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => {});
     }
   }
 
-  // 4. Wait up to 6s for SmartRecruiters form controls (including shadow-root oc-input / spl-input) to mount
+  // Dismiss cookie banner if present so it doesn't intercept the click on a#st-apply
+  const cookieBtn = page.locator('#onetrust-accept-btn-handler, button:has-text("Accept All")').first();
+  if (await cookieBtn.isVisible().catch(() => false)) {
+    await cookieBtn.click({ timeout: 2500 }).catch(() => {});
+  }
+
+  // Ensure a#st-apply opens in the SAME tab to preserve Referer and cookies
   await page
-    .locator('input:not([type="hidden"]), textarea, select, oc-input, spl-input, [role="combobox"], input[type="file"]')
-    .first()
-    .waitFor({ state: 'attached', timeout: 6000 })
+    .evaluate(() => {
+      const links = document.querySelectorAll(
+        'a#st-apply, a[data-test="apply-button"], a[href*="/oneclick-ui/"]'
+      );
+      for (const a of Array.from(links)) {
+        a.removeAttribute('target');
+      }
+    })
     .catch(() => {});
+
+  // Click a#st-apply or "I'm interested" with native Playwright trusted click (isTrusted: true + Referer)
+  const applySelectors = [
+    'a#st-apply',
+    '[data-test="apply-button"]',
+    'a[href*="/oneclick-ui/"]',
+    'a:has-text("I\'m interested")',
+    'button:has-text("I\'m interested")',
+    'oc-button:has-text("I\'m interested")',
+  ];
+
+  for (const sel of applySelectors) {
+    const loc = page.locator(sel).first();
+    if (await loc.isVisible().catch(() => false)) {
+      await loc.scrollIntoViewIfNeeded().catch(() => {});
+      await loc.click({ timeout: 6000 }).catch(() => {});
+      break;
+    }
+  }
+
+  return await waitForOneClickInputs(10000);
 }
 
 export class AutoApplyRunner {
@@ -345,6 +371,112 @@ export class AutoApplyRunner {
   private lastRecoveryPoll = 0;
   private submissionObservation?: { url: string; report: BotRunReport; observer: ReturnType<typeof observeSubmission> };
   private learnedFields: Array<{ questionText: string; category: string; value: string }> = [];
+  private activeWatchdog?: JobActivityWatchdog;
+
+  /**
+   * Ticket GEN-108: Dismiss Ashby React cookie consent modal / OneTrust banners and wait for form controls hydration.
+   */
+  private async dismissCookieConsentAndHydrateForm(page: Page): Promise<void> {
+    const url = page.url();
+    const isAshby = /ashbyhq\.com/i.test(url);
+    const maxPollMs = isAshby ? 6500 : 2500;
+    const pollIntervalMs = 350;
+    const deadline = Date.now() + maxPollMs;
+    let clickedCookieDialog = false;
+
+    // Fast check: native click on Ashby / OneTrust cookie banner buttons
+    const fastCookie = page
+      .locator(
+        'button:has-text("Accept All"), [role="dialog"] button:has-text("Necessary Only"), #onetrust-accept-btn-handler, button:has-text("Accept Cookies"), [data-automation-id="legalNoticeAcceptButton"]'
+      )
+      .first();
+    if (await fastCookie.isVisible().catch(() => false)) {
+      await fastCookie.click({ timeout: 2000 }).catch(() => {});
+      clickedCookieDialog = true;
+      await page.waitForTimeout(400).catch(() => {});
+    }
+
+    while (Date.now() < deadline) {
+      const state = await page
+        .evaluate(() => {
+          const countInteractiveControls = (root: Document | ShadowRoot | Element): number => {
+            let count = root.querySelectorAll(
+              'input:not([type="hidden"]), textarea, select, [role="combobox"], input[type="file"]'
+            ).length;
+            const all = root.querySelectorAll('*');
+            for (const node of Array.from(all)) {
+              const sr = (node as HTMLElement).shadowRoot;
+              if (sr) count += countInteractiveControls(sr);
+            }
+            return count;
+          };
+
+          // 1. Check Ashby React Cookie Dialog (<div role="dialog" aria-label="Cookie consent">) and global cookie banners
+          const dialogs = Array.from(
+            document.querySelectorAll(
+              '[role="dialog"][aria-label*="cookie" i], [role="dialog"][aria-label*="consent" i], [id*="cookie" i], [class*="cookie-banner" i], #onetrust-banner-sdk'
+            )
+          );
+
+          for (const dialog of dialogs) {
+            const buttons = Array.from(dialog.querySelectorAll('button, [role="button"], a'));
+            const targetBtn =
+              buttons.find((b) => /^accept all$/i.test((b.textContent || '').trim())) ||
+              buttons.find((b) => /^necessary only$/i.test((b.textContent || '').trim())) ||
+              buttons.find((b) => /^(accept|allow all|i agree|got it)$/i.test((b.textContent || '').trim()));
+            if (targetBtn && (targetBtn as HTMLElement).offsetParent !== null) {
+              (targetBtn as HTMLElement).click();
+              return { clicked: true, controlCount: countInteractiveControls(document) };
+            }
+          }
+
+          // 2. Fallback: Check any visible button with exact text "Accept All" or "Necessary Only" on page
+          const allButtons = Array.from(document.querySelectorAll('button, [role="button"]'));
+          const topCookieBtn =
+            allButtons.find((b) => /^accept all$/i.test((b.textContent || '').trim())) ||
+            allButtons.find((b) => /^necessary only$/i.test((b.textContent || '').trim())) ||
+            allButtons.find((b) => b.id === 'onetrust-accept-btn-handler');
+          if (topCookieBtn && (topCookieBtn as HTMLElement).offsetParent !== null) {
+            (topCookieBtn as HTMLElement).click();
+            return { clicked: true, controlCount: countInteractiveControls(document) };
+          }
+
+          return { clicked: false, controlCount: countInteractiveControls(document) };
+        })
+        .catch(() => ({ clicked: false, controlCount: 0 }));
+
+      if (state.clicked) {
+        clickedCookieDialog = true;
+      }
+
+      // If we already have >= 2 form controls mounted (and no cookie dialog just clicked), we are hydrated!
+      if (state.controlCount >= 2 && !state.clicked) {
+        return;
+      }
+
+      await page.waitForTimeout(pollIntervalMs).catch(() => {});
+    }
+
+    // If we clicked the cookie dialog on Ashby, wait up to 5000ms for React to mount the 17+ form inputs
+    if (clickedCookieDialog || isAshby) {
+      const hydrateDeadline = Date.now() + 5000;
+      while (Date.now() < hydrateDeadline) {
+        const ready = await page
+          .evaluate(() => {
+            const inputs = document.querySelectorAll(
+              'input:not([type="hidden"]), textarea, select, [role="combobox"], input[type="file"]'
+            ).length;
+            const submitBtn = Array.from(document.querySelectorAll('button, input[type="submit"]')).some((b) =>
+              /submit application|submit|apply/i.test((b.textContent || (b as HTMLInputElement).value || '').trim())
+            );
+            return inputs >= 2 || submitBtn;
+          })
+          .catch(() => false);
+        if (ready) break;
+        await page.waitForTimeout(300).catch(() => {});
+      }
+    }
+  }
 
   private async coverLetter(options: AutoApplyOptions): Promise<string | undefined> {
     if (!options.sessionDir || !options.applicationBrief || !this.context) return;
@@ -1018,6 +1150,26 @@ export class AutoApplyRunner {
     for (const page of this.applicationPages) {
       if (page.isClosed()) continue;
       try {
+        const pageUrl = page.url();
+        const isConfirmationUrl =
+          /(?:\/confirmation|\/thank(?:s|[-_]?you)|\/application[-_]?submitted|\/submitted)(?:\/|$|\?|#)|[?&](?:submitted|applied|confirmation)=(?:true|1)\b/i.test(
+            pageUrl
+          );
+        if (isConfirmationUrl) {
+          this.page = page;
+          const applicationId =
+            new URL(pageUrl).searchParams.get('applicationId') ||
+            new URL(pageUrl).searchParams.get('application_id') ||
+            undefined;
+          const titleText = (await page.title().catch(() => '')) || 'Application Submitted';
+          return {
+            url: pageUrl,
+            text: titleText.slice(0, 1000),
+            verifiedAt: new Date().toISOString(),
+            selector: 'url_confirmation',
+            applicationId,
+          };
+        }
         const titleText = (await page.title().catch(() => '')) || '';
         if (titleText && (EXISTING_APPLICATION.test(titleText) || SUCCESS.test(titleText))) {
           this.page = page;
@@ -1026,18 +1178,18 @@ export class AutoApplyRunner {
         }
         for (const frame of page.frames()) {
           const candidates = frame.locator('h1, h2, h3, h4, p, [role="status"], [role="alert"], #application_confirmation, .application-confirmation, .post-apply-message, [data-automation-id="applicationSubmitted"], [data-automation-id="congratulationsMessage"]');
-      for (const item of await candidates.all()) {
-        if (!await item.isVisible()) continue;
-        if (await item.evaluate(el => !!el.closest('footer,nav,[role="contentinfo"],aside'))) continue;
-        const text = (await item.innerText()).trim();
-        const selector = await item.evaluate(el => el.id ? `[id=${JSON.stringify(el.id)}]` : el.getAttribute('role') ? `[role=${JSON.stringify(el.getAttribute('role'))}]` : el.tagName.toLowerCase());
-        if (EXISTING_APPLICATION.test(text) || SUCCESS.test(text)) {
-          this.page = page;
-          const applicationId = new URL(page.url()).searchParams.get('applicationId') || new URL(page.url()).searchParams.get('application_id') || undefined;
-          return { url: page.url(), text: text.slice(0, 1000), verifiedAt: new Date().toISOString(), selector, applicationId, ...(EXISTING_APPLICATION.test(text) ? { existing: true } : {}) };
+          for (const item of await candidates.all()) {
+            if (!await item.isVisible()) continue;
+            if (await item.evaluate(el => !!el.closest('footer,nav,[role="contentinfo"],aside'))) continue;
+            const text = (await item.innerText()).trim();
+            const selector = await item.evaluate(el => el.id ? `[id=${JSON.stringify(el.id)}]` : el.getAttribute('role') ? `[role=${JSON.stringify(el.getAttribute('role'))}]` : el.tagName.toLowerCase());
+            if (EXISTING_APPLICATION.test(text) || SUCCESS.test(text)) {
+              this.page = page;
+              const applicationId = new URL(page.url()).searchParams.get('applicationId') || new URL(page.url()).searchParams.get('application_id') || undefined;
+              return { url: page.url(), text: text.slice(0, 1000), verifiedAt: new Date().toISOString(), selector, applicationId, ...(EXISTING_APPLICATION.test(text) ? { existing: true } : {}) };
+            }
+          }
         }
-      }
-    }
       } catch {
         // A popup can close or its parent can navigate between any two awaits.
         // The next observation scans surviving related pages again.
@@ -1052,18 +1204,18 @@ export class AutoApplyRunner {
     let challenge = false;
     for (const frame of this.page!.frames()) {
       try {
-      for (const heading of await frame.getByRole('heading', { name: /^(?:access is temporarily restricted|access to this page has been blocked|verify you are human|checking your browser)$/i }).all()) {
-        if (await heading.isVisible()) challenge = true;
-      }
-      for (const heading of await frame.getByRole('heading', { name: /^(?:check (?:your )?email|verify (?:your )?email|email verification|activate (?:your )?account|forgot (?:your )?password|reset (?:your )?password|set (?:a )?new password|(?:your )?password (?:has been |was )?(?:successfully )?(?:reset|changed|updated)[.!\s]*)$/i }).all()) if (await heading.isVisible()) login = true;
-      if ((URL.canParse(frame.url()) && /\/(?:login|sign-?in|register|apply\/email|forgot.?password|reset.?password)(?:\/|$)/i.test(new URL(frame.url()).pathname)) || await frame.locator('#enterEmailSubmitButton,[data-automation-id="signInSubmitButton"],[data-automation-id="createAccountLink"],[data-automation-id="createAccountSubmitButton"],[data-automation-id="SignInWithEmailButton"]').count()) login = true;
-      for (const control of await frame.locator('input[type="password"], iframe[src*="recaptcha"], iframe[src*="hcaptcha"], iframe[src*="captcha-delivery.com"], iframe[src*="challenges.cloudflare.com"], iframe[title*="CAPTCHA" i], [data-sitekey]').all()) {
-        if (!await control.isVisible()) continue;
-        const source = await control.getAttribute('src');
-        if (source && URL.canParse(source, frame.url()) && /\/recaptcha\/(?:enterprise\/|api2\/)?anchor$/.test(new URL(source, frame.url()).pathname) && new URL(source, frame.url()).searchParams.get('size') === 'invisible') continue;
-        if (await control.getAttribute('type') === 'password') login = true;
-        else challenge = true;
-      }
+        for (const heading of await frame.getByRole('heading', { name: /^(?:access is temporarily restricted|access to this page has been blocked|verify you are human|checking your browser)$/i }).all()) {
+          if (await heading.isVisible()) challenge = true;
+        }
+        for (const heading of await frame.getByRole('heading', { name: /^(?:check (?:your )?email|verify (?:your )?email|email verification|activate (?:your )?account|forgot (?:your )?password|reset (?:your )?password|set (?:a )?new password|(?:your )?password (?:has been |was )?(?:successfully )?(?:reset|changed|updated)[.!\s]*)$/i }).all()) if (await heading.isVisible()) login = true;
+        if ((URL.canParse(frame.url()) && /\/(?:login|sign-?in|register|apply\/email|forgot.?password|reset.?password)(?:\/|$)/i.test(new URL(frame.url()).pathname)) || await frame.locator('#enterEmailSubmitButton,[data-automation-id="signInSubmitButton"],[data-automation-id="createAccountLink"],[data-automation-id="createAccountSubmitButton"],[data-automation-id="SignInWithEmailButton"],[data-automation-id="utilityButtonSignIn"],[data-automation-id="signInLink"],[data-automation-id="formField-email"] input').count()) login = true;
+        for (const control of await frame.locator('input[type="password"], iframe[src*="recaptcha"], iframe[src*="hcaptcha"], iframe[src*="captcha-delivery.com"], iframe[src*="challenges.cloudflare.com"], iframe[title*="CAPTCHA" i], [data-sitekey]').all()) {
+          if (!await control.isVisible()) continue;
+          const source = await control.getAttribute('src');
+          if (source && URL.canParse(source, frame.url()) && /\/recaptcha\/(?:enterprise\/|api2\/)?anchor$/.test(new URL(source, frame.url()).pathname) && new URL(source, frame.url()).searchParams.get('size') === 'invisible') continue;
+          if (await control.getAttribute('type') === 'password') login = true;
+          else challenge = true;
+        }
       } catch (error) {
         if (!frame.isDetached()) throw error;
       }
@@ -1281,6 +1433,7 @@ export class AutoApplyRunner {
       unprocessed.sort((a, b) => a.priority - b.priority);
       const next = unprocessed[0]!;
       const key = next.key;
+      this.activeWatchdog?.heartbeat(`field_${key}`);
       processed.set(key, next.state);
       const input = frame.locator(`[data-autoapply-control=${JSON.stringify(key)}]`);
       try {
@@ -1985,8 +2138,14 @@ export class AutoApplyRunner {
           }
           if (info.type === 'file' && document) uploadedFiles.set(key, document);
           report.fieldsFilled++;
-          if (options.mode === 'stealth') await this.page!.waitForTimeout(getHumanKeyDelay(50, 350));
-          if (next.postFillWaitMs > 50) await this.page!.waitForTimeout(next.postFillWaitMs);
+          this.activeWatchdog?.heartbeat(`filled_${key}`);
+          const isLargeForm = fields.length >= 12;
+          if (options.mode === 'stealth') {
+            await this.page!.waitForTimeout(isLargeForm ? getHumanKeyDelay(20, 50) : getHumanKeyDelay(50, 350));
+          }
+          if (next.postFillWaitMs > 50) {
+            await this.page!.waitForTimeout(isLargeForm ? Math.min(next.postFillWaitMs, 50) : next.postFillWaitMs);
+          }
           await input.blur().catch(() => {});
           await frame.evaluate(`() => new Promise(resolve => {
             let quiet;
@@ -2073,6 +2232,7 @@ export class AutoApplyRunner {
       validateProfile(options.profile);
       const timeoutConfig = getProviderTimeoutConfig(options.url);
       const watchdog = new JobActivityWatchdog(timeoutConfig.maxTotalMs, timeoutConfig.maxIdleMs);
+      this.activeWatchdog = watchdog;
       const maxSteps = options.maxSteps ?? (options.url.toLowerCase().includes('myworkdayjobs.com') ? 14 : 12);
       if (!Number.isInteger(maxSteps) || maxSteps < 1) throw new Error('maxSteps must be a positive integer');
       if (!['http:', 'https:', 'file:'].includes(new URL(options.url).protocol)) throw new Error('Unsupported application URL');
@@ -2103,7 +2263,23 @@ export class AutoApplyRunner {
           saved = null;
         }
         if (saved) {
-        if (!options.retryReviewed) {
+          const isSavedConfirmation =
+            typeof saved.currentUrl === 'string' &&
+            /(?:\/confirmation|\/thank(?:s|[-_]?you)|\/application[-_]?submitted|\/submitted)(?:\/|$|\?|#)|[?&](?:submitted|applied|confirmation)=(?:true|1)\b/i.test(
+              saved.currentUrl
+            );
+          if (isSavedConfirmation) {
+            report.status = 'submitted';
+            report.receipt = {
+              url: saved.currentUrl,
+              text: 'Application Submitted',
+              verifiedAt: new Date().toISOString(),
+              selector: 'checkpoint_confirmation_url',
+            };
+            report.reason = 'Previous submission confirmed via confirmation URL; no new submission made';
+            return report;
+          }
+          if (!options.retryReviewed) {
           for (const action of saved.report?.credentialAttempts || []) if (action === 'signup' || action === 'signin') submittedCredentials.add(action);
           for (const action of ['signup', 'signin'] as const) if (saved.report?.logs?.includes(`workday_reconcile:auth_${action}_submitted`)) submittedCredentials.add(action);
           report.credentialAttempts = [...submittedCredentials];
@@ -2209,10 +2385,15 @@ export class AutoApplyRunner {
           return report;
         }
       }
-      const initialCookie = this.page!.locator('button:has-text("Accept Cookies"), button:has-text("Accept"), [data-automation-id="legalNoticeAcceptButton"]').filter({ visible: true }).first();
-      if (await initialCookie.isVisible().catch(() => false)) {
-        await initialCookie.click().catch(() => {});
-        await this.page!.waitForTimeout(1000);
+      await this.dismissCookieConsentAndHydrateForm(this.page!);
+      const immediateReceipt = await this.receipt();
+      if (immediateReceipt) {
+        report.receipt = immediateReceipt;
+        report.status = 'submitted';
+        report.reason = immediateReceipt.existing
+          ? 'Employer confirms an existing application; no new submission made'
+          : 'Application submission confirmed via confirmation URL/heading';
+        return report;
       }
       if ((await this.browserGates()).challenge && getResilientContextTier(this.context) !== 3) {
         this.log('Portal challenge/WAF detected on Tier 1 context; rotating to Tier 3 native context and retrying');
@@ -2221,6 +2402,7 @@ export class AutoApplyRunner {
         await this.page!.goto(target, { waitUntil: 'domcontentloaded', timeout: 45000 });
         await this.page!.locator('body').waitFor({ state: 'attached' });
         await this.waitReady(Math.min(options.timeoutMs ?? 5000, 5000));
+        await this.dismissCookieConsentAndHydrateForm(this.page!);
         if (options.url.toLowerCase().includes('smartrecruiters.com') || this.page!.url().toLowerCase().includes('smartrecruiters.com')) {
           await ensureSmartRecruitersApplicationStarted(this.page!);
         }
@@ -2311,11 +2493,7 @@ export class AutoApplyRunner {
             await ensureSmartRecruitersApplicationStarted(this.page!);
           }
         }
-        const stepCookie = this.page!.locator('button:has-text("Accept Cookies"), button:has-text("Accept"), [data-automation-id="legalNoticeAcceptButton"]').filter({ visible: true }).first();
-        if (await stepCookie.isVisible().catch(() => false)) {
-          await stepCookie.click().catch(() => {});
-          await this.page!.waitForTimeout(300);
-        }
+        await this.dismissCookieConsentAndHydrateForm(this.page!);
 
         // Ticket GEN-99: Auto-click "Are You Still With Us?" session timeout modal
         const isSessionModal = await this.page!.evaluate(() => {
@@ -2633,6 +2811,16 @@ export class AutoApplyRunner {
             break;
           }
 
+          const lateReceipt = await this.receipt();
+          if (lateReceipt) {
+            report.receipt = lateReceipt;
+            report.status = 'submitted';
+            report.reason = lateReceipt.existing
+              ? 'Employer confirms an existing application; no new submission made'
+              : 'Application submission confirmed via confirmation URL/heading';
+            break;
+          }
+
           report.reason = 'No supported submit control found';
           break;
         }
@@ -2823,6 +3011,7 @@ export class AutoApplyRunner {
       this.log(report.reason!);
       if (error instanceof Error && error.stack) this.log(error.stack);
     } finally {
+      this.activeWatchdog = undefined;
       if (report.reviewKind === 'answers' || report.reviewKind === 'challenge') report.humanInterventionRequired = true;
       if (this.page && !this.page.isClosed()) {
         const gates = await this.browserGates().catch(() => ({ login: false, challenge: false }));
