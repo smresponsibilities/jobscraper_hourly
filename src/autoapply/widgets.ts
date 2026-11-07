@@ -37,7 +37,7 @@ export async function verifyChoiceReadBack(
     const pill = root?.querySelector('[data-automation-id="selectedItem"], [class*="single-value"], [class*="singleValue"], [class*="multiValue"], [class*="selected-option"]');
     if (pill && (pill.textContent || '').trim().length > 0) return true;
 
-    const checkedRadio = root?.querySelector('input[type="radio"]:checked, input[type="checkbox"]:checked, [aria-checked="true"], [aria-pressed="true"]');
+    const checkedRadio = root?.querySelector('input[type="radio"]:checked, input[type="checkbox"]:checked, [aria-checked="true"], [aria-pressed="true"], button[data-autoapply-btngroup-option][aria-pressed="true"], button[data-autoapply-btngroup-option][data-state="checked"], button[data-autoapply-btngroup-option][class*="selected"], button[data-autoapply-btngroup-option][class*="active"]');
     if (checkedRadio) return true;
 
     // Check surrounding text if button or div container
@@ -152,23 +152,39 @@ export async function selectHarvestedOption(frame: Frame, control: Locator, opti
     return (await control.locator('option:checked').allTextContents()).includes(option);
   }
 
-  const overlay = control.locator('..').locator('[data-automation-id="click_filter"]').filter({ visible: true });
-  if (await overlay.count() === 1) await overlay.click({ timeout: 3000 }).catch(() => {});
-  else await control.click({ timeout: 3000 }).catch(() => {});
+  // GEN-127: Check if options / listbox are currently visible; if 0 visible options, re-open portal
+  const countVisibleOpts = async () => {
+    return await frame.locator('[role="option"], .select__option, [data-automation-id="promptOption"], [class*="_option_"]').filter({ visible: true }).count().catch(() => 0);
+  };
+
+  let visibleCount = await countVisibleOpts();
+  if (visibleCount === 0) {
+    const overlay = control.locator('..').locator('[data-automation-id="click_filter"]').filter({ visible: true });
+    if (await overlay.count() === 1) await overlay.click({ force: true, timeout: 3000 }).catch(() => {});
+    else await control.click({ force: true, timeout: 3000 }).catch(() => {});
+
+    await control.press('ArrowDown').catch(() => {});
+    await frame.page().waitForTimeout(350);
+  }
 
   const popupId = await control.getAttribute('aria-controls') || await control.getAttribute('aria-owns');
-  let popup = popupId ? frame.locator(`[id=${JSON.stringify(popupId)}]`) : frame.locator('[role=listbox],[data-automation-id="activeListContainer"]').filter({ visible: true });
+  let popup = popupId
+    ? frame.locator(`[id=${JSON.stringify(popupId)}]`)
+    : frame.locator('[role=listbox], .select__menu, [class*="-menu"], [data-automation-id="activeListContainer"]').filter({ visible: true });
   if (await popup.count() > 1) popup = popup.last();
-  if (await popup.count() === 0) return false;
+  if (await popup.count() === 0) {
+    popup = frame.locator('.select__menu-portal, [role="listbox"]').filter({ visible: true });
+    if (await popup.count() === 0) return false;
+  }
 
-  const choice = popup.getByRole('option', { name: option, exact: true }).or(popup.locator('[data-automation-id=promptOption]').filter({ hasText: new RegExp(`^${option.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`) }));
+  const choice = popup.getByRole('option', { name: option, exact: true }).or(popup.locator('.select__option, [data-automation-id=promptOption], [role="option"], [class*="_option_"]').filter({ hasText: new RegExp(`^${option.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`) }));
   if (await choice.count() > 0) {
     const opt = choice.first();
     await opt.dispatchEvent('mousedown').catch(() => {});
     await opt.click({ force: true }).catch(() => {});
     await opt.dispatchEvent('mouseup').catch(() => {});
   } else {
-    const partialChoice = popup.locator('[role=option],[data-automation-id=promptOption]').filter({ hasText: option });
+    const partialChoice = popup.locator('[role=option], .select__option, [data-automation-id=promptOption], [class*="_option_"]').filter({ hasText: option });
     if (await partialChoice.count() > 0) {
       const opt = partialChoice.first();
       await opt.dispatchEvent('mousedown').catch(() => {});
@@ -306,8 +322,8 @@ export async function selectAshbyYesNoOrCheckboxGroup(
       ? wantedAnswer ? 'yes' : 'no'
       : String(wantedAnswer).trim().toLowerCase();
 
-  // 1. Ashby Yes/No <button> pair (.ashby-application-form-input-yesno-option)
-  const ashbyBtns = cluster.locator('button.ashby-application-form-input-yesno-option, button[class*="yesno-option"]');
+  // 1. Ashby Yes/No <button> pair (.ashby-application-form-input-yesno-option, [data-autoapply-btngroup-option])
+  const ashbyBtns = cluster.locator('button.ashby-application-form-input-yesno-option, button[class*="yesno-option"], button[data-autoapply-btngroup-option], button[type="button"], [role="button"]');
   const btnCount = await ashbyBtns.count().catch(() => 0);
   if (btnCount > 0) {
     const targetText = /^(true|yes|1|i agree)$/i.test(normalizedWanted) ? /^yes$/i : /^no$/i;

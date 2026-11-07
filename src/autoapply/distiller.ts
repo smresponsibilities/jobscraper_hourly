@@ -232,7 +232,56 @@ export function annotateQuestionClusters(elements: Element[]): void {
 }
 
 export async function distillFormStep(frame: Frame): Promise<DistilledField[]> {
-  const controls = frame.locator('input:not([type=hidden]):not([type=submit]):not([type=button]):not([type=reset]),select,textarea,[role=combobox],button[aria-haspopup=listbox],button.ashby-application-form-input-yesno-option');
+  await frame.evaluate(() => {
+    // GEN-124: Discover Ashby / modern React <button type="button">Yes</button><button type="button">No</button> toggle groups
+    const allTypeButtons = Array.from(
+      document.querySelectorAll('button[type="button"], [role="button"]')
+    ) as HTMLElement[];
+    const visitedBtnParents = new Set<HTMLElement>();
+    for (const btn of allTypeButtons) {
+      const txt = (btn.textContent || '').trim();
+      if (!/^(yes|no)$/i.test(txt)) continue;
+      const parent = btn.parentElement;
+      if (!parent || visitedBtnParents.has(parent)) continue;
+      const siblingBtns = Array.from(
+        parent.querySelectorAll(':scope > button[type="button"], :scope > [role="button"]')
+      ) as HTMLElement[];
+      if (siblingBtns.length >= 2 && siblingBtns.length <= 4) {
+        const labels = siblingBtns.map((b) => (b.textContent || '').trim());
+        const hasYesAndNo =
+          labels.some((l) => /^yes$/i.test(l)) && labels.some((l) => /^no$/i.test(l));
+        if (hasYesAndNo) {
+          visitedBtnParents.add(parent);
+          // Mark sibling buttons with data-autoapply-btngroup-option so distiller & widgets treat them as radio options
+          siblingBtns.forEach((b) => b.setAttribute('data-autoapply-btngroup-option', (b.textContent || '').trim()));
+          parent.setAttribute('role', parent.getAttribute('role') || 'radiogroup');
+        }
+      }
+    }
+
+    // GEN-124: Filter out Ashby's duplicate "Autofill from resume" dropzone when a real "Resume" file input exists
+    const fileInputs = Array.from(document.querySelectorAll('input[type="file"]')) as HTMLInputElement[];
+    if (fileInputs.length >= 2) {
+      const hasAutofill = fileInputs.some((el) => {
+        const text = (el.closest('fieldset, .ashby-application-form-field-entry, label, div')?.textContent || '').toLowerCase();
+        return /autofill\s+from\s+resume/i.test(text);
+      });
+      const hasDirectResume = fileInputs.some((el) => {
+        const text = (el.closest('fieldset, .ashby-application-form-field-entry, label, div')?.textContent || '').toLowerCase();
+        return /^(?:resume|cv|resume\s*\/?\s*cv)\b/i.test(text) && !/autofill/i.test(text);
+      });
+      if (hasAutofill && hasDirectResume) {
+        fileInputs.forEach((el) => {
+          const text = (el.closest('fieldset, .ashby-application-form-field-entry, label, div')?.textContent || '').toLowerCase();
+          if (/autofill\s+from\s+resume/i.test(text)) {
+            el.setAttribute('data-autoapply-skip-file', 'true');
+          }
+        });
+      }
+    }
+  }).catch(() => {});
+
+  const controls = frame.locator('input:not([type=hidden]):not([type=submit]):not([type=button]):not([type=reset]):not([data-autoapply-skip-file="true"]),select,textarea,[role=combobox],button[aria-haspopup=listbox],button.ashby-application-form-input-yesno-option,button[data-autoapply-btngroup-option]');
   await controls.evaluateAll(annotateQuestionClusters);
   const fields = await controls.evaluateAll(elements => {
     const splitDates = new Set<Element>();
@@ -240,8 +289,10 @@ export async function distillFormStep(frame: Frame): Promise<DistilledField[]> {
     const ashbyGroups = new Set<Element>();
     return elements.filter(el => {
       if (/beecatcher|honey-?pot|bot-trap/i.test([el.id, el.getAttribute('name'), el.getAttribute('data-automation-id')].join(' '))) return false;
+      if (el.getAttribute('data-autoapply-skip-file') === 'true') return false;
       const input = el as HTMLInputElement;
-      const isChoice = el.getAttribute('role') === 'combobox' || el.getAttribute('role') === 'listbox' || el.getAttribute('data-uxi-widget-type') === 'selectinput' || !!el.getAttribute('aria-haspopup') || !!el.getAttribute('aria-controls') || !!el.getAttribute('aria-owns') || el.classList.contains('ashby-application-form-input-yesno-option');
+      const isButtonToggle = el.hasAttribute('data-autoapply-btngroup-option');
+      const isChoice = el.getAttribute('role') === 'combobox' || el.getAttribute('role') === 'listbox' || el.getAttribute('data-uxi-widget-type') === 'selectinput' || !!el.getAttribute('aria-haspopup') || !!el.getAttribute('aria-controls') || !!el.getAttribute('aria-owns') || el.classList.contains('ashby-application-form-input-yesno-option') || isButtonToggle;
       if (input.readOnly && !isChoice) return false;
       if (input.type !== 'file' && (!el.getClientRects().length || el.closest('[hidden],[aria-hidden=true]'))) return false;
       const rect = el.getBoundingClientRect();
@@ -252,8 +303,8 @@ export async function distillFormStep(frame: Frame): Promise<DistilledField[]> {
         if (radioGroups.has(key)) return false;
         radioGroups.add(key);
       }
-      const ashbyBox = el.closest('.ashby-application-form-input-yesno');
-      if (ashbyBox) {
+      const ashbyBox = el.closest('.ashby-application-form-input-yesno, [role="radiogroup"]') || (isButtonToggle ? el.parentElement : null);
+      if (ashbyBox && (el.classList.contains('ashby-application-form-input-yesno-option') || isButtonToggle)) {
         if (ashbyGroups.has(ashbyBox)) return false;
         ashbyGroups.add(ashbyBox);
       }
@@ -265,7 +316,7 @@ export async function distillFormStep(frame: Frame): Promise<DistilledField[]> {
       return true;
     }).map(el => {
       const input = el as HTMLInputElement;
-      const isAshbyBtn = el.classList.contains('ashby-application-form-input-yesno-option');
+      const isAshbyBtn = el.classList.contains('ashby-application-form-input-yesno-option') || el.hasAttribute('data-autoapply-btngroup-option');
       const isGreenhouseSelect = el.classList.contains('select__input') ||
         el.getAttribute('role') === 'combobox' ||
         !!el.closest('.select-shell, .select__control')?.querySelector('button[aria-label="Toggle flyout"]') ||
@@ -290,8 +341,14 @@ export async function distillFormStep(frame: Frame): Promise<DistilledField[]> {
         : 'TEXT';
       const root = el.getRootNode() as Document | ShadowRoot;
       const choices = input.type === 'radio' ? elements.filter(peer => (peer as HTMLInputElement).type === 'radio' && (peer === el || input.name && (peer as HTMLInputElement).name === input.name && peer.getRootNode() === root && (peer as HTMLInputElement).form === input.form)) : [];
-      const options = isAshbyBtn ? ['Yes', 'No'] : el.tagName === 'SELECT' ? Array.from((el as HTMLSelectElement).options).map(option => option.textContent || '') : choices.map(peer => Array.from((peer as HTMLInputElement).labels || []).map(label => label.textContent || '').join(' ') || (peer as HTMLInputElement).value);
-      const box = el.closest('[data-autoapply-cluster]');
+      const box = el.closest('[data-autoapply-cluster]') || el.parentElement;
+      const options = isAshbyBtn
+        ? (box?.querySelectorAll('button[data-autoapply-btngroup-option]').length
+            ? Array.from(box.querySelectorAll('button[data-autoapply-btngroup-option]')).map(b => (b.textContent || '').trim())
+            : ['Yes', 'No'])
+        : el.tagName === 'SELECT'
+        ? Array.from((el as HTMLSelectElement).options).map(option => option.textContent || '')
+        : choices.map(peer => Array.from((peer as HTMLInputElement).labels || []).map(label => label.textContent || '').join(' ') || (peer as HTMLInputElement).value);
       const target = el.getAttribute('data-autoapply-target');
       const question = el.getAttribute('data-autoapply-question') || el.getAttribute('aria-label') || Array.from(input.labels || []).map(label => label.textContent).join(' ') || input.name || el.id || 'Field';
       return {
@@ -302,7 +359,7 @@ export async function distillFormStep(frame: Frame): Promise<DistilledField[]> {
         sectionHeading: el.closest('fieldset')?.querySelector('legend')?.textContent || '',
         isFilled: (() => {
           if (isAshbyBtn) {
-            return !!box?.querySelector('.ashby-application-form-input-yesno button[aria-pressed="true"], .ashby-application-form-input-yesno button[class*="selected"], .ashby-application-form-input-yesno button[class*="active"]');
+            return !!box?.querySelector('.ashby-application-form-input-yesno button[aria-pressed="true"], .ashby-application-form-input-yesno button[class*="selected"], .ashby-application-form-input-yesno button[class*="active"], button[data-autoapply-btngroup-option][aria-pressed="true"], button[data-autoapply-btngroup-option][data-state="checked"], button[data-autoapply-btngroup-option][class*="selected"], button[data-autoapply-btngroup-option][class*="active"]');
           }
           const singleVal = box?.querySelector('.select__single-value, [data-automation-id="selectedItem"], [class*="singleValue"]');
           if (singleVal && (singleVal.textContent || '').trim().length > 0) return true;
@@ -310,7 +367,7 @@ export async function distillFormStep(frame: Frame): Promise<DistilledField[]> {
         })(),
         currentValue: (() => {
           if (isAshbyBtn) {
-            return (box?.querySelector('.ashby-application-form-input-yesno button[aria-pressed="true"], .ashby-application-form-input-yesno button[class*="selected"], .ashby-application-form-input-yesno button[class*="active"]')?.textContent?.trim() || '');
+            return (box?.querySelector('.ashby-application-form-input-yesno button[aria-pressed="true"], .ashby-application-form-input-yesno button[class*="selected"], .ashby-application-form-input-yesno button[class*="active"], button[data-autoapply-btngroup-option][aria-pressed="true"], button[data-autoapply-btngroup-option][data-state="checked"], button[data-autoapply-btngroup-option][class*="selected"], button[data-autoapply-btngroup-option][class*="active"]')?.textContent?.trim() || '');
           }
           const singleVal = box?.querySelector('.select__single-value, [data-automation-id="selectedItem"], [class*="singleValue"]');
           if (singleVal && (singleVal.textContent || '').trim().length > 0) return (singleVal.textContent || '').trim();

@@ -443,8 +443,13 @@ export async function authenticateWorkdayPortal(
       .first();
 
     if (await submitTarget.isVisible().catch(() => false)) {
-      await submitTarget.click({ force: true, timeout: 3000 }).catch(() => {});
-    } else if (count > 0) {
+      await submitTarget.click({ force: true, timeout: 5000 }).catch(() => {});
+    }
+    const filter = page.locator('[data-automation-id="click_filter"]').filter({ visible: true }).first();
+    if (await filter.isVisible().catch(() => false)) {
+      await filter.click({ force: true, timeout: 3000 }).catch(() => {});
+    }
+    if (count > 0) {
       await pws.last().press('Enter').catch(() => {});
     }
     await page.waitForTimeout(3500);
@@ -479,8 +484,13 @@ export async function authenticateWorkdayPortal(
       .first();
 
     if (await signInTarget.isVisible().catch(() => false)) {
-      await signInTarget.click({ force: true, timeout: 3000 }).catch(() => {});
-    } else if ((await pws.count()) > 0) {
+      await signInTarget.click({ force: true, timeout: 5000 }).catch(() => {});
+    }
+    const filter = page.locator('[data-automation-id="click_filter"]').filter({ visible: true }).first();
+    if (await filter.isVisible().catch(() => false)) {
+      await filter.click({ force: true, timeout: 3000 }).catch(() => {});
+    }
+    if ((await pws.count()) > 0) {
       await pws.first().press('Enter').catch(() => {});
     }
     await page.waitForTimeout(3500);
@@ -497,7 +507,7 @@ export async function authenticateWorkdayPortal(
       .filter({ visible: true })
       .first();
     if (await createLink.isVisible().catch(() => false)) {
-      await createLink.click({ timeout: 2500 }).catch(() => {});
+      await createLink.click({ force: true, timeout: 5000 }).catch(() => {});
       await page.waitForTimeout(1200);
     }
   }
@@ -514,7 +524,7 @@ export async function authenticateWorkdayPortal(
       markWorkdayHostVerified(currentHost);
       const signInLink = page.locator('[data-automation-id="signInLink"], a:has-text("Sign In")').filter({ visible: true }).first();
       if (await signInLink.isVisible().catch(() => false)) {
-        await signInLink.click({ timeout: 2500 }).catch(() => {});
+        await signInLink.click({ force: true, timeout: 5000 }).catch(() => {});
         await page.waitForTimeout(1000);
         if (rawPassword) await fillAndSubmitSignIn(email, rawPassword);
         if ((await getVisiblePasswordInputs().count().catch(() => 0)) > 0 && rawPassword !== password) {
@@ -544,7 +554,7 @@ export async function authenticateWorkdayPortal(
         .filter({ visible: true })
         .first();
       if (await createLink.isVisible().catch(() => false)) {
-        await createLink.click({ timeout: 2500 }).catch(() => {});
+        await createLink.click({ force: true, timeout: 5000 }).catch(() => {});
         await page.waitForTimeout(1000);
         await fillAndSubmitCreateAccount(email, password);
         await completeInPageEmailVerificationIfPrompted(page, page.mainFrame());
@@ -566,7 +576,7 @@ export async function authenticateWorkdayPortal(
         .filter({ visible: true })
         .first();
       if (await createLink.isVisible().catch(() => false)) {
-        await createLink.click({ timeout: 2500 }).catch(() => {});
+        await createLink.click({ force: true, timeout: 5000 }).catch(() => {});
         await page.waitForTimeout(1000);
       }
       await fillAndSubmitCreateAccount(aliasEmail, password);

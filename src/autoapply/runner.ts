@@ -174,7 +174,7 @@ export interface AutoApplyOptions {
   applicationBrief?: ApplicationBrief;
 }
 
-const INPUTS = 'input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([data-automation-id="beecatcher"]), select, textarea, [role="combobox"], [role="radio"], button[aria-haspopup="listbox"], button.ashby-application-form-input-yesno-option';
+const INPUTS = 'input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([data-automation-id="beecatcher"]):not([data-autoapply-skip-file="true"]), select, textarea, [role="combobox"], [role="radio"], button[aria-haspopup="listbox"], button.ashby-application-form-input-yesno-option, button[data-autoapply-btngroup-option]';
 const SUCCESS = /(?:^|[\n.!?“"']\s*|\b)(?:thank(?:s| you)? for (?:applying|your application|interest|submitting)|(?:your )?application (?:has been |was )?(?:successfully )?(?:submitted|received)|successfully applied|we['’]ve received your application|we have received your application|application received|application submitted|submission received|application complete)\b/i;
 const EXISTING_APPLICATION = /^you have already applied to this position\b/i;
 const NEXT = /(?:^|\b)(?:next|continue|save (?:and|&) continue|save & next)(?:\b|$)/i;
@@ -232,7 +232,7 @@ export async function ensureStepReadyBeforeNext(frame: Frame, resumePath?: strin
   }
 
   if (resolvedResume && existsSync(resolvedResume)) {
-    const emptyFileInput = frame.locator('input[type="file"]').filter({ hasNot: frame.locator('[data-autoapply-uploaded="true"]') });
+    const emptyFileInput = frame.locator('input[type="file"]:not([data-autoapply-skip-file="true"])').filter({ hasNot: frame.locator('[data-autoapply-uploaded="true"]') });
     if ((await emptyFileInput.count().catch(() => 0)) > 0) {
       const firstInput = emptyFileInput.first();
       const hasFiles = await firstInput.evaluate((el: HTMLInputElement) => (el.files?.length ?? 0) > 0).catch(() => true);
@@ -386,6 +386,7 @@ export class AutoApplyRunner {
   private submissionObservation?: { url: string; report: BotRunReport; observer: ReturnType<typeof observeSubmission> };
   private learnedFields: Array<{ questionText: string; category: string; value: string }> = [];
   private activeWatchdog?: JobActivityWatchdog;
+  private lastNetworkSubmissionReceipt: { url: string; status: number; timestamp: number } | null = null;
 
   /**
    * Ticket GEN-108: Dismiss Ashby React cookie consent modal / OneTrust banners and wait for form controls hydration.
@@ -490,6 +491,81 @@ export class AutoApplyRunner {
         await page.waitForTimeout(300).catch(() => {});
       }
     }
+  }
+
+  /**
+   * Ticket GEN-123: Track HTTP POST network submissions on known ATS endpoints.
+   */
+  private attachNetworkReceiptListener(page: Page): void {
+    page.on('response', async (response) => {
+      try {
+        const req = response.request();
+        if (req.method() !== 'POST' && req.method() !== 'PUT') return;
+        const status = response.status();
+        if (status < 200 || status >= 300) return;
+        const respUrl = response.url();
+        const isAtsSubmitEndpoint =
+          /ApiSubmitApplicationForm|submitApplication|\/embed\/job_app|\/oneclick-ui\/[^?]+\/(?:candidates|applications)|\/jobs\/\d+\/applications|\/apply\/submit/i.test(
+            respUrl
+          );
+        if (!isAtsSubmitEndpoint) return;
+        // For GraphQL (Ashby), ensure response JSON doesn't contain errors
+        const contentType = response.headers()['content-type'] || '';
+        if (contentType.includes('application/json')) {
+          const bodyText = await response.text().catch(() => '');
+          if (/"errors"\s*:\s*\[[^\]]+\]|"success"\s*:\s*false/i.test(bodyText)) {
+            return;
+          }
+        }
+        this.lastNetworkSubmissionReceipt = {
+          url: respUrl,
+          status,
+          timestamp: Date.now(),
+        };
+      } catch {
+        // Ignore response read errors on navigation
+      }
+    });
+  }
+
+  /**
+   * Ticket GEN-125: Auto-check mandatory privacy/terms consent checkboxes across light and open shadow DOM.
+   */
+  private async ensurePrivacyConsentCheckboxesChecked(page: Page): Promise<void> {
+    await page
+      .evaluate(() => {
+        const collectCheckboxes = (root: Document | ShadowRoot | Element): HTMLInputElement[] => {
+          const out = Array.from(root.querySelectorAll('input[type="checkbox"]')) as HTMLInputElement[];
+          for (const el of Array.from(root.querySelectorAll('*'))) {
+            const sr = (el as HTMLElement).shadowRoot;
+            if (sr) out.push(...collectCheckboxes(sr));
+          }
+          return out;
+        };
+        const boxes = collectCheckboxes(document);
+        for (const box of boxes) {
+          if (box.checked) continue;
+          const host = (box.getRootNode?.() as ShadowRoot)?.host as HTMLElement | undefined;
+          const contextText = (
+            (box.closest('label, [class*="checkbox" i], [class*="consent" i]')?.textContent || '') +
+            ' ' +
+            (host?.textContent || '') +
+            ' ' +
+            (host?.getAttribute?.('label') || '')
+          ).toLowerCase();
+          if (
+            /privacy|terms|consent|acknowledge|agree|gdpr|data\s+protection|authorize/i.test(contextText) ||
+            boxes.length === 1
+          ) {
+            box.click();
+            if (!box.checked) {
+              box.checked = true;
+              box.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+            }
+          }
+        }
+      })
+      .catch(() => {});
   }
 
   private async coverLetter(options: AutoApplyOptions): Promise<string | undefined> {
@@ -676,6 +752,7 @@ export class AutoApplyRunner {
   private trackPage(page: Page): void {
     if (this.applicationPages.has(page)) return;
     this.applicationPages.add(page);
+    this.attachNetworkReceiptListener(page);
     page.on('framenavigated', frame => this.frameEpochs.set(frame, (this.frameEpochs.get(frame) || 0) + 1));
     page.on('request', request => {
       if (['xhr', 'fetch'].includes(request.resourceType()) && !/analytics|telemetry|sentry|datadog|segment|linkedin\.com|doubleclick|googletagmanager|google-analytics|hotjar|\/collect(?:\?|$)/i.test(request.url())) this.dependentRequests.set(request, { epoch: this.frameEpochs.get(request.frame()) || 0 });
@@ -1255,6 +1332,30 @@ export class AutoApplyRunner {
         continue;
       }
     }
+
+    // Ticket GEN-123: Network-Plus-DOM submission receipt tracking
+    if (this.lastNetworkSubmissionReceipt && Date.now() - this.lastNetworkSubmissionReceipt.timestamp < 60_000) {
+      const activePage = this.page && !this.page.isClosed() ? this.page : Array.from(this.applicationPages).find(p => !p.isClosed());
+      if (activePage) {
+        const hasVisibleErrors = await activePage.evaluate(() => {
+          const errors = document.querySelectorAll('[aria-invalid="true"], input:invalid, select:invalid, textarea:invalid, .error-message:not(:empty)');
+          for (const el of Array.from(errors)) {
+            const rect = el.getBoundingClientRect();
+            if (rect.width > 0 && rect.height > 0) return true;
+          }
+          return false;
+        }).catch(() => false);
+        if (!hasVisibleErrors) {
+          return {
+            url: this.lastNetworkSubmissionReceipt.url,
+            text: `Application submitted via verified network POST (${this.lastNetworkSubmissionReceipt.status})`,
+            verifiedAt: new Date(this.lastNetworkSubmissionReceipt.timestamp).toISOString(),
+            selector: 'network_receipt',
+          };
+        }
+      }
+    }
+
     return undefined;
   }
 
@@ -1441,6 +1542,54 @@ export class AutoApplyRunner {
 
   private async fillFrame(frame: Frame, options: AutoApplyOptions, report: BotRunReport) {
     await this.repeatedSections(frame, options.profile, !!options.dryRun);
+    await frame.evaluate(() => {
+      // GEN-124: Discover Ashby / modern React <button type="button">Yes</button><button type="button">No</button> toggle groups
+      const allTypeButtons = Array.from(
+        document.querySelectorAll('button[type="button"], [role="button"]')
+      ) as HTMLElement[];
+      const visitedBtnParents = new Set<HTMLElement>();
+      for (const btn of allTypeButtons) {
+        const txt = (btn.textContent || '').trim();
+        if (!/^(yes|no)$/i.test(txt)) continue;
+        const parent = btn.parentElement;
+        if (!parent || visitedBtnParents.has(parent)) continue;
+        const siblingBtns = Array.from(
+          parent.querySelectorAll(':scope > button[type="button"], :scope > [role="button"]')
+        ) as HTMLElement[];
+        if (siblingBtns.length >= 2 && siblingBtns.length <= 4) {
+          const labels = siblingBtns.map((b) => (b.textContent || '').trim());
+          const hasYesAndNo =
+            labels.some((l) => /^yes$/i.test(l)) && labels.some((l) => /^no$/i.test(l));
+          if (hasYesAndNo) {
+            visitedBtnParents.add(parent);
+            // Mark sibling buttons with data-autoapply-btngroup-option so distiller & widgets treat them as radio options
+            siblingBtns.forEach((b) => b.setAttribute('data-autoapply-btngroup-option', (b.textContent || '').trim()));
+            parent.setAttribute('role', parent.getAttribute('role') || 'radiogroup');
+          }
+        }
+      }
+
+      // GEN-124: Filter out Ashby's duplicate "Autofill from resume" dropzone when a real "Resume" file input exists
+      const fileInputs = Array.from(document.querySelectorAll('input[type="file"]')) as HTMLInputElement[];
+      if (fileInputs.length >= 2) {
+        const hasAutofill = fileInputs.some((el) => {
+          const text = (el.closest('fieldset, .ashby-application-form-field-entry, label, div')?.textContent || '').toLowerCase();
+          return /autofill\s+from\s+resume/i.test(text);
+        });
+        const hasDirectResume = fileInputs.some((el) => {
+          const text = (el.closest('fieldset, .ashby-application-form-field-entry, label, div')?.textContent || '').toLowerCase();
+          return /^(?:resume|cv|resume\s*\/?\s*cv)\b/i.test(text) && !/autofill/i.test(text);
+        });
+        if (hasAutofill && hasDirectResume) {
+          fileInputs.forEach((el) => {
+            const text = (el.closest('fieldset, .ashby-application-form-field-entry, label, div')?.textContent || '').toLowerCase();
+            if (/autofill\s+from\s+resume/i.test(text)) {
+              el.setAttribute('data-autoapply-skip-file', 'true');
+            }
+          });
+        }
+      }
+    }).catch(() => {});
     const scan = randomUUID();
     const processed = new Map<string, string>();
     const attempts = new Map<string, number>();
@@ -2161,7 +2310,7 @@ export class AutoApplyRunner {
                 }, targetBool).catch(() => {});
               }
             }
-          } else if (info.tag === 'button' && (info.type === 'button' || !info.type) && await input.evaluate(el => el.classList.contains('ashby-application-form-input-yesno-option') || !!el.closest('.ashby-application-form-input-yesno'))) {
+          } else if (info.tag === 'button' && (info.type === 'button' || !info.type) && await input.evaluate(el => el.classList.contains('ashby-application-form-input-yesno-option') || el.hasAttribute('data-autoapply-btngroup-option') || !!el.closest('.ashby-application-form-input-yesno, [role="radiogroup"]'))) {
             const cluster = input.locator('..');
             const handled = await selectAshbyYesNoOrCheckboxGroup(cluster, value ?? 'Yes').catch(() => false);
             if (handled) {
@@ -2273,6 +2422,7 @@ export class AutoApplyRunner {
   async run(options: AutoApplyOptions): Promise<BotRunReport> {
     const attemptStartWallClockMs = Date.now();
     this.logs = [];
+    this.lastNetworkSubmissionReceipt = null;
     options.url = unwrapDirectAtsApplicationUrl(options.url);
     // Ticket GEN-91: Strict 5-ATS Positive Allowlist Gate (0ms rejection)
     if (!isSupportedDirectAtsJobUrl(options.url)) {
@@ -2789,6 +2939,7 @@ export class AutoApplyRunner {
         }
         watchdog.heartbeat(`before_next_step_${step}`);
         watchdog.checkOrThrow();
+        await this.ensurePrivacyConsentCheckboxesChecked(this.page!);
         const isSinglePageAts = ['greenhouse', 'ashby', 'lever'].includes(report.ats);
         let submitControl: Locator | undefined;
         if (isSinglePageAts) {
@@ -2809,6 +2960,43 @@ export class AutoApplyRunner {
           const wdBtn = this.page.locator('button[data-automation-id="bottom-navigation-next-button"], button[data-automation-id="pageFooterNextButton"]').filter({ hasText: /^\s*submit\b/i }).first();
           if (await wdBtn.count().catch(() => 0) > 0 && await wdBtn.isVisible().catch(() => false)) {
             submitControl = wdBtn;
+            next = undefined;
+          }
+        }
+        // Ticket GEN-125: SmartRecruiters & open Shadow-DOM submit discovery
+        if (!submitControl && this.page) {
+          const shadowSubmitFound = await this.page.evaluate(() => {
+            const findShadowSubmit = (root: Document | ShadowRoot | Element): HTMLElement | null => {
+              const direct = root.querySelector('[data-test="footer-submit"], oc-button[data-test="footer-submit"], button[data-test="footer-submit"]') as HTMLElement | null;
+              if (direct) return direct;
+              const allEls = Array.from(root.querySelectorAll('*'));
+              for (const el of allEls) {
+                if (el.tagName.toLowerCase() === 'oc-button' || el.tagName.toLowerCase() === 'button') {
+                  const txt = (el.textContent || '').trim();
+                  if (/^(?:submit|submit application|send application|apply|next|continue)$/i.test(txt)) {
+                    return el as HTMLElement;
+                  }
+                }
+                const sr = (el as HTMLElement).shadowRoot;
+                if (sr) {
+                  const found = findShadowSubmit(sr);
+                  if (found) return found;
+                }
+              }
+              return null;
+            };
+            const btn = findShadowSubmit(document);
+            if (btn) {
+              btn.setAttribute('data-autoapply-shadow-submit', 'true');
+              const innerBtn = btn.shadowRoot?.querySelector('button') || btn.querySelector('button');
+              if (innerBtn) innerBtn.setAttribute('data-autoapply-shadow-submit', 'true');
+              return true;
+            }
+            return false;
+          }).catch(() => false);
+
+          if (shadowSubmitFound) {
+            submitControl = this.page.locator('[data-autoapply-shadow-submit="true"]').first();
             next = undefined;
           }
         }
@@ -2855,7 +3043,13 @@ export class AutoApplyRunner {
           watchdog.heartbeat(`advanced_step_${step}`);
           continue;
         }
-        const submit = submitControl || (await this.button(SUBMIT, ATS_STRATEGIES[report.ats]?.submit, 'flow_submit_button'));
+        let submit = submitControl || (await this.button(SUBMIT, ATS_STRATEGIES[report.ats]?.submit, 'flow_submit_button'));
+        if (!submit && this.page) {
+          const shadowBtn = this.page.locator('[data-autoapply-shadow-submit="true"], [data-test="footer-submit"], oc-button[data-test="footer-submit"]').first();
+          if (await shadowBtn.count().catch(() => 0) > 0 && await shadowBtn.isVisible().catch(() => false)) {
+            submit = shadowBtn;
+          }
+        }
         if (!submit) {
           const isClosedOr404 = await this.page!.evaluate(() => {
             const bodyTxt = (document.body?.innerText || '').slice(0, 6000);
