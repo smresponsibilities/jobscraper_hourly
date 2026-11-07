@@ -1,5 +1,100 @@
 # Handoff
 
+## Marathon Runner Live Diagnostic Autopsy & Handoff (Cycle #1 & #2, Tickets GEN-104 through GEN-112) — 2026-11-07
+
+### 1. Executive Summary & Current Execution State
+- **Active Git HEAD**: `e42ca80` (merged and pushed clean with `origin/main`).
+- **Dashboard Service**: Running on `http://localhost:4321` (PID active).
+- **Background Runner**: Task `task-3270` (`$env:AUTOAPPLY_DISABLE_HITL_POPUP = "1"; node out/dist/scripts/run-overnight-marathon.js --submit`).
+- **Telemetry Snapshot (`out/MORNING-IMPROVEMENT-REPORT.md`)**:
+  - Total Processed: 13,528
+  - Applied (Submitted): 107
+  - Verified Receipts: 150
+  - Paused for Review: 1,574
+  - Failed: 1,076
+  - Skipped: 10,771
+- **Cycle Progress**:
+  - Cycle #1: Completed 40 jobs in 1,608.0s (0 applied, 16 skipped, 14 paused, 10 failed).
+  - Cycle #2: Actively running (14/40 jobs processed).
+
+---
+
+### 2. Forensic Autopsy: The 5 Root Causes Proved by Live DOM Probes
+
+#### Root Cause 1: Ashby React Cookie Dialog Blocker (Sarvam AI, Bjak, NETGEAR, UptimeAI, FlutterFlow, Gradera, Smallest)
+- **Symptom**: Paused after 13–18s with `No supported submit control found` (`fieldsFilled: 0`).
+- **Live Empirical Evidence**:
+  - Ashby mounts a React dialog `<div role="dialog" aria-label="Cookie consent">` containing buttons `Accept All`, `Necessary Only`, `Customize Settings`.
+  - While this modal is present, Ashby unmounts or suppresses the form controls: `page.locator('input, textarea, select').count()` returns **0**.
+  - In a standalone Playwright probe on `https://jobs.ashbyhq.com/netgear/42ed1416-702a-455e-a5ad-9e39cf489fc3/application`:
+    - Before clicking cookie button: `Input count: 0`.
+    - After clicking `button:has-text("Accept All")` and waiting 1.5s: `Input count: 17`, buttons include `Submit Application`!
+  - `runner.ts:2212` and `runner.ts:2314` checked only `button:has-text("Accept")` without waiting for modal mount, missing `button:has-text("Accept All")` / `button:has-text("Necessary Only")`.
+
+#### Root Cause 2: Workday `utilityButtonSignIn` Unrecognized Login Gate (Airbus, Dbs, Ms, Thermo Fisher)
+- **Symptom**: Paused with `No supported submit control found` (`fieldsFilled: 0`, duration 78s–102s).
+- **Live Empirical Evidence**:
+  - When Workday loads `/job/.../apply/applyManually` without an active authenticated session, it renders only the public header containing `<button data-automation-id="utilityButtonSignIn">Sign In</button>`.
+  - In `runner.ts:1059`, `browserGates()` checked `#enterEmailSubmitButton`, `signInSubmitButton`, `createAccountLink`, `createAccountSubmitButton`, `SignInWithEmailButton`, but **omitted `utilityButtonSignIn`**.
+  - As a result, `browserGates()` returned `login: false`. The runner bypassed `authenticateWorkdayPortal()`, scanned the empty page, saw 0 inputs and no next/submit buttons, and exited with `No supported submit control found`.
+
+#### Root Cause 3: Greenhouse Submitted Receipts Lost on `/confirmation` URLs (`enterpret`)
+- **Symptom**: Paused with `No supported submit control found` after 136s.
+- **Live Empirical Evidence**:
+  - `enterpret` (`https://job-boards.greenhouse.io/enterpret/jobs/7723230003`) **successfully filled all 10 fields and submitted**!
+  - `checkpoint.json` recorded `currentUrl: "https://job-boards.greenhouse.io/enterpret/jobs/7723230003/confirmation"` with heading `"Thank you for applying."`.
+  - `this.receipt()` checked `page.title()` and specific heading selectors, but never checked `page.url()`.
+  - Because `options.resume === true` and `checkpoint.json` had `currentUrl: ".../confirmation"`, line 2132 navigated directly to `/confirmation`, looked for application fields, found none, looked for a submit button on the confirmation page, found none, and overwrote the status with `No supported submit control found`!
+
+#### Root Cause 4: SmartRecruiters Direct Navigation Trips DataDome (Miratech, Eurofins, Coface, BlueOptima, Renesas)
+- **Symptom**: Paused with `No application fields observed; review before submission` in 30–38s.
+- **Live Empirical Evidence**:
+  - In a standalone Playwright probe on `https://jobs.smartrecruiters.com/oneclick-ui/company/Eurofins/publication/526672c9-51d4-4236-ac9c-c6aefc77d1e4?dcr_ci=Eurofins`:
+    - Direct `page.goto()` triggered DataDome iframe: `https://geo.captcha-delivery.com/captcha/?initialCid=...`.
+    - `Input count: 0`.
+  - When navigating to `jobs.smartrecruiters.com/{company}/{id}` and clicking `a#st-apply` (or `button:has-text("I'm interested")`), real user click events and referer headers load the in-page form without triggering DataDome.
+
+#### Root Cause 5: Large 30-Field Greenhouse Forms Timeout under Multi-Lane Load (Commvault, capco, prodigal, Skild AI, WPP, mediabrands, Zinnov)
+- **Symptom**: Timed out at exactly 150.0s.
+- **Live Empirical Evidence**:
+  - On Commvault (38 inputs, 30 fields including `react-select` `Location (City)*` combobox, demographics, and disclosures), a single-lane dry run parsed and classified all 30 fields in **25 seconds**.
+  - When 4 lanes run simultaneously on Windows, process scheduling and Chromium I/O contention stretch execution from 25s to >150s, hitting the hard watchdog ceiling.
+
+---
+
+### 3. Immediate Action Plan: Master Tickets GEN-108 to GEN-112 for the New Chat
+
+- **Ticket GEN-108: Ashby React Cookie Dialog Clicker & Input Mount Wait**
+  - In `src/autoapply/runner.ts` and `src/autoapply/widgets.ts`:
+    - Add an Ashby-specific modal handler before form filling:
+      Wait up to 3,000ms for `div[role="dialog"] button:has-text("Accept All"), button:has-text("Accept All"), button:has-text("Necessary Only"), [aria-label*="cookie" i] button`.
+    - If found, click with `pacedClick()`, and wait for `input:not([type="hidden"]), textarea, select` count to exceed 0 (timeout: 4,000ms).
+
+- **Ticket GEN-109: Workday `utilityButtonSignIn` Recognition & Auto-Click**
+  - In `src/autoapply/runner.ts:1059`:
+    - Add `[data-automation-id="utilityButtonSignIn"], button:has-text("Sign In")` to the `login` gate locator.
+  - In `src/autoapply/workday-entry.ts` and Step 1:
+    - If `[data-automation-id="utilityButtonSignIn"]` is visible on `/apply/applyManually` or `/job/.../apply`, click it and wait for `[data-automation-id="signInContent"], input[type="password"]` to mount before proceeding.
+
+- **Ticket GEN-110: Confirmation URL Receipt Recognizer & Resume Guard**
+  - In `src/autoapply/runner.ts` (`this.receipt()`):
+    - If `/\/confirmation\b|\/thank[-_]?you\b|\/application[-_]?submitted\b/i.test(page.url())`, return a verified receipt immediately with `selector: 'url_confirmation'`.
+  - In `src/autoapply/runner.ts` line 2092:
+    - If `saved.currentUrl` matches a confirmation URL, never set `target = saved.currentUrl` for form refilling; mark the job `submitted` with the existing confirmation receipt and return.
+
+- **Ticket GEN-111: SmartRecruiters In-Page `a#st-apply` Interaction**
+  - In `src/autoapply/runner.ts` (`ensureSmartRecruitersApplicationStarted`):
+    - Do not perform naked `page.goto()` to `/oneclick-ui/...`.
+    - From the job overview page (`jobs.smartrecruiters.com/{company}/{id}`), scroll to and click `a#st-apply, button:has-text("I'm interested")` via Playwright click to preserve referer and browser context, avoiding DataDome iframe challenges.
+
+- **Ticket GEN-112: Greenhouse Watchdog & Concurrency Tuning**
+  - In `src/autoapply/watchdog-timer.ts`:
+    - Set `maxTotalMs = 180_000` (180s) for Greenhouse forms with >= 20 fields.
+  - In `src/autoapply/runner.ts` (`humanType` / `fillFrame`):
+    - Reduce post-fill wait for standard text inputs from 50ms to 20ms to keep total form filling under 60s even under 4-lane load.
+
+---
+
 ## Google Elephant–Goldfish Model (EGM) GEN-00 through GEN-08 Certified Execution (2026-11-03)
 
 ### Executive Summary
