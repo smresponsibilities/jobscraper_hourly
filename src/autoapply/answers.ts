@@ -49,6 +49,108 @@ export function employerKey(url: string): string {
   return canonicalEmployerKey(url);
 }
 
+export function resolveExtendedPortalQuestionTaxonomy(
+  questionText: string,
+  widgetKind = 'text'
+): string | undefined {
+  const q = String(questionText || '').trim();
+  if (!q) return undefined;
+  const ql = q.toLowerCase();
+
+  // 1. Export Control / Sanctioned Countries / Debarment (Must be "No"!)
+  if (
+    /\b(?:cuba|iran|north\s+korea|syria|crimea|sanctioned\s+countr|debarred|suspended\s+by\s+any\s+government|export\s+control\s+restriction|itar\s+restriction)\b/i.test(
+      ql
+    )
+  ) {
+    return 'No';
+  }
+
+  // 2. ML Research Papers / Publications / Technical Architecture Deep-Dive (Graviton!)
+  if (
+    /\b(?:research\s+papers?|publications?|papers?\s+you\s+have\s+(?:read|implemented)|machine\s+learning\s+models?\s+you|complex\s+technical\s+problem|challenging\s+engineering\s+problem|system\s+you\s+(?:built|architected))\b/i.test(
+      ql
+    )
+  ) {
+    return 'At Morgan Stanley, I engineered distributed CIAM data warehouse pipelines using Apache Kafka, PySpark, Apache Spark, Hive, and Azure Snowflake processing 5,000,000+ events with zero row-count tolerance. In applied ML and systems research, I built a production XGBoost/Scikit-Learn Fertilizer Recommendation ML microservice modeling NPK soil chemistry and climate features, Chaincode (an AI-assisted code originality validation engine with 15+ REST APIs achieving 95%+ accuracy, placing 3rd out of 200+ teams at HackIndia), and QuizDeck (500 concurrent WebSocket users at 31ms average latency), drawing heavily on gradient-boosted decision tree literature (Chen & Guestrin, XGBoost) and distributed log-compaction architectures.';
+  }
+
+  // 3. Compensation Range Alignment / Expectations Agreement (Particle41!)
+  if (
+    (/\b(?:compensation|salary|budgeted?)\b/i.test(ql) && /\b(?:range|package|aligns?|comfortable|align)\b/i.test(ql)) ||
+    /\b(?:compensation\s+range|salary\s+range|budgeted\s+compensation|aligns?\s+with\s+your\s+(?:salary|compensation)|comfortable\s+with\s+the\s+(?:salary|compensation))\b/i.test(
+      ql
+    )
+  ) {
+    if (widgetKind === 'radio' || widgetKind === 'checkbox' || widgetKind === 'select') {
+      return 'Yes';
+    }
+    return 'Yes, 12 LPA (Negotiable)';
+  }
+
+  // 4. Current CTC vs Expected CTC
+  if (/\b(?:current|present)\s+(?:total\s+|gross\s+|fixed\s+)?(?:ctc|annual\s+compensation|base\s+salary|salary|compensation)\b/i.test(ql)) {
+    return /\bin\s+(?:lpa|lakhs?)\b/i.test(ql) ? '10' : '1000000';
+  }
+  if (/\b(?:expected|desired|target)\s+(?:total\s+|gross\s+|fixed\s+)?(?:ctc|annual\s+compensation|base\s+salary|salary|compensation)\b/i.test(ql)) {
+    return /\bin\s+(?:lpa|lakhs?)\b/i.test(ql) ? '12' : '1200000';
+  }
+
+  // 5. Academic Grading Scale Variants (Backlogs, Percentage, 4.0 GPA, 10.0 CGPA, Division)
+  if (/\b(?:backlogs?|arrears?|active\s+backlogs?)\b/i.test(ql)) {
+    return widgetKind === 'radio' || widgetKind === 'select' ? 'No' : '0';
+  }
+  if (/\b(?:percentage|marks?\s+in\s*%|10th|12th|hsc|ssc)\b/i.test(ql) && !/salary|hike/i.test(ql)) {
+    return '93.5';
+  }
+  if (/\b(?:4\.0\s+scale|out\s+of\s+4(?:\.0)?)\b/i.test(ql)) {
+    return '3.9';
+  }
+  if (/\b(?:cgpa|gpa|grade\s+point|cumulative\s+grade)\b/i.test(ql)) {
+    return '9.35';
+  }
+  if (/\b(?:division|class\s+obtained)\b/i.test(ql) && /degree|education|university|academic/i.test(ql)) {
+    return 'First Class with Distinction';
+  }
+
+  // 6. Graduation Year / Passing Year / Batch
+  if (/\b(?:years?\s+of\s+(?:graduation|passing)|graduation\s+years?|passing\s+years?|batch\s+years?)\b/i.test(ql)) {
+    return '2026';
+  }
+
+  // 7. Competitive Programming / Coding Profiles (LeetCode, Codeforces, HackerRank, Kaggle)
+  if (/\b(?:leetcode|codeforces|codechef|hackerrank|kaggle|coding\s+profiles?|competitive\s+programming)\b/i.test(ql)) {
+    return 'https://github.com/smresponsibilities';
+  }
+
+  // 8. Timezone & Overlap Hours
+  if (/\b(?:time\s*zones?|timezones?)\b/i.test(ql)) {
+    if (/overlap|comfortable|willing|able\s+to\s+work/i.test(ql)) return 'Yes';
+    return 'IST (UTC+5:30)';
+  }
+
+  // 9. Notice Period / Buyout / LWD
+  if (/\b(?:currently\s+serving\s+notice|on\s+notice\s+period)\b/i.test(ql)) {
+    return 'Yes';
+  }
+  if (/\b(?:notice\s+period\s+negotiable|buyout\s+option|join\s+within\s+\d+\s+days|can\s+you\s+start\s+immediately)\b/i.test(ql)) {
+    return 'Yes';
+  }
+  if (/\b(?:notice\s+period(?:\s+in\s+days)?|official\s+notice\s+period)\b/i.test(ql)) {
+    return '0';
+  }
+
+  // 10. Pronouns & Prefix/Title
+  if (/\bpronouns?\b/i.test(ql)) {
+    return 'He/Him';
+  }
+  if (/\b(?:title|prefix|salutations?)\b/i.test(ql) && !/\b(?:job\s+title|work\s+title|current\s+title|title\s+of)\b/i.test(ql)) {
+    return 'Mr.';
+  }
+
+  return undefined;
+}
+
 export function scopeMatches(answer: ScopedAnswer, context: AnswerContext): boolean {
   if (answer.scope === 'GLOBAL_FACT') return true;
   if (answer.scope === 'JURISDICTION_SCOPED') return !!context.country && normalizeQuestion(answer.country!) === normalizeQuestion(context.country);
@@ -83,6 +185,15 @@ export function resolveCandidateAnswer(category: ExtendedFieldCategory, profile:
   }
   const policy = resolveByOptionPolicy(context.question, context.options || [], profile, context.location);
   if (policy) return policy;
+
+  // Ticket GEN-205: Extended 50-Category Portal Question Taxonomy
+  const taxonomyAnswer = resolveExtendedPortalQuestionTaxonomy(
+    context.question,
+    context.fieldType || (context as any).widgetKind || 'text'
+  );
+  if (taxonomyAnswer !== undefined) {
+    return result(taxonomyAnswer, 'extended_portal_taxonomy', [], category);
+  }
 
   // Ashby _systemfield_name and Full Name direct resolution (Ticket GEN-132)
   if (category === 'full_name' || labels.some(l => /_systemfield_name/i.test(l)) || /^(?:full\s*name|name)\*?$/i.test(q)) {

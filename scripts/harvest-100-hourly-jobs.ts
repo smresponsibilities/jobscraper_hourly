@@ -49,7 +49,51 @@ async function fetchJsonFast(url: string, timeoutMs = 4500): Promise<any> {
   }
 }
 
-export async function harvestLiveFastAtsBoardsFromCompaniesJson(maxBoards = 220): Promise<HarvestedJob[]> {
+export const TIER_0_HIGH_YIELD_BOARDS: Array<{ ats: string; slug: string; name: string }> = [
+  { ats: 'greenhouse', slug: 'razorpay', name: 'Razorpay' },
+  { ats: 'greenhouse', slug: 'meesho', name: 'Meesho' },
+  { ats: 'greenhouse', slug: 'postman', name: 'Postman' },
+  { ats: 'greenhouse', slug: 'rubrik', name: 'Rubrik' },
+  { ats: 'greenhouse', slug: 'databricks', name: 'Databricks' },
+  { ats: 'greenhouse', slug: 'cloudflare', name: 'Cloudflare' },
+  { ats: 'greenhouse', slug: 'confluent', name: 'Confluent' },
+  { ats: 'greenhouse', slug: 'gitlab', name: 'GitLab' },
+  { ats: 'greenhouse', slug: 'grafanalabs', name: 'Grafana Labs' },
+  { ats: 'greenhouse', slug: 'elastic', name: 'Elastic' },
+  { ats: 'greenhouse', slug: 'mongodb', name: 'MongoDB' },
+  { ats: 'greenhouse', slug: 'cockroachlabs', name: 'Cockroach Labs' },
+  { ats: 'greenhouse', slug: 'coinbase', name: 'Coinbase' },
+  { ats: 'greenhouse', slug: 'twilio', name: 'Twilio' },
+  { ats: 'greenhouse', slug: 'okta', name: 'Okta' },
+  { ats: 'greenhouse', slug: 'zscaler', name: 'Zscaler' },
+  { ats: 'greenhouse', slug: 'nutanix', name: 'Nutanix' },
+  { ats: 'greenhouse', slug: 'cohesity', name: 'Cohesity' },
+  { ats: 'greenhouse', slug: 'harness', name: 'Harness' },
+  { ats: 'greenhouse', slug: 'druva', name: 'Druva' },
+  { ats: 'greenhouse', slug: 'chargebee', name: 'Chargebee' },
+  { ats: 'greenhouse', slug: 'clevertap', name: 'CleverTap' },
+  { ats: 'greenhouse', slug: 'moengage', name: 'MoEngage' },
+  { ats: 'greenhouse', slug: 'innovaccer', name: 'Innovaccer' },
+  { ats: 'greenhouse', slug: 'clickhouse', name: 'ClickHouse' },
+  { ats: 'greenhouse', slug: 'airbyte', name: 'Airbyte' },
+  { ats: 'greenhouse', slug: 'temporaltechnologies', name: 'Temporal' },
+  { ats: 'greenhouse', slug: 'truveta', name: 'Truveta' },
+  { ats: 'greenhouse', slug: 'enterpret', name: 'Enterpret' },
+  { ats: 'ashby', slug: 'sarvam-ai', name: 'Sarvam AI' },
+  { ats: 'ashby', slug: 'supabase', name: 'Supabase' },
+  { ats: 'ashby', slug: 'linear', name: 'Linear' },
+  { ats: 'ashby', slug: 'LangChain', name: 'LangChain' },
+  { ats: 'ashby', slug: 'qdrant', name: 'Qdrant' },
+  { ats: 'ashby', slug: 'posthog', name: 'PostHog' },
+  { ats: 'ashby', slug: 'railway', name: 'Railway' },
+  { ats: 'ashby', slug: 'replit', name: 'Replit' },
+  { ats: 'lever', slug: 'hevodata', name: 'Hevo Data' },
+  { ats: 'lever', slug: 'zepto', name: 'Zepto' },
+  { ats: 'lever', slug: 'cred', name: 'CRED' },
+  { ats: 'lever', slug: 'zeta', name: 'Zeta' },
+];
+
+export async function harvestLiveFastAtsBoardsFromCompaniesJson(maxBoards = 320): Promise<HarvestedJob[]> {
   const harvested: HarvestedJob[] = [];
   if (!fs.existsSync('companies.json')) return harvested;
 
@@ -69,10 +113,21 @@ export async function harvestLiveFastAtsBoardsFromCompaniesJson(maxBoards = 220)
 
   // Rotate starting offset by current hour so every hour sweeps a fresh slice + top India boards
   const hourOffset = (new Date().getUTCHours() * 150) % Math.max(1, fastBoards.length);
-  const selected = [
+  const rotatedSlice = [
     ...fastBoards.slice(hourOffset, hourOffset + maxBoards),
     ...fastBoards.slice(0, Math.max(0, maxBoards - (fastBoards.length - hourOffset))),
   ].slice(0, maxBoards);
+
+  // Prepend Tier-0 High-Yield boards and deduplicate by slug
+  const seenSlugs = new Set<string>();
+  const selected: any[] = [];
+  for (const b of [...TIER_0_HIGH_YIELD_BOARDS, ...rotatedSlice]) {
+    const slug = String(b.slug || b.board || b.id || b.token || '').trim().toLowerCase();
+    if (slug && !seenSlugs.has(slug)) {
+      seenSlugs.add(slug);
+      selected.push(b);
+    }
+  }
 
   const concurrency = 25;
   for (let i = 0; i < selected.length; i += concurrency) {
@@ -90,7 +145,13 @@ export async function harvestLiveFastAtsBoardsFromCompaniesJson(maxBoards = 220)
           const list = Array.isArray(data?.jobs) ? data.jobs : [];
           for (const j of list) {
             const loc = String(j.location?.name || '');
-            const url = String(j.absolute_url || '');
+            const rawAbs = String(j.absolute_url || '');
+            const url =
+              /greenhouse\.io/i.test(rawAbs) && rawAbs
+                ? rawAbs
+                : j.id
+                ? `https://boards.greenhouse.io/${slug}/jobs/${j.id}`
+                : rawAbs;
             if (url) jobsOut.push({ company: companyName, title: String(j.title || ''), location: loc, url, ats: 'greenhouse' });
           }
         } else if (ats === 'ashby') {
@@ -98,7 +159,13 @@ export async function harvestLiveFastAtsBoardsFromCompaniesJson(maxBoards = 220)
           const list = Array.isArray(data?.jobs) ? data.jobs : [];
           for (const j of list) {
             const loc = String(j.location || j.address?.postalAddress?.addressLocality || '');
-            const url = String(j.jobUrl || j.applyUrl || `https://jobs.ashbyhq.com/${slug}/${j.id}/application`);
+            const rawUrl = String(j.jobUrl || j.applyUrl || '');
+            const url =
+              /ashbyhq\.com/i.test(rawUrl) && rawUrl
+                ? rawUrl
+                : j.id
+                ? `https://jobs.ashbyhq.com/${slug}/${j.id}/application`
+                : rawUrl;
             if (url) jobsOut.push({ company: companyName, title: String(j.title || ''), location: loc, url, ats: 'ashby' });
           }
         } else if (ats === 'lever') {
@@ -106,7 +173,13 @@ export async function harvestLiveFastAtsBoardsFromCompaniesJson(maxBoards = 220)
           const list = Array.isArray(data) ? data : [];
           for (const j of list) {
             const loc = String(j.categories?.location || j.workplaceType || '');
-            const url = String(j.applyUrl || j.hostedUrl || '');
+            const rawUrl = String(j.applyUrl || j.hostedUrl || '');
+            const url =
+              /jobs\.lever\.co/i.test(rawUrl) && rawUrl
+                ? rawUrl
+                : j.id
+                ? `https://jobs.lever.co/${slug}/${j.id}/apply`
+                : rawUrl;
             if (url) jobsOut.push({ company: companyName, title: String(j.text || ''), location: loc, url, ats: 'lever' });
           }
         } else if (ats === 'smartrecruiters') {

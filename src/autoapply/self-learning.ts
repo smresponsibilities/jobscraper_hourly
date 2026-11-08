@@ -173,6 +173,17 @@ export function inferAnswerFromOptionSignature(
       options[0]!;
     return { category: 'expected_salary', value: hit };
   }
+  // Compensation agreement / confirmation options signature (Particle41)
+  if (
+    /\b(?:compensation|salary|budget|range|aligns?|confirm|agree|accept)\b/i.test(questionText) ||
+    /\b(?:aligns?|comfortable|competitive package|desired annual compensation)\b/i.test(joined)
+  ) {
+    const hit =
+      options.find(o => /^(?:yes|i agree|agree|confirm|aligns?|comfortable|understand|accept)\b/i.test(o.trim())) ||
+      options.find(o => /yes|align|agree|confirm|comfortable|understand|accept|10\s*-\s*15|₹|\$/i.test(o)) ||
+      options[0]!;
+    return { category: 'compensation_agreement', value: hit };
+  }
   // Experience Bucket signature
   if (/\b(0\s*-\s*1|1\s*-\s*3|3\s*-\s*5|5\+\s*years|entry level|<\s*1\s*year|fresher)\b/.test(joined)) {
     const hit = options.find(o => /0\s*-\s*[123]|1\s*-\s*[234]|less than|<\s*1|\b1\s*year|entry|junior|associate|fresher/i.test(o));

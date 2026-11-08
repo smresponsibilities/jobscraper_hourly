@@ -797,9 +797,10 @@ export class AutoApplyRunner {
           placeholder: (inp.getAttribute('placeholder') || '').toLowerCase(),
           min: inp.getAttribute('min') || '',
           max: inp.getAttribute('max') || '',
+          maxLength: inp.maxLength > 0 ? inp.maxLength : (Number(inp.getAttribute('maxlength')) || 0),
         };
       })
-      .catch(() => ({ type: '', role: '', inputMode: '', placeholder: '', min: '', max: '' }));
+      .catch(() => ({ type: '', role: '', inputMode: '', placeholder: '', min: '', max: '', maxLength: 0 }));
 
     // GEN-153 & GEN-184: Strict numeric input sanitizer with min/max clamping
     if (meta.type === 'number' || meta.role === 'spinbutton' || meta.inputMode === 'numeric') {
@@ -842,6 +843,12 @@ export class AutoApplyRunner {
         return 'https://shivammahajan.com';
       }
     }
+
+    // Ticket GEN-206: Truncate single-line inputs cleanly to maxLength (Artefact)
+    if (meta.maxLength > 0 && val.length > meta.maxLength) {
+      return val.slice(0, meta.maxLength).trim();
+    }
+
     return val;
   }
 
@@ -2739,12 +2746,14 @@ export class AutoApplyRunner {
               targetBool = isLocationSynonymMatch || isSkillsMatch;
             }
 
-            if (!targetBool && info.required) {
-              const isSafeDefault = /yes|agree|accept|acknowledge|confirm|bengaluru|bangalore|india|linkedin|none of the above|do not wish|prefer not/i.test(optText);
+            // Ticket GEN-206: Guarantee screening & compensation clusters check >= 1 box (Particle41)
+            const isScreeningCluster = /\b(?:compensation|salary|range|package|current|desired|expected|budget|align|location|city|skills?|shift|eligib|agreement|confirm)\b/i.test(qText);
+            if (!targetBool && (info.required || isScreeningCluster)) {
+              const isSafeDefault = /yes|align|agree|confirm|comfortable|understand|accept|bengaluru|bangalore|india|remote|10|12|15|linkedin|none of the above|do not wish|prefer not/i.test(optText);
               if (isSafeDefault) targetBool = true;
             }
 
-            if (!targetBool && !info.required && typeof value !== 'boolean') {
+            if (!targetBool && !info.required && !isScreeningCluster && typeof value !== 'boolean') {
               action.status = 'skipped';
               continue;
             }

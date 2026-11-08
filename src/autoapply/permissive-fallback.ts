@@ -1,6 +1,7 @@
 // src/autoapply/permissive-fallback.ts
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { resolveExtendedPortalQuestionTaxonomy } from './answers.js';
 
 export const ATTEMPTS_PATH = path.resolve('state/autoapply/portal-review/job-attempts.json');
 
@@ -44,6 +45,19 @@ export function resolveUniversalPermissiveFallback(params: {
 }): string {
   const q = `${params.questionText} ${params.placeholder || ''}`.replace(/[✱*]/g, '').toLowerCase().trim();
   const opts = (params.options || []).filter(o => o && !/^(select|choose|please select|--)/i.test(o.trim()));
+
+  // Ticket GEN-205: Extended 50-Category Portal Question Taxonomy
+  const taxonomy = resolveExtendedPortalQuestionTaxonomy(params.questionText, params.widgetKind);
+  if (taxonomy !== undefined) {
+    if (opts.length > 0) {
+      const match =
+        opts.find(o => new RegExp(`^${taxonomy}$`, 'i').test(o.trim())) ||
+        opts.find(o => new RegExp(`\\b${taxonomy}\\b`, 'i').test(o.trim())) ||
+        opts.find(o => /yes|align|agree|confirm/i.test(o.trim()));
+      if (match) return match;
+    }
+    return taxonomy;
+  }
 
   // Domain & Technical Protocol / Experience Questions (FIX protocol, REST APIs, Kafka, etc.)
   if (/\b(fix protocol|fix\b|protocol|trading|market data|financial protocol|describe your experience|tell us about your experience|experience with|hands-on experience)\b/i.test(q)) {
