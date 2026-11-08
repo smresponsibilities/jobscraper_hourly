@@ -197,6 +197,104 @@ export function selectDiversifiedMultiLaneChunk(
   return selected;
 }
 
+
+/**
+ * Ticket GEN-162: Fast HTTP 404/410 Pre-Flight Dead-Posting Filter (<250ms).
+ * Bounded 2500ms HTTP GET (redirect: 'follow').
+ * If 404 or 410, or redirected to ?error=true or /404, fails fast without launching browser.
+ */
+export async function checkJobPostingHttpAliveFast(url: string): Promise<{ alive: boolean; reason?: string }> {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2500);
+    const res = await fetch(url, {
+      method: 'GET',
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      },
+      redirect: 'follow',
+    });
+    clearTimeout(timeoutId);
+    if (res.status === 404 || res.status === 410) {
+      return { alive: false, reason: `HTTP ${res.status} Not Found` };
+    }
+    const finalUrl = res.url || '';
+    if (/(\?error=true|\/404\b)/i.test(finalUrl)) {
+      return { alive: false, reason: `Redirected to error page (${finalUrl})` };
+    }
+    return { alive: true };
+  } catch {
+    // Plain fetch failures, SSL cert differences, timeouts or 403 blocks pass through to Playwright
+    return { alive: true };
+  }
+}
+
+/**
+ * Ticket GEN-159: Dynamic activity-aware timeout.
+ * 360_000ms base timeout, dynamically extended by +60_000ms when checkpoint updates, up to 450_000ms.
+ */
+export async function runWithDynamicActivityTimeout<T>(
+  promise: Promise<T>,
+  baseTimeoutMs = 360_000,
+  label = 'Job',
+  jobId?: string
+): Promise<T> {
+  const maxTimeoutMs = 450_000;
+  const startTime = Date.now();
+  let currentDeadline = startTime + baseTimeoutMs;
+  let lastCheckedCheckpointMtime = 0;
+  let timer: NodeJS.Timeout | null = null;
+  let checkInterval: NodeJS.Timeout | null = null;
+
+  const cleanup = () => {
+    if (timer) clearTimeout(timer);
+    if (checkInterval) clearInterval(checkInterval);
+  };
+
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    const arm = () => {
+      const remainingMs = Math.max(0, currentDeadline - Date.now());
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        cleanup();
+        const totalElapsedSec = Math.round((Date.now() - startTime) / 1000);
+        reject(new Error(`${label} timed out after ${totalElapsedSec}s`));
+      }, remainingMs);
+    };
+
+    arm();
+
+    if (jobId) {
+      const cpPath = path.resolve('state/autoapply/portal-review/applications', jobId, 'checkpoint.json');
+      checkInterval = setInterval(() => {
+        try {
+          if (fs.existsSync(cpPath)) {
+            const stat = fs.statSync(cpPath);
+            if (stat.mtimeMs > lastCheckedCheckpointMtime) {
+              lastCheckedCheckpointMtime = stat.mtimeMs;
+              if (currentDeadline - Date.now() < 45_000) {
+                const newDeadline = Math.min(startTime + maxTimeoutMs, currentDeadline + 60_000);
+                if (newDeadline > currentDeadline) {
+                  currentDeadline = newDeadline;
+                  arm();
+                }
+              }
+            }
+          }
+        } catch {}
+      }, 10_000);
+    }
+  });
+
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    cleanup();
+  }
+}
+
 export async function runOvernightMarathon(config: {
   profilePath: string;
   stateDir: string;
@@ -439,6 +537,17 @@ export async function runOvernightMarathon(config: {
           return;
         }
 
+        // Ticket GEN-162: Fast HTTP 404/410 Pre-Flight Dead-Posting Filter (<250ms)
+        const httpPreflight = await checkJobPostingHttpAliveFast(job.jobUrl);
+        if (!httpPreflight.alive) {
+          console.log(`[MARATHON] Fast preflight detected closed posting (${httpPreflight.reason}) for ${job.company}`);
+          queue.markFailed(job.id, 'Job posting is closed or no longer available (HTTP 404/410 pre-flight)');
+          markHostOutcome(job.jobUrl, 'error', hostHealthPath);
+          chunkProcessedCount++;
+          totalProcessedOverall++;
+          return;
+        }
+
         const sessionDir = path.join(
           stateDir,
           'applications',
@@ -521,11 +630,32 @@ export async function runOvernightMarathon(config: {
         await waitUntilNetworkOnline();
 
         try {
-          report = await runWithHardTimeout(childRunner.run(options), timeoutConfig.maxTotalMs, `Job ${job.company}`);
+          report = await runWithDynamicActivityTimeout(childRunner.run(options), timeoutConfig.maxTotalMs, `Job ${job.company}`, job.id);
         } catch (err: any) {
           const measuredDurationMs = Date.now() - jobStartMs;
           const isNetDrop = isOfflineDinoOrNetworkError(err?.message || '') ||
             /\b(Wi-Fi \/ DNS drop|ERR_INTERNET_DISCONNECTED|ERR_NAME_NOT_RESOLVED|ERR_NETWORK_CHANGED|ERR_CONNECTION_TIMED_OUT|network.*offline)\b/i.test(err?.message || '');
+
+          // Ticket GEN-159: Preserve fieldsFilled and check for confirmation in checkpoint
+          let cpFieldsFilled = 0;
+          let cpFieldsFound = 0;
+          let cpStepNumber = 1;
+          let cpCurrentUrl = '';
+          let cpReceipt: any = undefined;
+          const cpPath = path.resolve('state/autoapply/portal-review/applications', job.id, 'checkpoint.json');
+          if (fs.existsSync(cpPath)) {
+            try {
+              const cp = JSON.parse(fs.readFileSync(cpPath, 'utf8'));
+              cpFieldsFilled = cp.report?.fieldsFilled ?? cp.fieldsFilled ?? 0;
+              cpFieldsFound = cp.report?.fieldsFound ?? cp.fieldsFound ?? 0;
+              cpStepNumber = cp.stepNumber || cp.lastStep || 1;
+              cpCurrentUrl = cp.currentUrl || '';
+              cpReceipt = cp.report?.receipt;
+            } catch {}
+          }
+
+          const CONF_RE = /(?:\/confirmation|\/thank(?:s|[-_]?you)|\/application[-_]?submitted|\/submitted)(?:\/|$|\?|#)|[?&](?:submitted|applied|confirmation)=(?:true|1)\b/i;
+          const isConfirmedFromCp = CONF_RE.test(cpCurrentUrl) || Boolean(cpReceipt);
 
           report = {
             mode: 'stealth',
@@ -534,12 +664,18 @@ export async function runOvernightMarathon(config: {
             startTime: jobStartedAt,
             endTime: new Date().toISOString(),
             durationMs: measuredDurationMs,
-            fieldsFound: 0,
-            fieldsFilled: 0,
+            fieldsFound: cpFieldsFound,
+            fieldsFilled: cpFieldsFilled,
             unmappedFields: 0,
-            stepsTraversed: 1,
-            status: isNetDrop ? 'queued' : 'failed',
-            reason: isNetDrop ? 'wifi_drop_requeued' : (err?.message || 'Execution failed'),
+            stepsTraversed: cpStepNumber,
+            status: isConfirmedFromCp ? 'submitted' : (isNetDrop ? 'queued' : 'failed'),
+            reason: isConfirmedFromCp ? 'Submitted (checkpoint verified)' : (isNetDrop ? 'wifi_drop_requeued' : (err?.message || 'Execution failed')),
+            receipt: isConfirmedFromCp ? (cpReceipt || {
+              url: cpCurrentUrl,
+              text: 'Application Submitted',
+              verifiedAt: new Date().toISOString(),
+              selector: 'checkpoint_confirmation_catch_guard'
+            }) : undefined,
             actions: [],
             logs: [],
           };

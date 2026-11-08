@@ -424,15 +424,39 @@ export async function authenticateWorkdayPortal(
       await pws.nth(i).fill(pwToUse).catch(() => {});
     }
 
-    // Check consent checkbox if present
-    const consentCb = page
-      .locator('[data-automation-id="createAccountCheckbox"], input[type="checkbox"]')
-      .filter({ visible: true })
-      .first();
-    if (await consentCb.isVisible().catch(() => false)) {
-      const checked = await consentCb.isChecked().catch(() => false);
-      if (!checked) await consentCb.click({ force: true }).catch(() => {});
-    }
+    // Ticket GEN-161: Workday Enterprise createAccountCheckbox & Auth Modal Consent Auto-Check
+    const checkWorkdayCreateAccountConsentIfPresent = async (): Promise<void> => {
+      await page
+        .evaluate(() => {
+          const boxes = Array.from(
+            document.querySelectorAll<HTMLInputElement>(
+              '[data-automation-id="createAccountCheckbox"], [data-automation-id*="checkbox" i] input[type="checkbox"], form input[type="checkbox"], [role="dialog"] input[type="checkbox"]'
+            )
+          );
+          for (const box of boxes) {
+            if (!box.checked) {
+              box.click();
+              if (!box.checked) {
+                box.checked = true;
+                box.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+              }
+            }
+          }
+          const ariaBoxes = Array.from(
+            document.querySelectorAll<HTMLElement>(
+              '[data-automation-id="createAccountCheckbox"][role="checkbox"], [role="checkbox"][aria-checked="false"]'
+            )
+          );
+          for (const ab of ariaBoxes) {
+            if (ab.getAttribute('aria-checked') !== 'true') {
+              ab.click();
+            }
+          }
+        })
+        .catch(() => {});
+    };
+
+    await checkWorkdayCreateAccountConsentIfPresent();
 
     // Click Workday click_filter overlay OR submit button + press Enter
     const submitTarget = page

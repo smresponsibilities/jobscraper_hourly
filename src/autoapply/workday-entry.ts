@@ -284,9 +284,10 @@ export async function ensureSmartRecruitersApplicationStarted(
     })
     .catch(() => {});
 
-  // Click a#st-apply or "I'm interested" with native Playwright trusted click (isTrusted: true + Referer)
+  // Ticket GEN-160: SmartRecruiters a.js-oneclick + in-page location.assign(href) Referer Fallback
   const applySelectors = [
     'a#st-apply',
+    'a.js-oneclick',
     '[data-test="apply-button"]',
     'a[href*="/oneclick-ui/"]',
     'a:has-text("I\'m interested")',
@@ -303,5 +304,34 @@ export async function ensureSmartRecruitersApplicationStarted(
     }
   }
 
-  return await waitForOneClickInputs(10000);
+  // Wait up to 3500ms for URL transition to /oneclick-ui/
+  await page.waitForTimeout(1000).catch(() => {});
+  if (!/\/oneclick-ui\//i.test(page.url())) {
+    const triggeredInPageAssign = await page
+      .evaluate(() => {
+        const a = document.querySelector<HTMLAnchorElement>(
+          'a#st-apply, a.js-oneclick, a[data-test="apply-button"], a[href*="/oneclick-ui/"]'
+        );
+        if (a && a.href && /\/oneclick-ui\//i.test(a.href)) {
+          a.removeAttribute('target');
+          a.click();
+          setTimeout(() => {
+            if (!window.location.href.includes('/oneclick-ui/')) {
+              window.location.assign(a.href);
+            }
+          }, 600);
+          return true;
+        }
+        return false;
+      })
+      .catch(() => false);
+
+    if (triggeredInPageAssign) {
+      await page
+        .waitForURL((u) => /\/oneclick-ui\//i.test(u.toString()), { timeout: 8000 })
+        .catch(() => {});
+    }
+  }
+
+  return await waitForOneClickInputs(15000);
 }

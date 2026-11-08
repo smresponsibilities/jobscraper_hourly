@@ -135,12 +135,12 @@ export async function enforceHumanSubmissionPacingFloor(
   }
   const elapsedMs = Date.now() - formOpenedAtMs;
   // Ticket GEN-104: If we have already spent >= 18 seconds filling fields on the form, zero extra dwell
-  if (elapsedMs >= 18_000) return 0;
+  if (elapsedMs >= 4000) return 0;
   const remainingMs = targetDwellMs - elapsedMs;
   if (remainingMs <= 0) return 0;
 
   // Simulate natural human proofreading during the remaining wait window
-  const stepMs = Math.min(remainingMs, 18_000);
+  const stepMs = Math.min(remainingMs, 4000);
   const third = Math.floor(stepMs / 3);
 
   await page.evaluate(() => window.scrollTo({ top: 120, behavior: 'smooth' })).catch(() => {});

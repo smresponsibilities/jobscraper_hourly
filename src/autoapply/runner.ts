@@ -356,9 +356,10 @@ export async function ensureSmartRecruitersApplicationStarted(
     })
     .catch(() => {});
 
-  // Click a#st-apply or "I'm interested" with native Playwright trusted click (isTrusted: true + Referer)
+  // Ticket GEN-160: SmartRecruiters a.js-oneclick + in-page location.assign(href) Referer Fallback
   const applySelectors = [
     'a#st-apply',
+    'a.js-oneclick',
     '[data-test="apply-button"]',
     'a[href*="/oneclick-ui/"]',
     'a:has-text("I\'m interested")',
@@ -375,7 +376,36 @@ export async function ensureSmartRecruitersApplicationStarted(
     }
   }
 
-  return await waitForOneClickInputs(10000);
+  // Wait up to 3500ms for URL transition to /oneclick-ui/
+  await page.waitForTimeout(1000).catch(() => {});
+  if (!/\/oneclick-ui\//i.test(page.url())) {
+    const triggeredInPageAssign = await page
+      .evaluate(() => {
+        const a = document.querySelector<HTMLAnchorElement>(
+          'a#st-apply, a.js-oneclick, a[data-test="apply-button"], a[href*="/oneclick-ui/"]'
+        );
+        if (a && a.href && /\/oneclick-ui\//i.test(a.href)) {
+          a.removeAttribute('target');
+          a.click();
+          setTimeout(() => {
+            if (!window.location.href.includes('/oneclick-ui/')) {
+              window.location.assign(a.href);
+            }
+          }, 600);
+          return true;
+        }
+        return false;
+      })
+      .catch(() => false);
+
+    if (triggeredInPageAssign) {
+      await page
+        .waitForURL((u) => /\/oneclick-ui\//i.test(u.toString()), { timeout: 8000 })
+        .catch(() => {});
+    }
+  }
+
+  return await waitForOneClickInputs(15000);
 }
 
 export class AutoApplyRunner {
@@ -591,6 +621,47 @@ export class AutoApplyRunner {
           .catch(() => false);
         if (ready) break;
         await page.waitForTimeout(300).catch(() => {});
+      }
+    }
+
+    // Ticket GEN-158: Greenhouse Remix Collapsed Form Expander in hydration
+    if (/greenhouse\.io/i.test(page.url())) {
+      const ghVisibleInputCount = await page
+        .evaluate(() => {
+          const inputs = Array.from(
+            document.querySelectorAll<HTMLElement>(
+              '#application-form input:not([type="hidden"]), #application-form textarea, #application-form [role="combobox"], input#first_name, input#last_name, input#email'
+            )
+          );
+          return inputs.filter((el) => {
+            const rect = el.getBoundingClientRect();
+            return rect.width > 0 && rect.height > 0 && window.getComputedStyle(el).visibility !== 'hidden';
+          }).length;
+        })
+        .catch(() => 0);
+
+      if (ghVisibleInputCount < 2) {
+        const applyPillSelectors = [
+          'button.btn--pill:has-text("Apply")',
+          'button:has-text("Apply for this job")',
+          'a.btn--pill:has-text("Apply")',
+          '[data-mapped="true"] button:has-text("Apply")',
+          'button:has-text("Apply")',
+          'a[href="#app"], a[href*="#application"]',
+        ];
+        for (const sel of applyPillSelectors) {
+          const btn = page.locator(sel).first();
+          if (await btn.isVisible().catch(() => false)) {
+            await btn.scrollIntoViewIfNeeded().catch(() => {});
+            await btn.click({ timeout: 4000 }).catch(() => {});
+            break;
+          }
+        }
+        await page
+          .locator('#first_name, #email, #application-form input:not([type="hidden"])')
+          .first()
+          .waitFor({ state: 'visible', timeout: 6000 })
+          .catch(() => {});
       }
     }
   }
@@ -1099,9 +1170,9 @@ export class AutoApplyRunner {
     await input.press('ControlOrMeta+A').catch(() => {});
     await input.press('Backspace').catch(() => {});
     const tag = (await input.evaluate(el => el.tagName.toLowerCase()).catch(() => 'input')) || 'input';
-    if (text.length > 35) {
-      // Ticket GEN-104.2 / GEN-115: Fast-chunk long text with composed: true prototype setter
-      await input.pressSequentially(text.slice(0, 4), { delay: 25 }).catch(() => {});
+    if (text.length > 2) {
+      // Ticket GEN-104.2 / GEN-115 / GEN-159: Fast-chunk text with composed: true prototype setter
+      await input.pressSequentially(text.slice(0, 2), { delay: 15 }).catch(() => {});
       await input.fill(text).catch(() => {});
       await input
         .evaluate((el, val) => {
@@ -3097,13 +3168,45 @@ export class AutoApplyRunner {
           break;
         }
 
-        // Ticket GEN-69: Greenhouse Collapsed Form Expander (capco, cognite, GitLab, Crewmeister, Ensono, Esri)
+        // Ticket GEN-69 & GEN-158: Greenhouse Collapsed Form Expander (capco, cognite, GitLab, Crewmeister, Ensono, Esri, Moniepoint, Schrödinger)
         if (report.ats === 'greenhouse' || this.page!.url().toLowerCase().includes('greenhouse.io')) {
-          const greenhouseExpandBtn = this.page!.locator('button.btn:has-text("Apply"), button:has-text("Apply to this job"), a.btn:has-text("Apply")').filter({ visible: true });
-          const hasAppForm = await this.page!.locator('#application-form, form[id*="application"], #application').isVisible().catch(() => false);
-          if (!hasAppForm && (await greenhouseExpandBtn.count().catch(() => 0)) > 0) {
-            await greenhouseExpandBtn.first().click().catch(() => {});
-            await this.page!.waitForTimeout(1000);
+          const ghVisibleInputCount = await this.page!
+            .evaluate(() => {
+              const inputs = Array.from(
+                document.querySelectorAll<HTMLElement>(
+                  '#application-form input:not([type="hidden"]), #application-form textarea, #application-form [role="combobox"], input#first_name, input#last_name, input#email'
+                )
+              );
+              return inputs.filter((el) => {
+                const rect = el.getBoundingClientRect();
+                return rect.width > 0 && rect.height > 0 && window.getComputedStyle(el).visibility !== 'hidden';
+              }).length;
+            })
+            .catch(() => 0);
+
+          if (ghVisibleInputCount < 2) {
+            const applyPillSelectors = [
+              'button.btn--pill:has-text("Apply")',
+              'button:has-text("Apply for this job")',
+              'a.btn--pill:has-text("Apply")',
+              '[data-mapped="true"] button:has-text("Apply")',
+              'button:has-text("Apply")',
+              'a[href="#app"], a[href*="#application"]',
+            ];
+            for (const sel of applyPillSelectors) {
+              const btn = this.page!.locator(sel).first();
+              if (await btn.isVisible().catch(() => false)) {
+                await btn.scrollIntoViewIfNeeded().catch(() => {});
+                await btn.click({ timeout: 4000 }).catch(() => {});
+                break;
+              }
+            }
+            // Wait up to 6000ms for #first_name / #email / form inputs to mount after clicking Apply
+            await this.page!
+              .locator('#first_name, #email, #application-form input:not([type="hidden"])')
+              .first()
+              .waitFor({ state: 'visible', timeout: 6000 })
+              .catch(() => {});
           }
         }
         for (const frame of this.page!.frames()) {
@@ -3444,8 +3547,8 @@ export class AutoApplyRunner {
           if (reviewedSignature !== currentSignature) {
             const formOpenedAtMs = Date.parse(report.startTime) || Date.now();
             const alreadyElapsedMs = Date.now() - formOpenedAtMs;
-            // Ticket GEN-104.1: If already spent >= 18 seconds on the form filling fields, DO NOT sleep an extra 20-30s!
-            const remainingHumanFloorMs = Math.max(0, (18_000 + Math.floor(Math.random() * 4_000)) - alreadyElapsedMs);
+            // Ticket GEN-104.1 / GEN-159: Lower required elapsed floor from 18s-22s down to 4000ms (4s)
+            const remainingHumanFloorMs = alreadyElapsedMs >= 4000 ? 0 : Math.min(3000, 4000 - alreadyElapsedMs);
             if (remainingHumanFloorMs > 0) {
               await this.page!.waitForTimeout(remainingHumanFloorMs).catch(() => {});
             }

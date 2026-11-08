@@ -154,15 +154,19 @@ export async function harvestControlOptions(
     }
   }
 
-  await control.press('Escape').catch(() => {});
-  await frame.page().keyboard.press('Escape').catch(() => {});
-  const openMenu = frame.locator('.select__menu, [role="listbox"], [data-automation-id="activeListContainer"]').filter({ visible: true });
-  if (await openMenu.count().catch(() => 0) > 0) {
+  // Ticket GEN-159: Only close menu if NO options were found.
+  // If options were found, keep menu open so selectHarvestedOption can click the choice immediately without re-opening!
+  if (options.length === 0) {
+    await control.press('Escape').catch(() => {});
     await frame.page().keyboard.press('Escape').catch(() => {});
-  }
-  const popper = frame.locator('[data-popper-placement],[data-behavior-click-outside-close="topmost"]').filter({ visible: true });
-  if (await popper.count() > 0) {
-    await frame.locator('body').click({ position: { x: 5, y: 5 }, timeout: 800 }).catch(() => {});
+    const openMenu = frame.locator('.select__menu, [role="listbox"], [data-automation-id="activeListContainer"]').filter({ visible: true });
+    if (await openMenu.count().catch(() => 0) > 0) {
+      await frame.page().keyboard.press('Escape').catch(() => {});
+    }
+    const popper = frame.locator('[data-popper-placement],[data-behavior-click-outside-close="topmost"]').filter({ visible: true });
+    if (await popper.count() > 0) {
+      await frame.locator('body').click({ position: { x: 5, y: 5 }, timeout: 800 }).catch(() => {});
+    }
   }
   return { options, popupContainer: popup };
 }

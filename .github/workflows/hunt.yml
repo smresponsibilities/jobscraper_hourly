@@ -308,29 +308,23 @@ jobs:
       # the run leaves it behind and the commit below is rejected. That is not
       # hypothetical: it failed twice, and because a failed step skips the rest
       # of the job it also took the catalog publish with it.
-      - name: Rebase onto any commits that landed mid-run
+      - name: Commit and push board list with atomic retry
         if: '!inputs.test_email'
         continue-on-error: true
         run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email 'github-actions[bot]@users.noreply.github.com'
-          git pull --rebase --autostash origin main
-
-      # companies.json is hand-curated, so its history is worth keeping on main.
-      #
-      # continue-on-error because this is bookkeeping, not the product: losing
-      # one board-list commit costs nothing (the next run rewrites the same
-      # state), while failing the job here skips "Publish catalog" and leaves
-      # the data branch stale. It matters more since boards became tiered —
-      # `lastPolledAt` lives in this file, and if it never persists the cold
-      # rotation freezes on the same slice and never reaches the rest.
-      - name: Commit board list
-        if: '!inputs.test_email'
-        continue-on-error: true
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: 'companies: board list update [skip ci]'
-          file_pattern: companies.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add companies.json
+          if ! git diff --cached --quiet; then
+            git commit -m "companies: board list update [skip ci]" || true
+            for attempt in 1 2 3 4 5; do
+              git fetch origin main && \
+              (git rebase -X theirs --autostash origin/main || (git rebase --abort || true; git pull --no-rebase -X theirs origin main)) && \
+              git push origin HEAD:main && break
+              echo "Push attempt $attempt failed, retrying in 5s..."
+              sleep 5
+            done
+          fi
 
       # The commit message carries [skip ci] for the same reason every commit
       # to main does, and it matters more here: Vercel deploys every branch by

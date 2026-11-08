@@ -36,23 +36,22 @@ jobs:
 
       - run: npm run discover
 
-      - name: Rebase onto any commits that landed mid-run
+      - name: Commit and push new boards with atomic retry
         continue-on-error: true
         run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email 'github-actions[bot]@users.noreply.github.com'
-          if ! git pull --rebase --autostash origin main; then
-            echo "Rebase conflict encountered, aborting and resetting to origin/main"
-            git rebase --abort 2>/dev/null || true
-            git stash drop 2>/dev/null || true
-            git checkout -- . 2>/dev/null || true
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add companies.json
+          if ! git diff --cached --quiet; then
+            git commit -m "discover: new boards from Common Crawl [skip ci]" || true
+            for attempt in 1 2 3 4 5; do
+              git fetch origin main && \
+              (git rebase -X theirs --autostash origin/main || (git rebase --abort || true; git pull --no-rebase -X theirs origin main)) && \
+              git push origin HEAD:main && break
+              echo "Push attempt $attempt failed, retrying in 5s..."
+              sleep 5
+            done
           fi
-
-      - name: Commit new boards
-        continue-on-error: true
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: 'discover: new boards from Common Crawl [skip ci]'
           file_pattern: companies.json state/discover-cursor.json
 
   # Re-validates every untracked tenant in ats-scrapers' published lists. This
@@ -116,23 +115,22 @@ jobs:
       # India role at all, which is runtime spent to learn nothing.
       - run: npm run bulk-import -- --bar india
 
-      - name: Rebase onto any commits that landed mid-run
+      - name: Commit and push imported boards with atomic retry
         continue-on-error: true
         run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email 'github-actions[bot]@users.noreply.github.com'
-          if ! git pull --rebase --autostash origin main; then
-            echo "Rebase conflict encountered, aborting and resetting to origin/main"
-            git rebase --abort 2>/dev/null || true
-            git stash drop 2>/dev/null || true
-            git checkout -- . 2>/dev/null || true
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add companies.json
+          if ! git diff --cached --quiet; then
+            git commit -m "bulk-import: new boards from ats-scrapers tenant lists [skip ci]" || true
+            for attempt in 1 2 3 4 5; do
+              git fetch origin main && \
+              (git rebase -X theirs --autostash origin/main || (git rebase --abort || true; git pull --no-rebase -X theirs origin main)) && \
+              git push origin HEAD:main && break
+              echo "Push attempt $attempt failed, retrying in 5s..."
+              sleep 5
+            done
           fi
-
-      - name: Commit imported boards
-        continue-on-error: true
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: 'bulk-import: new boards from ats-scrapers tenant lists [skip ci]'
           file_pattern: companies.json
 
   # Re-resolves YC's India directory against every company's own careers page.
@@ -191,21 +189,20 @@ jobs:
 
       - run: npm run detect -- state/yc-india.txt
 
-      - name: Rebase onto any commits that landed mid-run
+      - name: Commit and push resolved boards with atomic retry
         continue-on-error: true
         run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email 'github-actions[bot]@users.noreply.github.com'
-          if ! git pull --rebase --autostash origin main; then
-            echo "Rebase conflict encountered, aborting and resetting to origin/main"
-            git rebase --abort 2>/dev/null || true
-            git stash drop 2>/dev/null || true
-            git checkout -- . 2>/dev/null || true
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add companies.json
+          if ! git diff --cached --quiet; then
+            git commit -m "yc: boards resolved from the YC India directory [skip ci]" || true
+            for attempt in 1 2 3 4 5; do
+              git fetch origin main && \
+              (git rebase -X theirs --autostash origin/main || (git rebase --abort || true; git pull --no-rebase -X theirs origin main)) && \
+              git push origin HEAD:main && break
+              echo "Push attempt $attempt failed, retrying in 5s..."
+              sleep 5
+            done
           fi
-
-      - name: Commit resolved boards
-        continue-on-error: true
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: 'yc: boards resolved from the YC India directory [skip ci]'
           file_pattern: companies.json

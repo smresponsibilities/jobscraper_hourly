@@ -35,21 +35,20 @@ jobs:
 
       - run: npm run detect -- state/yc-india.txt
 
-      - name: Rebase onto any commits that landed mid-run
+      - name: Commit and push resolved boards with atomic retry
         continue-on-error: true
         run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email 'github-actions[bot]@users.noreply.github.com'
-          if ! git pull --rebase --autostash origin main; then
-            echo "Rebase conflict encountered, aborting and resetting to origin/main"
-            git rebase --abort 2>/dev/null || true
-            git stash drop 2>/dev/null || true
-            git checkout -- . 2>/dev/null || true
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add companies.json
+          if ! git diff --cached --quiet; then
+            git commit -m "yc: boards resolved from the YC India directory [skip ci]" || true
+            for attempt in 1 2 3 4 5; do
+              git fetch origin main && \
+              (git rebase -X theirs --autostash origin/main || (git rebase --abort || true; git pull --no-rebase -X theirs origin main)) && \
+              git push origin HEAD:main && break
+              echo "Push attempt $attempt failed, retrying in 5s..."
+              sleep 5
+            done
           fi
-
-      - name: Commit resolved boards
-        continue-on-error: true
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: 'yc: boards resolved from the YC India directory [skip ci]'
           file_pattern: companies.json

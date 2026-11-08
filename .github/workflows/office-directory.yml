@@ -34,11 +34,16 @@ jobs:
       - run: npm run test:map
       - name: Save validated office locations
         run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add web/public/data/offices.json
-          if git diff --cached --quiet; then exit 0; fi
-          git commit -m 'Refresh sourced office locations'
-          git fetch origin
-          git merge origin/main
-          git push origin HEAD:main
+          if ! git diff --cached --quiet; then
+            git commit -m "Refresh sourced office locations [skip ci]" || true
+            for attempt in 1 2 3 4 5; do
+              git fetch origin main && \
+              (git rebase -X theirs --autostash origin/main || (git rebase --abort || true; git pull --no-rebase -X theirs origin main)) && \
+              git push origin HEAD:main && break
+              echo "Push attempt $attempt failed, retrying in 5s..."
+              sleep 5
+            done
+          fi

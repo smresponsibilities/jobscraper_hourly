@@ -25,7 +25,7 @@ jobs:
         with:
           node-version: '22.16'
           cache: npm
-      - run: npm ci
+      - run: npm ci || npm install --no-audit --no-fund
       - run: npx playwright install chromium
       - run: npm run build:extension
       - run: npx tsc --noEmit

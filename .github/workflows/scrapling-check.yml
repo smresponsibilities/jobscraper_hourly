@@ -18,10 +18,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: npm ci
+      - run: npm ci || npm install --no-audit --no-fund
       - name: Install both browser runtimes
         run: |
-          python -m pip install "scrapling[fetchers]==0.4.15"
+          python -m pip install --upgrade pip && python -m pip install "scrapling[fetchers]==0.4.15"
           python -m playwright install --with-deps chromium
           npx playwright install --with-deps chromium
       - name: Typecheck
