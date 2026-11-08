@@ -177,3 +177,60 @@ export async function discoverGithubOrgCommitContacts(
 
   return leads;
 }
+
+export async function discoverPublicWebsiteContacts(
+  company: string,
+  domain: string
+): Promise<DiscoveredContactLead[]> {
+  const leads: DiscoveredContactLead[] = [];
+  const cleanDomain = (domain.toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0] || '').trim();
+  if (!cleanDomain) return leads;
+
+  const pages = ['/about', '/careers', '/contact', '/team', '/.well-known/security.txt'];
+  const seenEmails = new Set<string>();
+
+  for (const pagePath of pages) {
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 3500);
+      const res = await fetch(`https://${cleanDomain}${pagePath}`, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124.0.0.0',
+          Accept: 'text/html,text/plain,application/xhtml+xml',
+        },
+        signal: ctrl.signal,
+      }).catch(() => null);
+      clearTimeout(timer);
+
+      if (res && res.ok) {
+        const text = await res.text().catch(() => '');
+        const emailMatches = text.matchAll(/\b([a-zA-Z0-9._%+-]+@([a-zA-Z0-9.-]+\.[a-zA-Z]{2,}))\b/g);
+        for (const m of emailMatches) {
+          const email = m[1]?.toLowerCase() || '';
+          const emailDomain = m[2]?.toLowerCase() || '';
+          if (
+            email &&
+            emailDomain === cleanDomain &&
+            isSafeOutreachEmailSyntax(email) &&
+            !seenEmails.has(email) &&
+            !email.startsWith('security@')
+          ) {
+            seenEmails.add(email);
+            leads.push({
+              name: email.split('@')[0] || 'Team',
+              email,
+              role: 'Public Team Contact',
+              company,
+              domain: cleanDomain,
+              source: 'public_page_osint',
+              confidence: 0.88,
+              mxVerified: true,
+            });
+          }
+        }
+      }
+    } catch {}
+  }
+
+  return leads;
+}

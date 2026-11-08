@@ -1256,7 +1256,7 @@ export class AutoApplyRunner {
     this.attachNetworkReceiptListener(page);
     page.on('framenavigated', frame => this.frameEpochs.set(frame, (this.frameEpochs.get(frame) || 0) + 1));
     page.on('request', request => {
-      if (['xhr', 'fetch'].includes(request.resourceType()) && !/sentry\.io|datadog|google-analytics|googletagmanager|doubleclick|segment\.io|segment|amplitude|mixpanel|hotjar|intercom|clarity\.ms|linkedin\.com\/px|facebook\.net|fullstory|bugsnag|hs-analytics|optimizely|newrelic|telemetry|\/collect(?:\?|$)/i.test(request.url())) this.dependentRequests.set(request, { epoch: this.frameEpochs.get(request.frame()) || 0 });
+      if (['xhr', 'fetch'].includes(request.resourceType()) && !/sentry\.io|datadog|google-analytics|googletagmanager|doubleclick|segment\.io|segment|amplitude|mixpanel|hotjar|intercom|clarity\.ms|linkedin\.com\/px|facebook\.net|fullstory|bugsnag|hs-analytics|optimizely|newrelic|nr-data\.net|telemetry|\/collect(?:\?|$)/i.test(request.url())) this.dependentRequests.set(request, { epoch: this.frameEpochs.get(request.frame()) || 0 });
     });
     page.on('response', response => {
       const pending = this.dependentRequests.get(response.request());
@@ -3187,7 +3187,7 @@ export class AutoApplyRunner {
       }
 
       // Filter out any 3rd-party analytics beacons that slipped into dependentRequests
-      const ANALYTICS_BEACONS_REGEX = /sentry\.io|datadog|google-analytics|googletagmanager|doubleclick|segment\.io|amplitude|mixpanel|hotjar|intercom|clarity\.ms|linkedin\.com\/px|facebook\.net|fullstory|bugsnag|hs-analytics|optimizely|newrelic/i;
+      const ANALYTICS_BEACONS_REGEX = /sentry\.io|datadog|google-analytics|googletagmanager|doubleclick|segment\.io|amplitude|mixpanel|hotjar|intercom|clarity\.ms|linkedin\.com\/px|facebook\.net|fullstory|bugsnag|hs-analytics|optimizely|newrelic|nr-data\.net/i;
       const pending = [...this.dependentRequests]
         .filter(([req]) => !ANALYTICS_BEACONS_REGEX.test(req.url()))
         .map(([request, response]) => {

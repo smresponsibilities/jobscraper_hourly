@@ -87,7 +87,19 @@ export class ApplicationStore {
   }
 
   private transaction<T>(action: () => T): T {
-    this.db.exec('BEGIN IMMEDIATE');
+    let retries = 5;
+    while (true) {
+      try {
+        this.db.exec('BEGIN IMMEDIATE');
+        break;
+      } catch (err: any) {
+        if (/database is locked/i.test(err?.message || '') && retries-- > 0) {
+          Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 250);
+          continue;
+        }
+        throw err;
+      }
+    }
     try { const result = action(); this.db.exec('COMMIT'); return result; }
     catch (error) { this.db.exec('ROLLBACK'); throw error; }
   }

@@ -13,6 +13,7 @@ export const TARGET_DB_PATHS = [
 ].filter((p) => fs.existsSync(p));
 
 export const DEAD_SLUGS_PATH = path.resolve('state/dead-board-slugs.json');
+export const VERIFIED_LIVE_BOARDS_PATH = path.resolve('state/verified-live-boards.json');
 export const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
 export function loadDeadBoardSlugs(): Record<string, number> {
@@ -28,6 +29,23 @@ export function saveDeadBoardSlugs(store: Record<string, number>): void {
   try {
     fs.mkdirSync(path.dirname(DEAD_SLUGS_PATH), { recursive: true });
     fs.writeFileSync(DEAD_SLUGS_PATH, JSON.stringify(store, null, 2), 'utf8');
+  } catch {}
+}
+
+export function loadVerifiedLiveBoards(): Array<{ ats: string; slug: string; name: string }> {
+  try {
+    if (fs.existsSync(VERIFIED_LIVE_BOARDS_PATH)) {
+      const data = JSON.parse(fs.readFileSync(VERIFIED_LIVE_BOARDS_PATH, 'utf8'));
+      if (Array.isArray(data)) return data;
+    }
+  } catch {}
+  return [];
+}
+
+export function saveVerifiedLiveBoards(boards: Array<{ ats: string; slug: string; name: string }>): void {
+  try {
+    fs.mkdirSync(path.dirname(VERIFIED_LIVE_BOARDS_PATH), { recursive: true });
+    fs.writeFileSync(VERIFIED_LIVE_BOARDS_PATH, JSON.stringify(boards, null, 2), 'utf8');
   } catch {}
 }
 
@@ -119,9 +137,120 @@ export const TIER_0_HIGH_YIELD_BOARDS: Array<{ ats: string; slug: string; name: 
   { ats: 'lever', slug: 'zepto', name: 'Zepto' },
   { ats: 'lever', slug: 'cred', name: 'CRED' },
   { ats: 'lever', slug: 'zeta', name: 'Zeta' },
+  // Additional Verified High-Velocity India / Bengaluru / Remote Tech Boards
+  { ats: 'greenhouse', slug: 'browserstack', name: 'BrowserStack' },
+  { ats: 'greenhouse', slug: 'freshworks', name: 'Freshworks' },
+  { ats: 'greenhouse', slug: 'datadog', name: 'Datadog' },
+  { ats: 'greenhouse', slug: 'crowdstrike', name: 'CrowdStrike' },
+  { ats: 'greenhouse', slug: 'snyk', name: 'Snyk' },
+  { ats: 'greenhouse', slug: 'hashicorp', name: 'HashiCorp' },
+  { ats: 'greenhouse', slug: 'figma', name: 'Figma' },
+  { ats: 'greenhouse', slug: 'canva', name: 'Canva' },
+  { ats: 'greenhouse', slug: 'notion', name: 'Notion' },
+  { ats: 'greenhouse', slug: 'airtable', name: 'Airtable' },
+  { ats: 'greenhouse', slug: 'vercel', name: 'Vercel' },
+  { ats: 'greenhouse', slug: 'newrelic', name: 'New Relic' },
+  { ats: 'greenhouse', slug: 'pagerduty', name: 'PagerDuty' },
+  { ats: 'greenhouse', slug: 'sentinelone', name: 'SentinelOne' },
+  { ats: 'greenhouse', slug: 'digitalocean', name: 'DigitalOcean' },
+  { ats: 'greenhouse', slug: 'braze', name: 'Braze' },
+  { ats: 'greenhouse', slug: 'amplitude', name: 'Amplitude' },
+  { ats: 'greenhouse', slug: 'mixpanel', name: 'Mixpanel' },
+  { ats: 'greenhouse', slug: 'fivetran', name: 'Fivetran' },
+  { ats: 'greenhouse', slug: 'dbtlabs', name: 'dbt Labs' },
+  { ats: 'greenhouse', slug: 'starburst', name: 'Starburst' },
+  { ats: 'greenhouse', slug: 'singlestore', name: 'SingleStore' },
+  { ats: 'greenhouse', slug: 'timescale', name: 'Timescale' },
+  { ats: 'greenhouse', slug: 'neo4j', name: 'Neo4j' },
+  { ats: 'greenhouse', slug: 'algolia', name: 'Algolia' },
+  { ats: 'greenhouse', slug: 'contentful', name: 'Contentful' },
+  { ats: 'greenhouse', slug: 'launchdarkly', name: 'LaunchDarkly' },
+  { ats: 'greenhouse', slug: 'circleci', name: 'CircleCI' },
+  { ats: 'greenhouse', slug: 'buildkite', name: 'Buildkite' },
+  { ats: 'greenhouse', slug: 'jfrog', name: 'JFrog' },
+  { ats: 'greenhouse', slug: 'tanium', name: 'Tanium' },
+  { ats: 'greenhouse', slug: 'illumio', name: 'Illumio' },
+  { ats: 'greenhouse', slug: 'netskope', name: 'Netskope' },
+  { ats: 'greenhouse', slug: 'mindtickle', name: 'Mindtickle' },
+  { ats: 'greenhouse', slug: 'icertis', name: 'Icertis' },
+  { ats: 'greenhouse', slug: 'zenoti', name: 'Zenoti' },
+  { ats: 'greenhouse', slug: 'whatfix', name: 'Whatfix' },
+  { ats: 'greenhouse', slug: 'acceldata', name: 'Acceldata' },
+  { ats: 'greenhouse', slug: 'robinhood', name: 'Robinhood' },
+  { ats: 'greenhouse', slug: 'reddit', name: 'Reddit' },
+  { ats: 'greenhouse', slug: 'pinterest', name: 'Pinterest' },
+  { ats: 'greenhouse', slug: 'dropbox', name: 'Dropbox' },
+  { ats: 'greenhouse', slug: 'asana', name: 'Asana' },
+  { ats: 'greenhouse', slug: 'duolingo', name: 'Duolingo' },
+  { ats: 'greenhouse', slug: 'coursera', name: 'Coursera' },
+  { ats: 'greenhouse', slug: 'udemy', name: 'Udemy' },
+  { ats: 'greenhouse', slug: 'grammarly', name: 'Grammarly' },
+  { ats: 'greenhouse', slug: 'affirm', name: 'Affirm' },
+  { ats: 'greenhouse', slug: 'toast', name: 'Toast' },
+  { ats: 'greenhouse', slug: 'coupa', name: 'Coupa' },
+  { ats: 'greenhouse', slug: 'agoda', name: 'Agoda' },
+  { ats: 'ashby', slug: 'elevenlabs', name: 'ElevenLabs' },
+  { ats: 'ashby', slug: 'perplexity', name: 'Perplexity' },
+  { ats: 'ashby', slug: 'togetherai', name: 'Together AI' },
+  { ats: 'ashby', slug: 'weaviate', name: 'Weaviate' },
+  { ats: 'ashby', slug: 'modal', name: 'Modal' },
+  { ats: 'ashby', slug: 'baseten', name: 'Baseten' },
+  { ats: 'ashby', slug: 'anyscale', name: 'Anyscale' },
+  { ats: 'ashby', slug: 'portkey', name: 'Portkey' },
+  { ats: 'ashby', slug: 'composio', name: 'Composio' },
+  { ats: 'ashby', slug: 'truefoundry', name: 'TrueFoundry' },
+  { ats: 'ashby', slug: 'emergentlabsinc', name: 'Emergent Labs' },
+  { ats: 'ashby', slug: 'smallest', name: 'Smallest AI' },
+  { ats: 'ashby', slug: 'bjak', name: 'Bjak' },
+  { ats: 'ashby', slug: 'ramp', name: 'Ramp' },
+  { ats: 'ashby', slug: 'deel', name: 'Deel' },
+  { ats: 'ashby', slug: 'mercury', name: 'Mercury' },
+  { ats: 'ashby', slug: 'brex', name: 'Brex' },
+  { ats: 'ashby', slug: 'vanta', name: 'Vanta' },
+  { ats: 'ashby', slug: 'drata', name: 'Drata' },
+  { ats: 'ashby', slug: 'sardine', name: 'Sardine' },
+  { ats: 'ashby', slug: 'persona', name: 'Persona' },
+  { ats: 'ashby', slug: 'resend', name: 'Resend' },
+  { ats: 'ashby', slug: 'inngest', name: 'Inngest' },
+  { ats: 'ashby', slug: 'upstash', name: 'Upstash' },
+  { ats: 'ashby', slug: 'neon', name: 'Neon' },
+  { ats: 'ashby', slug: 'turso', name: 'Turso' },
+  { ats: 'ashby', slug: 'convex', name: 'Convex' },
+  { ats: 'ashby', slug: 'tinybird', name: 'Tinybird' },
+  { ats: 'ashby', slug: 'zed', name: 'Zed' },
+  { ats: 'ashby', slug: 'warp', name: 'Warp' },
+  { ats: 'ashby', slug: 'sourcegraph', name: 'Sourcegraph' },
+  { ats: 'ashby', slug: 'codeium', name: 'Codeium' },
+  { ats: 'lever', slug: 'palantir', name: 'Palantir' },
+  { ats: 'lever', slug: 'plaid', name: 'Plaid' },
+  { ats: 'lever', slug: 'kraken', name: 'Kraken' },
+  { ats: 'lever', slug: 'chainalysis', name: 'Chainalysis' },
+  { ats: 'lever', slug: 'alchemy', name: 'Alchemy' },
+  { ats: 'lever', slug: 'polygon', name: 'Polygon' },
+  { ats: 'lever', slug: 'outreach', name: 'Outreach' },
+  { ats: 'lever', slug: 'gong', name: 'Gong' },
+  { ats: 'lever', slug: 'clari', name: 'Clari' },
+  { ats: 'lever', slug: 'highspot', name: 'Highspot' },
+  { ats: 'lever', slug: 'attentive', name: 'Attentive' },
+  { ats: 'lever', slug: 'klaviyo', name: 'Klaviyo' },
+  { ats: 'lever', slug: 'intercom', name: 'Intercom' },
+  { ats: 'lever', slug: 'zendesk', name: 'Zendesk' },
+  { ats: 'lever', slug: 'plivo', name: 'Plivo' },
+  { ats: 'lever', slug: 'exotel', name: 'Exotel' },
+  { ats: 'lever', slug: 'observe-ai', name: 'Observe.AI' },
+  { ats: 'lever', slug: 'sprinklr', name: 'Sprinklr' },
+  { ats: 'lever', slug: 'urbancompany', name: 'Urban Company' },
+  { ats: 'lever', slug: 'nobroker', name: 'NoBroker' },
+  { ats: 'lever', slug: 'spinny', name: 'Spinny' },
+  { ats: 'lever', slug: 'cars24', name: 'CARS24' },
+  { ats: 'lever', slug: 'porter', name: 'Porter' },
+  { ats: 'lever', slug: 'shiprocket', name: 'Shiprocket' },
+  { ats: 'lever', slug: 'moglix', name: 'Moglix' },
+  { ats: 'lever', slug: 'zetwerk', name: 'Zetwerk' },
+  { ats: 'lever', slug: 'cropin', name: 'Cropin' },
 ];
 
-export async function harvestLiveFastAtsBoardsFromCompaniesJson(maxBoards = 500): Promise<HarvestedJob[]> {
+export async function harvestLiveFastAtsBoardsFromCompaniesJson(maxBoards = 650): Promise<HarvestedJob[]> {
   const harvested: HarvestedJob[] = [];
   if (!fs.existsSync('companies.json')) return harvested;
 
@@ -134,6 +263,12 @@ export async function harvestLiveFastAtsBoardsFromCompaniesJson(maxBoards = 500)
   }
 
   const deadSlugs = loadDeadBoardSlugs();
+  const verifiedLiveBoards = loadVerifiedLiveBoards();
+  const verifiedMap = new Map<string, { ats: string; slug: string; name: string }>();
+  for (const b of verifiedLiveBoards) {
+    const k = `${String(b.ats || '').toLowerCase()}:${String(b.slug || '').toLowerCase()}`;
+    if (k !== ':') verifiedMap.set(k, b);
+  }
   const now = Date.now();
 
   // Prioritize Greenhouse, Ashby, Lever, SmartRecruiters, and Workday boards
@@ -156,13 +291,15 @@ export async function harvestLiveFastAtsBoardsFromCompaniesJson(maxBoards = 500)
     ...fastBoards.slice(0, Math.max(0, maxBoards - (fastBoards.length - hourOffset))),
   ].slice(0, maxBoards);
 
-  // Prepend Tier-0 High-Yield boards and deduplicate by slug
+  // Prepend Tier-0 High-Yield boards and persistent verified live boards, deduplicated by ats:slug
   const seenSlugs = new Set<string>();
   const selected: any[] = [];
-  for (const b of [...TIER_0_HIGH_YIELD_BOARDS, ...rotatedSlice]) {
+  for (const b of [...TIER_0_HIGH_YIELD_BOARDS, ...verifiedLiveBoards, ...rotatedSlice]) {
+    const ats = String(b.ats || b.provider || b.type || '').toLowerCase();
     const slug = String(b.slug || b.board || b.id || b.token || '').trim().toLowerCase();
-    if (slug && !seenSlugs.has(slug)) {
-      seenSlugs.add(slug);
+    const key = `${ats}:${slug}`;
+    if (slug && !seenSlugs.has(key)) {
+      seenSlugs.add(key);
       selected.push(b);
     }
   }
@@ -264,6 +401,9 @@ export async function harvestLiveFastAtsBoardsFromCompaniesJson(maxBoards = 500)
             }
           }
         }
+        if (jobsOut.length > 0) {
+          verifiedMap.set(`${ats}:${slug.toLowerCase()}`, { ats, slug, name: companyName });
+        }
         return jobsOut;
       })
     );
@@ -271,6 +411,7 @@ export async function harvestLiveFastAtsBoardsFromCompaniesJson(maxBoards = 500)
   }
 
   saveDeadBoardSlugs(deadSlugs);
+  saveVerifiedLiveBoards(Array.from(verifiedMap.values()));
   return harvested;
 }
 
@@ -336,7 +477,7 @@ export async function runHourly100JobsHarvester(): Promise<{
   insertedOrBoosted: number;
 }> {
   const [fastAtsJobs, workdayJobs] = await Promise.all([
-    harvestLiveFastAtsBoardsFromCompaniesJson(500),
+    harvestLiveFastAtsBoardsFromCompaniesJson(650),
     harvestLiveWorkdayBengaluruGccJobs().catch(() => []),
   ]);
   const liveJobs = [...fastAtsJobs, ...workdayJobs];

@@ -90,69 +90,86 @@ export function composeAppliedFollowUpPitch(company: string, roleTitle: string):
 }
 
 export function syncAppliedJobsToOutreachTargets(dbPath?: string): number {
-  const resolvedDbPath = dbPath || (fs.existsSync('state/autoapply/portal-review/queue.sqlite')
-    ? 'state/autoapply/portal-review/queue.sqlite'
-    : 'data/queue.sqlite');
+  const dbPaths = dbPath
+    ? [dbPath]
+    : [
+        'state/autoapply/portal-review/queue.sqlite',
+        'data/queue.sqlite',
+      ].filter((p) => fs.existsSync(p));
 
-  if (!fs.existsSync(resolvedDbPath)) return 0;
+  if (dbPaths.length === 0) return 0;
 
   const ledger = loadOutreachLedger();
-  let db: DatabaseSync | null = null;
   const targets: any[] = [];
-  try {
-    db = new DatabaseSync(resolvedDbPath, { readOnly: true });
-    db.exec('PRAGMA busy_timeout = 15000;');
+  const seenUrls = new Set<string>();
 
-    const hasAppsTable = (db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='applications'").all() as any[]).length > 0;
-    const hasJobsTable = (db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='jobs'").all() as any[]).length > 0;
+  for (const resolvedDbPath of dbPaths) {
+    let db: DatabaseSync | null = null;
+    try {
+      db = new DatabaseSync(resolvedDbPath, { readOnly: true });
+      db.exec('PRAGMA busy_timeout = 5000;');
 
-    if (hasAppsTable) {
-      const rows = db.prepare("SELECT id, normalized_url, payload FROM applications WHERE status = 'applied' ORDER BY rowid DESC").all() as any[];
-      for (const r of rows) {
-        try {
-          const p = JSON.parse(r.payload);
-          const comp = p.company || 'Company';
-          const title = p.title || 'Software Engineer';
+      const hasAppsTable = (db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='applications'").all() as any[]).length > 0;
+      const hasJobsTable = (db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='jobs'").all() as any[]).length > 0;
+
+      if (hasAppsTable) {
+        const rows = db.prepare("SELECT id, normalized_url, payload FROM applications WHERE status = 'applied' ORDER BY rowid DESC").all() as any[];
+        for (const r of rows) {
+          try {
+            const p = JSON.parse(r.payload);
+            const comp = p.company || 'Company';
+            const title = p.title || 'Software Engineer';
+            const jobUrl = String(p.jobUrl || r.normalized_url || '').trim();
+            const normKey = jobUrl.toLowerCase().replace(/\/$/, '');
+            if (normKey && seenUrls.has(normKey)) continue;
+            if (normKey) seenUrls.add(normKey);
+
+            const pitch = composeAppliedFollowUpPitch(comp, title);
+            const eligibility = canSendOutreachToTarget('', comp, ledger);
+            targets.push({
+              id: r.id,
+              company: comp,
+              title,
+              jobUrl: jobUrl || r.normalized_url,
+              appliedAt: p.appliedAt || new Date().toISOString(),
+              subject: pitch.subject,
+              body: pitch.body,
+              canSend: eligibility.allowed,
+              cooldownReason: eligibility.reason,
+            });
+          } catch {}
+        }
+      } else if (hasJobsTable) {
+        const rows = db.prepare("SELECT company, title, url FROM jobs WHERE status = 'applied'").all() as any[];
+        for (const r of rows) {
+          const comp = r.company || 'Company';
+          const title = r.title || 'Software Engineer';
+          const jobUrl = String(r.url || '').trim();
+          const normKey = jobUrl.toLowerCase().replace(/\/$/, '');
+          if (normKey && seenUrls.has(normKey)) continue;
+          if (normKey) seenUrls.add(normKey);
+
           const pitch = composeAppliedFollowUpPitch(comp, title);
           const eligibility = canSendOutreachToTarget('', comp, ledger);
           targets.push({
-            id: r.id,
             company: comp,
             title,
-            jobUrl: p.jobUrl || r.normalized_url,
-            appliedAt: p.appliedAt || new Date().toISOString(),
+            jobUrl,
+            appliedAt: new Date().toISOString(),
             subject: pitch.subject,
             body: pitch.body,
             canSend: eligibility.allowed,
             cooldownReason: eligibility.reason,
           });
-        } catch {}
+        }
       }
-    } else if (hasJobsTable) {
-      const rows = db.prepare("SELECT company, title, url FROM jobs WHERE status = 'applied'").all() as any[];
-      for (const r of rows) {
-        const comp = r.company || 'Company';
-        const title = r.title || 'Software Engineer';
-        const pitch = composeAppliedFollowUpPitch(comp, title);
-        const eligibility = canSendOutreachToTarget('', comp, ledger);
-        targets.push({
-          company: comp,
-          title,
-          jobUrl: r.url,
-          appliedAt: new Date().toISOString(),
-          subject: pitch.subject,
-          body: pitch.body,
-          canSend: eligibility.allowed,
-          cooldownReason: eligibility.reason,
-        });
+    } catch (err: any) {
+      if (!/database is locked/i.test(err?.message || '')) {
+        console.warn('[OUTREACH SYNC NOTICE]', err?.message || err);
       }
+    } finally {
+      try { db?.close(); } catch {}
     }
-  } catch (err: any) {
-    if (!/database is locked/i.test(err?.message || '')) {
-      console.warn('[OUTREACH SYNC NOTICE]', err?.message || err);
-    }
-  } finally {
-    try { db?.close(); } catch {}
   }
 
   const outPath = path.resolve('state/autoapply/applied-outreach-targets.json');
