@@ -2,8 +2,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
+import { runAllSystemInvariantsAndAutoHeal } from '../src/contracts/system-invariants.js';
 
 export function printLiveScoreboardSnapshot(): void {
+  try {
+    runAllSystemInvariantsAndAutoHeal();
+  } catch (err: any) {
+    console.warn('[INVARIANTS WARNING]', err?.message || err);
+  }
   const dbPath = fs.existsSync('state/autoapply/portal-review/queue.sqlite')
     ? 'state/autoapply/portal-review/queue.sqlite'
     : 'data/queue.sqlite';

@@ -46,6 +46,7 @@ import { bodySimilarity, bounceGateDecision, buildFirstDraft, displayName, domai
 import { applyboltLookup, extractEmails, extractLeadership, packageNameCandidates, parseApplyBolt, parseDmarcRua, roleAddresses } from './contact-sources.js';
 import { controlAddress, mxProvider, rejectionIsMeaningful } from './verify-email.js';
 import type { BoardState, Company, Industry, RawJob } from './types.js';
+import { runAllSystemInvariantsAndAutoHeal } from './contracts/system-invariants.js';
 
 /**
  * Regression tests for the two regex layers that decide everything.
@@ -2610,6 +2611,15 @@ check('metrics skipped count matches 1', metrics.totalSkipped, 1);
 console.log('REA Bridge: D:\\rea Verification');
 const reaStatus = checkReaStatus();
 check('REA status verified on host', typeof reaStatus.available, 'boolean');
+
+console.log('System Invariants & Anti-Regression Verification:');
+try {
+  const invReport = runAllSystemInvariantsAndAutoHeal();
+  check('all 6 system invariants pass', invReport.invariantsPassed, true);
+  check('companies.json meets board threshold', invReport.companiesReport.totalBoards >= 13500, true);
+} catch (err: any) {
+  check('system invariants failure: ' + (err?.message || err), true, false);
+}
 
 console.log(failures === 0 ? '\nall checks pass' : `\n${failures} failing check(s)`);
 process.exit(failures === 0 ? 0 : 1);
