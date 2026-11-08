@@ -172,10 +172,38 @@ export async function harvestControlOptions(
 }
 
 export async function selectHarvestedOption(frame: Frame, control: Locator, option: string): Promise<boolean> {
-  if (await control.evaluate(el => el.tagName === 'SELECT')) {
-    await control.selectOption({ label: option }).catch(() => {});
-    return (await control.locator('option:checked').allTextContents()).includes(option);
+  // Ticket GEN-168: 15ms Native <select> instant selection fast-path
+  const isNativeSelect = await control
+    .evaluate((el) => el.tagName.toLowerCase() === 'select')
+    .catch(() => false);
+  if (isNativeSelect) {
+    const selectedViaNative = await control
+      .evaluate((el, targetText) => {
+        const sel = el as HTMLSelectElement;
+        const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
+        const want = norm(targetText);
+        const opts = Array.from(sel.options).filter((o) => !o.disabled && norm(o.text) !== '');
+        const match =
+          opts.find((o) => norm(o.text) === want || norm(o.value) === want) ||
+          opts.find((o) => norm(o.text).includes(want) || want.includes(norm(o.text)));
+        if (!match) return false;
+        sel.value = match.value;
+        sel.selectedIndex = match.index;
+        sel.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+        sel.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+        return true;
+      }, option)
+      .catch(() => false);
+    if (selectedViaNative) {
+      await control.selectOption({ label: option }).catch(() => {});
+      return true;
+    }
   }
+
+  // Ticket GEN-170: Workday button[aria-haspopup="listbox"] resolver
+  const isButtonListbox = await control
+    .evaluate((el) => el.tagName.toLowerCase() === 'button' && (el.getAttribute('aria-haspopup') === 'listbox' || el.getAttribute('aria-expanded') !== null))
+    .catch(() => false);
 
   // GEN-127: Check if options / listbox are currently visible; if 0 visible options, re-open portal
   const countVisibleOpts = async () => {
@@ -184,12 +212,18 @@ export async function selectHarvestedOption(frame: Frame, control: Locator, opti
 
   let visibleCount = await countVisibleOpts();
   if (visibleCount === 0) {
-    const overlay = control.locator('..').locator('[data-automation-id="click_filter"]').filter({ visible: true });
-    if (await overlay.count() === 1) await overlay.click({ force: true, timeout: 3000 }).catch(() => {});
-    else await control.click({ force: true, timeout: 3000 }).catch(() => {});
+    if (isButtonListbox) {
+      await control.click({ force: true, timeout: 3000 }).catch(() => {});
+      await frame.page().waitForTimeout(300);
+      visibleCount = await countVisibleOpts();
+    } else {
+      const overlay = control.locator('..').locator('[data-automation-id="click_filter"]').filter({ visible: true });
+      if (await overlay.count() === 1) await overlay.click({ force: true, timeout: 3000 }).catch(() => {});
+      else await control.click({ force: true, timeout: 3000 }).catch(() => {});
 
-    await control.press('ArrowDown').catch(() => {});
-    await frame.page().waitForTimeout(350);
+      await control.press('ArrowDown').catch(() => {});
+      await frame.page().waitForTimeout(350);
+    }
   }
 
   const popupId = await control.getAttribute('aria-controls') || await control.getAttribute('aria-owns');

@@ -1,5 +1,5 @@
 import { chromium, type Browser, type BrowserContext, type Page, type Locator, type Frame, type Request } from 'patchright';
-import { mkdirSync, readFileSync, writeFileSync, renameSync, existsSync, unlinkSync } from 'node:fs';
+import { copyFileSync, mkdirSync, readFileSync, writeFileSync, renameSync, existsSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { BotRunReport, CandidateExtendedProfile, RunnerMode } from './types.js';
@@ -244,6 +244,14 @@ export async function ensureStepReadyBeforeNext(frame: Frame, resumePath?: strin
       const hasFiles = await firstInput.evaluate((el: HTMLInputElement) => (el.files?.length ?? 0) > 0).catch(() => true);
       if (!hasFiles) {
         let uploadFile = resolvedResume;
+        // Ticket GEN-166: Clean Shivam_Mahajan_Resume.pdf filename
+        if (/\.pdf$/i.test(uploadFile) && path.basename(uploadFile) !== 'Shivam_Mahajan_Resume.pdf') {
+          const stagedResume = path.join(path.dirname(uploadFile), 'Shivam_Mahajan_Resume.pdf');
+          try {
+            copyFileSync(uploadFile, stagedResume);
+            uploadFile = stagedResume;
+          } catch {}
+        }
         const accept = (await firstInput.getAttribute('accept').catch(() => '')) || '';
         const prefersDocx = Boolean(accept && /\b(\.docx?|msword|wordprocessingml)\b/i.test(accept) && !/\b(\.pdf|application\/pdf)\b/i.test(accept));
         if (prefersDocx) {
@@ -2247,8 +2255,12 @@ export class AutoApplyRunner {
           if (options.mode === 'stealth') await this.page!.waitForTimeout(1500 + Math.random() * 2000);
           if (info.type === 'file' && document) {
             const bytes = readFileSync(document);
+            let uploadName = 'Shivam_Mahajan_Resume.pdf';
+            if (/\.docx$/i.test(document)) {
+              uploadName = 'Shivam_Mahajan_Resume.docx';
+            }
             await input.setInputFiles({
-              name: path.basename(document),
+              name: uploadName,
               mimeType: /\.pdf$/i.test(document) ? 'application/pdf' : /\.docx$/i.test(document) ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : 'application/octet-stream',
               buffer: bytes
             });
@@ -2688,6 +2700,24 @@ export class AutoApplyRunner {
               stringVal,
               descriptor + ' ' + (info.questionTitle || '') + ' ' + (action.question || '')
             );
+
+            // Ticket GEN-167: Pre-populated input value check
+            const existingVal = await input.inputValue().catch(() => '');
+            const isCurrentlyInvalid = await input
+              .evaluate((el: Element) => el.getAttribute('aria-invalid') === 'true')
+              .catch(() => false);
+            if (
+              existingVal &&
+              !isCurrentlyInvalid &&
+              (retainedText(existingVal, stringVal, info.type) || existingVal.trim() === String(stringVal).trim())
+            ) {
+              action.status = 'filled';
+              action.value = info.type === 'password' ? '' : String(value);
+              report.fieldsFilled++;
+              this.activeWatchdog?.heartbeat(`prefilled_${key}`);
+              continue;
+            }
+
             if (options.mode === 'stealth') await this.humanType(input, stringVal);
             else {
               await input.fill(stringVal);
@@ -3494,6 +3524,17 @@ export class AutoApplyRunner {
           const shadowBtn = this.page.locator('[data-autoapply-shadow-submit="true"], [data-test="footer-submit"], oc-button[data-test="footer-submit"]').first();
           if (await shadowBtn.count().catch(() => 0) > 0 && await shadowBtn.isVisible().catch(() => false)) {
             submit = shadowBtn;
+          }
+        }
+        if (!submit && this.page) {
+          // Ticket GEN-169: Child-frame submitControl piercer
+          for (const f of this.page.frames()) {
+            if (f === this.page.mainFrame()) continue;
+            const childSubmit = f.locator('button[type="submit"], input[type="submit"], #submit_app, button:has-text("Submit Application"), button:has-text("Submit"), [data-test="footer-submit"]').first();
+            if (await childSubmit.count().catch(() => 0) > 0 && await childSubmit.isVisible().catch(() => false)) {
+              submit = childSubmit;
+              break;
+            }
           }
         }
         if (!submit) {

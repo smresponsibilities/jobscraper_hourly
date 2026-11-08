@@ -39,6 +39,7 @@ import {
   computeJobPriorityScore,
 } from '../src/autoapply/priority-scheduler.js';
 import { syncHourlyFreshJobsFromOriginMain } from './sync-hourly-from-origin.js';
+import { syncAppliedJobsToOutreachTargets } from './sync-applied-to-outreach.js';
 import { evaluateCandidateJobFit } from '../src/autoapply/candidate-fit-filter.js';
 import {
   cleanStaleChromiumProfileLocks,
@@ -793,6 +794,9 @@ export async function runOvernightMarathon(config: {
             const lead = await findFreeCompanyLeads({ company: job.company, domain });
             const draft = generateColdOutreachDraft(job.company, job.title, lead, profile);
             recordOutreachLead(draft);
+          } catch {}
+          try {
+            await syncAppliedJobsToOutreachTargets(path.join(stateDir, 'queue.sqlite'));
           } catch {}
         } else if (report.status === 'paused_for_review') {
           queue.pauseForReview(job.id, report.reason);
