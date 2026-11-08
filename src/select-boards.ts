@@ -39,13 +39,18 @@ export function selectBoards(
   // ceiling yields — a board that can alert must not wait on rotation.
   const slots = Math.max(0, limit - hot.length);
 
-  // Poll times come from the board state now, not the Company row. A board the
-  // state has never heard of reads as never-polled and sorts first, which is
-  // also what makes an evicted cache degrade into a clean full sweep.
-  const polledAt = (c: Company) => boardState[boardKey(c)]?.lastPolledAt ?? '';
-
+  // Poll times come from board state.
+  // 1. Healthy boards (no failingSince streak) before failing boards
+  // 2. Oldest polled first (unpolled sorts first among healthy boards)
   const rotated = [...cold]
-    .sort((a, b) => polledAt(a).localeCompare(polledAt(b)))
+    .sort((a, b) => {
+      const stateA = boardState[boardKey(a)];
+      const stateB = boardState[boardKey(b)];
+      const failA = stateA?.failingSince ? 1 : 0;
+      const failB = stateB?.failingSince ? 1 : 0;
+      if (failA !== failB) return failA - failB;
+      return (stateA?.lastPolledAt ?? '').localeCompare(stateB?.lastPolledAt ?? '');
+    })
     .slice(0, slots);
 
   return {

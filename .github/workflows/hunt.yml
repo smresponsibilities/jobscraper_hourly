@@ -177,6 +177,10 @@ jobs:
         env:
           TEST_EMAIL: ${{ inputs.test_email && '1' || '0' }}
 
+      - name: Harvest 150+ Tier-0 Hourly Jobs
+        continue-on-error: true
+        run: npx tsx scripts/harvest-100-hourly-jobs.ts || true
+
       - name: Save seen state
         uses: actions/cache/save@v4
         if: always()

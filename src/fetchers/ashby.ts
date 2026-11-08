@@ -5,7 +5,8 @@ interface AshbyJob {
   id: string;
   title: string;
   location?: string;
-  secondaryLocations?: { location?: string }[];
+  secondaryLocations?: Array<string | { location?: string }>;
+  isRemote?: boolean;
   employmentType?: string;
   publishedAt?: string;
   jobUrl: string;
@@ -25,11 +26,12 @@ export async function list(company: Company): Promise<RawJob[]> {
     `https://api.ashbyhq.com/posting-api/job-board/${company.token}?includeCompensation=true`,
   );
   return (data.jobs ?? []).map((j) => {
-    const extra = (j.secondaryLocations ?? []).map((s) => s.location).filter(Boolean);
+    const extra = (j.secondaryLocations ?? []).map((s) => typeof s === 'string' ? s : s?.location).filter(Boolean);
+    const remote = j.isRemote ? 'Remote' : '';
     return {
       externalId: j.id,
       title: j.title,
-      location: [j.location, ...extra].filter(Boolean).join(', '),
+      location: [j.location, ...extra, remote].filter(Boolean).join(', '),
       url: j.jobUrl,
       postedAt: j.publishedAt,
       salary:

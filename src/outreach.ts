@@ -28,6 +28,8 @@
  * every reload. No fact, no mail; no near-twin bodies in one batch; the human
  * is the transport — nothing here speaks SMTP as a sender.
  */
+import fs from 'node:fs';
+import path from 'node:path';
 import http from 'node:http';
 import { createHash } from 'node:crypto';
 import { writeFile, mkdir, readFile, rm } from 'node:fs/promises';
@@ -2396,6 +2398,31 @@ async function buildBatch(): Promise<Batch> {
   const weekend = [0, 6].includes(new Date().getDay()) && process.env.OUTREACH_WEEKEND !== '1';
   if (budget > 0 && process.env.OUTREACH_NO_NEW !== '1') {
     const pool = loadCompanyPool(catalog, state);
+
+    // Wire in confirmed applied outreach targets
+    try {
+      const appliedPath = path.resolve('state/autoapply/applied-outreach-targets.json');
+      if (fs.existsSync(appliedPath)) {
+        const appliedData = JSON.parse(fs.readFileSync(appliedPath, 'utf8'));
+        const targets = Array.isArray(appliedData?.targets) ? appliedData.targets : [];
+        for (const t of targets) {
+          const comp = String(t.company || '').trim();
+          if (!comp || pool.some(p => p.company.toLowerCase() === comp.toLowerCase())) continue;
+          pool.unshift({
+            company: displayName(comp),
+            job: {
+              id: String(t.id || `applied_${comp}`),
+              title: String(t.title || 'Software Engineer'),
+              company: comp,
+              url: String(t.jobUrl || ''),
+              postedAt: String(t.appliedAt || new Date().toISOString()),
+              firstSeen: String(t.appliedAt || new Date().toISOString()),
+            },
+            lane: 'triggered',
+          });
+        }
+      }
+    } catch {}
 
     // Select targets first (cheap, deterministic), then resolve contacts for
     // all of them in parallel — serial SMTP probing made full-day builds take

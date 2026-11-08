@@ -25,7 +25,8 @@ export async function list(company: Company): Promise<RawJob[]> {
     `https://api.lever.co/v0/postings/${company.token}?mode=json`,
   );
   return postings.map((p) => {
-    const locations = p.categories?.allLocations?.join(', ') || p.categories?.location || '';
+    const allLocs = Array.isArray(p.categories?.allLocations) ? p.categories.allLocations.filter(Boolean).join(', ') : '';
+    const locations = [p.categories?.location, allLocs].filter(Boolean).join(', ');
     return {
       externalId: p.id,
       title: p.text,

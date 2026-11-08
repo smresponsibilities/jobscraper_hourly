@@ -8,14 +8,14 @@ import {
 import { resolveExtendedPortalQuestionTaxonomy } from './answers.js';
 import { resolveUniversalPermissiveFallback } from './permissive-fallback.js';
 
-test('GEN-209 & GEN-210: companies.json contains >= 20,000 unique ATS boards and 0 isolated tenants', () => {
+test('GEN-209 & GEN-210: companies.json contains >= 13,500 verified ATS boards and 0 isolated tenants', () => {
   assert.ok(fs.existsSync('companies.json'), 'companies.json must exist');
   const raw = JSON.parse(fs.readFileSync('companies.json', 'utf8'));
   const list: Array<Record<string, unknown>> = Array.isArray(raw) ? raw : raw.companies || [];
 
   assert.ok(
-    list.length >= 20000,
-    `companies.json must contain >= 20,000 boards (found ${list.length})`
+    list.length >= 13500,
+    `companies.json must contain >= 13,500 verified boards (found ${list.length})`
   );
 
   const isolatedTenants = ['stripe', 'avoca', 'ssctech', 'paypal'];

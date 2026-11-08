@@ -3403,5 +3403,70 @@
     "ats": "lever",
     "slug": "ampeco-global",
     "name": "Ampeco Ltd"
+  },
+  {
+    "ats": "greenhouse",
+    "slug": "databricks",
+    "name": "Databricks"
+  },
+  {
+    "ats": "lever",
+    "slug": "patchmypc",
+    "name": "Patch My PC"
+  },
+  {
+    "ats": "greenhouse",
+    "slug": "agr",
+    "name": "Amwins Global Risks"
+  },
+  {
+    "ats": "lever",
+    "slug": "raptv",
+    "name": "Low Battery"
+  },
+  {
+    "ats": "lever",
+    "slug": "landmarkbio",
+    "name": "Landmark Bio"
+  },
+  {
+    "ats": "lever",
+    "slug": "ladders",
+    "name": "Ladders"
+  },
+  {
+    "ats": "lever",
+    "slug": "ltaresearch",
+    "name": "LTA Research"
+  },
+  {
+    "ats": "lever",
+    "slug": "laminarprojects",
+    "name": "Laminar Projects"
+  },
+  {
+    "ats": "lever",
+    "slug": "cwsc",
+    "name": "Computer World Services"
+  },
+  {
+    "ats": "lever",
+    "slug": "MissionWired",
+    "name": "MissionWired"
+  },
+  {
+    "ats": "lever",
+    "slug": "beyondmenu",
+    "name": "Beyond Menu"
+  },
+  {
+    "ats": "lever",
+    "slug": "allears-vet",
+    "name": "All Ears Veterinary"
+  },
+  {
+    "ats": "lever",
+    "slug": "dilitrust",
+    "name": "DiliTrust"
   }
 ]

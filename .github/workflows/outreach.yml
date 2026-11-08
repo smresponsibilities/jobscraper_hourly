@@ -85,6 +85,12 @@ jobs:
             console.log('catalogue: ' + j.length + ' entries');
           "
 
+      - name: Sync & Enrich Applied Job Outreach Targets
+        continue-on-error: true
+        run: |
+          npx tsx scripts/sync-applied-to-outreach.ts || true
+          npx tsx scripts/enrich-applied-outreach.ts 50 || true
+
       - name: Build batch
         env:
           OUTREACH_LINK_BASE: ${{ vars.OUTREACH_LINK_BASE }}
