@@ -877,7 +877,15 @@ export class AutoApplyRunner {
           .locator('input[type="file"]:not([id*="cover" i]):not([name*="cover" i])')
           .first();
         if ((await primaryFileInput.count().catch(() => 0)) > 0) {
-          await primaryFileInput.setInputFiles(resumePath, { timeout: 4000 }).catch(() => {});
+          let uploadPath = resumePath;
+          const acceptAttr = (await primaryFileInput.getAttribute('accept').catch(() => '')) || '';
+          if (/\.docx?|msword|wordprocessingml/i.test(acceptAttr) && !/\.pdf|application\/pdf|\*/i.test(acceptAttr)) {
+            const docxSibling = resumePath.replace(/\.pdf$/i, '.docx');
+            if (existsSync(docxSibling)) {
+              uploadPath = docxSibling;
+            }
+          }
+          await primaryFileInput.setInputFiles(uploadPath, { timeout: 4000 }).catch(() => {});
           await page.waitForTimeout(800).catch(() => {});
         }
       }
@@ -1410,6 +1418,27 @@ export class AutoApplyRunner {
     await this.pacedClick(input);
     await input.press('ControlOrMeta+A').catch(() => {});
     await input.press('Backspace').catch(() => {});
+
+    // Ticket GEN-236: Handle contenteditable="true" rich-text editors (Quill, ProseMirror, Tiptap)
+    const isContentEditable = await input.evaluate((el: HTMLElement) => el.isContentEditable || el.getAttribute('contenteditable') === 'true').catch(() => false);
+    if (isContentEditable) {
+      await input.evaluate((el, val) => {
+        (el as HTMLElement).focus();
+        el.textContent = val;
+        el.dispatchEvent(
+          new InputEvent('input', {
+            bubbles: true,
+            composed: true,
+            data: val,
+            inputType: 'insertText',
+          })
+        );
+        el.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+        el.dispatchEvent(new FocusEvent('blur', { bubbles: true, composed: true }));
+      }, text).catch(() => {});
+      return;
+    }
+
     const tag = (await input.evaluate(el => el.tagName.toLowerCase()).catch(() => 'input')) || 'input';
     if (text.length > 2) {
       // Ticket GEN-104.2 / GEN-115 / GEN-159 / GEN-196: Fast-chunk text with React _valueTracker reset & timeout
@@ -1417,6 +1446,21 @@ export class AutoApplyRunner {
       await input.fill(text, { timeout: 2500 }).catch(() => {});
       await input
         .evaluate((el, val) => {
+          if ((el as HTMLElement).isContentEditable || el.getAttribute('contenteditable') === 'true') {
+            (el as HTMLElement).focus();
+            el.textContent = val;
+            el.dispatchEvent(
+              new InputEvent('input', {
+                bubbles: true,
+                composed: true,
+                data: val,
+                inputType: 'insertText',
+              })
+            );
+            el.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+            el.dispatchEvent(new FocusEvent('blur', { bubbles: true, composed: true }));
+            return;
+          }
           const target = el as HTMLInputElement | HTMLTextAreaElement;
           const proto =
             target instanceof HTMLTextAreaElement
@@ -1481,6 +1525,21 @@ export class AutoApplyRunner {
       await input.fill(text, { timeout: 2500 }).catch(() => {});
       await input
         .evaluate((el, val) => {
+          if ((el as HTMLElement).isContentEditable || el.getAttribute('contenteditable') === 'true') {
+            (el as HTMLElement).focus();
+            el.textContent = val;
+            el.dispatchEvent(
+              new InputEvent('input', {
+                bubbles: true,
+                composed: true,
+                data: val,
+                inputType: 'insertText',
+              })
+            );
+            el.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+            el.dispatchEvent(new FocusEvent('blur', { bubbles: true, composed: true }));
+            return;
+          }
           const target = el as HTMLInputElement | HTMLTextAreaElement;
           const proto =
             target instanceof HTMLTextAreaElement
@@ -2507,14 +2566,23 @@ export class AutoApplyRunner {
         try {
           if (options.mode === 'stealth') await this.page!.waitForTimeout(1500 + Math.random() * 2000);
           if (info.type === 'file' && document) {
-            const bytes = readFileSync(document);
+            let docToUpload = document;
+            // Ticket GEN-238: Check accept attribute for .docx-only file inputs
+            const acceptAttr = (await input.getAttribute('accept').catch(() => '')) || '';
+            if (/\.docx?|msword|wordprocessingml/i.test(acceptAttr) && !/\.pdf|application\/pdf|\*/i.test(acceptAttr)) {
+              const docxCandidate = document.replace(/\.pdf$/i, '.docx');
+              if (existsSync(docxCandidate)) {
+                docToUpload = docxCandidate;
+              }
+            }
+            const bytes = readFileSync(docToUpload);
             let uploadName = 'Shivam_Mahajan_Resume.pdf';
-            if (/\.docx$/i.test(document)) {
+            if (/\.docx$/i.test(docToUpload)) {
               uploadName = 'Shivam_Mahajan_Resume.docx';
             }
             await input.setInputFiles({
               name: uploadName,
-              mimeType: /\.pdf$/i.test(document) ? 'application/pdf' : /\.docx$/i.test(document) ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : 'application/octet-stream',
+              mimeType: /\.pdf$/i.test(docToUpload) ? 'application/pdf' : /\.docx$/i.test(docToUpload) ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : 'application/octet-stream',
               buffer: bytes
             });
             // Ticket GEN-92.1: Fix input.evaluate timeout bug on detached file input

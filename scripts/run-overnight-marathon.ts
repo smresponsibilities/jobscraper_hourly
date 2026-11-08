@@ -458,6 +458,27 @@ export async function runOvernightMarathon(config: {
     fs.writeFileSync(DEFAULT_OVERNIGHT_ERRORS_PATH, '', 'utf8');
   }
 
+  // GEN-237: Reset orphaned status = 'running' rows back to status = 'queued' across active SQLite databases
+  for (const dbPath of [path.join(stateDir, 'queue.sqlite'), 'data/queue.sqlite']) {
+    if (fs.existsSync(dbPath)) {
+      try {
+        const db = new DatabaseSync(dbPath);
+        db.exec('PRAGMA busy_timeout = 15000;');
+        const hasJobs = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='jobs'").get();
+        if (hasJobs) {
+          db.prepare("UPDATE jobs SET status = 'queued' WHERE status = 'running'").run();
+        }
+        const hasApps = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='applications'").get();
+        if (hasApps) {
+          db.prepare("UPDATE applications SET status = 'queued' WHERE status = 'running'").run();
+        }
+        db.close();
+      } catch (err) {
+        console.warn(`[MARATHON] GEN-237: Failed to reset orphaned running jobs in ${dbPath}:`, err);
+      }
+    }
+  }
+
   // Generate initial morning improvement report
   try {
     generateParkIssuesScoreboard(path.join(stateDir, 'queue.sqlite'));

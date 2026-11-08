@@ -343,7 +343,7 @@ export async function distillFormStep(frame: Frame): Promise<DistilledField[]> {
     }
   }).catch(() => {});
 
-  const controls = frame.locator('input:not([type=hidden]):not([type=submit]):not([type=button]):not([type=reset]):not([data-autoapply-skip-file="true"]),select,textarea,[role=combobox],button[aria-haspopup=listbox],button.ashby-application-form-input-yesno-option,button[data-autoapply-btngroup-option]');
+  const controls = frame.locator('input:not([type=hidden]):not([type=submit]):not([type=button]):not([type=reset]):not([data-autoapply-skip-file="true"]),select,textarea,[role=combobox],button[aria-haspopup=listbox],button.ashby-application-form-input-yesno-option,button[data-autoapply-btngroup-option],[contenteditable="true"],.ql-editor[contenteditable="true"]');
   await controls.evaluateAll(annotateQuestionClusters);
   const fields = await controls.evaluateAll(elements => {
     const splitDates = new Set<Element>();
@@ -383,12 +383,13 @@ export async function distillFormStep(frame: Frame): Promise<DistilledField[]> {
         el.getAttribute('role') === 'combobox' ||
         !!el.closest('.select-shell, .select__control')?.querySelector('button[aria-label="Toggle flyout"]') ||
         !!el.parentElement?.querySelector('button[aria-label="Toggle flyout"]');
+      const isRichText = (el as HTMLElement).isContentEditable || el.getAttribute('contenteditable') === 'true' || el.classList.contains('ql-editor');
 
       const widgetKind: WidgetKind = isAshbyBtn
         ? 'BOOLEAN_TOGGLE'
         : input.type === 'file'
         ? 'FILE_UPLOAD'
-        : el.tagName === 'TEXTAREA'
+        : el.tagName === 'TEXTAREA' || isRichText
         ? 'TEXTAREA'
         : el.closest('[data-automation-id^="formField-"]')?.querySelector('[data-automation-id="dateSectionMonth-input"]')
         ? 'DATE_SPLIT'
@@ -436,6 +437,9 @@ export async function distillFormStep(frame: Frame): Promise<DistilledField[]> {
           if (isAshbyBtn) {
             return !!box?.querySelector('.ashby-application-form-input-yesno button[aria-pressed="true"], .ashby-application-form-input-yesno button[class*="selected"], .ashby-application-form-input-yesno button[class*="active"], button[data-autoapply-btngroup-option][aria-pressed="true"], button[data-autoapply-btngroup-option][data-state="checked"], button[data-autoapply-btngroup-option][class*="selected"], button[data-autoapply-btngroup-option][class*="active"]');
           }
+          if (isRichText) {
+            return (el.textContent || '').trim().length > 0;
+          }
           const singleVal = box?.querySelector('.select__single-value, [data-automation-id="selectedItem"], [class*="singleValue"]');
           if (singleVal && (singleVal.textContent || '').trim().length > 0) return true;
           return choices.length ? choices.some(peer => (peer as HTMLInputElement).checked) : input.type === 'checkbox' ? input.checked : !!input.value;
@@ -443,6 +447,9 @@ export async function distillFormStep(frame: Frame): Promise<DistilledField[]> {
         currentValue: (() => {
           if (isAshbyBtn) {
             return (box?.querySelector('.ashby-application-form-input-yesno button[aria-pressed="true"], .ashby-application-form-input-yesno button[class*="selected"], .ashby-application-form-input-yesno button[class*="active"], button[data-autoapply-btngroup-option][aria-pressed="true"], button[data-autoapply-btngroup-option][data-state="checked"], button[data-autoapply-btngroup-option][class*="selected"], button[data-autoapply-btngroup-option][class*="active"]')?.textContent?.trim() || '');
+          }
+          if (isRichText) {
+            return (el.textContent || '').trim();
           }
           const singleVal = box?.querySelector('.select__single-value, [data-automation-id="selectedItem"], [class*="singleValue"]');
           if (singleVal && (singleVal.textContent || '').trim().length > 0) return (singleVal.textContent || '').trim();

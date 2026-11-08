@@ -428,9 +428,16 @@ export async function selectHarvestedOption(
     }
   }
 
-  // Ensure any open flyout / popup menu is closed so it doesn't block next field
-  const remainingMenu = frame.locator('.select__menu, [role="listbox"], [data-automation-id="activeListContainer"]').filter({ visible: true });
-  if (await remainingMenu.count().catch(() => 0) > 0) {
+  // GEN-235: Ensure no floating multi-select or combobox menu remains open covering subsequent fields
+  const menuStillOpen = await frame
+    .evaluate(() => {
+      const openMenu = document.querySelector(
+        '[role="listbox"], .select__menu, .select__menu-list, [class*="_listbox_" i]'
+      ) as HTMLElement | null;
+      return Boolean(openMenu && openMenu.offsetParent !== null);
+    })
+    .catch(() => false);
+  if (menuStillOpen) {
     await frame.page().keyboard.press('Escape').catch(() => {});
   }
 
