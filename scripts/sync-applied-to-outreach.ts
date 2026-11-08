@@ -3,6 +3,11 @@ import path from 'node:path';
 import dns from 'node:dns';
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
+import {
+  pickRoleTailoredProjectsSummary,
+  canSendOutreachToTarget,
+  loadOutreachLedger,
+} from '../src/outreach/outreach-ledger.js';
 
 export const POISON_EMAIL_PREFIXES = new Set([
   'security',
@@ -61,6 +66,7 @@ export function composeAppliedFollowUpPitch(company: string, roleTitle: string):
 } {
   const cleanCompany = company.trim() || 'your engineering team';
   const cleanRole = roleTitle.trim() || 'Software Engineer';
+  const tailoredProjects = pickRoleTailoredProjectsSummary(cleanRole);
   return {
     subject: `Applied: ${cleanRole} at ${cleanCompany} — Shivam Mahajan (Morgan Stanley / 9.35 CGPA)`,
     body: [
@@ -69,7 +75,7 @@ export function composeAppliedFollowUpPitch(company: string, roleTitle: string):
       `I just submitted my application for the ${cleanRole} role at ${cleanCompany} and wanted to share a brief summary of my background:`,
       ``,
       `• Morgan Stanley (Technology Apprentice, Bengaluru): Engineered Customer Identity & Access Management (CIAM) data warehouse pipelines using Apache Kafka, PySpark, Apache Spark, Hive, and Azure Snowflake (processing 5,000,000+ events with zero row-count tolerance, secured with mTLS/OAuth 2.0/RBAC) and built distributed Java Spring Boot REST APIs.`,
-      `• Engineering Projects (https://shivammahajan.com/projects/): Built a ClickHouse OLAP ingestion tool, QuizDeck (500 concurrent WebSocket users at 31ms latency), and Chaincode (placed 3rd out of 200+ teams at HackIndia).`,
+      `• Engineering Projects (https://shivammahajan.com/projects/): ${tailoredProjects}.`,
       `• Education & Consistency: B.E. CSE at Chitkara University (9.35 / 10.0 CGPA), 1,255+ consecutive days of code, and 2,600+ algorithmic problems solved.`,
       ``,
       `I am based in Bengaluru, can start immediately, and would love to chat if my background aligns with what you are building at ${cleanCompany}.`,
@@ -90,6 +96,7 @@ export function syncAppliedJobsToOutreachTargets(dbPath?: string): number {
 
   if (!fs.existsSync(resolvedDbPath)) return 0;
 
+  const ledger = loadOutreachLedger();
   let db: DatabaseSync | null = null;
   const targets: any[] = [];
   try {
@@ -107,6 +114,7 @@ export function syncAppliedJobsToOutreachTargets(dbPath?: string): number {
           const comp = p.company || 'Company';
           const title = p.title || 'Software Engineer';
           const pitch = composeAppliedFollowUpPitch(comp, title);
+          const eligibility = canSendOutreachToTarget('', comp, ledger);
           targets.push({
             id: r.id,
             company: comp,
@@ -115,20 +123,27 @@ export function syncAppliedJobsToOutreachTargets(dbPath?: string): number {
             appliedAt: p.appliedAt || new Date().toISOString(),
             subject: pitch.subject,
             body: pitch.body,
+            canSend: eligibility.allowed,
+            cooldownReason: eligibility.reason,
           });
         } catch {}
       }
     } else if (hasJobsTable) {
       const rows = db.prepare("SELECT company, title, url FROM jobs WHERE status = 'applied'").all() as any[];
       for (const r of rows) {
-        const pitch = composeAppliedFollowUpPitch(r.company || 'Company', r.title || 'Software Engineer');
+        const comp = r.company || 'Company';
+        const title = r.title || 'Software Engineer';
+        const pitch = composeAppliedFollowUpPitch(comp, title);
+        const eligibility = canSendOutreachToTarget('', comp, ledger);
         targets.push({
-          company: r.company,
-          title: r.title,
+          company: comp,
+          title,
           jobUrl: r.url,
           appliedAt: new Date().toISOString(),
           subject: pitch.subject,
           body: pitch.body,
+          canSend: eligibility.allowed,
+          cooldownReason: eligibility.reason,
         });
       }
     }
