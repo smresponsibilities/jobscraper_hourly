@@ -63,7 +63,36 @@ export function appendSectionContextIfAmbiguous(text: string, el: Element | null
 export function extractCleanQuestionText(box: Element, els: Element[] = []): string {
   const rawText = _extractRawCleanQuestionText(box, els);
   const first = els[0] || (box.matches('input,select,textarea,[role="combobox"]') ? box : box.querySelector('input,select,textarea,[role="combobox"]'));
-  return appendSectionContextIfAmbiguous(rawText, first || box);
+  let finalQ = appendSectionContextIfAmbiguous(rawText, first || box);
+
+  // GEN-263: aria-describedby format hint appender
+  const target = first || box;
+  const describedBy = target?.getAttribute?.('aria-describedby');
+  if (describedBy) {
+    const root = target.getRootNode() as Document | ShadowRoot;
+    const findById = (id: string): Element | null => {
+      if (!id) return null;
+      if (typeof (root as Document).getElementById === 'function') return (root as Document).getElementById(id);
+      try { return root.querySelector(`[id="${id.replace(/"/g, '\\\"')}"]`); } catch { return null; }
+    };
+    for (const id of describedBy.split(/\s+/).filter(Boolean)) {
+      const hintEl = findById(id);
+      const hintText = hintEl?.textContent?.replace(/\s+/g, ' ').trim() || '';
+      if (
+        hintText.length > 0 &&
+        hintText.length <= 90 &&
+        !/required|invalid|error/i.test(hintText) &&
+        /\b(?:lpa|lakhs?|inr|months|days|out\s+of\s+(?:10|4)|scale|yyyy-mm-dd|mm\/dd\/yyyy)\b/i.test(hintText)
+      ) {
+        if (!finalQ.includes(hintText)) {
+          finalQ = `${finalQ} (${hintText})`;
+        }
+        break;
+      }
+    }
+  }
+
+  return finalQ;
 }
 
 function _extractRawCleanQuestionText(box: Element, els: Element[] = []): string {
@@ -285,6 +314,26 @@ export function annotateQuestionClusters(elements: Element[]): void {
         question = `${cleanQ} (Education)`;
       } else if (el.closest('[data-automation-id="workExperienceSection"], [class*="experience" i], [id*="experience" i], [class*="employment" i]')) {
         question = `${cleanQ} (Work Experience)`;
+      }
+    }
+
+    // GEN-263: aria-describedby format hint appender
+    const describedBy = el.getAttribute('aria-describedby');
+    if (describedBy) {
+      for (const id of describedBy.split(/\s+/).filter(Boolean)) {
+        const hintEl = (root as Document).getElementById ? (root as Document).getElementById(id) : root.querySelector(`[id="${id.replace(/"/g, '\\\"')}"]`);
+        const hintText = hintEl?.textContent?.replace(/\s+/g, ' ').trim() || '';
+        if (
+          hintText.length > 0 &&
+          hintText.length <= 90 &&
+          !/required|invalid|error/i.test(hintText) &&
+          /\b(?:lpa|lakhs?|inr|months|days|out\s+of\s+(?:10|4)|scale|yyyy-mm-dd|mm\/dd\/yyyy)\b/i.test(hintText)
+        ) {
+          if (!question.includes(hintText)) {
+            question = `${question} (${hintText})`;
+          }
+          break;
+        }
       }
     }
     el.setAttribute('data-autoapply-question', question.slice(0, 1500));

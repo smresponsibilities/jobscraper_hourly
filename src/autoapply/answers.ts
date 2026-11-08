@@ -114,6 +114,20 @@ export function resolveExtendedPortalQuestionTaxonomy(
     return 'Yes, 12 LPA (Negotiable)';
   }
 
+  // Ticket GEN-264: Experience in Months (12 months = 1 year at Morgan Stanley)
+  if (
+    /\b(?:experience|internship|apprenticeship)\b.*\bin\s+months\b|\bhow\s+many\s+months\s+of\s+(?:experience|internship|work)/i.test(
+      ql
+    )
+  ) {
+    return '12';
+  }
+
+  // Ticket GEN-264: Monthly Stipend / Monthly Salary (80000 INR/month vs 1200000 annual)
+  if (/\b(?:monthly\s+(?:salary|ctc|stipend|compensation)|stipend\s+per\s+month|expected\s+stipend)\b/i.test(ql)) {
+    return '80000';
+  }
+
   // 4. Current CTC vs Expected CTC
   if (/\b(?:current|present)\s+(?:total\s+|gross\s+|fixed\s+)?(?:ctc|annual\s+compensation|base\s+salary|salary|compensation)\b/i.test(ql)) {
     return /\bin\s+(?:lpa|lakhs?)\b/i.test(ql) ? '10' : '1000000';

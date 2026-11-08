@@ -274,13 +274,72 @@ export async function harvestLiveFastAtsBoardsFromCompaniesJson(maxBoards = 500)
   return harvested;
 }
 
+const VERIFIED_WORKDAY_BENGALURU_GCCS: Array<{ name: string; origin: string; tenant: string; site: string }> = [
+  { name: 'Cisco', origin: 'https://cisco.wd5.myworkdayjobs.com', tenant: 'cisco', site: 'Cisco_Careers' },
+  { name: 'Salesforce', origin: 'https://salesforce.wd12.myworkdayjobs.com', tenant: 'salesforce', site: 'External_Career_Site' },
+  { name: 'Adobe', origin: 'https://adobe.wd5.myworkdayjobs.com', tenant: 'adobe', site: 'external_experienced' },
+  { name: 'NVIDIA', origin: 'https://nvidia.wd5.myworkdayjobs.com', tenant: 'nvidia', site: 'NVIDIAExternalCareerSite' },
+  { name: 'Mastercard', origin: 'https://mastercard.wd1.myworkdayjobs.com', tenant: 'mastercard', site: 'CorporateCareers' },
+  { name: 'NatWest Group', origin: 'https://natwest.wd3.myworkdayjobs.com', tenant: 'natwest', site: 'RBS' },
+  { name: 'AstraZeneca', origin: 'https://astrazeneca.wd3.myworkdayjobs.com', tenant: 'astrazeneca', site: 'Careers' },
+  { name: 'ServiceNow', origin: 'https://servicenow.wd1.myworkdayjobs.com', tenant: 'servicenow', site: 'Careers' },
+  { name: 'Dell', origin: 'https://dell.wd1.myworkdayjobs.com', tenant: 'dell', site: 'External' },
+];
+
+export async function harvestLiveWorkdayBengaluruGccJobs(): Promise<HarvestedJob[]> {
+  const out: HarvestedJob[] = [];
+  await Promise.all(
+    VERIFIED_WORKDAY_BENGALURU_GCCS.map(async (gcc) => {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 4500);
+      try {
+        const cxsUrl = `${gcc.origin}/wday/cxs/${gcc.tenant}/${gcc.site}/jobs`;
+        const res = await fetch(cxsUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124.0.0.0',
+          },
+          body: JSON.stringify({ appliedFacets: {}, limit: 20, offset: 0, searchText: 'Software Engineer Bengaluru' }),
+          signal: ctrl.signal,
+        });
+        if (!res.ok) return;
+        const data = (await res.json().catch(() => null)) as any;
+        const postings = Array.isArray(data?.jobPostings) ? data.jobPostings : [];
+        for (const p of postings) {
+          if (!p.externalPath || !p.title) continue;
+          const loc = String(p.locationsText || 'Bengaluru, India');
+          const url = `${gcc.origin}/${gcc.site}${p.externalPath}`;
+          out.push({
+            company: gcc.name,
+            title: String(p.title),
+            location: loc,
+            url,
+            ats: 'workday',
+          });
+        }
+      } catch {
+        // Ignore single GCC timeout
+      } finally {
+        clearTimeout(timer);
+      }
+    })
+  );
+  return out;
+}
+
 export async function runHourly100JobsHarvester(): Promise<{
   databasesUpdated: string[];
   rawHarvested: number;
   targetFitMatched: number;
   insertedOrBoosted: number;
 }> {
-  const liveJobs = await harvestLiveFastAtsBoardsFromCompaniesJson(500);
+  const [fastAtsJobs, workdayJobs] = await Promise.all([
+    harvestLiveFastAtsBoardsFromCompaniesJson(500),
+    harvestLiveWorkdayBengaluruGccJobs().catch(() => []),
+  ]);
+  const liveJobs = [...fastAtsJobs, ...workdayJobs];
   const fitJobs: HarvestedJob[] = [];
 
   for (const j of liveJobs) {

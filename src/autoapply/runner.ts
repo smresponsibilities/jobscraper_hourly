@@ -1256,7 +1256,7 @@ export class AutoApplyRunner {
     this.attachNetworkReceiptListener(page);
     page.on('framenavigated', frame => this.frameEpochs.set(frame, (this.frameEpochs.get(frame) || 0) + 1));
     page.on('request', request => {
-      if (['xhr', 'fetch'].includes(request.resourceType()) && !/analytics|telemetry|sentry|datadog|segment|linkedin\.com|doubleclick|googletagmanager|google-analytics|hotjar|\/collect(?:\?|$)/i.test(request.url())) this.dependentRequests.set(request, { epoch: this.frameEpochs.get(request.frame()) || 0 });
+      if (['xhr', 'fetch'].includes(request.resourceType()) && !/sentry\.io|datadog|google-analytics|googletagmanager|doubleclick|segment\.io|segment|amplitude|mixpanel|hotjar|intercom|clarity\.ms|linkedin\.com\/px|facebook\.net|fullstory|bugsnag|hs-analytics|optimizely|newrelic|telemetry|\/collect(?:\?|$)/i.test(request.url())) this.dependentRequests.set(request, { epoch: this.frameEpochs.get(request.frame()) || 0 });
     });
     page.on('response', response => {
       const pending = this.dependentRequests.get(response.request());
@@ -3177,10 +3177,23 @@ export class AutoApplyRunner {
       }
     }
     if (!converged) {
-      const pending = [...this.dependentRequests].map(([request, response]) => {
-        const url = new URL(request.url());
-        return `${request.method()} ${url.hostname} route#${sha256(url.pathname).slice(0, 12)} ${response.status || 'awaiting-headers'} ${response.contentType || ''}`;
-      });
+      // Ticket GEN-265: Check this.receipt() before ever throwing "Waiting for application requests to finish"
+      const confirmedReceipt = (await this.receipt().catch(() => undefined));
+      if (confirmedReceipt) {
+        report.receipt = confirmedReceipt;
+        report.status = 'submitted';
+        report.reason = 'Submission confirmation observed';
+        return;
+      }
+
+      // Filter out any 3rd-party analytics beacons that slipped into dependentRequests
+      const ANALYTICS_BEACONS_REGEX = /sentry\.io|datadog|google-analytics|googletagmanager|doubleclick|segment\.io|amplitude|mixpanel|hotjar|intercom|clarity\.ms|linkedin\.com\/px|facebook\.net|fullstory|bugsnag|hs-analytics|optimizely|newrelic/i;
+      const pending = [...this.dependentRequests]
+        .filter(([req]) => !ANALYTICS_BEACONS_REGEX.test(req.url()))
+        .map(([request, response]) => {
+          const url = new URL(request.url());
+          return `${request.method()} ${url.hostname} route#${sha256(url.pathname).slice(0, 12)} ${response.status || 'awaiting-headers'} ${response.contentType || ''}`;
+        });
       this.log(`Pending application requests: ${[...new Set(pending)].join(', ') || 'none'}`);
       if (pending.length) {
         report.reviewKind = 'network';
