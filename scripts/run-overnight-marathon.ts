@@ -370,6 +370,7 @@ export async function runOvernightMarathon(config: {
   try {
     generateParkIssuesScoreboard(path.join(stateDir, 'queue.sqlite'));
     compileMorningImprovementReport();
+    syncAppliedJobsToOutreachTargets(path.join(stateDir, 'queue.sqlite'));
   } catch {}
 
   const marathonStartMs = Date.now();
@@ -938,6 +939,7 @@ export async function runOvernightMarathon(config: {
         generateParkIssuesScoreboard(path.join(stateDir, 'queue.sqlite'));
         const rep = compileMorningImprovementReport();
         console.log(`[MARATHON] [REPORT] Morning Improvement Report updated at out/MORNING-IMPROVEMENT-REPORT.md.`);
+        syncAppliedJobsToOutreachTargets(path.join(stateDir, 'queue.sqlite'));
       } catch (err) {
         console.error('[MARATHON] Failed compiling improvement report:', err);
       }

@@ -140,6 +140,52 @@ export async function healInvalidFieldsAndRetrySubmit(
       }
     }
 
+    // 4. Ticket GEN-184: Heal any required or aria-invalid <select> that still has no value across Light + Shadow DOM
+    for (const el of allDomNodes) {
+      if (el instanceof HTMLSelectElement) {
+        const sel = el as HTMLSelectElement;
+        if (sel.value && sel.getAttribute('aria-invalid') !== 'true') continue;
+        const validOpt = Array.from(sel.options).find(
+          (o) => !o.disabled && o.value.trim() !== '' && !/^(?:select|choose|--|none)/i.test(o.text.trim())
+        );
+        if (validOpt) {
+          sel.value = validOpt.value;
+          sel.selectedIndex = validOpt.index;
+          sel.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+          sel.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+          fixed++;
+        }
+      }
+    }
+
+    // 5. Ticket GEN-184: Heal any unchecked required radio group across Light + Shadow DOM
+    const radios = allDomNodes.filter((n): n is HTMLInputElement => n instanceof HTMLInputElement && n.type === 'radio');
+    const groups = new Map<string, HTMLInputElement[]>();
+    for (const r of radios) {
+      if (!r.name) continue;
+      const list = groups.get(r.name) || [];
+      list.push(r);
+      groups.set(r.name, list);
+    }
+    for (const [, group] of groups) {
+      if (group.some((r) => r.checked)) continue;
+      const isGroupInvalidOrReq = group.some(
+        (r) =>
+          r.required ||
+          r.getAttribute('aria-invalid') === 'true' ||
+          r.closest('[aria-invalid="true"], .field-error, [class*="error" i]')
+      );
+      if (isGroupInvalidOrReq && group.length > 0) {
+        const preferred =
+          group.find((r) => /^(?:yes|no|i do not wish|prefer not)/i.test((r.closest('label')?.textContent || r.value || '').trim())) ||
+          group[0];
+        if (preferred) {
+          preferred.click();
+          fixed++;
+        }
+      }
+    }
+
     return fixed;
   }, [profileEmail, phone]).catch(() => 0);
 
@@ -718,24 +764,38 @@ export class AutoApplyRunner {
           role: (inp.getAttribute('role') || '').toLowerCase(),
           inputMode: (inp.getAttribute('inputmode') || '').toLowerCase(),
           placeholder: (inp.getAttribute('placeholder') || '').toLowerCase(),
+          min: inp.getAttribute('min') || '',
+          max: inp.getAttribute('max') || '',
         };
       })
-      .catch(() => ({ type: '', role: '', inputMode: '', placeholder: '' }));
+      .catch(() => ({ type: '', role: '', inputMode: '', placeholder: '', min: '', max: '' }));
 
-    // GEN-153: Strict numeric input sanitizer
+    // GEN-153 & GEN-184: Strict numeric input sanitizer with min/max clamping
     if (meta.type === 'number' || meta.role === 'spinbutton' || meta.inputMode === 'numeric') {
+      const clampNumeric = (numStr: string): string => {
+        let n = Number(numStr);
+        if (!Number.isFinite(n)) n = 1;
+        if (meta.min !== '' && Number.isFinite(Number(meta.min)) && n < Number(meta.min)) {
+          n = Number(meta.min);
+        }
+        if (meta.max !== '' && Number.isFinite(Number(meta.max)) && n > Number(meta.max)) {
+          n = Number(meta.max);
+        }
+        return String(n);
+      };
+
       if (/^(?:immediate|immediately|now|none|no|n\/a|false)$/i.test(val)) {
-        return '0';
+        return clampNumeric('0');
       }
       if (/lpa|lakh/i.test(val)) {
         const asksInLakhs = /\bin\s+(?:lpa|lakhs?)\b|\(lpa\)/i.test(questionText);
-        return asksInLakhs ? '12' : '1200000';
+        return clampNumeric(asksInLakhs ? '12' : '1200000');
       }
       const numMatch = val.match(/-?\d+(?:\.\d+)?/);
       if (numMatch) {
-        return numMatch[0];
+        return clampNumeric(numMatch[0]);
       }
-      return '1';
+      return clampNumeric('1');
     }
 
     // GEN-154: Strict URL input sanitizer

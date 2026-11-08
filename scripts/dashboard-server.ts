@@ -1891,6 +1891,26 @@ export function startDashboardServer(port = PORT): http.Server {
       return;
     }
 
+    if (url.pathname === '/api/outreach-targets') {
+      try {
+        const outreachPath = path.resolve('state/autoapply/applied-outreach-targets.json');
+        let data = { count: 0, targets: [] };
+        if (fs.existsSync(outreachPath)) {
+          data = JSON.parse(fs.readFileSync(outreachPath, 'utf8'));
+        }
+        res.writeHead(200, {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Cache-Control': 'no-store, no-cache, must-revalidate',
+          'Access-Control-Allow-Origin': '*',
+        });
+        res.end(JSON.stringify(data));
+      } catch (err: any) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err?.message || 'Error loading outreach targets' }));
+      }
+      return;
+    }
+
     if (url.pathname === '/api/hourly-jobs') {
       try {
         const data = cachedHourlyJobsData || getHourlyJobsData();

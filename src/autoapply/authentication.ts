@@ -565,6 +565,27 @@ export async function authenticateWorkdayPortal(
           await fillAndSubmitSignIn(email, password);
         }
         await completeInPageEmailVerificationIfPrompted(page, page.mainFrame());
+
+        // Ticket GEN-185: If Sign In failed on existing account, fall back to +alias Create Account immediately
+        if ((await getVisiblePasswordInputs().count().catch(() => 0)) > 0) {
+          let aliasEmail = makeGmailTenantAlias(email, page.url());
+          if (aliasEmail === email && email.includes('@')) {
+            const [l, d] = email.split('@');
+            aliasEmail = `${l}+wd${Date.now().toString().slice(-4)}@${d}`;
+          }
+          const createLink = page
+            .locator(
+              '[data-automation-id="createAccountLink"], button:has-text("Create Account"), a:has-text("Create Account")'
+            )
+            .filter({ visible: true })
+            .first();
+          if (await createLink.isVisible().catch(() => false)) {
+            await createLink.click({ force: true, timeout: 5000 }).catch(() => {});
+            await page.waitForTimeout(1000);
+            await fillAndSubmitCreateAccount(aliasEmail, password);
+            await completeInPageEmailVerificationIfPrompted(page, page.mainFrame());
+          }
+        }
       }
     } else if ((await getVisiblePasswordInputs().count().catch(() => 0)) === 0) {
       markWorkdayHostVerified(currentHost);
@@ -600,24 +621,26 @@ export async function authenticateWorkdayPortal(
     }
   }
 
-  // TICKET GEN-74: Gmail +alias bypass if both Sign In and Create Account failed with base email
+  // TICKET GEN-74 & GEN-185: Gmail +alias bypass if both Sign In and Create Account failed with base email
   if ((await getVisiblePasswordInputs().count().catch(() => 0)) > 0) {
-    const aliasEmail = makeGmailTenantAlias(email, page.url());
-    if (aliasEmail !== email) {
-      const createLink = page
-        .locator(
-          '[data-automation-id="createAccountLink"], button:has-text("Create Account"), a:has-text("Create Account")'
-        )
-        .filter({ visible: true })
-        .first();
-      if (await createLink.isVisible().catch(() => false)) {
-        await createLink.click({ force: true, timeout: 5000 }).catch(() => {});
-        await page.waitForTimeout(1000);
-      }
-      await fillAndSubmitCreateAccount(aliasEmail, password);
-      const verified = await completeInPageEmailVerificationIfPrompted(page, page.mainFrame());
-      if (verified) await postVerifyWorkdaySignIn();
+    let aliasEmail = makeGmailTenantAlias(email, page.url());
+    if (aliasEmail === email && email.includes('@')) {
+      const [l, d] = email.split('@');
+      aliasEmail = `${l}+wd${Date.now().toString().slice(-4)}@${d}`;
     }
+    const createLink = page
+      .locator(
+        '[data-automation-id="createAccountLink"], button:has-text("Create Account"), a:has-text("Create Account")'
+      )
+      .filter({ visible: true })
+      .first();
+    if (await createLink.isVisible().catch(() => false)) {
+      await createLink.click({ force: true, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(1000);
+    }
+    await fillAndSubmitCreateAccount(aliasEmail, password);
+    const verified = await completeInPageEmailVerificationIfPrompted(page, page.mainFrame());
+    if (verified) await postVerifyWorkdaySignIn();
   }
 
   const finalPwCount = await getVisiblePasswordInputs().count().catch(() => 0);
