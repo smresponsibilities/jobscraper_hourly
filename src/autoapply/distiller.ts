@@ -46,7 +46,27 @@ function isCleanQuestionCandidate(txt: string | null | undefined): boolean {
   return true;
 }
 
+export function appendSectionContextIfAmbiguous(text: string, el: Element | null): string {
+  if (!el || !text) return text;
+  const clean = text.replace(/\s+/g, ' ').trim();
+  if (/^(?:from|to|start\s*date|end\s*date|start\s*year|end\s*year|start\s*month|end\s*month|month|year|date|location|city|description|role\s*description)\s*\*?$/i.test(clean)) {
+    if (el.closest('[data-automation-id="educationSection"], [class*="education" i], [id*="education" i]')) {
+      return `${clean} (Education)`;
+    }
+    if (el.closest('[data-automation-id="workExperienceSection"], [class*="experience" i], [id*="experience" i], [class*="employment" i]')) {
+      return `${clean} (Work Experience)`;
+    }
+  }
+  return clean;
+}
+
 export function extractCleanQuestionText(box: Element, els: Element[] = []): string {
+  const rawText = _extractRawCleanQuestionText(box, els);
+  const first = els[0] || (box.matches('input,select,textarea,[role="combobox"]') ? box : box.querySelector('input,select,textarea,[role="combobox"]'));
+  return appendSectionContextIfAmbiguous(rawText, first || box);
+}
+
+function _extractRawCleanQuestionText(box: Element, els: Element[] = []): string {
   const root = box.getRootNode() as Document | ShadowRoot;
   const findById = (id: string): Element | null => {
     if (!id) return null;
@@ -259,6 +279,14 @@ export function annotateQuestionClusters(elements: Element[]): void {
         question = fallback.replace(/\s+/g, ' ').trim();
       }
     }
+    const cleanQ = question.replace(/\s+/g, ' ').trim();
+    if (/^(?:from|to|start\s*date|end\s*date|start\s*year|end\s*year|start\s*month|end\s*month|month|year|date|location|city|description|role\s*description)\s*\*?$/i.test(cleanQ)) {
+      if (el.closest('[data-automation-id="educationSection"], [class*="education" i], [id*="education" i]')) {
+        question = `${cleanQ} (Education)`;
+      } else if (el.closest('[data-automation-id="workExperienceSection"], [class*="experience" i], [id*="experience" i], [class*="employment" i]')) {
+        question = `${cleanQ} (Work Experience)`;
+      }
+    }
     el.setAttribute('data-autoapply-question', question.slice(0, 1500));
     el.setAttribute('data-autoapply-target', String(controls.indexOf(el)));
     box.setAttribute('data-autoapply-cluster', String(controls.indexOf(el)));
@@ -384,7 +412,15 @@ export async function distillFormStep(frame: Frame): Promise<DistilledField[]> {
         ? Array.from((el as HTMLSelectElement).options).map(option => option.textContent || '')
         : choices.map(peer => Array.from((peer as HTMLInputElement).labels || []).map(label => label.textContent || '').join(' ') || (peer as HTMLInputElement).value);
       const target = el.getAttribute('data-autoapply-target');
-      const question = el.getAttribute('data-autoapply-question') || el.getAttribute('aria-label') || Array.from(input.labels || []).map(label => label.textContent).join(' ') || input.name || el.id || 'Field';
+      let question = el.getAttribute('data-autoapply-question') || el.getAttribute('aria-label') || Array.from(input.labels || []).map(label => label.textContent).join(' ') || input.name || el.id || 'Field';
+      const cleanQ = question.replace(/\s+/g, ' ').trim();
+      if (/^(?:from|to|start\s*date|end\s*date|start\s*year|end\s*year|start\s*month|end\s*month|month|year|date|location|city|description|role\s*description)\s*\*?$/i.test(cleanQ)) {
+        if (el.closest('[data-automation-id="educationSection"], [class*="education" i], [id*="education" i]')) {
+          question = `${cleanQ} (Education)`;
+        } else if (el.closest('[data-automation-id="workExperienceSection"], [class*="experience" i], [id*="experience" i], [class*="employment" i]')) {
+          question = `${cleanQ} (Work Experience)`;
+        }
+      }
       return {
         refKey: [el.id, input.name, target, question].join('|'),
         questionText: question.trim(),

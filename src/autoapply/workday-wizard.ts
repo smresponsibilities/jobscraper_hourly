@@ -15,7 +15,10 @@ export async function fillWorkdaySpinbuttonDates(frame: Frame): Promise<number> 
     const headingText = (await frame.locator('h1, h2, [data-automation-id="pageHeaderTitle"]').allTextContents().catch(() => [])).join(' ').toLowerCase();
     const fullContext = `${text} ${headingText}`;
 
-    const isEducation = /education|school|university|degree/i.test(fullContext) && !/self[-_\s]*identify|disability|signature/i.test(fullContext);
+    const inEducation = await field.evaluate((el) => Boolean(el.closest('[data-automation-id="educationSection"], [class*="education" i]'))).catch(() => false);
+    const inWorkExp = await field.evaluate((el) => Boolean(el.closest('[data-automation-id="workExperienceSection"], [class*="experience" i], [class*="employment" i]'))).catch(() => false);
+
+    const isEducation = inEducation || (/education|school|university|degree/i.test(fullContext) && !/self[-_\s]*identify|disability|signature/i.test(fullContext));
     const isStart = /from|start/i.test(text);
     const isSignatureOrToday = /self[-_\s]*identify|disability|signature|today|date\s+signed/i.test(fullContext) || (/date/i.test(text) && !/from|to|start|end/i.test(text));
 
@@ -31,6 +34,10 @@ export async function fillWorkdaySpinbuttonDates(frame: Frame): Promise<number> 
     } else if (isEducation) {
       month = isStart ? '08' : '06';
       year = isStart ? '2022' : '2026';
+    } else if (inWorkExp || /work\s*experience|employment|job/i.test(fullContext)) {
+      // Work experience (Morgan Stanley: Aug 2025 - Aug 2026)
+      month = '08';
+      year = isStart ? '2025' : '2026';
     } else {
       // Work experience (Morgan Stanley: Aug 2025 - Aug 2026)
       month = '08';
@@ -176,6 +183,19 @@ export async function runWorkdayStepFastPass(frame: Frame, resumePdfPath?: strin
     'Chitkara University',
     ['Chitkara', 'Other', 'India', 'University']
   );
+
+  // Ticket GEN-230: Workday Step 2 "I currently work here" checkbox physics
+  const workExpSection = frame.locator('[data-automation-id="workExperienceSection"]').first();
+  if (await workExpSection.isVisible().catch(() => false)) {
+    const currentlyWorkHere = workExpSection.locator('input[data-automation-id="currentlyWorkHere"], [data-automation-id="currentlyWorkHere"] input[type="checkbox"], [data-automation-id="currentlyWorkHere"]').filter({ visible: true }).first();
+    if (await currentlyWorkHere.isVisible().catch(() => false)) {
+      const isChecked = await currentlyWorkHere.isChecked().catch(() => false);
+      if (!isChecked) {
+        await currentlyWorkHere.click({ force: true, timeout: 2000 }).catch(() => {});
+        await frame.waitForTimeout(250);
+      }
+    }
+  }
 
   // 5. Fill all Workday MM/DD/YYYY spinbutton date clusters
   await fillWorkdaySpinbuttonDates(frame);

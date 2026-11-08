@@ -709,12 +709,57 @@ export class AutoApplyRunner {
       }
     }
 
-    // Ticket GEN-158 & GEN-224: Greenhouse Remix Collapsed Form Expander & Embed Fallback
+    // Ticket GEN-158, GEN-224 & GEN-228: Greenhouse Remix Collapsed Form Expander & Safe Embed Fallback
     const effectiveUrl = page.url() || fallbackUrl || '';
     const ghMatch = effectiveUrl.match(/(?:boards|job-boards(?:\.eu)?)\.greenhouse\.io\/([^/?#]+)\/jobs\/(\d+)/i) ||
                     (fallbackUrl ? fallbackUrl.match(/(?:boards|job-boards(?:\.eu)?)\.greenhouse\.io\/([^/?#]+)\/jobs\/(\d+)/i) : null);
 
-    if (/greenhouse\.io/i.test(page.url()) || ghMatch) {
+    if (/greenhouse\.io\/embed\/job_app/i.test(page.url())) {
+      const embedCount = await page.evaluate(() => {
+        return document.querySelectorAll('input:not([type="hidden"]), textarea, select, [role="combobox"]').length;
+      }).catch(() => 0);
+
+      if (embedCount < 2) {
+        const ready = await page.waitForFunction(() => {
+          return document.querySelectorAll('input:not([type="hidden"]), textarea, select, [role="combobox"]').length >= 2;
+        }, { timeout: 3500 }).then(() => true).catch(() => false);
+
+        if (!ready) {
+          let forSlug = '';
+          let tokenJobId = '';
+          try {
+            const u = new URL(page.url());
+            forSlug = u.searchParams.get('for') || '';
+            tokenJobId = u.searchParams.get('token') || '';
+          } catch {}
+          if (!forSlug && ghMatch) {
+            forSlug = ghMatch[1] || '';
+            tokenJobId = ghMatch[2] || '';
+          }
+          if (forSlug && tokenJobId) {
+            const hostedUrl = `https://job-boards.greenhouse.io/${encodeURIComponent(forSlug)}/jobs/${encodeURIComponent(tokenJobId)}`;
+            await page.goto(hostedUrl, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
+            const applyBtn = page.locator('button.btn--pill:has-text("Apply"), button:has-text("Apply"), a.btn--pill:has-text("Apply")').first();
+            if (await applyBtn.isVisible().catch(() => false)) {
+              await applyBtn.click({ timeout: 3000 }).catch(() => {});
+            }
+            await page
+              .evaluate(() => {
+                const formEl = document.querySelector('#application-form, #application_form, #app');
+                if (formEl) formEl.scrollIntoView({ block: 'start' });
+              })
+              .catch(() => {});
+          }
+        }
+      }
+    } else if (/greenhouse\.io/i.test(page.url()) || ghMatch) {
+      await page
+        .evaluate(() => {
+          const formEl = document.querySelector('#application-form, #application_form, #app');
+          if (formEl) formEl.scrollIntoView({ block: 'start' });
+        })
+        .catch(() => {});
+
       let ghVisibleInputCount = await page
         .evaluate(() => {
           const inputs = Array.from(
@@ -747,6 +792,13 @@ export class AutoApplyRunner {
           }
         }
         await page
+          .evaluate(() => {
+            const formEl = document.querySelector('#application-form, #application_form, #app');
+            if (formEl) formEl.scrollIntoView({ block: 'start' });
+          })
+          .catch(() => {});
+
+        await page
           .locator('#first_name, #email, #application-form input:not([type="hidden"]), input:not([type="hidden"])')
           .first()
           .waitFor({ state: 'visible', timeout: 5000 })
@@ -767,21 +819,69 @@ export class AutoApplyRunner {
           .catch(() => 0);
       }
 
-      // Ticket GEN-224: If visible inputs remain < 2 or redirected away, immediately redirect to embed URL
+      // Ticket GEN-224 & GEN-228: If visible inputs remain < 2 or redirected away, immediately redirect to embed URL
       if (ghVisibleInputCount < 2 && ghMatch && ghMatch[1] && ghMatch[2]) {
         const ghSlug = ghMatch[1];
         const ghJobId = ghMatch[2];
         const embedUrl = `https://boards.greenhouse.io/embed/job_app?for=${encodeURIComponent(ghSlug)}&token=${encodeURIComponent(ghJobId)}`;
         try {
           await page.goto(embedUrl, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
-          await page
+          const embedInputs = await page
             .locator('#first_name, #email, input:not([type="hidden"])')
             .first()
-            .waitFor({ state: 'visible', timeout: 5000 })
-            .catch(() => {});
+            .waitFor({ state: 'visible', timeout: 3500 })
+            .then(() => true)
+            .catch(() => false);
+
+          if (!embedInputs) {
+            // Embed disabled on this board! Fall back to hosted board
+            const hostedUrl = `https://job-boards.greenhouse.io/${encodeURIComponent(ghSlug)}/jobs/${encodeURIComponent(ghJobId)}`;
+            await page.goto(hostedUrl, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
+            const applyBtn = page.locator('button.btn--pill:has-text("Apply"), button:has-text("Apply"), a.btn--pill:has-text("Apply")').first();
+            if (await applyBtn.isVisible().catch(() => false)) {
+              await applyBtn.click({ timeout: 3000 }).catch(() => {});
+            }
+            await page
+              .evaluate(() => {
+                const formEl = document.querySelector('#application-form, #application_form, #app');
+                if (formEl) formEl.scrollIntoView({ block: 'start' });
+              })
+              .catch(() => {});
+          }
         } catch {}
       }
     }
+  }
+
+  /**
+   * Ticket GEN-231: Pre-Submit Resume Upload Guarantee.
+   * If any dropzone/file-input was missed during step filling, ensure primary resume is uploaded before submit.
+   */
+  private async ensureResumeUploadedBeforeSubmit(page: Page, resumePath?: string): Promise<void> {
+    if (!resumePath) return;
+    try {
+      const needsUpload = await page
+        .evaluate(() => {
+          const fileInputs = Array.from(document.querySelectorAll<HTMLInputElement>('input[type="file"]'));
+          if (fileInputs.length === 0) return false;
+          // If any file input already has files attached, or page shows ".pdf" / ".docx" uploaded pill, skip
+          if (fileInputs.some((inp) => inp.files && inp.files.length > 0)) return false;
+          const bodyTxt = (document.body?.innerText || '').toLowerCase();
+          if (bodyTxt.includes('shivam_mahajan_resume.pdf') || bodyTxt.includes('remove file')) return false;
+          return true;
+        })
+        .catch(() => false);
+
+      if (needsUpload) {
+        const primaryFileInput = page
+          .locator('input[type="file"]:not([id*="cover" i]):not([name*="cover" i])')
+          .first();
+        if ((await primaryFileInput.count().catch(() => 0)) > 0) {
+          await primaryFileInput.setInputFiles(resumePath, { timeout: 4000 }).catch(() => {});
+          await page.waitForTimeout(800).catch(() => {});
+        }
+      }
+    } catch {}
   }
 
   /**
@@ -2735,12 +2835,35 @@ export class AutoApplyRunner {
             }
             if (!matchBestOption(value, [{ value: info.value, label: info.optionLabel }])) { action.status = 'skipped'; continue; }
             if (await input.getAttribute('role') === 'radio') {
-              if (options.mode === 'stealth') await this.pacedClick(input); else await input.click();
+              if (options.mode === 'stealth') await this.pacedClick(input); else await input.click({ force: true }).catch(() => {});
               if (await input.getAttribute('aria-checked') !== 'true') throw new Error('Radio option did not retain selection');
             } else {
               if (options.mode === 'stealth') await this.approach(input);
-              try { await input.check(); } catch { await this.page!.keyboard.press('Escape').catch(() => {}); await input.check({ force: true }).catch(() => {}); }
-              if (!await input.isChecked()) throw new Error('Radio option did not retain selection');
+              // Ticket GEN-233: Zero-Interception <label> click + .checked = true setter for styled radio
+              await input
+                .evaluate((el) => {
+                  const inp = el as HTMLInputElement;
+                  const doc = inp.ownerDocument;
+                  const lbl =
+                    inp.closest('label') ||
+                    (inp.id && typeof CSS !== 'undefined' && typeof CSS.escape === 'function' && doc
+                      ? doc.querySelector<HTMLElement>(`label[for="${CSS.escape(inp.id)}"]`)
+                      : null);
+                  if (lbl) {
+                    lbl.click();
+                  } else {
+                    inp.click();
+                  }
+                  if (!inp.checked) {
+                    inp.checked = true;
+                    inp.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+                    inp.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+                  }
+                })
+                .catch(async () => {
+                  await input.check({ force: true }).catch(() => {});
+                });
+              if (!await input.isChecked().catch(() => true)) throw new Error('Radio option did not retain selection');
             }
           } else if (info.type === 'checkbox') {
             if (yesNo) {
@@ -2796,17 +2919,32 @@ export class AutoApplyRunner {
               if (await option.getAttribute('aria-pressed') !== 'true' && await option.getAttribute('aria-checked') !== 'true' && !(targetBool && await input.isChecked())) throw new Error('Yes/No option did not retain selection');
             } else {
               if (options.mode === 'stealth') await this.approach(input);
-              try {
-                await input.setChecked(targetBool);
-              } catch {
-                await input.evaluate((el: HTMLInputElement, wanted: boolean) => {
-                  if (el.checked !== wanted) {
-                    const lbl = el.closest('label') || el.ownerDocument.querySelector(`label[for="${el.id}"]`);
-                    if (lbl) (lbl as HTMLElement).click();
-                    else el.click();
+              // Ticket GEN-233: Zero-Interception <label> click + .checked = true setter for styled checkbox
+              await input
+                .evaluate((el, wanted) => {
+                  const inp = el as HTMLInputElement;
+                  const doc = inp.ownerDocument;
+                  if (inp.checked !== wanted) {
+                    const lbl =
+                      inp.closest('label') ||
+                      (inp.id && typeof CSS !== 'undefined' && typeof CSS.escape === 'function' && doc
+                        ? doc.querySelector<HTMLElement>(`label[for="${CSS.escape(inp.id)}"]`)
+                        : null);
+                    if (lbl) {
+                      lbl.click();
+                    } else {
+                      inp.click();
+                    }
+                    if (inp.checked !== wanted) {
+                      inp.checked = wanted;
+                      inp.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+                      inp.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+                    }
                   }
-                }, targetBool).catch(() => {});
-              }
+                }, targetBool)
+                .catch(async () => {
+                  await input.setChecked(targetBool, { force: true }).catch(() => {});
+                });
             }
           } else if (info.tag === 'button' && (info.type === 'button' || !info.type) && await input.evaluate(el => el.classList.contains('ashby-application-form-input-yesno-option') || el.hasAttribute('data-autoapply-btngroup-option') || !!el.closest('.ashby-application-form-input-yesno, [role="radiogroup"]'))) {
             const cluster = input.locator('..');
@@ -3812,6 +3950,11 @@ export class AutoApplyRunner {
             report.fieldsFilled || 0,
             pacingCapMs
           ).catch(() => 0);
+
+          // Ticket GEN-231: Pre-Submit Resume Upload Guarantee
+          const activeResumePath = options.profile?.documents?.resume ||
+            (existsSync(path.resolve('state/autoapply/resumes', 'Shivam_Mahajan_Resume_swe.pdf')) ? path.resolve('state/autoapply/resumes', 'Shivam_Mahajan_Resume_swe.pdf') : undefined);
+          await this.ensureResumeUploadedBeforeSubmit(this.page, activeResumePath);
         }
         if (!await reserveStateAction(this.page!.mainFrame(), submit, 'submit')) { report.reason = 'Submit already dispatched on this form state'; break; }
         report.submittedFields = [];

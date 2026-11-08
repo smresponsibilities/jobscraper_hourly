@@ -57,13 +57,31 @@ export function resolveExtendedPortalQuestionTaxonomy(
   const q = String(questionText || '').trim();
   if (!q) return undefined;
 
+  const ql = q.toLowerCase();
+
+  // Ticket GEN-229: Section-Scoped Education vs Work Experience Dates
+  if (/\(education\)/i.test(ql)) {
+    if (/\b(?:start|from|begin)\b/i.test(ql)) {
+      return /year/i.test(ql) ? '2022' : /month/i.test(ql) ? '08' : widgetKind === 'date' ? '2022-08-01' : '08/2022';
+    }
+    if (/\b(?:end|to|graduation|completion)\b/i.test(ql)) {
+      return /year/i.test(ql) ? '2026' : /month/i.test(ql) ? '08' : widgetKind === 'date' ? '2026-08-01' : '08/2026';
+    }
+  }
+  if (/\(work\s+experience\)/i.test(ql)) {
+    if (/\b(?:start|from|begin)\b/i.test(ql)) {
+      return /year/i.test(ql) ? '2025' : /month/i.test(ql) ? '08' : widgetKind === 'date' ? '2025-08-01' : '08/2025';
+    }
+    if (/\b(?:end|to|completion)\b/i.test(ql)) {
+      return /year/i.test(ql) ? '2026' : /month/i.test(ql) ? '08' : widgetKind === 'date' ? '2026-08-01' : '08/2026';
+    }
+  }
+
   // Ticket GEN-212: 1,050+ Question Portal Ontology Engine
   const bankHit = lookupQuestionIn1000Bank(q, widgetKind);
   if (bankHit !== undefined) {
     return bankHit;
   }
-
-  const ql = q.toLowerCase();
 
   // 1. Export Control / Sanctioned Countries / Debarment (Must be "No"!)
   if (

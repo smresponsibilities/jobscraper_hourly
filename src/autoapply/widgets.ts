@@ -352,37 +352,40 @@ export async function selectHarvestedOption(
     if (await popup.count() === 0) return false;
   }
 
-  const matchOptions = popup.locator('[role="option"], .select__option, [data-automation-id="promptOption"], [class*="_option_"], spl-select-option');
-  let choice = popup.getByRole('option', { name: option, exact: true }).or(
-    matchOptions.filter({ hasText: new RegExp(`^${option.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') })
+  const matchOptions = popup.locator('[role="option"], .select__option, [data-automation-id="promptOption"], [class*="_option_"], spl-select-option, li[role="option"]');
+
+  // Ticket GEN-217 & GEN-232: Pre-translate canonical answer against available DOM options
+  let targetOption = option;
+  const allLabels = await matchOptions.allInnerTexts().catch(() => []);
+  if (allLabels.length > 0) {
+    const translated = translateCanonicalAnswerToOption(option, questionText, allLabels);
+    if (translated) {
+      targetOption = translated;
+    }
+  }
+
+  let choice = popup.getByRole('option', { name: targetOption, exact: true }).or(
+    matchOptions.filter({ hasText: new RegExp(`^${targetOption.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') })
   );
 
   let matchCount = await choice.count().catch(() => 0);
   if (matchCount === 0) {
-    const partialChoice = matchOptions.filter({ hasText: option });
+    const partialChoice = matchOptions.filter({ hasText: targetOption });
     matchCount = await partialChoice.count().catch(() => 0);
     if (matchCount > 0) choice = partialChoice;
   }
 
-  // Ticket GEN-217: Option-Bucket & Synonym Translator Fallback
-  if (matchCount === 0) {
-    const allLabels = await matchOptions.allInnerTexts().catch(() => []);
-    const translated = translateCanonicalAnswerToOption(option, questionText, allLabels);
-    if (translated) {
-      const translatedChoice = popup.getByRole('option', { name: translated, exact: true }).or(
-        matchOptions.filter({ hasText: new RegExp(`^${translated.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') })
-      ).or(matchOptions.filter({ hasText: translated }));
-      const tCount = await translatedChoice.count().catch(() => 0);
-      if (tCount > 0) {
-        choice = translatedChoice;
-        matchCount = tCount;
-      }
-    }
+  // Fallback to original option if targetOption differed
+  if (matchCount === 0 && targetOption !== option) {
+    choice = popup.getByRole('option', { name: option, exact: true }).or(
+      matchOptions.filter({ hasText: new RegExp(`^${option.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') })
+    ).or(matchOptions.filter({ hasText: option }));
+    matchCount = await choice.count().catch(() => 0);
   }
 
   // Ticket GEN-145: Virtualized Combobox Type-to-Filter Fallback
   if (matchCount === 0) {
-    const filterSeed = option.replace(/\s*\(\+?\d+\).*$/, '').split(/[\/,]/)[0]!.trim().slice(0, 18);
+    const filterSeed = targetOption.replace(/\s*\(\+?\d+\).*$/, '').split(/[\/,]/)[0]!.trim().slice(0, 18);
     if (filterSeed.length > 0) {
       await control.click({ timeout: 1500 }).catch(() => {});
       await control.fill(filterSeed).catch(async () => {
@@ -390,7 +393,7 @@ export async function selectHarvestedOption(
       });
       await frame.page().waitForTimeout(350);
 
-      choice = popup.getByRole('option', { name: option, exact: true }).or(
+      choice = popup.getByRole('option', { name: targetOption, exact: true }).or(
         matchOptions.filter({ hasText: new RegExp(filterSeed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') })
       );
       matchCount = await choice.count().catch(() => 0);
@@ -399,6 +402,12 @@ export async function selectHarvestedOption(
 
   if (matchCount > 0) {
     const opt = choice.first();
+    await opt.scrollIntoViewIfNeeded().catch(() => {});
+    await opt.evaluate((el) => {
+      if (typeof (el as HTMLElement).scrollIntoView === 'function') {
+        (el as HTMLElement).scrollIntoView({ block: 'nearest' });
+      }
+    }).catch(() => {});
     await opt.dispatchEvent('mousedown').catch(() => {});
     await opt.click({ force: true }).catch(() => {});
     await opt.dispatchEvent('mouseup').catch(() => {});
