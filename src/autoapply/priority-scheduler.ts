@@ -14,7 +14,8 @@ export interface QueuedJobCandidate {
   provider?: string;
   createdAtMs?: number;
   rowId?: number;
-  isHourlyFresh?: boolean;
+  isHourlyFresh?: boolean | number;
+  is_hourly_fresh?: number;
   discoveredAt?: string;
   hourlySource?: 'github_hunt' | 'linkedin_1h' | 'yc_hiring' | 'hn_hiring' | string;
   payload?: any;
@@ -89,15 +90,24 @@ export function isFillableAtsUrl(url?: string): boolean {
 export function computeJobPriorityScore(job: QueuedJobCandidate, nowMs = Date.now()): number {
   let score = 0;
 
-  // 0. Hourly Fresh Job Super Priority (+10,000 pts)
-  // ONLY grant the +10,000 hourly priority boost when candidate.url is a fillable ATS URL!
-  const isFresh = Boolean(
-    job.isHourlyFresh ||
-    job.payload?.isHourlyFresh ||
+  // 0. Hourly Fresh Job Super Priority (+50,000 pts for Tier-2 fresh, +10,000 pts for Tier-1 fresh)
+  // ONLY grant the hourly priority boost when candidate.url is a fillable ATS URL!
+  const rawFresh = job.is_hourly_fresh ?? job.isHourlyFresh ?? job.payload?.is_hourly_fresh ?? job.payload?.isHourlyFresh;
+  let freshLevel = 0;
+  if (typeof rawFresh === 'number') {
+    freshLevel = rawFresh;
+  } else if (rawFresh === true) {
+    freshLevel = 1;
+  } else if (
     (job.discoveredAt && (nowMs - new Date(job.discoveredAt).getTime()) <= 86400_000) ||
     (job.payload?.discoveredAt && (nowMs - new Date(job.payload.discoveredAt).getTime()) <= 86400_000)
-  );
-  if (isFresh && isFillableAtsUrl(job.url)) {
+  ) {
+    freshLevel = 1;
+  }
+
+  if (freshLevel >= 2 && isFillableAtsUrl(job.url)) {
+    score += 50000;
+  } else if (freshLevel >= 1 && isFillableAtsUrl(job.url)) {
     score += 10000;
   }
 

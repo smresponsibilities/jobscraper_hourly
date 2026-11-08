@@ -608,7 +608,7 @@ export class AutoApplyRunner {
   /**
    * Ticket GEN-108: Dismiss Ashby React cookie consent modal / OneTrust banners and wait for form controls hydration.
    */
-  private async dismissCookieConsentAndHydrateForm(page: Page): Promise<void> {
+  private async dismissCookieConsentAndHydrateForm(page: Page, fallbackUrl?: string): Promise<void> {
     const url = page.url();
     const isAshby = /ashbyhq\.com/i.test(url);
     const maxPollMs = isAshby ? 6500 : 2500;
@@ -709,13 +709,17 @@ export class AutoApplyRunner {
       }
     }
 
-    // Ticket GEN-158: Greenhouse Remix Collapsed Form Expander in hydration
-    if (/greenhouse\.io/i.test(page.url())) {
-      const ghVisibleInputCount = await page
+    // Ticket GEN-158 & GEN-224: Greenhouse Remix Collapsed Form Expander & Embed Fallback
+    const effectiveUrl = page.url() || fallbackUrl || '';
+    const ghMatch = effectiveUrl.match(/(?:boards|job-boards(?:\.eu)?)\.greenhouse\.io\/([^/?#]+)\/jobs\/(\d+)/i) ||
+                    (fallbackUrl ? fallbackUrl.match(/(?:boards|job-boards(?:\.eu)?)\.greenhouse\.io\/([^/?#]+)\/jobs\/(\d+)/i) : null);
+
+    if (/greenhouse\.io/i.test(page.url()) || ghMatch) {
+      let ghVisibleInputCount = await page
         .evaluate(() => {
           const inputs = Array.from(
             document.querySelectorAll<HTMLElement>(
-              '#application-form input:not([type="hidden"]), #application-form textarea, #application-form [role="combobox"], input#first_name, input#last_name, input#email'
+              '#application-form input:not([type="hidden"]), #application-form textarea, #application-form [role="combobox"], input#first_name, input#last_name, input#email, input:not([type="hidden"])'
             )
           );
           return inputs.filter((el) => {
@@ -743,10 +747,39 @@ export class AutoApplyRunner {
           }
         }
         await page
-          .locator('#first_name, #email, #application-form input:not([type="hidden"])')
+          .locator('#first_name, #email, #application-form input:not([type="hidden"]), input:not([type="hidden"])')
           .first()
-          .waitFor({ state: 'visible', timeout: 6000 })
+          .waitFor({ state: 'visible', timeout: 5000 })
           .catch(() => {});
+
+        ghVisibleInputCount = await page
+          .evaluate(() => {
+            const inputs = Array.from(
+              document.querySelectorAll<HTMLElement>(
+                '#application-form input:not([type="hidden"]), #application-form textarea, #application-form [role="combobox"], input#first_name, input#last_name, input#email, input:not([type="hidden"])'
+              )
+            );
+            return inputs.filter((el) => {
+              const rect = el.getBoundingClientRect();
+              return rect.width > 0 && rect.height > 0 && window.getComputedStyle(el).visibility !== 'hidden';
+            }).length;
+          })
+          .catch(() => 0);
+      }
+
+      // Ticket GEN-224: If visible inputs remain < 2 or redirected away, immediately redirect to embed URL
+      if (ghVisibleInputCount < 2 && ghMatch && ghMatch[1] && ghMatch[2]) {
+        const ghSlug = ghMatch[1];
+        const ghJobId = ghMatch[2];
+        const embedUrl = `https://boards.greenhouse.io/embed/job_app?for=${encodeURIComponent(ghSlug)}&token=${encodeURIComponent(ghJobId)}`;
+        try {
+          await page.goto(embedUrl, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
+          await page
+            .locator('#first_name, #email, input:not([type="hidden"])')
+            .first()
+            .waitFor({ state: 'visible', timeout: 5000 })
+            .catch(() => {});
+        } catch {}
       }
     }
   }
@@ -3108,6 +3141,21 @@ export class AutoApplyRunner {
       }
       await this.page!.locator('body').waitFor({ state: 'attached' });
       await this.waitReady(Math.min(options.timeoutMs ?? 5000, 5000));
+
+      // Ticket GEN-224: Greenhouse 302 marketing site redirect fallback
+      const ghNavMatch = (target || options.url).match(/(?:boards|job-boards(?:\.eu)?)\.greenhouse\.io\/([^/?#]+)\/jobs\/(\d+)/i);
+      if (ghNavMatch && ghNavMatch[1] && ghNavMatch[2]) {
+        const ghSlug = ghNavMatch[1];
+        const ghJobId = ghNavMatch[2];
+        const currentUrl = this.page!.url().toLowerCase();
+        if (!currentUrl.includes('greenhouse.io')) {
+          const embedUrl = `https://boards.greenhouse.io/embed/job_app?for=${encodeURIComponent(ghSlug)}&token=${encodeURIComponent(ghJobId)}`;
+          this.log(`Redirected off Greenhouse to marketing page (${currentUrl}); recovering via embed URL: ${embedUrl}`);
+          await this.page!.goto(embedUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+          await this.page!.locator('body').waitFor({ state: 'attached' }).catch(() => {});
+        }
+      }
+
       // Ticket GEN-142: Fast-exit if job posting is 404/closed
       const deadReason = await this.isDeadOrClosedJobPosting(this.page!);
       if (deadReason) {
@@ -3156,7 +3204,7 @@ export class AutoApplyRunner {
           return report;
         }
       }
-      await this.dismissCookieConsentAndHydrateForm(this.page!);
+      await this.dismissCookieConsentAndHydrateForm(this.page!, target || options.url);
       const immediateReceipt = await this.receipt();
       if (immediateReceipt) {
         report.receipt = immediateReceipt;
@@ -3173,7 +3221,7 @@ export class AutoApplyRunner {
         await this.page!.goto(target, { waitUntil: 'domcontentloaded', timeout: 45000 });
         await this.page!.locator('body').waitFor({ state: 'attached' });
         await this.waitReady(Math.min(options.timeoutMs ?? 5000, 5000));
-        await this.dismissCookieConsentAndHydrateForm(this.page!);
+        await this.dismissCookieConsentAndHydrateForm(this.page!, target || options.url);
         if (options.url.toLowerCase().includes('smartrecruiters.com') || this.page!.url().toLowerCase().includes('smartrecruiters.com')) {
           await ensureSmartRecruitersApplicationStarted(this.page!);
         }
@@ -3264,7 +3312,7 @@ export class AutoApplyRunner {
             await ensureSmartRecruitersApplicationStarted(this.page!);
           }
         }
-        await this.dismissCookieConsentAndHydrateForm(this.page!);
+        await this.dismissCookieConsentAndHydrateForm(this.page!, target || options.url);
 
         // Ticket GEN-99: Auto-click "Are You Still With Us?" session timeout modal
         const isSessionModal = await this.page!.evaluate(() => {

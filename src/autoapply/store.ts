@@ -112,7 +112,7 @@ export class ApplicationStore {
 
   list(): AutoaplyJobItem[] {
     this.recover();
-    return (this.db.prepare('SELECT payload,status,canonical_key FROM applications WHERE candidate_id=? ORDER BY rowid').all(this.candidateId) as Array<{ payload: string; status: AutoaplyJobItem['status']; canonical_key: string | null }>).map(row => ({ ...JSON.parse(row.payload), status: row.status, canonicalKey: row.canonical_key || undefined }));
+    return (this.db.prepare('SELECT id,payload,status,canonical_key FROM applications WHERE candidate_id=? ORDER BY rowid').all(this.candidateId) as Array<{ id: string; payload: string; status: AutoaplyJobItem['status']; canonical_key: string | null }>).map(row => ({ ...JSON.parse(row.payload), id: row.id, status: row.status, canonicalKey: row.canonical_key || undefined }));
   }
 
   acquireWorkerLock(): boolean {
@@ -133,6 +133,7 @@ export class ApplicationStore {
   }
 
   save(job: AutoaplyJobItem): void {
+    if (!job || !job.id) return;
     this.transaction(() => {
       const previous = this.db.prepare('SELECT status,payload FROM applications WHERE candidate_id=? AND id=?').get(this.candidateId, job.id) as { status: string; payload: string } | undefined;
       this.db.prepare('UPDATE applications SET canonical_key=?,status=?,payload=?,owner=CASE WHEN ?=? THEN owner ELSE NULL END,expires=CASE WHEN ?=? THEN expires ELSE NULL END WHERE candidate_id=? AND id=?').run(job.canonicalKey || null, job.status, JSON.stringify(job), job.status, 'applying', job.status, 'applying', this.candidateId, job.id);

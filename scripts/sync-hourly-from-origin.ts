@@ -145,6 +145,7 @@ export function syncHourlyFreshJobsFromOriginMain(dbPath?: string): {
       if (existing) {
         if (existing.status === 'queued' && !existing.payload.isHourlyFresh) {
           existing.payload.isHourlyFresh = true;
+          existing.payload.is_hourly_fresh = 2;
           existing.payload.priorityBonus = fit.priorityBonus;
           updateStmt.run(JSON.stringify(existing.payload), existing.id);
           boostedExisting++;
@@ -165,6 +166,7 @@ export function syncHourlyFreshJobsFromOriginMain(dbPath?: string): {
         postedAt: new Date().toISOString(),
         status: 'queued',
         isHourlyFresh: true,
+        is_hourly_fresh: 2,
         priorityBonus: fit.priorityBonus,
         ats,
       };
@@ -238,11 +240,11 @@ export function syncHourlyFreshJobsFromOriginMain(dbPath?: string): {
         }
         if (hasHourlyFreshCol) {
           insertCols.push('is_hourly_fresh');
-          insertVals.push(1);
+          insertVals.push(2);
         }
         const placeholders = insertCols.map(() => '?').join(', ');
         db.prepare(`INSERT OR IGNORE INTO jobs (${insertCols.join(', ')}) VALUES (${placeholders})`).run(...insertVals);
-        existingByUrl.set(unwrappedUrl, { id: -1, status: 'queued', is_hourly_fresh: 1 });
+        existingByUrl.set(unwrappedUrl, { id: -1, status: 'queued', is_hourly_fresh: 2 });
         insertedFresh++;
       } catch {}
     }

@@ -351,13 +351,13 @@ export async function runHourly100JobsHarvester(): Promise<{
               location: job.location,
               ats: job.ats,
               discoveredAt: new Date().toISOString(),
-              is_hourly_fresh: 1,
+              is_hourly_fresh: 2,
             });
             insertStmt.run(candidateId, id, normUrl, normUrl, payload, expiresDate);
             totalInsertedOrBoosted++;
           } else if (existing.status === 'queued') {
             const p = existing.payload || {};
-            p.is_hourly_fresh = 1;
+            p.is_hourly_fresh = 2;
             p.boostedAt = new Date().toISOString();
             updateStmt.run(JSON.stringify(p), expiresDate, existing.id);
             totalInsertedOrBoosted++;
@@ -374,10 +374,10 @@ export async function runHourly100JobsHarvester(): Promise<{
 
         const insertJobStmt = db.prepare(`
           INSERT OR IGNORE INTO jobs (company, title, url, location, ats, status, is_hourly_fresh)
-          VALUES (?, ?, ?, ?, ?, 'queued', 1)
+          VALUES (?, ?, ?, ?, ?, 'queued', 2)
         `);
         const boostJobStmt = db.prepare(`
-          UPDATE jobs SET is_hourly_fresh = 1 WHERE id = ?
+          UPDATE jobs SET is_hourly_fresh = 2 WHERE id = ?
         `);
 
         for (const job of fitJobs) {

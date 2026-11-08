@@ -16,6 +16,30 @@ export function hasConsumedVerificationToken(token: string): boolean {
   return CONSUMED_VERIFICATION_TOKENS.has(token);
 }
 
+// Ticket GEN-225: Cross-lane IMAP Mutex ensuring serial IMAP mailbox access
+let imapMutexChain: Promise<any> = Promise.resolve();
+
+export async function withImapMutex<T>(fn: () => Promise<T>): Promise<T> {
+  let release: () => void;
+  const nextLock = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const prevLock = imapMutexChain;
+  imapMutexChain = (async () => {
+    try {
+      await prevLock;
+    } catch {}
+    await nextLock;
+  })();
+
+  try {
+    await prevLock;
+    return await fn();
+  } finally {
+    release!();
+  }
+}
+
 /**
  * Generates a deterministic Gmail +alias for a Workday tenant when the base email account
  * is locked or has a mismatched password from an older session.
@@ -54,85 +78,117 @@ export async function pollImapForVerificationCodeOrLink(params: {
 
   while (Date.now() - start < maxWaitMs) {
     params.onActivity?.();
-    const client = new ImapFlow({
-      host,
-      port: Number(process.env.IMAP_PORT || 993),
-      secure: true,
-      auth: { user, pass },
-      logger: false,
-    });
-    // Prevent unhandled socket reset crashes
-    client.on('error', () => {});
 
-    try {
-      await client.connect();
-      const lock = await client.getMailboxLock('INBOX');
+    const iterationResult = await withImapMutex(async (): Promise<ImapVerificationResult | null> => {
+      const client = new ImapFlow({
+        host,
+        port: Number(process.env.IMAP_PORT || 993),
+        secure: true,
+        auth: { user, pass },
+        logger: false,
+      });
+      // Prevent unhandled socket reset crashes
+      client.on('error', () => {});
+
       try {
-        const total = client.mailbox ? client.mailbox.exists : 0;
-        if (total > 0) {
-          const startSeq = Math.max(1, total - 12);
-          const messages: Array<{ seq: number; date: Date; subject: string; sourceText: string }> = [];
-          for await (const msg of client.fetch(`${startSeq}:*`, { envelope: true, source: true })) {
-            const msgDate = msg.envelope?.date ? new Date(msg.envelope.date) : new Date();
-            if (msgDate.getTime() < sinceTime) continue;
-            const subject = msg.envelope?.subject || '';
-            const rawSource = msg.source ? msg.source.toString('utf8') : '';
-            messages.push({ seq: msg.seq, date: msgDate, subject, sourceText: rawSource });
-          }
+        await client.connect();
+        const lock = await client.getMailboxLock('INBOX');
+        try {
+          const total = client.mailbox ? client.mailbox.exists : 0;
+          if (total > 0) {
+            // Ticket GEN-225: Search all emails in last 20 mins regardless of \Seen status
+            const searchSince = new Date(Date.now() - 20 * 60 * 1000);
+            let uids: number[] = [];
+            try {
+              const res = await client.search({ since: searchSince }, { uid: true });
+              if (Array.isArray(res)) uids = res;
+            } catch {}
 
-          // Check newest messages first
-          messages.sort((a, b) => b.date.getTime() - a.date.getTime());
-          for (const m of messages) {
-            if (
-              !/verify|verification|security code|confirmation|confirm your email|activate|workday|greenhouse|smartrecruiters|lever|one-time|passcode/i.test(
-                `${m.subject} ${m.sourceText.slice(0, 2000)}`
-              )
-            ) {
-              continue;
-            }
+            const messages: Array<{ seq: number; date: Date; subject: string; sourceText: string }> = [];
 
-            // Decode quoted-printable soft line breaks
-            const decoded = m.sourceText
-              .replace(/=\r?\n/g, '')
-              .replace(/=3D/gi, '=')
-              .replace(/&amp;/gi, '&');
-
-            // 1. Check for Workday / ATS Verification Link
-            const linkMatch = decoded.match(
-              /https?:\/\/[^\s"'<>]+(?:myworkdayjobs\.com|myworkday\.com|smartrecruiters\.com|greenhouse\.io)[^\s"'<>]*(?:verify|confirm|activate|token|code)[^\s"'<>]*/i
-            );
-
-            // 2. Check for 6-to-8 character OTP / Security Code
-            const bodyWithoutHtml = decoded.replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
-            const codeMatch =
-              bodyWithoutHtml.match(
-                /(?:verification code|security code|confirmation code|passcode|code is|enter the code)[:\s]*([A-Za-z0-9]{6,8})\b/i
-              ) || bodyWithoutHtml.match(/\b([0-9]{6})\b/);
-
-            const candidateToken = codeMatch?.[1] || linkMatch?.[0] || '';
-            if (candidateToken && CONSUMED_VERIFICATION_TOKENS.has(candidateToken)) {
-              continue;
-            }
-
-            if (linkMatch?.[0] || codeMatch?.[1]) {
-              if (candidateToken) {
-                CONSUMED_VERIFICATION_TOKENS.add(candidateToken);
+            if (uids.length > 0) {
+              const targetUids = uids.slice(-15).reverse();
+              for (const uid of targetUids) {
+                try {
+                  const msg = await client.fetchOne(String(uid), { envelope: true, source: true }, { uid: true });
+                  if (!msg) continue;
+                  const msgDate = msg.envelope?.date ? new Date(msg.envelope.date) : new Date();
+                  if (msgDate.getTime() < sinceTime) continue;
+                  const subject = msg.envelope?.subject || '';
+                  const rawSource = msg.source ? msg.source.toString('utf8') : '';
+                  messages.push({ seq: msg.seq, date: msgDate, subject, sourceText: rawSource });
+                } catch {}
               }
-              return {
-                found: true,
-                otpCode: codeMatch?.[1],
-                verificationUrl: linkMatch?.[0],
-                subject: m.subject,
-              };
+            } else {
+              const startSeq = Math.max(1, total - 12);
+              for await (const msg of client.fetch(`${startSeq}:*`, { envelope: true, source: true })) {
+                const msgDate = msg.envelope?.date ? new Date(msg.envelope.date) : new Date();
+                if (msgDate.getTime() < sinceTime) continue;
+                const subject = msg.envelope?.subject || '';
+                const rawSource = msg.source ? msg.source.toString('utf8') : '';
+                messages.push({ seq: msg.seq, date: msgDate, subject, sourceText: rawSource });
+              }
+            }
+
+            // Check newest messages first
+            messages.sort((a, b) => b.date.getTime() - a.date.getTime());
+            for (const m of messages) {
+              if (
+                !/verify|verification|security code|confirmation|confirm your email|activate|workday|greenhouse|smartrecruiters|lever|one-time|passcode/i.test(
+                  `${m.subject} ${m.sourceText.slice(0, 2000)}`
+                )
+              ) {
+                continue;
+              }
+
+              // Decode quoted-printable soft line breaks
+              const decoded = m.sourceText
+                .replace(/=\r?\n/g, '')
+                .replace(/=3D/gi, '=')
+                .replace(/&amp;/gi, '&');
+
+              // 1. Check for Workday / ATS Verification Link
+              const linkMatch = decoded.match(
+                /https?:\/\/[^\s"'<>]+(?:myworkdayjobs\.com|myworkday\.com|smartrecruiters\.com|greenhouse\.io)[^\s"'<>]*(?:verify|confirm|activate|token|code)[^\s"'<>]*/i
+              );
+
+              // 2. Check for 6-to-8 character OTP / Security Code
+              const bodyWithoutHtml = decoded.replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+              const codeMatch =
+                bodyWithoutHtml.match(
+                  /(?:verification code|security code|confirmation code|passcode|code is|enter the code)[:\s]*([A-Za-z0-9]{6,8})\b/i
+                ) || bodyWithoutHtml.match(/\b([0-9]{6})\b/);
+
+              const candidateToken = codeMatch?.[1] || linkMatch?.[0] || '';
+              if (candidateToken && CONSUMED_VERIFICATION_TOKENS.has(candidateToken)) {
+                continue;
+              }
+
+              if (linkMatch?.[0] || codeMatch?.[1]) {
+                if (candidateToken) {
+                  CONSUMED_VERIFICATION_TOKENS.add(candidateToken);
+                }
+                return {
+                  found: true,
+                  otpCode: codeMatch?.[1],
+                  verificationUrl: linkMatch?.[0],
+                  subject: m.subject,
+                };
+              }
             }
           }
+        } finally {
+          lock.release();
         }
-      } finally {
-        lock.release();
+        await client.logout().catch(() => {});
+      } catch {
+        try { client.close(); } catch {}
       }
-      await client.logout().catch(() => {});
-    } catch {
-      try { client.close(); } catch {}
+      return null;
+    });
+
+    if (iterationResult && iterationResult.found) {
+      return iterationResult;
     }
 
     await new Promise(r => setTimeout(r, 4000));

@@ -161,7 +161,14 @@ export function selectDiversifiedMultiLaneChunk(
     if (!job || !job.jobUrl) continue;
     if (/stripe/i.test(job.company) || /stripe/i.test(job.jobUrl)) continue;
 
-    const isFresh = (job as any).isFresh || Boolean(
+    const freshLevel = Number(
+      (job as any).is_hourly_fresh ??
+      (job as any).isHourlyFresh ??
+      (job as any).payload?.is_hourly_fresh ??
+      (job as any).payload?.isHourlyFresh ??
+      0
+    );
+    const isFresh = freshLevel > 0 || (job as any).isFresh || Boolean(
       job.postedAt &&
       !isNaN(new Date(job.postedAt).getTime()) &&
       Date.now() - new Date(job.postedAt).getTime() <= 24 * 60 * 60 * 1000
@@ -184,10 +191,17 @@ export function selectDiversifiedMultiLaneChunk(
   }
 
   // Ticket GEN-175: Sort candidates within each lane by candidate-fit priority bonus (Bengaluru +5000, India +3500, Junior tech +3000)
+  // Ticket GEN-223: Prioritize is_hourly_fresh = 2 first, then fit bonus, then newer id DESC
   const sortByFit = (a: AutoaplyJobItem, b: AutoaplyJobItem) => {
+    const freshA = Number((a as any).is_hourly_fresh ?? (a as any).isHourlyFresh ?? (a as any).payload?.is_hourly_fresh ?? (a as any).payload?.isHourlyFresh ?? 0);
+    const freshB = Number((b as any).is_hourly_fresh ?? (b as any).isHourlyFresh ?? (b as any).payload?.is_hourly_fresh ?? (b as any).payload?.isHourlyFresh ?? 0);
+    if (freshB !== freshA) return freshB - freshA;
+
     const fitA = evaluateCandidateJobFit({ company: a.company, title: a.title, location: (a as any).location, url: a.jobUrl });
     const fitB = evaluateCandidateJobFit({ company: b.company, title: b.title, location: (b as any).location, url: b.jobUrl });
-    return fitB.priorityBonus - fitA.priorityBonus;
+    if (fitB.priorityBonus !== fitA.priorityBonus) return fitB.priorityBonus - fitA.priorityBonus;
+
+    return String(b.id || '').localeCompare(String(a.id || ''));
   };
   hourlyQueue.sort(sortByFit);
   workdayQueue.sort(sortByFit);
@@ -554,6 +568,7 @@ export async function runOvernightMarathon(config: {
       const nowMs = Date.now();
       const scoredCandidates = freshQueued.map((job: AutoaplyJobItem) => {
         const createdAtMs = Date.parse((job as any).createdAt || job.postedAt || '0') || 0;
+        const rawFresh = (job as any).is_hourly_fresh ?? (job as any).isHourlyFresh ?? (job as any).payload?.is_hourly_fresh ?? (job as any).payload?.isHourlyFresh;
         const score = computeJobPriorityScore({
           id: job.id,
           company: job.company,
@@ -561,9 +576,10 @@ export async function runOvernightMarathon(config: {
           url: job.jobUrl,
           createdAtMs,
           rowId: (job as any).rowId || 0,
-          isHourlyFresh: (job as any).isHourlyFresh,
-          discoveredAt: (job as any).discoveredAt,
-          hourlySource: (job as any).hourlySource,
+          isHourlyFresh: rawFresh,
+          is_hourly_fresh: typeof rawFresh === 'number' ? rawFresh : undefined,
+          discoveredAt: (job as any).discoveredAt || (job as any).payload?.discoveredAt,
+          hourlySource: (job as any).hourlySource || (job as any).payload?.hourlySource,
           payload: (job as any).payload,
         }, nowMs);
         return { job, score };
@@ -575,9 +591,9 @@ export async function runOvernightMarathon(config: {
 
       for (const item of scoredCandidates) {
         const jobAny = item.job as any;
+        const rawFresh = jobAny.is_hourly_fresh ?? jobAny.isHourlyFresh ?? jobAny.payload?.is_hourly_fresh ?? jobAny.payload?.isHourlyFresh;
         const isFresh = Boolean(
-          jobAny.isHourlyFresh ||
-          jobAny.payload?.isHourlyFresh ||
+          rawFresh ||
           (jobAny.discoveredAt && (nowMs - new Date(jobAny.discoveredAt).getTime()) <= 86400_000) ||
           (jobAny.payload?.discoveredAt && (nowMs - new Date(jobAny.payload.discoveredAt).getTime()) <= 86400_000)
         );
