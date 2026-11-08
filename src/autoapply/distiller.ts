@@ -169,6 +169,14 @@ function _extractRawCleanQuestionText(box: Element, els: Element[] = []): string
   // 6. Ancestor Climbing (up to 5 levels) with Shadow Root boundary crossing
   let currentParent: HTMLElement | null = getParentOrShadowHost(first || box);
   for (let depth = 0; depth < 5 && currentParent && !currentParent.matches('body, form'); depth++) {
+    // GEN-272: Single-Control LCA Ceiling — avoid merging labels across 2-column sibling grid cells
+    const distinctInputsInAncestor = currentParent.querySelectorAll(
+      'input:not([type="hidden"]):not([type="radio"]):not([type="checkbox"]), select, textarea'
+    ).length;
+    if (distinctInputsInAncestor > 1) {
+      break;
+    }
+
     // Check custom Web Component host attributes (<spl-input label="First name *">, <oc-form-field label="City">)
     const hostLabel = currentParent.getAttribute('label') || currentParent.getAttribute('data-label') || currentParent.getAttribute('aria-label');
     if (isCleanQuestionCandidate(hostLabel)) {

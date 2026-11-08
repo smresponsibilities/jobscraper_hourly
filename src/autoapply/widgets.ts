@@ -82,6 +82,9 @@ export async function verifyChoiceReadBack(
 }
 
 /** Open a bounded, control-associated menu before resolving its answer. */
+export const ASYNC_LOADING_PLACEHOLDER_REGEX = /^(?:loading\.{0,3}|searching\.{0,3}|fetching\.{0,3}|please\s+wait\.{0,3})$/i;
+export const INVALID_OPTION_PLACEHOLDER_REGEX = /^(?:loading\.{0,3}|searching\.{0,3}|no\s+options?|no\s+results?\s+found|type\s+to\s+search|select\.{0,3}|--\s*select\s*--)$/i;
+
 export async function harvestControlOptions(
   frame: Frame,
   clusterOrControl: Locator,
@@ -94,7 +97,9 @@ export async function harvestControlOptions(
 
   // Physics 1: Native SELECT
   if (await control.evaluate(el => el.tagName === 'SELECT')) {
-    return { options: await control.locator('option').allTextContents(), popupContainer: null };
+    const rawOpts = await control.locator('option').allTextContents();
+    const options = rawOpts.map(t => t.trim()).filter(t => Boolean(t) && !INVALID_OPTION_PLACEHOLDER_REGEX.test(t));
+    return { options, popupContainer: null };
   }
 
   // Physics 1: Radio group
@@ -129,7 +134,14 @@ export async function harvestControlOptions(
 
   let choices = popup.locator('[role=option],[data-automation-id="promptOption"],.select__option,._option_1svni_32,.itta-item').filter({ visible: true });
   await choices.first().waitFor({ state: 'visible', timeout: 800 }).catch(() => {});
-  let options = [...new Set((await choices.allTextContents()).map(text => text.trim()).filter(Boolean))];
+  let rawChoices = (await choices.allTextContents()).map(text => text.trim()).filter(Boolean);
+
+  // GEN-274: Wait for async options if "Loading..." / "Searching..." is visible
+  if (rawChoices.some(t => ASYNC_LOADING_PLACEHOLDER_REGEX.test(t))) {
+    await frame.page().waitForTimeout(450);
+    rawChoices = (await choices.allTextContents()).map(text => text.trim()).filter(Boolean);
+  }
+  let options = [...new Set(rawChoices.filter(t => !INVALID_OPTION_PLACEHOLDER_REGEX.test(t)))];
 
   // Physics 3: Seed-then-harvest typeahead
   const tag = await control.evaluate(el => el.tagName.toLowerCase()).catch(() => '');
@@ -146,7 +158,12 @@ export async function harvestControlOptions(
     }
     await new Promise(resolve => setTimeout(resolve, 350));
     choices = popup.locator('[role=option],[data-automation-id="promptOption"],.select__option,._option_1svni_32,.itta-item').filter({ visible: true });
-    options = [...new Set((await choices.allTextContents()).map(text => text.trim()).filter(Boolean))];
+    let typeaheadChoices = (await choices.allTextContents()).map(text => text.trim()).filter(Boolean);
+    if (typeaheadChoices.some(t => ASYNC_LOADING_PLACEHOLDER_REGEX.test(t))) {
+      await frame.page().waitForTimeout(450);
+      typeaheadChoices = (await choices.allTextContents()).map(text => text.trim()).filter(Boolean);
+    }
+    options = [...new Set(typeaheadChoices.filter(t => !INVALID_OPTION_PLACEHOLDER_REGEX.test(t)))];
 
     // CRITICAL: Clear temporary seed during harvest so raw seed text never masquerades as a selected value!
     if (!isReadOnly) {
@@ -354,14 +371,24 @@ export async function selectHarvestedOption(
 
   const matchOptions = popup.locator('[role="option"], .select__option, [data-automation-id="promptOption"], [class*="_option_"], spl-select-option, li[role="option"]');
 
-  // Ticket GEN-217 & GEN-232: Pre-translate canonical answer against available DOM options
+  // Ticket GEN-217, GEN-232 & GEN-274: Wait for async options if Loading/Searching is present, and filter placeholders
   let targetOption = option;
-  const allLabels = await matchOptions.allInnerTexts().catch(() => []);
-  if (allLabels.length > 0) {
-    const translated = translateCanonicalAnswerToOption(option, questionText, allLabels);
+  let allLabels = await matchOptions.allInnerTexts().catch(() => []);
+  if (allLabels.some((t) => ASYNC_LOADING_PLACEHOLDER_REGEX.test(t.trim()))) {
+    await frame.page().waitForTimeout(450);
+    allLabels = await matchOptions.allInnerTexts().catch(() => []);
+  }
+
+  const validLabels = allLabels.map((t) => t.trim()).filter((t) => Boolean(t) && !INVALID_OPTION_PLACEHOLDER_REGEX.test(t));
+  if (validLabels.length > 0) {
+    const translated = translateCanonicalAnswerToOption(option, questionText, validLabels);
     if (translated) {
       targetOption = translated;
     }
+  }
+
+  if (INVALID_OPTION_PLACEHOLDER_REGEX.test(targetOption.trim())) {
+    return false;
   }
 
   let choice = popup.getByRole('option', { name: targetOption, exact: true }).or(

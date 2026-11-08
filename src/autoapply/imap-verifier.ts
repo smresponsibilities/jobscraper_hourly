@@ -41,6 +41,24 @@ export async function withImapMutex<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 /**
+ * Ticket GEN-276: Decode RFC-2045 Quoted-Printable MIME soft line breaks (=\r\n)
+ * and hex bytes (=3D, =20, etc.) before token/OTP parsing.
+ */
+export function decodeQuotedPrintableMime(raw: string): string {
+  if (!raw) return '';
+  return raw
+    .replace(/=(?:\r\n|\r|\n)/g, '')
+    .replace(/=([0-9A-Fa-f]{2})/g, (_match, hex) => {
+      try {
+        return String.fromCharCode(parseInt(hex, 16));
+      } catch {
+        return _match;
+      }
+    })
+    .replace(/&amp;/gi, '&');
+}
+
+/**
  * Generates a deterministic Gmail +alias for a Workday tenant when the base email account
  * is locked or has a mismatched password from an older session.
  * All emails sent to user+wd_citi@gmail.com arrive in user@gmail.com's IMAP inbox!
@@ -141,11 +159,8 @@ export async function pollImapForVerificationCodeOrLink(params: {
                 continue;
               }
 
-              // Decode quoted-printable soft line breaks
-              const decoded = m.sourceText
-                .replace(/=\r?\n/g, '')
-                .replace(/=3D/gi, '=')
-                .replace(/&amp;/gi, '&');
+              // Ticket GEN-276: Decode quoted-printable soft line breaks and hex characters
+              const decoded = decodeQuotedPrintableMime(m.sourceText);
 
               // 1. Check for Workday / ATS Verification Link
               const linkMatch = decoded.match(

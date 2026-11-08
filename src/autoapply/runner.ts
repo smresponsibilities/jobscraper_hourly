@@ -1056,7 +1056,11 @@ export class AutoApplyRunner {
         const contentType = response.headers()['content-type'] || '';
         if (contentType.includes('application/json')) {
           const bodyText = await response.text().catch(() => '');
-          if (/"errors"\s*:\s*\[[^\]]+\]|"success"\s*:\s*false/i.test(bodyText)) {
+          if (
+            /"(?:errors|errorMessages|validationErrors|fieldErrors)"\s*:\s*\[[^\]]+\]|"(?:isSuccess|success|ok)"\s*:\s*false/i.test(
+              bodyText
+            )
+          ) {
             return;
           }
         }
@@ -2281,9 +2285,40 @@ export class AutoApplyRunner {
       unprocessed.sort((a, b) => a.priority - b.priority);
       const next = unprocessed[0]!;
       const key = next.key;
+      const ref = key;
       this.activeWatchdog?.heartbeat(`field_${key}`);
       processed.set(key, next.state);
-      const input = frame.locator(`[data-autoapply-control=${JSON.stringify(key)}]`);
+
+      // GEN-273: Ephemeral data-autoapply-ref Re-Binder on React Re-Renders
+      const control = frame.locator(`[data-autoapply-ref="${ref}"], [data-autoapply-control=${JSON.stringify(key)}]`).first();
+      if ((await control.count().catch(() => 0)) === 0 && ref) {
+        await frame.evaluate(([targetRef, targetDesc]: [string, string]) => {
+          const allInputs = Array.from(
+            document.querySelectorAll(
+              'input:not([type="hidden"]):not([type="submit"]):not([type="button"]), select, textarea, [role="combobox"]'
+            )
+          ) as HTMLElement[];
+          const unstamped = allInputs.filter(
+            (el) => !el.hasAttribute('data-autoapply-ref') && !el.hasAttribute('data-autoapply-control')
+          );
+          for (const el of unstamped) {
+            const labelTxt = (
+              el.closest('.field, .form-group, [class*="_fieldEntry_"], .application-question, div')?.textContent ||
+              (el as HTMLInputElement).placeholder ||
+              el.getAttribute('aria-label') ||
+              (el as HTMLInputElement).name ||
+              ''
+            ).toLowerCase();
+            if (targetDesc && labelTxt && (labelTxt.includes(targetDesc) || targetDesc.includes(labelTxt))) {
+              el.setAttribute('data-autoapply-ref', targetRef);
+              el.setAttribute('data-autoapply-control', targetRef);
+              break;
+            }
+          }
+        }, [String(ref), String(key || '')] as [string, string]).catch(() => {});
+      }
+
+      const input = frame.locator(`[data-autoapply-ref="${ref}"], [data-autoapply-control=${JSON.stringify(key)}]`);
       try {
         if (!await input.count()) continue;
         const yesNo = await input.evaluate(el => !!el.closest('.ashby-application-form-input-yesno'));
