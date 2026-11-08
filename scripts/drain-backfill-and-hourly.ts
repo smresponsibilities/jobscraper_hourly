@@ -52,7 +52,8 @@ export function partitionJobsIntoProviderLanes<T extends { url?: string; jobUrl?
   return lanes;
 }
 
-export async function runWithHardTimeout<T>(promise: Promise<T>, timeoutMs = 75_000, label = 'Job'): Promise<T> {
+// Ticket GEN-284: Hard timeout default capped at 95_000ms
+export async function runWithHardTimeout<T>(promise: Promise<T>, timeoutMs = 95_000, label = 'Job'): Promise<T> {
   let timer: NodeJS.Timeout | null = null;
   const timeoutPromise = new Promise<never>((_, reject) => {
     timer = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs);

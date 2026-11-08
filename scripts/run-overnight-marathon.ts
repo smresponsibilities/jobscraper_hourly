@@ -89,11 +89,37 @@ export function countAutomationChrome(): number {
 }
 
 /**
- * Ticket GEN-97: Multi-lane chunk selector that enforces:
- * 1) Max 1 job per host/company per 40-job chunk (zero same-host monopolies).
- * 2) Skip hosts currently in cooldown before building the chunk.
- * 3) Priority #1 fresh hourly jobs first, followed by round-robin interleaving across Greenhouse, Ashby, Other, and Workday.
- * 4) Exclude Stripe jobs.
+ * Ticket GEN-282: Fast check of queued Tier-2 jobs. If >= 40, skip synchronous harvesting.
+ */
+export function countQueuedTier2Jobs(dbPath: string): number {
+  try {
+    if (!fs.existsSync(dbPath)) return 0;
+    const db = new DatabaseSync(dbPath, { readOnly: true });
+    db.exec('PRAGMA busy_timeout = 3000;');
+    const hasApps = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='applications'").get();
+    const hasJobs = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='jobs'").get();
+    let count = 0;
+    if (hasApps) {
+      const row = db.prepare("SELECT COUNT(*) as cnt FROM applications WHERE status = 'queued' AND COALESCE(json_extract(payload, '$.is_hourly_fresh'), 0) >= 2").get() as { cnt?: number };
+      count = row?.cnt ?? 0;
+    } else if (hasJobs) {
+      const row = db.prepare("SELECT COUNT(*) as cnt FROM jobs WHERE status = 'queued' AND COALESCE(is_hourly_fresh, 0) >= 2").get() as { cnt?: number };
+      count = row?.cnt ?? 0;
+    }
+    db.close();
+    return count;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Ticket GEN-97 & GEN-283: Multi-lane chunk selector that enforces:
+ * 1) 100% chunk dedication to Fast-ATS (Greenhouse, Ashby, Lever) while available.
+ * 2) Up to 8 jobs per company/tenant on Fast-ATS.
+ * 3) Skip hosts currently in cooldown before building the chunk.
+ * 4) Priority ordering by COALESCE(is_hourly_fresh, 0) DESC, priority_score DESC, candidate fit, id DESC.
+ * 5) Exclude Stripe jobs.
  */
 export function selectDiversifiedMultiLaneChunk(
   allSortedCandidates: AutoaplyJobItem[],
@@ -133,7 +159,7 @@ export function selectDiversifiedMultiLaneChunk(
     const key = getKey(job.jobUrl);
     const company = getCompany(job.company);
 
-    // Ticket GEN-242: Allow up to 6 jobs per company/tenant on Fast-ATS (Greenhouse, Ashby, Lever) & is_hourly_fresh >= 2
+    // Ticket GEN-242 & GEN-283: Allow up to 8 jobs per company/tenant on Fast-ATS (Greenhouse, Ashby, Lever) & is_hourly_fresh >= 2
     const freshLevel = Number(
       (job as any).is_hourly_fresh ??
       (job as any).isHourlyFresh ??
@@ -150,7 +176,7 @@ export function selectDiversifiedMultiLaneChunk(
       (job as any).ats === 'ashby' ||
       (job as any).ats === 'lever';
 
-    const maxAllowed = (freshLevel >= 2 || isFastAts) ? 6 : 1;
+    const maxAllowed = (freshLevel >= 2 || isFastAts) ? 8 : 1;
 
     const currentKeyCount = tenantCounts.get(key) || 0;
     const currentCompCount = company ? (companyCounts.get(company) || 0) : 0;
@@ -177,52 +203,38 @@ export function selectDiversifiedMultiLaneChunk(
     return true;
   };
 
-  // Rule 3: Priority #1 Fresh Hourly Candidates first
-  const hourlyQueue: AutoaplyJobItem[] = [];
-  const greenhouseQueue: AutoaplyJobItem[] = [];
-  const ashbyQueue: AutoaplyJobItem[] = [];
-  const otherQueue: AutoaplyJobItem[] = [];
-  const workdayQueue: AutoaplyJobItem[] = [];
+  const fastAtsCandidates: AutoaplyJobItem[] = [];
+  const slowAtsCandidates: AutoaplyJobItem[] = [];
 
   for (const job of allSortedCandidates) {
     if (!job || !job.jobUrl) continue;
     if (/stripe/i.test(job.company) || /stripe/i.test(job.jobUrl)) continue;
 
-    const freshLevel = Number(
-      (job as any).is_hourly_fresh ??
-      (job as any).isHourlyFresh ??
-      (job as any).payload?.is_hourly_fresh ??
-      (job as any).payload?.isHourlyFresh ??
-      0
-    );
-    const isFresh = freshLevel > 0 || (job as any).isFresh || Boolean(
-      job.postedAt &&
-      !isNaN(new Date(job.postedAt).getTime()) &&
-      Date.now() - new Date(job.postedAt).getTime() <= 24 * 60 * 60 * 1000
-    );
+    const u = job.jobUrl.toLowerCase();
+    const ats = String((job as any).ats || '').toLowerCase();
+    const isFast =
+      u.includes('greenhouse.io') ||
+      u.includes('ashbyhq.com') ||
+      u.includes('lever.co') ||
+      ats === 'greenhouse' ||
+      ats === 'ashby' ||
+      ats === 'lever';
 
-    if (isFresh) {
-      hourlyQueue.push(job);
+    if (isFast) {
+      fastAtsCandidates.push(job);
     } else {
-      const u = job.jobUrl.toLowerCase();
-      if (u.includes('greenhouse.io')) {
-        greenhouseQueue.push(job);
-      } else if (u.includes('ashbyhq.com')) {
-        ashbyQueue.push(job);
-      } else if (u.includes('myworkdayjobs.com')) {
-        workdayQueue.push(job);
-      } else {
-        otherQueue.push(job);
-      }
+      slowAtsCandidates.push(job);
     }
   }
 
-  // Ticket GEN-175: Sort candidates within each lane by candidate-fit priority bonus (Bengaluru +5000, India +3500, Junior tech +3000)
-  // Ticket GEN-223: Prioritize is_hourly_fresh = 2 first, then fit bonus, then newer id DESC
-  const sortByFit = (a: AutoaplyJobItem, b: AutoaplyJobItem) => {
+  const sortByPriority = (a: AutoaplyJobItem, b: AutoaplyJobItem) => {
     const freshA = Number((a as any).is_hourly_fresh ?? (a as any).isHourlyFresh ?? (a as any).payload?.is_hourly_fresh ?? (a as any).payload?.isHourlyFresh ?? 0);
     const freshB = Number((b as any).is_hourly_fresh ?? (b as any).isHourlyFresh ?? (b as any).payload?.is_hourly_fresh ?? (b as any).payload?.isHourlyFresh ?? 0);
     if (freshB !== freshA) return freshB - freshA;
+
+    const scoreA = Number((a as any).priority_score ?? (a as any).priorityScore ?? 0);
+    const scoreB = Number((b as any).priority_score ?? (b as any).priorityScore ?? 0);
+    if (scoreB !== scoreA) return scoreB - scoreA;
 
     const fitA = evaluateCandidateJobFit({ company: a.company, title: a.title, location: (a as any).location, url: a.jobUrl });
     const fitB = evaluateCandidateJobFit({ company: b.company, title: b.title, location: (b as any).location, url: b.jobUrl });
@@ -230,65 +242,20 @@ export function selectDiversifiedMultiLaneChunk(
 
     return String(b.id || '').localeCompare(String(a.id || ''));
   };
-  hourlyQueue.sort(sortByFit);
-  workdayQueue.sort(sortByFit);
-  greenhouseQueue.sort(sortByFit);
-  ashbyQueue.sort(sortByFit);
-  otherQueue.sort(sortByFit);
 
-  // Ticket GEN-189: Asymmetric 3:1 Fast-ATS chunk allocation
-  // 1. Take 100% of eligible fresh hourly candidates up to chunkSize
-  for (const job of hourlyQueue) {
+  fastAtsCandidates.sort(sortByPriority);
+  slowAtsCandidates.sort(sortByPriority);
+
+  // GEN-283: Dedicate 100% of chunk slots exclusively to Fast-ATS (Greenhouse, Ashby, Lever) while available
+  for (const job of fastAtsCandidates) {
     takeCandidate(job);
     if (selected.length >= chunkSize) return selected;
   }
 
-  // Cap workday slots at 25% (max 10 slots per 40-job chunk) while fast-ATS queues have items
-  const maxWorkdaySlots = Math.max(1, Math.floor(chunkSize * 0.25));
-  let workdayCount = selected.filter(j => j.jobUrl.toLowerCase().includes('myworkdayjobs.com')).length;
-
-  const pullFromLane = (queue: AutoaplyJobItem[], maxPull: number): boolean => {
-    let pulled = 0;
-    while (queue.length > 0 && pulled < maxPull) {
-      const candidate = queue.shift()!;
-      if (takeCandidate(candidate)) {
-        pulled++;
-        if (selected.length >= chunkSize) return true;
-      }
-    }
-    return pulled > 0;
-  };
-
-  let progressMade = true;
-  while (selected.length < chunkSize && progressMade) {
-    progressMade = false;
-
-    // Pull 2 Greenhouse, 2 Ashby, 2 Other (Lever / SmartRecruiters)
-    if (pullFromLane(greenhouseQueue, 2)) progressMade = true;
-    if (selected.length >= chunkSize) break;
-
-    if (pullFromLane(ashbyQueue, 2)) progressMade = true;
-    if (selected.length >= chunkSize) break;
-
-    if (pullFromLane(otherQueue, 2)) progressMade = true;
-    if (selected.length >= chunkSize) break;
-
-    // Cap workday at <= maxWorkdaySlots while fast-ATS queues have pending items
-    const fastAtsRemain = greenhouseQueue.length > 0 || ashbyQueue.length > 0 || otherQueue.length > 0;
-    if (!fastAtsRemain || workdayCount < maxWorkdaySlots) {
-      if (pullFromLane(workdayQueue, 1)) {
-        workdayCount++;
-        progressMade = true;
-      }
-    }
-  }
-
-  // If slots remain and Fast-ATS are empty, backfill with remaining workday jobs
-  while (selected.length < chunkSize && workdayQueue.length > 0) {
-    const candidate = workdayQueue.shift()!;
-    if (takeCandidate(candidate)) {
-      if (selected.length >= chunkSize) break;
-    }
+  // Only add slow ATS (Workday, SmartRecruiters, Other) if fewer than chunkSize fast-ATS jobs were available
+  for (const job of slowAtsCandidates) {
+    takeCandidate(job);
+    if (selected.length >= chunkSize) return selected;
   }
 
   return selected;
@@ -375,16 +342,16 @@ export async function checkJobPostingHttpAliveFast(rawUrl: string): Promise<{ al
 }
 
 /**
- * Ticket GEN-159: Dynamic activity-aware timeout.
- * 360_000ms base timeout, dynamically extended by +60_000ms when checkpoint updates, up to 450_000ms.
+ * Ticket GEN-159 & GEN-284: Dynamic activity-aware timeout.
+ * 95_000ms base timeout for Fast-ATS (160_000ms for Slow-ATS), dynamically extended by +30_000ms when checkpoint updates.
  */
 export async function runWithDynamicActivityTimeout<T>(
   promise: Promise<T>,
-  baseTimeoutMs = 360_000,
+  baseTimeoutMs = 95_000,
   label = 'Job',
   jobId?: string
 ): Promise<T> {
-  const maxTimeoutMs = 450_000;
+  const maxTimeoutMs = Math.round(baseTimeoutMs * 1.35);
   const startTime = Date.now();
   let currentDeadline = startTime + baseTimeoutMs;
   let lastCheckedCheckpointMtime = 0;
@@ -417,8 +384,8 @@ export async function runWithDynamicActivityTimeout<T>(
             const stat = fs.statSync(cpPath);
             if (stat.mtimeMs > lastCheckedCheckpointMtime) {
               lastCheckedCheckpointMtime = stat.mtimeMs;
-              if (currentDeadline - Date.now() < 45_000) {
-                const newDeadline = Math.min(startTime + maxTimeoutMs, currentDeadline + 60_000);
+              if (currentDeadline - Date.now() < 30_000) {
+                const newDeadline = Math.min(startTime + maxTimeoutMs, currentDeadline + 30_000);
                 if (newDeadline > currentDeadline) {
                   currentDeadline = newDeadline;
                   arm();
@@ -427,7 +394,7 @@ export async function runWithDynamicActivityTimeout<T>(
             }
           }
         } catch {}
-      }, 10_000);
+      }, 5_000);
     }
   });
 
@@ -552,14 +519,20 @@ export async function runOvernightMarathon(config: {
       }
 
 
-      // Ticket GEN-173 / GEN-201: Sync fresh 1-hour jobs from origin/main Git objects + Live 100+ Jobs Harvester
-      try {
-        const harvestRes = await runHourly100JobsHarvester().catch(() => null);
-        if (harvestRes && harvestRes.insertedOrBoosted > 0) {
-          console.log(`[MARATHON] Hourly 100+ Harvester: +${harvestRes.insertedOrBoosted} jobs inserted/boosted (raw: ${harvestRes.rawHarvested}, fit: ${harvestRes.targetFitMatched}) across ${harvestRes.databasesUpdated.length} DBs`);
+      // Ticket GEN-282: Fast-launch check: if >= 40 Tier-2 jobs already queued, skip blocking harvest/sync (0ms startup)!
+      const queueDbPath = path.join(stateDir, 'queue.sqlite');
+      const tier2Count = countQueuedTier2Jobs(queueDbPath);
+      if (tier2Count >= 40) {
+        console.log(`[MARATHON] Fast-launch: ${tier2Count} Tier-2 jobs already queued. Skipping blocking harvest/sync (0ms startup)!`);
+      } else {
+        try {
+          const harvestRes = await runHourly100JobsHarvester().catch(() => null);
+          if (harvestRes && harvestRes.insertedOrBoosted > 0) {
+            console.log(`[MARATHON] Hourly 100+ Harvester: +${harvestRes.insertedOrBoosted} jobs inserted/boosted (raw: ${harvestRes.rawHarvested}, fit: ${harvestRes.targetFitMatched}) across ${harvestRes.databasesUpdated.length} DBs`);
+          }
+        } catch (err) {
+          console.warn('[MARATHON] Hourly harvester notice (non-fatal):', err);
         }
-      } catch (err) {
-        console.warn('[MARATHON] Hourly harvester notice (non-fatal):', err);
       }
 
       // 1. Fresh queue read for eligible jobs
@@ -661,6 +634,17 @@ export async function runOvernightMarathon(config: {
         (url) => isHostReadyForRequest(url, 45000, hostHealthPath)
       );
       const lanes = partitionJobsIntoProviderLanes(chunkJobs);
+      // GEN-283: If workday lane is idle because 100% fast-ATS jobs were selected,
+      // allow lane 'workday' to help run excess fast-ATS jobs (up to half of the heaviest lane)
+      if ((lanes.workday?.length ?? 0) === 0) {
+        const heaviest = (Object.keys(lanes) as Array<keyof typeof lanes>)
+          .filter(k => k !== 'workday' && (lanes[k]?.length ?? 0) > 8)
+          .sort((a, b) => (lanes[b]?.length ?? 0) - (lanes[a]?.length ?? 0))[0];
+        if (heaviest && lanes[heaviest] && lanes[heaviest]!.length > 8) {
+          const splitCount = Math.floor(lanes[heaviest]!.length / 2);
+          lanes.workday = lanes[heaviest]!.splice(-splitCount);
+        }
+      }
       const activeLanes = (Object.keys(lanes) as Array<keyof typeof lanes>).filter(
         k => (lanes[k]?.length ?? 0) > 0
       );
@@ -714,15 +698,25 @@ export async function runOvernightMarathon(config: {
           return;
         }
 
-        // Ticket GEN-162: Fast HTTP 404/410 Pre-Flight Dead-Posting Filter (<250ms)
-        const httpPreflight = await checkJobPostingHttpAliveFast(job.jobUrl);
-        if (!httpPreflight.alive) {
-          console.log(`[MARATHON] Fast preflight detected closed posting (${httpPreflight.reason}) for ${job.company}`);
-          queue.markFailed(job.id, 'Job posting is closed or no longer available (HTTP 404/410 pre-flight)');
-          markHostOutcome(job.jobUrl, 'error', hostHealthPath);
-          chunkProcessedCount++;
-          totalProcessedOverall++;
-          return;
+        // Ticket GEN-162 & GEN-282: Fast HTTP 404/410 Pre-Flight Dead-Posting Filter (<250ms)
+        // Skip for is_hourly_fresh >= 2 because Tier-2 jobs were already verified alive by API harvester
+        const jobFreshLevel = Number(
+          (job as any).is_hourly_fresh ??
+          (job as any).isHourlyFresh ??
+          (job as any).payload?.is_hourly_fresh ??
+          (job as any).payload?.isHourlyFresh ??
+          0
+        );
+        if (jobFreshLevel < 2) {
+          const httpPreflight = await checkJobPostingHttpAliveFast(job.jobUrl);
+          if (!httpPreflight.alive) {
+            console.log(`[MARATHON] Fast preflight detected closed posting (${httpPreflight.reason}) for ${job.company}`);
+            queue.markFailed(job.id, 'Job posting is closed or no longer available (HTTP 404/410 pre-flight)');
+            markHostOutcome(job.jobUrl, 'error', hostHealthPath);
+            chunkProcessedCount++;
+            totalProcessedOverall++;
+            return;
+          }
         }
 
         const sessionDir = path.join(

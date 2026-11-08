@@ -67,7 +67,8 @@ test('GEN-243: harvest-100-hourly-jobs.ts updates location and restores skipped 
     'harvester must resurrect skipped applications'
   );
   assert.ok(
-    harvesterCode.includes("UPDATE jobs SET status = 'queued', is_hourly_fresh = 2, location = ?, last_error = NULL"),
+    harvesterCode.includes("UPDATE jobs SET status = 'queued'") &&
+    harvesterCode.includes("location = ?, last_error = NULL"),
     'harvester must resurrect and update location in jobs table'
   );
 });

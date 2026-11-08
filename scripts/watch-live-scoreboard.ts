@@ -63,6 +63,49 @@ export function printLiveScoreboardSnapshot(): void {
   console.log('Status Counts:', counts);
   console.log('Queued Freshness Tiers (2 = Live API Verified, 1 = Fresh, 0 = Backfill):', freshCounts);
   console.log('Latest Confirmed Applied Jobs:', recentApplied);
+
+  // Ticket GEN-285: Print last 10 completed runs from run-history.jsonl & velocity
+  const historyPath = 'state/autoapply/portal-review/run-history.jsonl';
+  if (fs.existsSync(historyPath)) {
+    try {
+      const content = fs.readFileSync(historyPath, 'utf8').trim();
+      const lines = content ? content.split(/\r?\n/).filter(Boolean) : [];
+      const recent = lines.slice(-10);
+      console.log('=== LAST 10 RUNS (run-history.jsonl) ===');
+      for (const line of recent) {
+        try {
+          const item = JSON.parse(line);
+          const durSec = Math.round((item.durationMs || 0) / 1000);
+          const comp = item.company || '?';
+          const ats = item.provider || item.ats || item.lane || '?';
+          const st = item.status || '?';
+          const filled = item.fieldsFilled ?? 0;
+          const rsn = String(item.reason || item.error || item.summary || '').slice(0, 60);
+          console.log(`[${st.toUpperCase()}] ${comp} | ${ats} | ${durSec}s | filled:${filled} | ${rsn}`);
+        } catch {}
+      }
+
+      const now = Date.now();
+      const tenMinsAgo = now - 10 * 60 * 1000;
+      let countLast10Mins = 0;
+      let appliedLast10Mins = 0;
+      for (let i = lines.length - 1; i >= Math.max(0, lines.length - 100); i--) {
+        try {
+          const parsed = JSON.parse(lines[i]!);
+          const finishedTime = parsed.finishedAt ? new Date(parsed.finishedAt).getTime() : 0;
+          if (finishedTime >= tenMinsAgo) {
+            countLast10Mins++;
+            if (parsed.status === 'applied' || parsed.status === 'submitted') {
+              appliedLast10Mins++;
+            }
+          }
+        } catch {}
+      }
+      console.log(`Velocity (Last 10m): ${countLast10Mins} completed (${(countLast10Mins / 10).toFixed(1)}/min) | ${appliedLast10Mins} applied`);
+    } catch (err: any) {
+      console.warn('Failed to parse run-history.jsonl:', err?.message || err);
+    }
+  }
 }
 
 const isDirectRun = Boolean(
