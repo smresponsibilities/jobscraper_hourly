@@ -247,7 +247,7 @@ export function resolveCandidateAnswer(category: ExtendedFieldCategory, profile:
   // Textarea narrative handling for unfamiliar stacks / Ruby on Rails (Ticket GEN-96)
   if (context.fieldType?.toLowerCase() === 'textarea' || (context as any).widgetKind?.toLowerCase() === 'textarea') {
     if (/\b(ruby|rails|ruby on rails)\b/i.test(q)) {
-      const narrative = composeGroundedNarrative(q, profile);
+      const narrative = composeGroundedNarrative(q, profile, context.company);
       if (narrative) return result(narrative, 'certified_experience_excerpt', ['experience']);
     }
   }
@@ -507,7 +507,7 @@ export function resolveCandidateAnswer(category: ExtendedFieldCategory, profile:
     ((category as string) === 'skill_experience' && isExplicitNarrativeField)
   );
   if (value === undefined && isNarrativeEligible && context.question) {
-    const narrative = composeGroundedNarrative(context.question, profile);
+    const narrative = composeGroundedNarrative(context.question, profile, context.company);
     if (narrative) return result(narrative, 'certified_experience_excerpt', ['experience', 'skillYears']);
   }
   if (value === undefined && context.question) {

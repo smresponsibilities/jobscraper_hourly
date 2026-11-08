@@ -53,11 +53,13 @@ function buildMaster1000QuestionCorpus(): QuestionBankEntry[] {
   // Domain 1: Identity & Legal Name
   add('identity', [
     'First Name', 'Legal First Name', 'Given Name', 'Preferred First Name', 'Preferred Name',
-    'What is your first name?', 'Candidate First Name', 'Forename', 'Applicant First Name', 'Nickname'
+    'What is your first name?', 'Candidate First Name', 'Forename', 'Applicant First Name', 'Nickname',
+    'Applicant Legal First Name', 'Applicant legal first name'
   ], 'Shivam');
   add('identity', [
     'Last Name', 'Legal Last Name', 'Surname', 'Family Name', 'What is your last name?',
-    'Candidate Last Name', 'Applicant Last Name', 'Second Name'
+    'Candidate Last Name', 'Applicant Last Name', 'Second Name',
+    'Applicant Legal Last Name', 'Applicant legal last name'
   ], 'Mahajan');
   add('identity', [
     'Full Name', 'Full Legal Name', 'Legal Name', 'Candidate Name', 'Applicant Full Name',
@@ -204,12 +206,12 @@ function buildMaster1000QuestionCorpus(): QuestionBankEntry[] {
   // Domain 9: Compensation, CTC & Expectations
   add('compensation', [
     'Current CTC', 'Present CTC', 'Current Annual Salary', 'Current Base Salary', 'Current Fixed CTC', 'Current Compensation',
-    'What is your current total annual compensation?'
+    'What is your current total annual compensation?', 'What is your current annual CTC in LPA?'
   ], '1000000', '10 LPA', '1000000');
   add('compensation', [
     'Expected CTC', 'Desired Salary', 'Expected Annual Salary', 'Expected Base Salary',
     'Target Compensation', 'Expected Compensation', 'Salary Expectations',
-    'What is your expected annual compensation?'
+    'What is your expected annual compensation?', 'What is your expected annual CTC in LPA?'
   ], '1200000', '12 LPA', '1200000');
   add('compensation', [
     'What is your desired annual compensation range?', 'Desired compensation range', 'Expected salary range'
@@ -408,6 +410,35 @@ for (const entry of PORTAL_QUESTION_BANK_1000) {
   }
 }
 
+export const ANTONYM_GROUPS: Array<[RegExp, RegExp]> = [
+  [/\b(?:first|given|forename)\b/, /\b(?:last|surname|family|middle)\b/],
+  [/\bmiddle\b/, /\b(?:first|last|surname|full)\b/],
+  [/\b(?:current|present)\b/, /\b(?:expected|desired|target)\b/],
+  [/\b(?:start|from|begin)\b/, /\b(?:end|to|graduation|passing|completion)\b/],
+  [/\b(?:authorized|eligible|citizen)\b/, /\b(?:sponsorship|sponsor|visa\s+assistance)\b/],
+  [/\b(?:10th|ssc|matric)\b/, /\b(?:12th|hsc|intermediate|diploma)\b/],
+  [/\bcgpa\b/, /\bpercentage\b/],
+  [/\bcity\b/, /\b(?:state|province|country|postal|pin|zip)\b/],
+  [/\bstate\b/, /\b(?:city|country|postal|pin|zip)\b/],
+  [/\b(?:not|never|non)\b/, /^(?!.*\b(?:not|never|non)\b).*$/],
+];
+
+export function hasAntonymOrPolarityConflict(aNorm: string, bNorm: string): boolean {
+  for (const [rx1, rx2] of ANTONYM_GROUPS) {
+    const aHas1 = rx1.test(aNorm);
+    const aHas2 = rx2.test(aNorm);
+    const bHas1 = rx1.test(bNorm);
+    const bHas2 = rx2.test(bNorm);
+    if ((aHas1 && bHas2 && !aHas2) || (bHas1 && aHas2 && !bHas2)) {
+      return true;
+    }
+    if (aHas1 !== bHas1 && (rx1.source.includes('first') || rx1.source.includes('current') || rx1.source.includes('start'))) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function lookupQuestionIn1000Bank(
   questionText: string,
   widgetKind = 'text'
@@ -435,6 +466,7 @@ export function lookupQuestionIn1000Bank(
 
   for (const candidate of PORTAL_QUESTION_BANK_1000) {
     if (candidate.tokens.length === 0) continue;
+    if (hasAntonymOrPolarityConflict(norm, candidate.normalizedKey)) continue;
     let shared = 0;
     for (const t of candidate.tokens) {
       if (qSet.has(t)) shared++;

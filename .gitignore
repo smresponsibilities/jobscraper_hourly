@@ -51,6 +51,8 @@ state/outreach.pid
 # Per-run state, same class as seen.json above: restored and saved through the
 # Actions cache by hunt.yml, never through git. These five were simply never
 # added to the list, so a local run left them showing as untracked additions.
+state/dead-board-slugs.json
+state/verified-active-boards.json
 state/outage.json
 state/host-stats.json
 state/reposts.json

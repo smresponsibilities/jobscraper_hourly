@@ -12,6 +12,25 @@ export const TARGET_DB_PATHS = [
   'data/queue.sqlite',
 ].filter((p) => fs.existsSync(p));
 
+export const DEAD_SLUGS_PATH = path.resolve('state/dead-board-slugs.json');
+export const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+
+export function loadDeadBoardSlugs(): Record<string, number> {
+  try {
+    if (fs.existsSync(DEAD_SLUGS_PATH)) {
+      return JSON.parse(fs.readFileSync(DEAD_SLUGS_PATH, 'utf8'));
+    }
+  } catch {}
+  return {};
+}
+
+export function saveDeadBoardSlugs(store: Record<string, number>): void {
+  try {
+    fs.mkdirSync(path.dirname(DEAD_SLUGS_PATH), { recursive: true });
+    fs.writeFileSync(DEAD_SLUGS_PATH, JSON.stringify(store, null, 2), 'utf8');
+  } catch {}
+}
+
 export interface HarvestedJob {
   company: string;
   title: string;
@@ -29,21 +48,30 @@ export function inferAts(url: string): string {
   return 'other';
 }
 
-async function fetchJsonFast(url: string, timeoutMs = 4500): Promise<any> {
+export interface FetchResult {
+  data: any;
+  status: number;
+}
+
+async function fetchJsonFast(url: string, timeoutMs = 4500, postBody?: string): Promise<FetchResult> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
     const res = await fetch(url, {
+      method: postBody ? 'POST' : 'GET',
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124.0.0.0',
         Accept: 'application/json',
+        ...(postBody ? { 'Content-Type': 'application/json' } : {}),
       },
+      body: postBody,
       signal: ctrl.signal,
     });
-    if (!res.ok) return null;
-    return await res.json();
+    if (!res.ok) return { data: null, status: res.status };
+    const data = await res.json();
+    return { data, status: res.status };
   } catch {
-    return null;
+    return { data: null, status: 0 };
   } finally {
     clearTimeout(timer);
   }
@@ -93,7 +121,7 @@ export const TIER_0_HIGH_YIELD_BOARDS: Array<{ ats: string; slug: string; name: 
   { ats: 'lever', slug: 'zeta', name: 'Zeta' },
 ];
 
-export async function harvestLiveFastAtsBoardsFromCompaniesJson(maxBoards = 320): Promise<HarvestedJob[]> {
+export async function harvestLiveFastAtsBoardsFromCompaniesJson(maxBoards = 500): Promise<HarvestedJob[]> {
   const harvested: HarvestedJob[] = [];
   if (!fs.existsSync('companies.json')) return harvested;
 
@@ -105,10 +133,20 @@ export async function harvestLiveFastAtsBoardsFromCompaniesJson(maxBoards = 320)
     return harvested;
   }
 
-  // Prioritize Greenhouse, Ashby, Lever, and SmartRecruiters boards for high-velocity harvesting
+  const deadSlugs = loadDeadBoardSlugs();
+  const now = Date.now();
+
+  // Prioritize Greenhouse, Ashby, Lever, SmartRecruiters, and Workday boards
+  // Skip any board quarantined within the last 7 days
   const fastBoards = companies.filter((c) => {
     const ats = String(c.ats || c.provider || c.type || '').toLowerCase();
-    return ['greenhouse', 'ashby', 'lever', 'smartrecruiters'].includes(ats) && (c.slug || c.board || c.id || c.token);
+    const slug = String(c.slug || c.board || c.id || c.token || '').trim().toLowerCase();
+    if (!['greenhouse', 'ashby', 'lever', 'smartrecruiters', 'workday'].includes(ats) || !slug) return false;
+    const deadTimestamp = deadSlugs[`${ats}:${slug}`];
+    if (deadTimestamp && now - deadTimestamp < SEVEN_DAYS_MS) {
+      return false;
+    }
+    return true;
   });
 
   // Rotate starting offset by current hour so every hour sweeps a fresh slice + top India boards
@@ -129,7 +167,7 @@ export async function harvestLiveFastAtsBoardsFromCompaniesJson(maxBoards = 320)
     }
   }
 
-  const concurrency = 25;
+  const concurrency = 40;
   for (let i = 0; i < selected.length; i += concurrency) {
     const batch = selected.slice(i, i + concurrency);
     const batchResults = await Promise.all(
@@ -141,10 +179,14 @@ export async function harvestLiveFastAtsBoardsFromCompaniesJson(maxBoards = 320)
 
         const jobsOut: HarvestedJob[] = [];
         if (ats === 'greenhouse') {
-          const data = await fetchJsonFast(`https://boards-api.greenhouse.io/v1/boards/${encodeURIComponent(slug)}/jobs`);
+          const { data, status } = await fetchJsonFast(`https://boards-api.greenhouse.io/v1/boards/${encodeURIComponent(slug)}/jobs`);
+          if (status === 404) deadSlugs[`${ats}:${slug.toLowerCase()}`] = now;
           const list = Array.isArray(data?.jobs) ? data.jobs : [];
           for (const j of list) {
-            const loc = String(j.location?.name || '');
+            const offLocs = Array.isArray(j.offices)
+              ? j.offices.map((o: any) => o?.name || o?.location || '').filter(Boolean).join(', ')
+              : '';
+            const loc = [j.location?.name, offLocs].filter(Boolean).join(', ');
             const rawAbs = String(j.absolute_url || '');
             const url =
               /greenhouse\.io/i.test(rawAbs) && rawAbs
@@ -155,10 +197,17 @@ export async function harvestLiveFastAtsBoardsFromCompaniesJson(maxBoards = 320)
             if (url) jobsOut.push({ company: companyName, title: String(j.title || ''), location: loc, url, ats: 'greenhouse' });
           }
         } else if (ats === 'ashby') {
-          const data = await fetchJsonFast(`https://api.ashbyhq.com/posting-api/job-board/${encodeURIComponent(slug)}`);
+          const { data, status } = await fetchJsonFast(`https://api.ashbyhq.com/posting-api/job-board/${encodeURIComponent(slug)}`);
+          if (status === 404) deadSlugs[`${ats}:${slug.toLowerCase()}`] = now;
           const list = Array.isArray(data?.jobs) ? data.jobs : [];
           for (const j of list) {
-            const loc = String(j.location || j.address?.postalAddress?.addressLocality || '');
+            const secLocs = Array.isArray(j.secondaryLocations)
+              ? j.secondaryLocations.map((s: any) => String(s?.location || s || '')).filter(Boolean).join(', ')
+              : '';
+            const remoteTag = j.isRemote ? 'Remote' : '';
+            const loc = [j.location, j.address?.postalAddress?.addressLocality, secLocs, remoteTag]
+              .filter(Boolean)
+              .join(', ');
             const rawUrl = String(j.jobUrl || j.applyUrl || '');
             const url =
               /ashbyhq\.com/i.test(rawUrl) && rawUrl
@@ -169,10 +218,12 @@ export async function harvestLiveFastAtsBoardsFromCompaniesJson(maxBoards = 320)
             if (url) jobsOut.push({ company: companyName, title: String(j.title || ''), location: loc, url, ats: 'ashby' });
           }
         } else if (ats === 'lever') {
-          const data = await fetchJsonFast(`https://api.lever.co/v0/postings/${encodeURIComponent(slug)}?mode=json`);
+          const { data, status } = await fetchJsonFast(`https://api.lever.co/v0/postings/${encodeURIComponent(slug)}?mode=json`);
+          if (status === 404) deadSlugs[`${ats}:${slug.toLowerCase()}`] = now;
           const list = Array.isArray(data) ? data : [];
           for (const j of list) {
-            const loc = String(j.categories?.location || j.workplaceType || '');
+            const allLocs = Array.isArray(j.categories?.allLocations) ? j.categories.allLocations.filter(Boolean).join(', ') : '';
+            const loc = [j.categories?.location, allLocs, j.workplaceType].filter(Boolean).join(', ');
             const rawUrl = String(j.applyUrl || j.hostedUrl || '');
             const url =
               /jobs\.lever\.co/i.test(rawUrl) && rawUrl
@@ -183,12 +234,34 @@ export async function harvestLiveFastAtsBoardsFromCompaniesJson(maxBoards = 320)
             if (url) jobsOut.push({ company: companyName, title: String(j.text || ''), location: loc, url, ats: 'lever' });
           }
         } else if (ats === 'smartrecruiters') {
-          const data = await fetchJsonFast(`https://api.smartrecruiters.com/v1/companies/${encodeURIComponent(slug)}/postings?limit=50`);
+          const { data, status } = await fetchJsonFast(`https://api.smartrecruiters.com/v1/companies/${encodeURIComponent(slug)}/postings?limit=50`);
+          if (status === 404) deadSlugs[`${ats}:${slug.toLowerCase()}`] = now;
           const list = Array.isArray(data?.content) ? data.content : [];
           for (const j of list) {
-            const loc = [j.location?.city, j.location?.country].filter(Boolean).join(', ');
+            const loc = [j.location?.city, j.location?.region, j.location?.country].filter(Boolean).join(', ');
             const url = `https://jobs.smartrecruiters.com/${slug}/${j.id}`;
             if (j.id) jobsOut.push({ company: companyName, title: String(j.name || ''), location: loc, url, ats: 'smartrecruiters' });
+          }
+        } else if (ats === 'workday') {
+          const tenant = slug;
+          const site = String(b.site || 'External_Career_Site');
+          const host = String(b.host || 'wd3');
+          const hostPrefix = host.includes('.') ? host : `${host}.myworkdayjobs.com`;
+          const cxsUrl = `https://${tenant}.${hostPrefix}/wday/cxs/${tenant}/${site}/jobs`;
+          const { data, status } = await fetchJsonFast(
+            cxsUrl,
+            5000,
+            JSON.stringify({ limit: 20, offset: 0, searchText: 'Bengaluru' })
+          );
+          if (status === 404) deadSlugs[`${ats}:${slug.toLowerCase()}`] = now;
+          const postings = Array.isArray(data?.jobPostings) ? data.jobPostings : [];
+          for (const p of postings) {
+            const loc = String(p.locationsText || 'Bengaluru, India');
+            const pathPart = String(p.externalPath || '');
+            const url = pathPart ? `https://${tenant}.${hostPrefix}/en-US/${site}${pathPart.startsWith('/') ? '' : '/'}${pathPart}` : '';
+            if (url) {
+              jobsOut.push({ company: companyName, title: String(p.title || ''), location: loc, url, ats: 'workday' });
+            }
           }
         }
         return jobsOut;
@@ -196,6 +269,8 @@ export async function harvestLiveFastAtsBoardsFromCompaniesJson(maxBoards = 320)
     );
     for (const res of batchResults) harvested.push(...res);
   }
+
+  saveDeadBoardSlugs(deadSlugs);
   return harvested;
 }
 
@@ -205,7 +280,7 @@ export async function runHourly100JobsHarvester(): Promise<{
   targetFitMatched: number;
   insertedOrBoosted: number;
 }> {
-  const liveJobs = await harvestLiveFastAtsBoardsFromCompaniesJson(240);
+  const liveJobs = await harvestLiveFastAtsBoardsFromCompaniesJson(500);
   const fitJobs: HarvestedJob[] = [];
 
   for (const j of liveJobs) {
@@ -256,96 +331,69 @@ export async function runHourly100JobsHarvester(): Promise<{
         const candidateId = '2e533f7f49798b955338';
         const insertStmt = db.prepare(`
           INSERT OR IGNORE INTO applications (candidate_id, id, canonical_key, normalized_url, status, payload, owner, expires)
-          VALUES (?, ?, ?, ?, 'queued', ?, NULL, NULL)
+          VALUES (?, ?, ?, ?, 'queued', ?, 'hourly_harvester', ?)
         `);
-        const updateStmt = db.prepare('UPDATE applications SET payload = ? WHERE id = ?');
+        const updateStmt = db.prepare(`
+          UPDATE applications SET payload = ?, expires = ? WHERE id = ?
+        `);
 
-        db.exec('BEGIN TRANSACTION');
-        for (const j of fitJobs) {
-          const ex = existingByUrl.get(j.url);
-          if (ex) {
-            if (ex.status === 'queued' && !ex.payload.isHourlyFresh) {
-              ex.payload.isHourlyFresh = true;
-              ex.payload.priorityBonus = (ex.payload.priorityBonus || 0) + 10000;
-              updateStmt.run(JSON.stringify(ex.payload), ex.id);
-              totalInsertedOrBoosted++;
-            }
-            continue;
-          }
+        for (const job of fitJobs) {
+          const normUrl = job.url.trim();
+          const existing = existingByUrl.get(normUrl);
+          const expiresDate = new Date(Date.now() + 48 * 3600 * 1000).toISOString();
 
-          const jobId = 'autoaply_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
-          const payload = {
-            id: jobId,
-            externalJobId: '',
-            title: j.title || 'Software Engineer',
-            company: j.company || 'Unknown',
-            jobUrl: j.url,
-            jobBoard: 'direct_ats',
-            location: j.location || 'India',
-            postedAt: new Date().toISOString(),
-            status: 'queued',
-            isHourlyFresh: true,
-            priorityBonus: 10000,
-            ats: j.ats,
-          };
-
-          try {
-            insertStmt.run(candidateId, jobId, j.url, j.url, JSON.stringify(payload));
-            existingByUrl.set(j.url, { id: jobId, status: 'queued', payload });
+          if (!existing) {
+            const id = `harvest_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+            const payload = JSON.stringify({
+              url: normUrl,
+              company: job.company,
+              title: job.title,
+              location: job.location,
+              ats: job.ats,
+              discoveredAt: new Date().toISOString(),
+              is_hourly_fresh: 1,
+            });
+            insertStmt.run(candidateId, id, normUrl, normUrl, payload, expiresDate);
             totalInsertedOrBoosted++;
-          } catch {}
-        }
-        db.exec('COMMIT');
-      } else if (hasJobsTable) {
-        const cols = new Set(
-          (db.prepare('PRAGMA table_info(jobs)').all() as Array<{ name: string }>).map((c) => c.name)
-        );
-        const existingUrls = new Map<string, { id: number; status: string }>();
-        for (const row of db.prepare('SELECT id, url, status FROM jobs').all() as any[]) {
-          if (row.url) existingUrls.set(String(row.url).trim(), row);
-        }
-
-        db.exec('BEGIN TRANSACTION');
-        for (const j of fitJobs) {
-          const ex = existingUrls.get(j.url);
-          if (ex) {
-            if (ex.status === 'queued' && cols.has('is_hourly_fresh')) {
-              const info = db
-                .prepare('UPDATE jobs SET is_hourly_fresh = 1 WHERE id = ? AND COALESCE(is_hourly_fresh, 0) = 0')
-                .run(ex.id) as any;
-              totalInsertedOrBoosted += (info?.changes || 0);
-            }
-            continue;
-          }
-          try {
-            const insertCols = ['company', 'title', 'url', 'status'];
-            const insertVals: Array<string | number | null> = [j.company, j.title, j.url, 'queued'];
-            if (cols.has('location')) {
-              insertCols.push('location');
-              insertVals.push(j.location || 'India');
-            }
-            if (cols.has('ats')) {
-              insertCols.push('ats');
-              insertVals.push(j.ats);
-            }
-            if (cols.has('is_hourly_fresh')) {
-              insertCols.push('is_hourly_fresh');
-              insertVals.push(1);
-            }
-            const ph = insertCols.map(() => '?').join(', ');
-            db.prepare(`INSERT OR IGNORE INTO jobs (${insertCols.join(', ')}) VALUES (${ph})`).run(...insertVals);
-            existingUrls.set(j.url, { id: -1, status: 'queued' });
+          } else if (existing.status === 'queued') {
+            const p = existing.payload || {};
+            p.is_hourly_fresh = 1;
+            p.boostedAt = new Date().toISOString();
+            updateStmt.run(JSON.stringify(p), expiresDate, existing.id);
             totalInsertedOrBoosted++;
-          } catch {}
+          }
         }
-        db.exec('COMMIT');
       }
-    } catch (err: any) {
-      if (!/database is locked/i.test(err?.message || '')) {
-        console.warn('[HARVESTER NOTICE]', err?.message || err);
+
+      if (hasJobsTable) {
+        const existingJobRows = db.prepare('SELECT id, url, status FROM jobs').all() as any[];
+        const existingJobsByUrl = new Map<string, { id: number; status: string }>();
+        for (const row of existingJobRows) {
+          if (row.url) existingJobsByUrl.set(String(row.url).trim(), { id: row.id, status: row.status });
+        }
+
+        const insertJobStmt = db.prepare(`
+          INSERT OR IGNORE INTO jobs (company, title, url, location, ats, status, is_hourly_fresh)
+          VALUES (?, ?, ?, ?, ?, 'queued', 1)
+        `);
+        const boostJobStmt = db.prepare(`
+          UPDATE jobs SET is_hourly_fresh = 1 WHERE id = ?
+        `);
+
+        for (const job of fitJobs) {
+          const normUrl = job.url.trim();
+          const existing = existingJobsByUrl.get(normUrl);
+          if (!existing) {
+            insertJobStmt.run(job.company, job.title, normUrl, job.location, job.ats);
+            totalInsertedOrBoosted++;
+          } else if (existing.status === 'queued') {
+            boostJobStmt.run(existing.id);
+            totalInsertedOrBoosted++;
+          }
+        }
       }
     } finally {
-      try { db.close(); } catch {}
+      db.close();
     }
   }
 
@@ -357,9 +405,11 @@ export async function runHourly100JobsHarvester(): Promise<{
   };
 }
 
-if (
-  process.argv[1] &&
-  fileURLToPath(import.meta.url).toLowerCase() === path.resolve(process.argv[1]).toLowerCase()
-) {
-  runHourly100JobsHarvester().then((r) => console.log('Hourly 100+ Jobs Harvester Result:', r));
+if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+  runHourly100JobsHarvester()
+    .then((r) => console.log('Hourly harvester run completed:', r))
+    .catch((err) => {
+      console.error('Hourly harvester failed:', err);
+      process.exit(1);
+    });
 }

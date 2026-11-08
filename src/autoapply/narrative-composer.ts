@@ -8,7 +8,12 @@ import type { CandidateExtendedProfile } from './types.js';
  * Branch 3: Data pipelines, ETL, databases, SQL
  * Branch 4: Motivation, why company, cover letter, additional info
  */
-export function composeGroundedNarrative(question: string, profile: CandidateExtendedProfile): string | null {
+export function composeGroundedNarrative(
+  question: string,
+  profile: CandidateExtendedProfile,
+  companyName?: string,
+  roleTitle?: string
+): string | null {
   const q = question.trim();
   let narrative: string | null = null;
 
@@ -40,11 +45,13 @@ export function composeGroundedNarrative(question: string, profile: CandidateExt
   else if (/\b(data pipeline|etl|data warehouse|database|sql|streaming|batch processing)\b/i.test(q)) {
     narrative = "During my Technology Apprenticeship at Morgan Stanley, I designed and maintained Python and PySpark ETL data pipelines processing high-throughput streaming events from Kafka and batch tables in Hive and Azure Snowflake, with relational modeling in MySQL, SQLite, and document storage in MongoDB.";
   }
-  // Branch 4: Motivation, "Why <Company>?", Cover Note, Fit, Additional Info
+  // Branch 4: Motivation, "Why <Company>?", Cover Note, Fit, Additional Info (Ticket GEN-218)
   else if (/\b(why\b|interest|excit|hire|fit\b|cover letter|anything else|additional information|tell us about yourself|motivation|join\b|stand out|value|contribute)\b/i.test(q)) {
-    narrative = 'I am a 2026 Computer Science and Engineering graduate from Chitkara University (9.35 CGPA) with 1 year of production experience ' +
-      'as a Technology Apprentice at Morgan Stanley in Bengaluru, where I built Java Spring Boot REST APIs, Python/PySpark ETL pipelines, ' +
-      'and Apache Kafka workflows. I am based in Bengaluru and available to start immediately.';
+    const extractedComp = q.match(/\b(?:why\s+(?:do\s+you\s+want\s+to\s+work\s+at|are\s+you\s+interested\s+in\s+joining|work\s+at)|what\s+excites\s+you\s+about)\s+([A-Za-z0-9\s._-]+?)(?:\?|$|\b)/i)?.[1]?.trim();
+    const targetComp = companyName || extractedComp;
+    const compClause = targetComp ? `I am deeply excited to contribute to ${targetComp}` : 'I am eager to contribute';
+    const roleClause = roleTitle ? ` as a ${roleTitle}` : '';
+    narrative = `${compClause}${roleClause}. I am a 2026 Computer Science and Engineering graduate from Chitkara University (9.35 CGPA) with 1 year of production experience as a Technology Apprentice at Morgan Stanley in Bengaluru, where I built Java Spring Boot REST APIs, Python/PySpark ETL pipelines, and Apache Kafka workflows. I am based in Bengaluru and available to start immediately.`;
   } else if (/\b(?:describe|explain|tell|example|experience|built|worked|tools|projects)\b/i.test(q)) {
     // Certified profile excerpt fallback
     const terms = q.toLowerCase().match(/jenkins|maven|git\b|ci\/?cd|release|deployment|build|spark|kafka|pyspark|snowflake|java\b|spring|rest|api\b|python|splunk|grafana|oauth|mtls|rbac|distributed|backend|data|etl/g) || [];

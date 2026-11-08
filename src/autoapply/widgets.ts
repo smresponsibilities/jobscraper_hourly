@@ -171,12 +171,128 @@ export async function harvestControlOptions(
   return { options, popupContainer: popup };
 }
 
-export async function selectHarvestedOption(frame: Frame, control: Locator, option: string): Promise<boolean> {
+export function translateCanonicalAnswerToOption(
+  canonicalAnswer: string,
+  questionText: string,
+  optionLabels: string[]
+): string | null {
+  const ans = String(canonicalAnswer || '').trim().toLowerCase();
+  const q = String(questionText || '').trim().toLowerCase();
+  const opts = optionLabels.map((o) => ({ raw: o, norm: o.trim().toLowerCase() })).filter((o) => o.norm !== '');
+  if (opts.length === 0) return null;
+
+  // 1. Direct or substring match first
+  const direct =
+    opts.find((o) => o.norm === ans) ||
+    opts.find((o) => ans.length >= 2 && (o.norm.includes(ans) || ans.includes(o.norm)));
+  if (direct) return direct.raw;
+
+  // 2. Experience (1 year) bucket matching: "0-2 years", "1-3 years", "0 - 1 year", "Entry Level", "< 2 years"
+  if (ans === '1' || ans === '1 year' || /experience|years|yoe/i.test(q)) {
+    if (ans === '0' || ans === 'no') {
+      const zeroOpt = opts.find((o) => /\b(?:0|none|no\s+experience|<\s*1|less\s+than\s+1|beginner|n\/a)\b/i.test(o.norm));
+      if (zeroOpt) return zeroOpt.raw;
+    }
+    const oneYrOpt = opts.find((o) =>
+      /\b(?:0\s*[-–to]+\s*[123]|1\s*[-–to]+\s*[2345]|less\s+than\s+[23]|<\s*[23]|entry|junior|fresher|1\s*\+?\s*year)\b/i.test(o.norm)
+    );
+    if (oneYrOpt) return oneYrOpt.raw;
+  }
+
+  // 3. Notice Period ("Immediate" / "0") bucket matching: "0 - 15 days", "Less than 2 weeks", "Immediately"
+  if (ans === 'immediate' || ans === '0' || /notice|join|start|availability/i.test(q)) {
+    const noticeOpt = opts.find((o) =>
+      /\b(?:immediate|0\s*[-–to]+\s*(?:7|15|30)|less\s+than\s+(?:15|30|2\s*weeks)|<\s*(?:15|30)|1\s*[-–to]+\s*2\s*weeks|currently\s+serving|right\s+away)\b/i.test(
+        o.norm
+      )
+    );
+    if (noticeOpt) return noticeOpt.raw;
+  }
+
+  // 4. Education / Degree ("Bachelor's Degree" / "B.E.") synonyms
+  if (/bachelor|b\.?\s*e\b|b\.?\s*tech|degree|qualification/i.test(ans + ' ' + q)) {
+    const degOpt = opts.find((o) =>
+      /\b(?:b\.?\s*e\b|b\.?\s*tech|bachelor|undergraduate|4[\s-]*year|b\.?\s*s\b|engineering\s+graduate)\b/i.test(o.norm)
+    );
+    if (degOpt) return degOpt.raw;
+  }
+
+  // 5. CGPA / Grade ("9.35" / "93.5") bucket matching
+  if (ans === '9.35' || ans === '93.5' || /cgpa|gpa|grade|percentage/i.test(q)) {
+    const gpaOpt = opts.find((o) =>
+      /(?:>\s*[89]|9(?:\.0)?\s*[-–to+]+\s*10|8(?:\.0|\.5)?\s*[-–to+]+\s*(?:9|10)|distinction|first\s+class|90\s*%|80\s*%)/i.test(
+        o.norm
+      )
+    );
+    if (gpaOpt) return gpaOpt.raw;
+  }
+
+  // 6. Compensation ("1200000" / "12 LPA" / "Yes") bucket matching
+  if (/1200000|12\s*lpa|compensation|salary|ctc/i.test(ans + ' ' + q)) {
+    const compOpt = opts.find((o) =>
+      /\b(?:yes|align|agree|comfortable|10\s*[-–to]+\s*15|8\s*[-–to]+\s*12|12\s*[-–to]+\s*(?:15|16|18))\b/i.test(o.norm)
+    );
+    if (compOpt) return compOpt.raw;
+  }
+
+  // 7. Gender ("Male" -> "Man") & EEO synonyms
+  if (ans === 'male' || /\bgender\b/i.test(q)) {
+    const gOpt = opts.find((o) => /^(?:male|man|cisgender\s+male|he\s*\/\s*him)$/i.test(o.norm));
+    if (gOpt) return gOpt.raw;
+  }
+
+  // 8. Work Authorization ("Yes") vs Sponsorship ("No") verbose phrasing
+  if (ans === 'yes') {
+    const yesOpt = opts.find((o) =>
+      /\b(?:yes|authorized|eligible|citizen|permanent\s+resident|no\s+sponsorship\s+required|i\s+agree|i\s+consent|comfortable)\b/i.test(
+        o.norm
+      )
+    );
+    if (yesOpt) return yesOpt.raw;
+  }
+  if (ans === 'no') {
+    const noOpt = opts.find((o) =>
+      /\b(?:no\b|do\s+not\s+require|not\s+required|no\s+sponsorship|none|never|i\s+am\s+not|i\s+do\s+not\s+have)\b/i.test(
+        o.norm
+      )
+    );
+    if (noOpt) return noOpt.raw;
+  }
+
+  // 9. City ("Bengaluru" <-> "Bangalore")
+  if (/bengaluru|bangalore/i.test(ans)) {
+    const blrOpt = opts.find((o) => /\b(?:bengaluru|bangalore|karnataka|india)\b/i.test(o.norm));
+    if (blrOpt) return blrOpt.raw;
+  }
+
+  return null;
+}
+
+export async function selectHarvestedOption(
+  frame: Frame,
+  control: Locator,
+  option: string,
+  questionText = ''
+): Promise<boolean> {
   // Ticket GEN-168: 15ms Native <select> instant selection fast-path
   const isNativeSelect = await control
     .evaluate((el) => el.tagName.toLowerCase() === 'select')
     .catch(() => false);
   if (isNativeSelect) {
+    const optionLabels = await control
+      .evaluate((el) =>
+        Array.from((el as HTMLSelectElement).options)
+          .filter((o) => !o.disabled && o.text.trim())
+          .map((o) => o.text)
+      )
+      .catch(() => []);
+
+    let targetOption = option;
+    const translated = translateCanonicalAnswerToOption(option, questionText, optionLabels);
+    if (translated) {
+      targetOption = translated;
+    }
+
     const selectedViaNative = await control
       .evaluate((el, targetText) => {
         const sel = el as HTMLSelectElement;
@@ -192,10 +308,10 @@ export async function selectHarvestedOption(frame: Frame, control: Locator, opti
         sel.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
         sel.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
         return true;
-      }, option)
+      }, targetOption)
       .catch(() => false);
     if (selectedViaNative) {
-      await control.selectOption({ label: option }).catch(() => {});
+      await control.selectOption({ label: targetOption }).catch(() => {});
       return true;
     }
   }
@@ -246,6 +362,22 @@ export async function selectHarvestedOption(frame: Frame, control: Locator, opti
     const partialChoice = matchOptions.filter({ hasText: option });
     matchCount = await partialChoice.count().catch(() => 0);
     if (matchCount > 0) choice = partialChoice;
+  }
+
+  // Ticket GEN-217: Option-Bucket & Synonym Translator Fallback
+  if (matchCount === 0) {
+    const allLabels = await matchOptions.allInnerTexts().catch(() => []);
+    const translated = translateCanonicalAnswerToOption(option, questionText, allLabels);
+    if (translated) {
+      const translatedChoice = popup.getByRole('option', { name: translated, exact: true }).or(
+        matchOptions.filter({ hasText: new RegExp(`^${translated.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') })
+      ).or(matchOptions.filter({ hasText: translated }));
+      const tCount = await translatedChoice.count().catch(() => 0);
+      if (tCount > 0) {
+        choice = translatedChoice;
+        matchCount = tCount;
+      }
+    }
   }
 
   // Ticket GEN-145: Virtualized Combobox Type-to-Filter Fallback
