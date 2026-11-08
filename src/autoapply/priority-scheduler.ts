@@ -1,13 +1,16 @@
 // src/autoapply/priority-scheduler.ts
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+export { isSupportedDirectAtsJobUrl } from './preflight.js';
 import { isSupportedDirectAtsJobUrl } from './preflight.js';
+import { evaluateCandidateJobFit } from './candidate-fit-filter.js';
 
 export interface QueuedJobCandidate {
   id: string;
   company: string;
   title: string;
   url: string;
+  location?: string;
   provider?: string;
   createdAtMs?: number;
   rowId?: number;
@@ -96,6 +99,18 @@ export function computeJobPriorityScore(job: QueuedJobCandidate, nowMs = Date.no
   );
   if (isFresh && isFillableAtsUrl(job.url)) {
     score += 10000;
+  }
+
+  // Candidate Precision Fit Bonus (GEN-175: Bengaluru +5000, India +3500, Junior tech +3000)
+  const loc = job.location || job.payload?.location || '';
+  const fit = evaluateCandidateJobFit({
+    company: job.company,
+    title: job.title,
+    location: loc,
+    url: job.url,
+  });
+  if (fit.priorityBonus > 0) {
+    score += fit.priorityBonus;
   }
 
   // 1. Recency / Freshness Score (Newest jobs get massive priority: up to +2000 pts)

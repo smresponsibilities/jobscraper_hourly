@@ -75,13 +75,27 @@ interface BoardResult {
   fallbackReason?: string;
 }
 
+process.on('unhandledRejection', (reason) => {
+  console.warn('[HUNT UNHANDLED REJECTION SAFEGUARD]', reason);
+});
+
 async function pollBoard(company: Company, multiLocations: Record<string, string>): Promise<BoardResult> {
   const started = Date.now();
   const parentDiag = routingDiagnostics.getStore();
   const diag: RouteDiagnostics = { forceMode: parentDiag?.forceMode };
   try {
     const jobs = await routingDiagnostics.run(diag, async () => {
-      return FETCHERS[company.ats].list(company);
+      try {
+        return await FETCHERS[company.ats].list(company);
+      } catch (err: any) {
+        if (err?.status === 429 || /429|rate[- ]?limit/i.test(err?.message || '')) {
+          const afterSec = Number(err?.headers?.get?.('retry-after')) || 2;
+          const waitMs = Math.min(8000, Math.max(1000, afterSec * 1000));
+          await new Promise((resolve) => setTimeout(resolve, waitMs));
+          return await FETCHERS[company.ats].list(company);
+        }
+        throw err;
+      }
     });
     if (company.ats === 'workday') {
       await resolvePlaceholderLocations(company, jobs, multiLocations, MULTILOC_MAX_PER_BOARD);

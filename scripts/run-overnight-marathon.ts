@@ -38,6 +38,8 @@ import {
   isEligibleEngineeringRoleTitle,
   computeJobPriorityScore,
 } from '../src/autoapply/priority-scheduler.js';
+import { syncHourlyFreshJobsFromOriginMain } from './sync-hourly-from-origin.js';
+import { evaluateCandidateJobFit } from '../src/autoapply/candidate-fit-filter.js';
 import {
   cleanStaleChromiumProfileLocks,
   recoverPowerOffAndNetOffJobs,
@@ -117,6 +119,15 @@ export function selectDiversifiedMultiLaneChunk(
     // Rule 4: Exclude Stripe
     if (/stripe/i.test(job.company) || /stripe/i.test(job.jobUrl)) return false;
 
+    // Ticket GEN-175: Candidate precision fit check
+    const fit = evaluateCandidateJobFit({
+      company: job.company,
+      title: job.title,
+      location: (job as any).location,
+      url: job.jobUrl,
+    });
+    if (!fit.allowed) return false;
+
     const key = getKey(job.jobUrl);
     const company = getCompany(job.company);
 
@@ -169,6 +180,18 @@ export function selectDiversifiedMultiLaneChunk(
       }
     }
   }
+
+  // Ticket GEN-175: Sort candidates within each lane by candidate-fit priority bonus (Bengaluru +5000, India +3500, Junior tech +3000)
+  const sortByFit = (a: AutoaplyJobItem, b: AutoaplyJobItem) => {
+    const fitA = evaluateCandidateJobFit({ company: a.company, title: a.title, location: (a as any).location, url: a.jobUrl });
+    const fitB = evaluateCandidateJobFit({ company: b.company, title: b.title, location: (b as any).location, url: b.jobUrl });
+    return fitB.priorityBonus - fitA.priorityBonus;
+  };
+  hourlyQueue.sort(sortByFit);
+  workdayQueue.sort(sortByFit);
+  greenhouseQueue.sort(sortByFit);
+  ashbyQueue.sort(sortByFit);
+  otherQueue.sort(sortByFit);
 
   // 1. Take 100% of eligible fresh hourly candidates up to chunkSize
   for (const job of hourlyQueue) {
@@ -386,6 +409,16 @@ export async function runOvernightMarathon(config: {
         }
       }
 
+
+      // Ticket GEN-173: Sync fresh 1-hour jobs from origin/main Git objects before each chunk
+      try {
+        const syncHourly = syncHourlyFreshJobsFromOriginMain(path.join(stateDir, 'queue.sqlite'));
+        if (syncHourly.insertedFresh > 0 || syncHourly.boostedExisting > 0) {
+          console.log(`[MARATHON] Hourly origin sync: +${syncHourly.insertedFresh} fresh jobs, ${syncHourly.boostedExisting} boosted`);
+        }
+      } catch (err) {
+        console.warn('[MARATHON] Hourly origin sync notice (non-fatal):', err);
+      }
 
       // 1. Fresh queue read for eligible jobs
       const profile = loadProfile(profilePath);
