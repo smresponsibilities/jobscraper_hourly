@@ -2,6 +2,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { resolveExtendedPortalQuestionTaxonomy } from './answers.js';
+import { lookupQuestionIn1000Bank } from './portal-question-bank-1000.js';
 
 export const ATTEMPTS_PATH = path.resolve('state/autoapply/portal-review/job-attempts.json');
 
@@ -45,6 +46,19 @@ export function resolveUniversalPermissiveFallback(params: {
 }): string {
   const q = `${params.questionText} ${params.placeholder || ''}`.replace(/[✱*]/g, '').toLowerCase().trim();
   const opts = (params.options || []).filter(o => o && !/^(select|choose|please select|--)/i.test(o.trim()));
+
+  // Ticket GEN-212: 1,050+ Question Portal Ontology Engine
+  const bankHit = lookupQuestionIn1000Bank(params.questionText, params.widgetKind);
+  if (bankHit !== undefined) {
+    if (opts.length > 0) {
+      const match =
+        opts.find(o => new RegExp(`^${bankHit}$`, 'i').test(o.trim())) ||
+        opts.find(o => new RegExp(`\\b${bankHit}\\b`, 'i').test(o.trim())) ||
+        opts.find(o => /yes|align|agree|confirm/i.test(o.trim()));
+      if (match) return match;
+    }
+    return bankHit;
+  }
 
   // Ticket GEN-205: Extended 50-Category Portal Question Taxonomy
   const taxonomy = resolveExtendedPortalQuestionTaxonomy(params.questionText, params.widgetKind);

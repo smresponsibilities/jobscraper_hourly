@@ -5,6 +5,7 @@ import { matchBestOption } from './aihawk.js';
 import { composeGroundedNarrative } from './narrative-composer.js';
 import { resolveBySemanticSelfLearning, resolveOvernightLearnedQuestions } from './self-learning.js';
 import { resolveUniversalPermissiveFallback } from './permissive-fallback.js';
+import { lookupQuestionIn1000Bank } from './portal-question-bank-1000.js';
 
 export interface AnswerContext {
   url: string;
@@ -55,6 +56,13 @@ export function resolveExtendedPortalQuestionTaxonomy(
 ): string | undefined {
   const q = String(questionText || '').trim();
   if (!q) return undefined;
+
+  // Ticket GEN-212: 1,050+ Question Portal Ontology Engine
+  const bankHit = lookupQuestionIn1000Bank(q, widgetKind);
+  if (bankHit !== undefined) {
+    return bankHit;
+  }
+
   const ql = q.toLowerCase();
 
   // 1. Export Control / Sanctioned Countries / Debarment (Must be "No"!)
@@ -185,6 +193,14 @@ export function resolveCandidateAnswer(category: ExtendedFieldCategory, profile:
   }
   const policy = resolveByOptionPolicy(context.question, context.options || [], profile, context.location);
   if (policy) return policy;
+
+  // Consent & age profile integrity guards: do not invent age confirmation or background-check consent if unprovided
+  if (profile.adult === undefined && /\b(?:at least|over|aged?|older than)\s+(?:18|eighteen)\b|\b(?:18|eighteen)\s+years?\s+(?:of age|old|or older)\b|\bage of majority\b/i.test(q) && !/\b(?:under|not|less than|younger than)\b/i.test(q)) {
+    return result(undefined, 'unprovided_age_confirmation');
+  }
+  if ((profile.declarations?.backgroundCheckConsent === undefined && (profile.workAuthorization as any)?.backgroundCheckConsent === undefined) && /\b(?:background\s+check|background\s+verification|bgv)\b/i.test(q)) {
+    return result(undefined, 'unprovided_background_check_consent');
+  }
 
   // Ticket GEN-205: Extended 50-Category Portal Question Taxonomy
   const taxonomyAnswer = resolveExtendedPortalQuestionTaxonomy(
