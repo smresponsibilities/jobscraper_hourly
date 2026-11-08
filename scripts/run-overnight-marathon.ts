@@ -101,8 +101,8 @@ export function selectDiversifiedMultiLaneChunk(
   isReadyFn: (url: string) => boolean = () => true
 ): AutoaplyJobItem[] {
   const selected: AutoaplyJobItem[] = [];
-  const selectedRateLimitKeys = new Set<string>();
-  const selectedCompanies = new Set<string>();
+  const tenantCounts = new Map<string, number>();
+  const companyCounts = new Map<string, number>();
 
   const getKey = (url: string): string => {
     try {
@@ -133,8 +133,31 @@ export function selectDiversifiedMultiLaneChunk(
     const key = getKey(job.jobUrl);
     const company = getCompany(job.company);
 
-    // Rule 1: Max 1 job per rate-limit tenant / company per chunk
-    if (selectedRateLimitKeys.has(key) || (company && selectedCompanies.has(company))) return false;
+    // Ticket GEN-242: Allow up to 6 jobs per company/tenant on Fast-ATS (Greenhouse, Ashby, Lever) & is_hourly_fresh >= 2
+    const freshLevel = Number(
+      (job as any).is_hourly_fresh ??
+      (job as any).isHourlyFresh ??
+      (job as any).payload?.is_hourly_fresh ??
+      (job as any).payload?.isHourlyFresh ??
+      0
+    );
+    const urlLower = job.jobUrl.toLowerCase();
+    const isFastAts =
+      urlLower.includes('greenhouse.io') ||
+      urlLower.includes('ashbyhq.com') ||
+      urlLower.includes('lever.co') ||
+      (job as any).ats === 'greenhouse' ||
+      (job as any).ats === 'ashby' ||
+      (job as any).ats === 'lever';
+
+    const maxAllowed = (freshLevel >= 2 || isFastAts) ? 6 : 1;
+
+    const currentKeyCount = tenantCounts.get(key) || 0;
+    const currentCompCount = company ? (companyCounts.get(company) || 0) : 0;
+
+    if (currentKeyCount >= maxAllowed || currentCompCount >= maxAllowed) {
+      return false;
+    }
 
     // Rule 2: Host must be ready (not in cooldown)
     if (!isReadyFn(job.jobUrl)) return false;
@@ -145,8 +168,12 @@ export function selectDiversifiedMultiLaneChunk(
   const takeCandidate = (job: AutoaplyJobItem): boolean => {
     if (!isEligible(job)) return false;
     selected.push(job);
-    selectedRateLimitKeys.add(getKey(job.jobUrl));
-    if (job.company) selectedCompanies.add(getCompany(job.company));
+    const key = getKey(job.jobUrl);
+    const company = getCompany(job.company);
+    tenantCounts.set(key, (tenantCounts.get(key) || 0) + 1);
+    if (company) {
+      companyCounts.set(company, (companyCounts.get(company) || 0) + 1);
+    }
     return true;
   };
 

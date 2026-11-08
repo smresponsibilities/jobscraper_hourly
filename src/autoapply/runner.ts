@@ -45,6 +45,7 @@ import { appendJobRunHistory } from './run-history.js';
 import { capturePageDiagnostics, recordOvernightError, normalizeReasonCode } from './overnight-error-logger.js';
 import { resolveUniversalPermissiveFallback } from './permissive-fallback.js';
 import { composeGroundedNarrative } from './narrative-composer.js';
+import { evaluateCandidateJobFit } from './candidate-fit-filter.js';
 
 export async function healInvalidFieldsAndRetrySubmit(
   frame: Frame,
@@ -3499,7 +3500,9 @@ export class AutoApplyRunner {
         }
       }
       const descriptions = await this.page!.locator('[data-automation-id=jobPostingDescription],.job-description,[data-testid=job-description],#job-description,.posting-description').allTextContents();
-      if (descriptions.some(text => exceedsExperienceGate(text, options.applicationBrief?.title))) {
+      const titleCandidate = options.applicationBrief?.title || (options as any).jobTitle || (options as any).title || '';
+      const candidateFit = evaluateCandidateJobFit({ title: titleCandidate, company: options.company || '', url: options.url });
+      if (!candidateFit.allowed && descriptions.some(text => exceedsExperienceGate(text, titleCandidate))) {
         report.status = 'skipped'; report.reason = 'ineligible_jd_experience'; return report;
       }
       const timeout = options.timeoutMs ?? 10000;

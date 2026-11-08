@@ -324,7 +324,9 @@ export async function runHourly100JobsHarvester(): Promise<{
           if (row.normalized_url) {
             let p: any = {};
             try { p = JSON.parse(row.payload); } catch {}
-            existingByUrl.set(String(row.normalized_url).trim(), { id: row.id, status: row.status, payload: p });
+            const u = String(row.normalized_url).trim();
+            existingByUrl.set(u, { id: row.id, status: row.status, payload: p });
+            existingByUrl.set(u.replace(/\/$/, ''), { id: row.id, status: row.status, payload: p });
           }
         }
 
@@ -336,10 +338,13 @@ export async function runHourly100JobsHarvester(): Promise<{
         const updateStmt = db.prepare(`
           UPDATE applications SET payload = ?, expires = ? WHERE id = ?
         `);
+        const resurrectAppStmt = db.prepare(`
+          UPDATE applications SET status = 'queued' WHERE id = ?
+        `);
 
         for (const job of fitJobs) {
           const normUrl = job.url.trim();
-          const existing = existingByUrl.get(normUrl);
+          const existing = existingByUrl.get(normUrl) || existingByUrl.get(normUrl.replace(/\/$/, ''));
           const expiresDate = new Date(Date.now() + 48 * 3600 * 1000).toISOString();
 
           if (!existing) {
@@ -355,11 +360,18 @@ export async function runHourly100JobsHarvester(): Promise<{
             });
             insertStmt.run(candidateId, id, normUrl, normUrl, payload, expiresDate);
             totalInsertedOrBoosted++;
-          } else if (existing.status === 'queued') {
+          } else if (existing.status === 'queued' || existing.status === 'skipped') {
             const p = existing.payload || {};
+            p.location = job.location || p.location || 'India';
+            p.title = job.title || p.title;
+            p.company = job.company || p.company;
             p.is_hourly_fresh = 2;
             p.boostedAt = new Date().toISOString();
+            delete p.last_error;
             updateStmt.run(JSON.stringify(p), expiresDate, existing.id);
+            if (existing.status === 'skipped') {
+              resurrectAppStmt.run(existing.id);
+            }
             totalInsertedOrBoosted++;
           }
         }
@@ -369,25 +381,29 @@ export async function runHourly100JobsHarvester(): Promise<{
         const existingJobRows = db.prepare('SELECT id, url, status FROM jobs').all() as any[];
         const existingJobsByUrl = new Map<string, { id: number; status: string }>();
         for (const row of existingJobRows) {
-          if (row.url) existingJobsByUrl.set(String(row.url).trim(), { id: row.id, status: row.status });
+          if (row.url) {
+            const u = String(row.url).trim();
+            existingJobsByUrl.set(u, { id: row.id, status: row.status });
+            existingJobsByUrl.set(u.replace(/\/$/, ''), { id: row.id, status: row.status });
+          }
         }
 
         const insertJobStmt = db.prepare(`
           INSERT OR IGNORE INTO jobs (company, title, url, location, ats, status, is_hourly_fresh)
           VALUES (?, ?, ?, ?, ?, 'queued', 2)
         `);
-        const boostJobStmt = db.prepare(`
-          UPDATE jobs SET is_hourly_fresh = 2 WHERE id = ?
+        const updateJobStmt = db.prepare(`
+          UPDATE jobs SET status = 'queued', is_hourly_fresh = 2, location = ?, last_error = NULL WHERE id = ? AND status IN ('queued', 'skipped')
         `);
 
         for (const job of fitJobs) {
           const normUrl = job.url.trim();
-          const existing = existingJobsByUrl.get(normUrl);
+          const existing = existingJobsByUrl.get(normUrl) || existingJobsByUrl.get(normUrl.replace(/\/$/, ''));
           if (!existing) {
             insertJobStmt.run(job.company, job.title, normUrl, job.location, job.ats);
             totalInsertedOrBoosted++;
-          } else if (existing.status === 'queued') {
-            boostJobStmt.run(existing.id);
+          } else if (existing.status === 'queued' || existing.status === 'skipped') {
+            updateJobStmt.run(job.location || 'India', existing.id);
             totalInsertedOrBoosted++;
           }
         }
