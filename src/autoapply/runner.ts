@@ -1218,6 +1218,7 @@ export class AutoApplyRunner {
     this.context.setDefaultTimeout(5000);
     this.context.setDefaultNavigationTimeout(45000);
     this.page = this.context.pages()[0] || await this.context.newPage();
+    this.page.setDefaultTimeout(6000);
     this.trackPage(this.page);
   }
 
@@ -1257,6 +1258,7 @@ export class AutoApplyRunner {
     this.context.setDefaultTimeout(5000);
     this.context.setDefaultNavigationTimeout(45000);
     this.page = await this.context.newPage();
+    this.page.setDefaultTimeout(6000);
     this.trackPage(this.page);
   }
 
@@ -1270,9 +1272,9 @@ export class AutoApplyRunner {
     await input.press('Backspace').catch(() => {});
     const tag = (await input.evaluate(el => el.tagName.toLowerCase()).catch(() => 'input')) || 'input';
     if (text.length > 2) {
-      // Ticket GEN-104.2 / GEN-115 / GEN-159: Fast-chunk text with composed: true prototype setter
+      // Ticket GEN-104.2 / GEN-115 / GEN-159 / GEN-196: Fast-chunk text with React _valueTracker reset & timeout
       await input.pressSequentially(text.slice(0, 2), { delay: 15 }).catch(() => {});
-      await input.fill(text).catch(() => {});
+      await input.fill(text, { timeout: 2500 }).catch(() => {});
       await input
         .evaluate((el, val) => {
           const target = el as HTMLInputElement | HTMLTextAreaElement;
@@ -1281,6 +1283,12 @@ export class AutoApplyRunner {
               ? window.HTMLTextAreaElement.prototype
               : window.HTMLInputElement.prototype;
           const nativeSetter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+          try {
+            const tracker = (target as unknown as { _valueTracker?: { setValue: (v: string) => void } })._valueTracker;
+            if (tracker && typeof tracker.setValue === 'function') {
+              tracker.setValue('');
+            }
+          } catch {}
           if (nativeSetter) {
             nativeSetter.call(target, val);
           } else {
@@ -1309,7 +1317,7 @@ export class AutoApplyRunner {
     try {
       await input.pressSequentially(text, { delay: Math.round(getHumanKeyDelay(15, 35)) });
     } catch {
-      await input.fill(text).catch(() => {});
+      await input.fill(text, { timeout: 2500 }).catch(() => {});
     }
     let clickedDropdownLocation = false;
     const inputId = await input.getAttribute('id').catch(() => '');
@@ -1325,8 +1333,12 @@ export class AutoApplyRunner {
     }
     if (blur) await input.blur().catch(() => {});
     const type = (await input.getAttribute('type').catch(() => ''))?.toLowerCase() || '';
-    if (!clickedDropdownLocation && !retainedText(await input.inputValue().catch(() => ''), text, type)) {
-      await input.fill(text).catch(() => {});
+    const existingVal = await Promise.race([
+      input.evaluate((el) => String((el as HTMLInputElement).value ?? '')).catch(() => ''),
+      new Promise<string>((resolve) => setTimeout(() => resolve(''), 250)),
+    ]);
+    if (!clickedDropdownLocation && !retainedText(existingVal, text, type)) {
+      await input.fill(text, { timeout: 2500 }).catch(() => {});
       await input
         .evaluate((el, val) => {
           const target = el as HTMLInputElement | HTMLTextAreaElement;
@@ -1335,6 +1347,12 @@ export class AutoApplyRunner {
               ? window.HTMLTextAreaElement.prototype
               : window.HTMLInputElement.prototype;
           const nativeSetter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+          try {
+            const tracker = (target as unknown as { _valueTracker?: { setValue: (v: string) => void } })._valueTracker;
+            if (tracker && typeof tracker.setValue === 'function') {
+              tracker.setValue('');
+            }
+          } catch {}
           if (nativeSetter) {
             nativeSetter.call(target, val);
           } else {
@@ -1358,7 +1376,10 @@ export class AutoApplyRunner {
         }, text)
         .catch(() => {});
       if (blur) await input.blur().catch(() => {});
-      const finalVal = await input.inputValue().catch(() => '');
+      const finalVal = await Promise.race([
+        input.evaluate((el) => String((el as HTMLInputElement).value ?? '')).catch(() => ''),
+        new Promise<string>((resolve) => setTimeout(() => resolve(''), 250)),
+      ]);
       if (!retainedText(finalVal, text, type) && !finalVal.trim()) throw new Error('Typed field did not retain the intended value');
     }
   }
@@ -2793,11 +2814,15 @@ export class AutoApplyRunner {
               descriptor + ' ' + (info.questionTitle || '') + ' ' + (action.question || '')
             );
 
-            // Ticket GEN-167: Pre-populated input value check
-            const existingVal = await input.inputValue().catch(() => '');
-            const isCurrentlyInvalid = await input
-              .evaluate((el: Element) => el.getAttribute('aria-invalid') === 'true')
-              .catch(() => false);
+            // Ticket GEN-167 / GEN-196: Pre-populated input value check with 250ms non-blocking evaluation
+            const existingVal = await Promise.race([
+              input.evaluate((el) => String((el as HTMLInputElement).value ?? '')).catch(() => ''),
+              new Promise<string>((resolve) => setTimeout(() => resolve(''), 250)),
+            ]);
+            const isCurrentlyInvalid = await Promise.race([
+              input.evaluate((el: Element) => el.getAttribute('aria-invalid') === 'true').catch(() => false),
+              new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 200)),
+            ]);
             if (
               existingVal &&
               !isCurrentlyInvalid &&
@@ -2812,8 +2837,11 @@ export class AutoApplyRunner {
 
             if (options.mode === 'stealth') await this.humanType(input, stringVal);
             else {
-              await input.fill(stringVal);
-              const typedVal = await input.inputValue().catch(() => '');
+              await input.fill(stringVal, { timeout: 2500 }).catch(() => {});
+              const typedVal = await Promise.race([
+                input.evaluate((el) => String((el as HTMLInputElement).value ?? '')).catch(() => ''),
+                new Promise<string>((resolve) => setTimeout(() => resolve(''), 250)),
+              ]);
               if (!retainedText(typedVal, stringVal, info.type) && !typedVal.trim()) {
                 throw new Error('Typed field did not retain the intended value');
               }
@@ -2972,6 +3000,7 @@ export class AutoApplyRunner {
           await this.initBrowser(options.headless ?? true, options.sessionDir, options.browserProfileDir || defaultProfileDir);
         }
       }
+      this.page?.setDefaultTimeout(6000);
       const preserveReviewedValues = !!(options.preserveReviewedValues || options.advanceReviewedStep) && !!options.resume && this.page!.url() !== 'about:blank';
       let target = options.url;
       const checkpoint = options.sessionDir && path.join(options.sessionDir, 'checkpoint.json');
@@ -3596,6 +3625,33 @@ export class AutoApplyRunner {
             if (invalidCount) break;
           }
           if (!changed) {
+            // Ticket GEN-199: Heal & retry before failing on "Next did not change the form"
+            if (this.page && !this.page.isClosed()) {
+              for (const frame of this.page.frames()) {
+                await healInvalidFieldsAndRetrySubmit(
+                  frame,
+                  options.profile.personal.email,
+                  options.profile.personal.phone,
+                  this.attemptedFieldRefs
+                ).catch(() => 0);
+              }
+              // SmartRecruiters autocomplete shadow-root option selector
+              await this.page.evaluate(() => {
+                const autoNodes = Array.from(document.querySelectorAll('spl-autocomplete, [class*="autocomplete"]'));
+                for (const node of autoNodes) {
+                  const sr = (node as HTMLElement).shadowRoot;
+                  const opt = sr?.querySelector<HTMLElement>('spl-select-option, .spl-autocomplete-option, [role="option"]');
+                  if (opt) opt.click();
+                }
+              }).catch(() => {});
+
+              if (options.mode === 'stealth') await this.pacedClick(next); else await next.click().catch(() => {});
+              if (await this.waitChanged(before, timeout, workdayStep)) {
+                changed = true;
+              }
+            }
+          }
+          if (!changed) {
             report.reason = 'Next did not change the form';
             await this.recordUnknownFieldsFromErrors(options, report);
             break;
@@ -3613,16 +3669,16 @@ export class AutoApplyRunner {
         }
         let submit = submitControl || (await this.button(SUBMIT, ATS_STRATEGIES[report.ats]?.submit, 'flow_submit_button'));
         if (!submit && this.page) {
-          const shadowBtn = this.page.locator('[data-autoapply-shadow-submit="true"], [data-test="footer-submit"], oc-button[data-test="footer-submit"]').first();
+          const shadowBtn = this.page.locator('[data-autoapply-shadow-submit="true"], [data-test="footer-submit"], oc-button[data-test="footer-submit"], [role="button"]:has-text("Submit"), [role="button"]:has-text("Apply"), button[data-automation-id*="submit" i], a.btn-submit').first();
           if (await shadowBtn.count().catch(() => 0) > 0 && await shadowBtn.isVisible().catch(() => false)) {
             submit = shadowBtn;
           }
         }
         if (!submit && this.page) {
-          // Ticket GEN-169: Child-frame submitControl piercer
+          // Ticket GEN-169 / GEN-199: Child-frame submitControl piercer
           for (const f of this.page.frames()) {
             if (f === this.page.mainFrame()) continue;
-            const childSubmit = f.locator('button[type="submit"], input[type="submit"], #submit_app, button:has-text("Submit Application"), button:has-text("Submit"), [data-test="footer-submit"]').first();
+            const childSubmit = f.locator('button[type="submit"], input[type="submit"], #submit_app, button:has-text("Submit Application"), button:has-text("Submit"), [data-test="footer-submit"], [role="button"]:has-text("Submit"), [role="button"]:has-text("Apply"), button[data-automation-id*="submit" i], a.btn-submit').first();
             if (await childSubmit.count().catch(() => 0) > 0 && await childSubmit.isVisible().catch(() => false)) {
               submit = childSubmit;
               break;

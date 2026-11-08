@@ -39,6 +39,7 @@ import {
   computeJobPriorityScore,
 } from '../src/autoapply/priority-scheduler.js';
 import { syncHourlyFreshJobsFromOriginMain } from './sync-hourly-from-origin.js';
+import { runHourly100JobsHarvester } from './harvest-100-hourly-jobs.js';
 import { syncAppliedJobsToOutreachTargets } from './sync-applied-to-outreach.js';
 import { evaluateCandidateJobFit } from '../src/autoapply/candidate-fit-filter.js';
 import {
@@ -258,30 +259,76 @@ export function selectDiversifiedMultiLaneChunk(
  * Bounded 2500ms HTTP GET (redirect: 'follow').
  * If 404 or 410, or redirected to ?error=true or /404, fails fast without launching browser.
  */
-export async function checkJobPostingHttpAliveFast(url: string): Promise<{ alive: boolean; reason?: string }> {
+export async function checkJobPostingHttpAliveFast(rawUrl: string): Promise<{ alive: boolean; reason?: string }> {
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2500);
-    const res = await fetch(url, {
-      method: 'GET',
-      signal: controller.signal,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-      },
-      redirect: 'follow',
-    });
-    clearTimeout(timeoutId);
-    if (res.status === 404 || res.status === 410) {
-      return { alive: false, reason: `HTTP ${res.status} Not Found` };
+    const u = new URL(rawUrl);
+    const fetchFast = async (targetUrl: string, acceptJson = false): Promise<Response | null> => {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 2800);
+      try {
+        return await fetch(targetUrl, {
+          method: 'GET',
+          redirect: 'follow',
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124.0.0.0',
+            Accept: acceptJson ? 'application/json' : 'text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8',
+          },
+          signal: ctrl.signal,
+        });
+      } catch {
+        return null;
+      } finally {
+        clearTimeout(timer);
+      }
+    };
+
+    // 1. Workday CXS JSON API check: https://{tenant}.wd5.myworkdayjobs.com/{site}/job/{rest} -> /wday/cxs/{tenant}/{site}/job/{rest}
+    if (/\.myworkdayjobs\.com$/i.test(u.hostname)) {
+      const tenant = u.hostname.split('.')[0];
+      const cleanedPath = u.pathname.replace(/^\/[a-z]{2}-[A-Z]{2}\//, '/').replace(/\/apply(?:\/.*)?$/i, '');
+      const siteMatch = cleanedPath.match(/^\/([^/]+)\/(job\/.+)$/i);
+      if (tenant && siteMatch && siteMatch[1] && siteMatch[2]) {
+        const site = siteMatch[1];
+        const jobPath = siteMatch[2];
+        const cxsUrl = `${u.origin}/wday/cxs/${tenant}/${site}/${jobPath}`;
+        const cxsRes = await fetchFast(cxsUrl, true);
+        if (cxsRes && (cxsRes.status === 404 || cxsRes.status === 410)) {
+          return { alive: false, reason: `Workday CXS API ${cxsRes.status} (closed posting)` };
+        }
+      }
     }
-    const finalUrl = res.url || '';
-    if (/(\?error=true|\/404\b)/i.test(finalUrl)) {
-      return { alive: false, reason: `Redirected to error page (${finalUrl})` };
+
+    // 2. SmartRecruiters Public API check: https://jobs.smartrecruiters.com/{company}/{id}
+    if (/smartrecruiters\.com$/i.test(u.hostname)) {
+      const srMatch = u.pathname.match(/^\/([^/]+)\/(\d{8,22})/i);
+      if (srMatch && srMatch[1] && srMatch[2]) {
+        const co = srMatch[1];
+        const numId = srMatch[2];
+        const srApiRes = await fetchFast(
+          `https://api.smartrecruiters.com/v1/companies/${encodeURIComponent(co)}/postings/${encodeURIComponent(numId)}`,
+          true
+        );
+        if (srApiRes && (srApiRes.status === 404 || srApiRes.status === 410)) {
+          return { alive: false, reason: `SmartRecruiters API ${srApiRes.status} (closed posting)` };
+        }
+      }
+    }
+
+    // 3. Standard HTTP GET check (catches Greenhouse/Ashby/Lever 404s and Lever root redirects)
+    const res = await fetchFast(rawUrl, false);
+    if (res) {
+      if (res.status === 404 || res.status === 410) {
+        return { alive: false, reason: `HTTP ${res.status} pre-flight (closed posting)` };
+      }
+      if (/jobs\.lever\.co$/i.test(u.hostname) && res.url) {
+        const finalUrl = new URL(res.url);
+        if (/^\/[^/]+\/?$/.test(finalUrl.pathname)) {
+          return { alive: false, reason: 'Lever redirected to company root (closed posting)' };
+        }
+      }
     }
     return { alive: true };
   } catch {
-    // Plain fetch failures, SSL cert differences, timeouts or 403 blocks pass through to Playwright
     return { alive: true };
   }
 }
@@ -443,14 +490,14 @@ export async function runOvernightMarathon(config: {
       }
 
 
-      // Ticket GEN-173: Sync fresh 1-hour jobs from origin/main Git objects before each chunk
+      // Ticket GEN-173 / GEN-201: Sync fresh 1-hour jobs from origin/main Git objects + Live 100+ Jobs Harvester
       try {
-        const syncHourly = syncHourlyFreshJobsFromOriginMain(path.join(stateDir, 'queue.sqlite'));
-        if (syncHourly.insertedFresh > 0 || syncHourly.boostedExisting > 0) {
-          console.log(`[MARATHON] Hourly origin sync: +${syncHourly.insertedFresh} fresh jobs, ${syncHourly.boostedExisting} boosted`);
+        const harvestRes = await runHourly100JobsHarvester().catch(() => null);
+        if (harvestRes && harvestRes.insertedOrBoosted > 0) {
+          console.log(`[MARATHON] Hourly 100+ Harvester: +${harvestRes.insertedOrBoosted} jobs inserted/boosted (raw: ${harvestRes.rawHarvested}, fit: ${harvestRes.targetFitMatched}) across ${harvestRes.databasesUpdated.length} DBs`);
         }
       } catch (err) {
-        console.warn('[MARATHON] Hourly origin sync notice (non-fatal):', err);
+        console.warn('[MARATHON] Hourly harvester notice (non-fatal):', err);
       }
 
       // 1. Fresh queue read for eligible jobs

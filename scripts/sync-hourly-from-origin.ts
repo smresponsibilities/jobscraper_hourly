@@ -74,9 +74,21 @@ export function syncHourlyFreshJobsFromOriginMain(dbPath?: string): {
   insertedFresh: number;
   boostedExisting: number;
 } {
-  const targetDbPath = dbPath || (fs.existsSync('state/autoapply/portal-review/queue.sqlite')
-    ? 'state/autoapply/portal-review/queue.sqlite'
-    : 'data/queue.sqlite');
+  if (!dbPath) {
+    const defaultPaths = ['state/autoapply/portal-review/queue.sqlite', 'data/queue.sqlite'].filter(p => fs.existsSync(p));
+    let totalInspected = 0;
+    let totalInserted = 0;
+    let totalBoosted = 0;
+    for (const p of defaultPaths) {
+      const res = syncHourlyFreshJobsFromOriginMain(p);
+      totalInspected = Math.max(totalInspected, res.inspected);
+      totalInserted += res.insertedFresh;
+      totalBoosted += res.boostedExisting;
+    }
+    return { inspected: totalInspected, insertedFresh: totalInserted, boostedExisting: totalBoosted };
+  }
+
+  const targetDbPath = dbPath;
 
   if (!fs.existsSync(targetDbPath)) {
     return { inspected: 0, insertedFresh: 0, boostedExisting: 0 };

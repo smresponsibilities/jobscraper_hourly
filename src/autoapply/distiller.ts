@@ -389,7 +389,12 @@ export async function distillFormStep(frame: Frame): Promise<DistilledField[]> {
         refKey: [el.id, input.name, target, question].join('|'),
         questionText: question.trim(),
         widgetKind,
-        isRequired: isAshbyBtn ? true : (input.required || el.getAttribute('aria-required') === 'true'),
+        isRequired: isAshbyBtn
+          ? true
+          : (input.required ||
+             el.getAttribute('aria-required') === 'true' ||
+             /\*\s*$|\brequired\b/i.test(question.trim()) ||
+             Boolean(el.closest('.field, [class*="_fieldEntry_"], .application-question, fieldset')?.querySelector('.required, .asterisk, [aria-required="true"]'))),
         sectionHeading: el.closest('fieldset')?.querySelector('legend')?.textContent || '',
         isFilled: (() => {
           if (isAshbyBtn) {
