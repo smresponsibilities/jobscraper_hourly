@@ -49,17 +49,43 @@ import { composeGroundedNarrative } from './narrative-composer.js';
 export async function healInvalidFieldsAndRetrySubmit(
   frame: Frame,
   profileEmail: string,
-  profilePhone?: string
+  profilePhone?: string,
+  attemptedFieldRefs?: Set<string>
 ): Promise<number> {
   const phone = profilePhone || process.env.AUTOAPPLY_PHONE || '9000000000';
-  const healedCount = await frame.evaluate(([email, ph]) => {
+  const result = await frame.evaluate(([email, ph]) => {
     // Ticket GEN-130: Abort healer immediately if OTP / security code inputs are visible!
     const hasOtp = !!document.querySelector(
       'input[id^="security-input-"], input[id^="security-code"], #security-code, .security-code-input input, input[name*="security_code" i], input[aria-label*="security code" i], input[aria-label*="verification code" i]'
     );
-    if (hasOtp) return 0;
+    if (hasOtp) return { fixed: 0, refsToUnlock: [] };
 
     let fixed = 0;
+    // GEN-191: Tag controls inside error-flagged field wrappers ([id$="-error"], [role="alert"], _fieldEntry_, .field-error)
+    const refsToUnlock: string[] = [];
+    const errorNodes = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        '[id$="-error"], [role="alert"], .field-error, .error-message, .card-field-error, [class*="_error" i], [class*="errorMessage" i], [data-automation-id="errorMessage"]'
+      )
+    );
+    for (const errEl of errorNodes) {
+      if (errEl.offsetParent === null || !(errEl.textContent || '').trim()) continue;
+      const wrapper = errEl.closest(
+        '.field, [class*="_fieldEntry_"], .application-question, [data-automation-id^="formField-"], fieldset, [class*="form-field" i], [class*="FormField" i]'
+      );
+      if (!wrapper) continue;
+      const controls = Array.from(
+        wrapper.querySelectorAll<HTMLElement>(
+          'input:not([type="hidden"]), select, textarea, [role="combobox"], button[data-autoapply-btngroup-option], [data-autoapply-ref]'
+        )
+      );
+      for (const ctrl of controls) {
+        ctrl.setAttribute('aria-invalid', 'true');
+        const ref = ctrl.getAttribute('data-autoapply-ref');
+        if (ref) refsToUnlock.push(ref);
+      }
+    }
+
     const setNativeValue = (el: HTMLInputElement | HTMLTextAreaElement, val: string) => {
       const proto = el instanceof HTMLTextAreaElement ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
       const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
@@ -186,10 +212,14 @@ export async function healInvalidFieldsAndRetrySubmit(
       }
     }
 
-    return fixed;
-  }, [profileEmail, phone]).catch(() => 0);
+    return { fixed, refsToUnlock };
+  }, [profileEmail, phone]).catch(() => ({ fixed: 0, refsToUnlock: [] as string[] }));
 
-  return healedCount;
+  for (const ref of result.refsToUnlock) {
+    attemptedFieldRefs?.delete?.(ref);
+  }
+
+  return result.fixed;
 }
 
 
@@ -478,6 +508,7 @@ export class AutoApplyRunner {
   private activeWatchdog?: JobActivityWatchdog;
   private lastNetworkSubmissionReceipt: { url: string; status: number; timestamp: number } | null = null;
   private profile?: CandidateExtendedProfile;
+  private attemptedFieldRefs?: Set<string>;
 
   /**
    * Ticket GEN-131: Lever Async parseResume Field-Wipe Protection.
@@ -1939,6 +1970,7 @@ export class AutoApplyRunner {
     const processed = new Map<string, string>();
     const attempts = new Map<string, number>();
     const attemptedFieldRefs = new Set<string>();
+    this.attemptedFieldRefs = attemptedFieldRefs;
     const uploadedFiles = new Map<string, string>();
     const formSelector = ATS_STRATEGIES[report.ats]?.form;
     const forms = formSelector ? frame.locator(formSelector).filter({ visible: true }) : undefined;
@@ -3776,7 +3808,7 @@ export class AutoApplyRunner {
           // Ticket GEN-59, GEN-60 & GEN-61: Post-Submit :invalid Surgical Healer
           if (!report.receipt && !this.page!.isClosed()) {
             for (const frame of this.page!.frames()) {
-              const healedCount = await healInvalidFieldsAndRetrySubmit(frame, options.profile.personal.email);
+              const healedCount = await healInvalidFieldsAndRetrySubmit(frame, options.profile.personal.email, options.profile.personal.phone, this.attemptedFieldRefs);
               if (healedCount > 0) {
                 this.log(`Post-submit surgical healer fixed ${healedCount} invalid/unanswered fields on frame.`);
                 const retrySubmit = await this.button(SUBMIT, ATS_STRATEGIES[report.ats]?.submit, 'flow_submit_button');

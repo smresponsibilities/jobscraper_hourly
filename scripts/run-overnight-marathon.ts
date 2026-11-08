@@ -194,26 +194,57 @@ export function selectDiversifiedMultiLaneChunk(
   ashbyQueue.sort(sortByFit);
   otherQueue.sort(sortByFit);
 
+  // Ticket GEN-189: Asymmetric 3:1 Fast-ATS chunk allocation
   // 1. Take 100% of eligible fresh hourly candidates up to chunkSize
   for (const job of hourlyQueue) {
     takeCandidate(job);
     if (selected.length >= chunkSize) return selected;
   }
 
-  // 2. Round-Robin interleaving across [workday, greenhouse, ashby, other]
-  const lanes = [workdayQueue, greenhouseQueue, ashbyQueue, otherQueue];
-  let progressMade = true;
+  // Cap workday slots at 25% (max 10 slots per 40-job chunk) while fast-ATS queues have items
+  const maxWorkdaySlots = Math.max(1, Math.floor(chunkSize * 0.25));
+  let workdayCount = selected.filter(j => j.jobUrl.toLowerCase().includes('myworkdayjobs.com')).length;
 
+  const pullFromLane = (queue: AutoaplyJobItem[], maxPull: number): boolean => {
+    let pulled = 0;
+    while (queue.length > 0 && pulled < maxPull) {
+      const candidate = queue.shift()!;
+      if (takeCandidate(candidate)) {
+        pulled++;
+        if (selected.length >= chunkSize) return true;
+      }
+    }
+    return pulled > 0;
+  };
+
+  let progressMade = true;
   while (selected.length < chunkSize && progressMade) {
     progressMade = false;
-    for (const lane of lanes) {
-      while (lane.length > 0) {
-        const candidate = lane.shift()!;
-        if (takeCandidate(candidate)) {
-          progressMade = true;
-          break; // move to next lane for round-robin
-        }
+
+    // Pull 2 Greenhouse, 2 Ashby, 2 Other (Lever / SmartRecruiters)
+    if (pullFromLane(greenhouseQueue, 2)) progressMade = true;
+    if (selected.length >= chunkSize) break;
+
+    if (pullFromLane(ashbyQueue, 2)) progressMade = true;
+    if (selected.length >= chunkSize) break;
+
+    if (pullFromLane(otherQueue, 2)) progressMade = true;
+    if (selected.length >= chunkSize) break;
+
+    // Cap workday at <= maxWorkdaySlots while fast-ATS queues have pending items
+    const fastAtsRemain = greenhouseQueue.length > 0 || ashbyQueue.length > 0 || otherQueue.length > 0;
+    if (!fastAtsRemain || workdayCount < maxWorkdaySlots) {
+      if (pullFromLane(workdayQueue, 1)) {
+        workdayCount++;
+        progressMade = true;
       }
+    }
+  }
+
+  // If slots remain and Fast-ATS are empty, backfill with remaining workday jobs
+  while (selected.length < chunkSize && workdayQueue.length > 0) {
+    const candidate = workdayQueue.shift()!;
+    if (takeCandidate(candidate)) {
       if (selected.length >= chunkSize) break;
     }
   }

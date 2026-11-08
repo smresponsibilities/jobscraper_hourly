@@ -243,44 +243,82 @@ export function getArchetypeProjects(archetype: ResumeArchetype | RoleArchetype)
   ];
 }
 
+export function prioritizeVerifiedSkillsForRole(
+  skills: string[],
+  roleTitle = '',
+  jdText = ''
+): string[] {
+  if (!Array.isArray(skills) || skills.length === 0) return [];
+  const text = `${roleTitle} ${jdText}`.toLowerCase();
+  if (!text.trim()) return [...skills];
+
+  const matching: string[] = [];
+  const remaining: string[] = [];
+
+  for (const skill of skills) {
+    const sLower = skill.toLowerCase().trim();
+    if (!sLower) continue;
+
+    const escaped = sLower.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const wordRegex = new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`, 'i');
+
+    if (wordRegex.test(text) || text.includes(sLower)) {
+      matching.push(skill);
+    } else {
+      remaining.push(skill);
+    }
+  }
+
+  return [...matching, ...remaining];
+}
+
 export function getArchetypeCategorizedSkills(
-  archetype: ResumeArchetype | RoleArchetype
+  archetype: ResumeArchetype | RoleArchetype,
+  roleTitle = '',
+  jdText = ''
 ): Record<string, string[]> {
   const norm = String(archetype).toUpperCase();
+  let base: Record<string, string[]>;
 
   if (norm.includes('DATA')) {
-    return {
+    base = {
       'Languages': ['Python', 'SQL', 'Java', 'Scala'],
       'Data & Streaming': ['PySpark', 'Apache Spark', 'Apache Kafka', 'Hive', 'ETL Pipelines'],
       'Cloud & Warehousing': ['Azure Snowflake', 'Relational Modeling', 'MongoDB', 'MySQL', 'SQLite'],
       'CI/CD & Observability': ['Jenkins CI/CD', 'Git', 'Maven', 'Splunk', 'Grafana', 'Power BI'],
     };
-  }
-
-  if (norm.includes('DEVOPS')) {
-    return {
+  } else if (norm.includes('DEVOPS')) {
+    base = {
       'Languages': ['Python', 'Java', 'SQL', 'Shell Scripting'],
       'CI/CD & Build': ['Jenkins CI/CD', 'Maven', 'Git', 'Automated Pipelines'],
       'Cloud & Security': ['Azure Snowflake', 'OAuth 2.0', 'mTLS', 'RBAC', 'REST APIs'],
       'Observability & Monitoring': ['Splunk', 'Grafana', 'Apache Kafka', 'Telemetry Monitoring'],
     };
-  }
-
-  if (norm.includes('FULLSTACK')) {
-    return {
+  } else if (norm.includes('FULLSTACK')) {
+    base = {
       'Languages': ['TypeScript', 'JavaScript', 'Java', 'Python', 'SQL'],
       'Frontend & UI': ['React', 'Angular', 'HTML5', 'CSS3', 'WebSockets'],
       'Backend & APIs': ['Node.js', 'Express.js', 'Spring Boot', 'REST APIs', 'OAuth 2.0'],
       'Data & DevOps': ['MySQL', 'MongoDB', 'Git', 'Jenkins CI/CD', 'Azure Snowflake'],
     };
+  } else {
+    base = {
+      'Languages': ['Java', 'Python', 'SQL', 'JavaScript', 'C++'],
+      'Backend & Distributed Systems': ['Spring Boot', 'REST APIs', 'Microservices', 'Kafka', 'OAuth 2.0'],
+      'Data & Cloud Platforms': ['PySpark', 'Apache Spark', 'Azure Snowflake', 'MySQL', 'MongoDB'],
+      'DevOps, CI/CD & Observability': ['Jenkins CI/CD', 'Git', 'Maven', 'Splunk', 'Grafana'],
+    };
   }
 
-  return {
-    'Languages': ['Java', 'Python', 'SQL', 'JavaScript', 'C++'],
-    'Backend & Distributed Systems': ['Spring Boot', 'REST APIs', 'Microservices', 'Kafka', 'OAuth 2.0'],
-    'Data & Cloud Platforms': ['PySpark', 'Apache Spark', 'Azure Snowflake', 'MySQL', 'MongoDB'],
-    'DevOps, CI/CD & Observability': ['Jenkins CI/CD', 'Git', 'Maven', 'Splunk', 'Grafana'],
-  };
+  if (roleTitle || jdText) {
+    const prioritized: Record<string, string[]> = {};
+    for (const [cat, skList] of Object.entries(base)) {
+      prioritized[cat] = prioritizeVerifiedSkillsForRole(skList, roleTitle, jdText);
+    }
+    return prioritized;
+  }
+
+  return base;
 }
 
 export function verifyNoKeywordStuffing(fullText: string): { clean: boolean; maxFreq: number } {
@@ -319,10 +357,12 @@ export function verifyNoKeywordStuffing(fullText: string): { clean: boolean; max
 
 export function generateResumeHtml(
   candidate: CandidateExtendedProfile,
-  archetype: ResumeArchetype | RoleArchetype
+  archetype: ResumeArchetype | RoleArchetype,
+  roleTitle = '',
+  jdText = ''
 ): string {
   const bullets = getArchetypeOrderedBullets(archetype);
-  const skillCategories = getArchetypeCategorizedSkills(archetype);
+  const skillCategories = getArchetypeCategorizedSkills(archetype, roleTitle, jdText);
   const projects = getArchetypeProjects(archetype);
 
   const p = (candidate as any).profile?.personal || (candidate as any).personal || (candidate as any).basics || {};
@@ -545,10 +585,12 @@ export function generateResumeHtml(
 
 export async function buildDocxWithLibrary(
   candidate: CandidateExtendedProfile,
-  archetype: ResumeArchetype | RoleArchetype
+  archetype: ResumeArchetype | RoleArchetype,
+  roleTitle = '',
+  jdText = ''
 ): Promise<Buffer> {
   const bullets = getArchetypeOrderedBullets(archetype);
-  const skillCategories = getArchetypeCategorizedSkills(archetype);
+  const skillCategories = getArchetypeCategorizedSkills(archetype, roleTitle, jdText);
   const projects = getArchetypeProjects(archetype);
 
   const p = (candidate as any).profile?.personal || (candidate as any).personal || (candidate as any).basics || {};
@@ -852,9 +894,11 @@ export async function buildDocxWithLibrary(
 
 export async function buildOpenXmlDocx(
   candidate: CandidateExtendedProfile,
-  archetype: RoleArchetype | ResumeArchetype
+  archetype: RoleArchetype | ResumeArchetype,
+  roleTitle = '',
+  jdText = ''
 ): Promise<Buffer> {
-  return await buildDocxWithLibrary(candidate, archetype);
+  return await buildDocxWithLibrary(candidate, archetype, roleTitle, jdText);
 }
 
 export async function generateDualAtsResume(
@@ -980,7 +1024,7 @@ export async function buildTailoredResumePair(
       ? 'FULLSTACK'
       : 'BACKEND';
 
-  const html = generateResumeHtml(candidateProfile, roleArch);
+  const html = generateResumeHtml(candidateProfile, roleArch, job.title, job.description || '');
 
   fs.mkdirSync(outputDir, { recursive: true });
   const sanitizedCompany = (job.company || 'general').toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 20);
@@ -989,7 +1033,7 @@ export async function buildTailoredResumePair(
   const docxPath = path.resolve(outputDir, `${baseName}.docx`);
 
   // 1. Generate DOCX
-  const docxBuffer = await buildDocxWithLibrary(candidateProfile, archetype);
+  const docxBuffer = await buildDocxWithLibrary(candidateProfile, archetype, job.title, job.description || '');
   fs.writeFileSync(docxPath, docxBuffer);
 
   // 2. Generate PDF via headless browser
@@ -1016,7 +1060,7 @@ export async function buildTailoredResumePair(
     if (browser) await browser.close().catch(() => {});
   }
 
-  const skillsIncluded = Object.values(getArchetypeCategorizedSkills(roleArch)).flat();
+  const skillsIncluded = Object.values(getArchetypeCategorizedSkills(roleArch, job.title, job.description || '')).flat();
   const topBulletStack = getArchetypeOrderedBullets(roleArch)[0] || '';
 
   return {

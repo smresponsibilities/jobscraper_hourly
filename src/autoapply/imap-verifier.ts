@@ -9,6 +9,13 @@ export interface ImapVerificationResult {
   subject?: string;
 }
 
+// Ticket GEN-192: Cross-lane IMAP OTP token isolation
+export const CONSUMED_VERIFICATION_TOKENS = new Set<string>();
+
+export function hasConsumedVerificationToken(token: string): boolean {
+  return CONSUMED_VERIFICATION_TOKENS.has(token);
+}
+
 /**
  * Generates a deterministic Gmail +alias for a Workday tenant when the base email account
  * is locked or has a mismatched password from an older session.
@@ -102,7 +109,15 @@ export async function pollImapForVerificationCodeOrLink(params: {
                 /(?:verification code|security code|confirmation code|passcode|code is|enter the code)[:\s]*([A-Za-z0-9]{6,8})\b/i
               ) || bodyWithoutHtml.match(/\b([0-9]{6})\b/);
 
+            const candidateToken = codeMatch?.[1] || linkMatch?.[0] || '';
+            if (candidateToken && CONSUMED_VERIFICATION_TOKENS.has(candidateToken)) {
+              continue;
+            }
+
             if (linkMatch?.[0] || codeMatch?.[1]) {
+              if (candidateToken) {
+                CONSUMED_VERIFICATION_TOKENS.add(candidateToken);
+              }
               return {
                 found: true,
                 otpCode: codeMatch?.[1],
