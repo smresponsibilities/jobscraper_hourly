@@ -87,8 +87,10 @@ export function syncHourlyFreshJobsFromOriginMain(dbPath?: string): {
   }
 
   const db = new DatabaseSync(targetDbPath);
+  db.exec('PRAGMA busy_timeout = 15000; PRAGMA journal_mode = WAL;');
 
-  const hasAppsTable = (db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='applications'").all() as any[]).length > 0;
+  try {
+    const hasAppsTable = (db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='applications'").all() as any[]).length > 0;
   const hasJobsTable = (db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='jobs'").all() as any[]).length > 0;
 
   let insertedFresh = 0;
@@ -236,6 +238,9 @@ export function syncHourlyFreshJobsFromOriginMain(dbPath?: string): {
   }
 
   return { inspected: rawJobs.length, insertedFresh, boostedExisting };
+  } finally {
+    try { db.close(); } catch {}
+  }
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url).toLowerCase() === path.resolve(process.argv[1]).toLowerCase()) {

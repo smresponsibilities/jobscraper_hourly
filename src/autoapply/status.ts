@@ -57,6 +57,7 @@ export function readApplicationStatus(stateDir: string, jobId?: string): object 
   const filename = path.join(stateDir, 'queue.sqlite');
   if (!existsSync(filename)) return { worker: workerLiveness(worker), queue: 'missing' };
   const db = new DatabaseSync(filename, { readOnly: true });
+  db.exec('PRAGMA busy_timeout = 15000;');
   try {
     const rows = db.prepare('SELECT id,status,payload FROM applications').all() as Array<{ id: string; status: string; payload: string }>;
     if (jobId) {

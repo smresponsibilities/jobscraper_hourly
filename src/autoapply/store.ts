@@ -16,7 +16,7 @@ export class ApplicationStore {
     this.filename = /\.json$/i.test(statePath) ? statePath.replace(/\.json$/i, '.sqlite') : statePath;
     mkdirSync(path.dirname(this.filename), { recursive: true });
     this.db = new DatabaseSync(this.filename);
-    this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA temp_store=MEMORY; PRAGMA foreign_keys=ON;
+    this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=15000; PRAGMA temp_store=MEMORY; PRAGMA foreign_keys=ON;
       CREATE TABLE IF NOT EXISTS metadata(key TEXT PRIMARY KEY,value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS workers(owner TEXT PRIMARY KEY,pid INTEGER NOT NULL,expires INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS submission_attempts(candidate_id TEXT NOT NULL,day TEXT NOT NULL,attempt_id TEXT PRIMARY KEY);

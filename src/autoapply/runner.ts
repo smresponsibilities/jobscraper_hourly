@@ -3835,6 +3835,7 @@ export class AutoApplyRunner {
           const sqlitePath = path.resolve('state/autoapply/portal-review/queue.sqlite');
           if (existsSync(sqlitePath)) {
             const db = new DatabaseSync(sqlitePath);
+            db.exec('PRAGMA busy_timeout = 15000;');
             db.prepare(`
               UPDATE applications
               SET payload = json_set(payload,

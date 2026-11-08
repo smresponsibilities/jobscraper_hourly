@@ -70,8 +70,10 @@ export function getHourlyJobsData() {
   }
 
   if (hourlyItems.length < 50 && fs.existsSync(SQLITE_DB_PATH)) {
+    let db: DatabaseSync | null = null;
     try {
-      const db = new DatabaseSync(SQLITE_DB_PATH);
+      db = new DatabaseSync(SQLITE_DB_PATH, { readOnly: true });
+      db.exec('PRAGMA busy_timeout = 15000;');
       const rows = db.prepare("SELECT id, normalized_url, status, payload FROM applications WHERE payload LIKE '%isHourlyFresh%' ORDER BY rowid DESC LIMIT 150").all() as any[];
       const seenIds = new Set(hourlyItems.map(h => h.id || h.jobUrl));
       for (const r of rows) {
@@ -93,8 +95,9 @@ export function getHourlyJobsData() {
           } catch {}
         }
       }
-      db.close();
-    } catch {}
+    } catch {} finally {
+      try { db?.close(); } catch {}
+    }
   }
 
   const history = readJobRunHistory(300);
@@ -166,8 +169,10 @@ export function getAppliedJobsData() {
   const seenKeys = new Set<string>();
 
   if (fs.existsSync(SQLITE_DB_PATH)) {
+    let db: DatabaseSync | null = null;
     try {
-      const db = new DatabaseSync(SQLITE_DB_PATH);
+      db = new DatabaseSync(SQLITE_DB_PATH, { readOnly: true });
+      db.exec('PRAGMA busy_timeout = 15000;');
       const rows = db.prepare("SELECT id, normalized_url, payload FROM applications WHERE status = 'applied' ORDER BY rowid DESC").all() as any[];
       for (const r of rows) {
         try {
@@ -207,9 +212,12 @@ export function getAppliedJobsData() {
           });
         } catch {}
       }
-      db.close();
-    } catch (e) {
-      console.error('[DASHBOARD] Error reading applied jobs from sqlite:', e);
+    } catch (e: any) {
+      if (!/database is locked/i.test(e?.message || '')) {
+        console.error('[DASHBOARD] Error reading applied jobs from sqlite:', e);
+      }
+    } finally {
+      try { db?.close(); } catch {}
     }
   }
 
@@ -310,14 +318,17 @@ export function getDashboardTelemetry() {
   };
 
   if (fs.existsSync(SQLITE_DB_PATH)) {
+    let db: DatabaseSync | null = null;
     try {
-      const db = new DatabaseSync(SQLITE_DB_PATH);
+      const dbInstance = new DatabaseSync(SQLITE_DB_PATH, { readOnly: true });
+      db = dbInstance;
+      dbInstance.exec('PRAGMA busy_timeout = 15000;');
       const countQ = (pattern: string) => {
-        const row = db.prepare("SELECT count(1) as c FROM applications WHERE status = 'queued' AND normalized_url LIKE ?").get(`%${pattern}%`) as any;
+        const row = dbInstance.prepare("SELECT count(1) as c FROM applications WHERE status = 'queued' AND normalized_url LIKE ?").get(`%${pattern}%`) as any;
         return row ? Number(row.c) : 0;
       };
       const countStatus = (st: string) => {
-        const row = db.prepare("SELECT count(1) as c FROM applications WHERE status = ?").get(st) as any;
+        const row = dbInstance.prepare("SELECT count(1) as c FROM applications WHERE status = ?").get(st) as any;
         return row ? Number(row.c) : 0;
       };
 
@@ -344,8 +355,9 @@ export function getDashboardTelemetry() {
 
       queueTotals.queued = total;
       queueTotals.applied = Math.max(queueTotals.applied || 0, totalAppliedInDb);
-      db.close();
-    } catch {}
+    } catch {} finally {
+      try { db?.close(); } catch {}
+    }
   }
 
   history.sort((a, b) => new Date(b.finishedAt).getTime() - new Date(a.finishedAt).getTime());

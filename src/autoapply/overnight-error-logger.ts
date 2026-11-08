@@ -399,6 +399,7 @@ export function compileMorningImprovementReport(options?: {
   if (fs.existsSync(queueDbPath)) {
     try {
       const db = new DatabaseSync(queueDbPath, { readOnly: true });
+      db.exec('PRAGMA busy_timeout = 15000;');
       const rows = db.prepare('SELECT status, COUNT(*) as cnt FROM applications GROUP BY status').all() as Array<{
         status: string;
         cnt: number;

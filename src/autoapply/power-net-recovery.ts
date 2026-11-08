@@ -56,7 +56,7 @@ export function recoverPowerOffAndNetOffJobs(sqlitePath = 'state/autoapply/porta
   }
 
   const db = new DatabaseSync(resolvedDbPath);
-  db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA busy_timeout = 5000;');
+  db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA busy_timeout = 15000;');
 
   // Recover any job that was marked in_progress or interrupted by power-off
   let recoveredInFlight = 0;
