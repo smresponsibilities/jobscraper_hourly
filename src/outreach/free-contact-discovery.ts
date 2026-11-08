@@ -110,7 +110,8 @@ export async function verifyDomainDeliverability(domain: string): Promise<{
 export async function discoverGithubOrgCommitContacts(
   company: string,
   domain: string,
-  orgSlug?: string
+  orgSlug?: string,
+  roleTitle = ''
 ): Promise<DiscoveredContactLead[]> {
   const leads: DiscoveredContactLead[] = [];
   const cleanDomain = (domain.toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0] || '').trim();
@@ -129,16 +130,33 @@ export async function discoverGithubOrgCommitContacts(
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 5000);
     const reposRes = await fetch(
-      `https://api.github.com/orgs/${encodeURIComponent(slug)}/repos?sort=pushed&per_page=3`,
+      `https://api.github.com/orgs/${encodeURIComponent(slug)}/repos?sort=pushed&per_page=15`,
       { headers, signal: ctrl.signal }
     ).catch(() => null);
     clearTimeout(timer);
     if (!reposRes || !reposRes.ok) return leads;
 
-    const repos = (await reposRes.json().catch(() => [])) as Array<{ name?: string; full_name?: string }>;
+    const repos = (await reposRes.json().catch(() => [])) as Array<{ name?: string; full_name?: string; description?: string }>;
     const seenEmails = new Set<string>();
 
-    for (const repo of repos.slice(0, 2)) {
+    const tokens = (roleTitle || '')
+      .toLowerCase()
+      .split(/\W+/)
+      .filter((t) => t.length >= 2 && !/^(the|and|for|with|engineer|engineering|software|developer|senior|staff|principal|lead)$/i.test(t));
+
+    const rankedRepos = [...repos].sort((a, b) => {
+      const textA = `${a.name || ''} ${a.description || ''}`.toLowerCase();
+      const textB = `${b.name || ''} ${b.description || ''}`.toLowerCase();
+      let scoreA = 0;
+      let scoreB = 0;
+      for (const tok of tokens) {
+        if (textA.includes(tok)) scoreA++;
+        if (textB.includes(tok)) scoreB++;
+      }
+      return scoreB - scoreA;
+    });
+
+    for (const repo of rankedRepos.slice(0, 3)) {
       if (!repo.full_name) continue;
       const cCtrl = new AbortController();
       const cTimer = setTimeout(() => cCtrl.abort(), 5000);

@@ -55,6 +55,15 @@ export interface HarvestedJob {
   location: string;
   url: string;
   ats: string;
+  postedRecent?: boolean;
+}
+
+export function isPostedWithinHours(rawDate: unknown, maxHours = 72): boolean {
+  if (!rawDate) return false;
+  const ts = typeof rawDate === 'number' ? rawDate : Date.parse(String(rawDate));
+  if (!Number.isFinite(ts) || ts <= 0) return false;
+  const ageMs = Date.now() - ts;
+  return ageMs >= -3600_000 && ageMs <= maxHours * 3600_000;
 }
 
 export function inferAts(url: string): string {
@@ -331,7 +340,7 @@ export async function harvestLiveFastAtsBoardsFromCompaniesJson(maxBoards = 650)
                 : j.id
                 ? `https://boards.greenhouse.io/${slug}/jobs/${j.id}`
                 : rawAbs;
-            if (url) jobsOut.push({ company: companyName, title: String(j.title || ''), location: loc, url, ats: 'greenhouse' });
+            if (url) jobsOut.push({ company: companyName, title: String(j.title || ''), location: loc, url, ats: 'greenhouse', postedRecent: isPostedWithinHours(j.updated_at || j.first_published, 72) });
           }
         } else if (ats === 'ashby') {
           const { data, status } = await fetchJsonFast(`https://api.ashbyhq.com/posting-api/job-board/${encodeURIComponent(slug)}`);
@@ -352,7 +361,7 @@ export async function harvestLiveFastAtsBoardsFromCompaniesJson(maxBoards = 650)
                 : j.id
                 ? `https://jobs.ashbyhq.com/${slug}/${j.id}/application`
                 : rawUrl;
-            if (url) jobsOut.push({ company: companyName, title: String(j.title || ''), location: loc, url, ats: 'ashby' });
+            if (url) jobsOut.push({ company: companyName, title: String(j.title || ''), location: loc, url, ats: 'ashby', postedRecent: isPostedWithinHours(j.publishedAt || j.updatedAt, 72) });
           }
         } else if (ats === 'lever') {
           const { data, status } = await fetchJsonFast(`https://api.lever.co/v0/postings/${encodeURIComponent(slug)}?mode=json`);
@@ -368,7 +377,7 @@ export async function harvestLiveFastAtsBoardsFromCompaniesJson(maxBoards = 650)
                 : j.id
                 ? `https://jobs.lever.co/${slug}/${j.id}/apply`
                 : rawUrl;
-            if (url) jobsOut.push({ company: companyName, title: String(j.text || ''), location: loc, url, ats: 'lever' });
+            if (url) jobsOut.push({ company: companyName, title: String(j.text || ''), location: loc, url, ats: 'lever', postedRecent: isPostedWithinHours(j.createdAt, 72) });
           }
         } else if (ats === 'smartrecruiters') {
           const { data, status } = await fetchJsonFast(`https://api.smartrecruiters.com/v1/companies/${encodeURIComponent(slug)}/postings?limit=50`);
@@ -377,7 +386,7 @@ export async function harvestLiveFastAtsBoardsFromCompaniesJson(maxBoards = 650)
           for (const j of list) {
             const loc = [j.location?.city, j.location?.region, j.location?.country].filter(Boolean).join(', ');
             const url = `https://jobs.smartrecruiters.com/${slug}/${j.id}`;
-            if (j.id) jobsOut.push({ company: companyName, title: String(j.name || ''), location: loc, url, ats: 'smartrecruiters' });
+            if (j.id) jobsOut.push({ company: companyName, title: String(j.name || ''), location: loc, url, ats: 'smartrecruiters', postedRecent: isPostedWithinHours(j.releasedDate, 72) });
           }
         } else if (ats === 'workday') {
           const tenant = slug;
@@ -397,7 +406,7 @@ export async function harvestLiveFastAtsBoardsFromCompaniesJson(maxBoards = 650)
             const pathPart = String(p.externalPath || '');
             const url = pathPart ? `https://${tenant}.${hostPrefix}/en-US/${site}${pathPart.startsWith('/') ? '' : '/'}${pathPart}` : '';
             if (url) {
-              jobsOut.push({ company: companyName, title: String(p.title || ''), location: loc, url, ats: 'workday' });
+              jobsOut.push({ company: companyName, title: String(p.title || ''), location: loc, url, ats: 'workday', postedRecent: isPostedWithinHours(p.postedOn, 72) });
             }
           }
         }
@@ -514,6 +523,22 @@ export async function runHourly100JobsHarvester(): Promise<{
     db.exec('PRAGMA busy_timeout = 15000; PRAGMA journal_mode = WAL;');
 
     try {
+      let acquired = false;
+      let retries = 10;
+      while (retries-- > 0) {
+        try {
+          db.exec('BEGIN IMMEDIATE');
+          acquired = true;
+          break;
+        } catch (err: any) {
+          if (/database is locked/i.test(err?.message || '') && retries > 0) {
+            Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 300);
+            continue;
+          }
+          break;
+        }
+      }
+
       const hasAppsTable = (db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='applications'").all() as any[]).length > 0;
       const hasJobsTable = (db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='jobs'").all() as any[]).length > 0;
 
@@ -546,6 +571,7 @@ export async function runHourly100JobsHarvester(): Promise<{
           const normUrl = job.url.trim();
           const existing = existingByUrl.get(normUrl) || existingByUrl.get(normUrl.replace(/\/$/, ''));
           const expiresDate = new Date(Date.now() + 48 * 3600 * 1000).toISOString();
+          const freshTier = job.postedRecent ? 3 : 2;
 
           if (!existing) {
             const id = `harvest_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -556,7 +582,7 @@ export async function runHourly100JobsHarvester(): Promise<{
               location: job.location,
               ats: job.ats,
               discoveredAt: new Date().toISOString(),
-              is_hourly_fresh: 2,
+              is_hourly_fresh: freshTier,
             });
             insertStmt.run(candidateId, id, normUrl, normUrl, payload, expiresDate);
             totalInsertedOrBoosted++;
@@ -565,7 +591,7 @@ export async function runHourly100JobsHarvester(): Promise<{
             p.location = job.location || p.location || 'India';
             p.title = job.title || p.title;
             p.company = job.company || p.company;
-            p.is_hourly_fresh = 2;
+            p.is_hourly_fresh = Math.max(p.is_hourly_fresh || 0, freshTier);
             p.boostedAt = new Date().toISOString();
             delete p.last_error;
             updateStmt.run(JSON.stringify(p), expiresDate, existing.id);
@@ -590,23 +616,33 @@ export async function runHourly100JobsHarvester(): Promise<{
 
         const insertJobStmt = db.prepare(`
           INSERT OR IGNORE INTO jobs (company, title, url, location, ats, status, is_hourly_fresh)
-          VALUES (?, ?, ?, ?, ?, 'queued', 2)
+          VALUES (?, ?, ?, ?, ?, 'queued', ?)
         `);
         const updateJobStmt = db.prepare(`
-          UPDATE jobs SET status = 'queued', is_hourly_fresh = 2, location = ?, last_error = NULL WHERE id = ? AND status IN ('queued', 'skipped')
+          UPDATE jobs SET status = 'queued', is_hourly_fresh = MAX(COALESCE(is_hourly_fresh, 0), ?), location = ?, last_error = NULL WHERE id = ? AND status IN ('queued', 'skipped')
         `);
 
         for (const job of fitJobs) {
           const normUrl = job.url.trim();
           const existing = existingJobsByUrl.get(normUrl) || existingJobsByUrl.get(normUrl.replace(/\/$/, ''));
+          const freshTier = job.postedRecent ? 3 : 2;
           if (!existing) {
-            insertJobStmt.run(job.company, job.title, normUrl, job.location, job.ats);
+            insertJobStmt.run(job.company, job.title, normUrl, job.location, job.ats, freshTier);
             totalInsertedOrBoosted++;
           } else if (existing.status === 'queued' || existing.status === 'skipped') {
-            updateJobStmt.run(job.location || 'India', existing.id);
+            updateJobStmt.run(freshTier, job.location || 'India', existing.id);
             totalInsertedOrBoosted++;
           }
         }
+      }
+
+      if (acquired) {
+        db.exec('COMMIT');
+      }
+    } catch (err: any) {
+      try { db.exec('ROLLBACK'); } catch {}
+      if (!/database is locked/i.test(err?.message || '')) {
+        throw err;
       }
     } finally {
       db.close();

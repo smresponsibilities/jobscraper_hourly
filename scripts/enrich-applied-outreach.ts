@@ -124,8 +124,9 @@ export async function enrichAppliedOutreachQueue(
 
     if (domain) {
       deliverability = await verifyDomainDeliverability(domain);
+      const primaryRole = jobTitles[0] || '';
       const [ghContacts, webContacts] = await Promise.all([
-        discoverGithubOrgCommitContacts(company, domain).catch(() => []),
+        discoverGithubOrgCommitContacts(company, domain, undefined, primaryRole).catch(() => []),
         discoverPublicWebsiteContacts(company, domain).catch(() => []),
       ]);
       const seen = new Set<string>();

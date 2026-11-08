@@ -75,6 +75,7 @@ export async function healInvalidFieldsAndRetrySubmit(
         '.field, [class*="_fieldEntry_"], .application-question, [data-automation-id^="formField-"], fieldset, [class*="form-field" i], [class*="FormField" i]'
       );
       if (!wrapper) continue;
+      const errText = (errEl.textContent || '').toLowerCase();
       const controls = Array.from(
         wrapper.querySelectorAll<HTMLElement>(
           'input:not([type="hidden"]), select, textarea, [role="combobox"], button[data-autoapply-btngroup-option], [data-autoapply-ref]'
@@ -84,6 +85,40 @@ export async function healInvalidFieldsAndRetrySubmit(
         ctrl.setAttribute('aria-invalid', 'true');
         const ref = ctrl.getAttribute('data-autoapply-ref');
         if (ref) refsToUnlock.push(ref);
+
+        if (ctrl instanceof HTMLInputElement || ctrl instanceof HTMLTextAreaElement) {
+          const oldVal = (ctrl.value || '').trim();
+          const setter = Object.getOwnPropertyDescriptor(
+            ctrl instanceof HTMLTextAreaElement
+              ? window.HTMLTextAreaElement.prototype
+              : window.HTMLInputElement.prototype,
+            'value'
+          )?.set;
+          const setMutated = (newVal: string) => {
+            try {
+              (ctrl as unknown as { _valueTracker?: { setValue: (v: string) => void } })._valueTracker?.setValue('');
+            } catch {}
+            if (setter) setter.call(ctrl, newVal);
+            else ctrl.value = newVal;
+            ctrl.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+            ctrl.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+          };
+
+          if (/number|numeric|integer|digits\s+only/i.test(errText) && !/^\d+$/.test(oldVal)) {
+            const extracted = oldVal.match(/\d+/)?.[0] || '1';
+            setMutated(extracted === '0' ? '1' : extracted);
+          } else if (
+            (oldVal === '0' || oldVal === '') &&
+            /greater\s+than|at\s+least\s+1|minimum|positive|between\s+1/i.test(errText)
+          ) {
+            setMutated('1');
+          } else if (/url|http|website|valid\s+link/i.test(errText) && !/^https?:\/\//i.test(oldVal)) {
+            setMutated('https://shivammahajan.com');
+          } else if (oldVal) {
+            // Clear rejected value so GEN-167 existingVal check does not skip re-filling on Pass 2!
+            setMutated('');
+          }
+        }
       }
     }
 
@@ -998,6 +1033,13 @@ export class AutoApplyRunner {
    * Ticket GEN-123: Track HTTP POST network submissions on known ATS endpoints.
    */
   private attachNetworkReceiptListener(page: Page): void {
+    page
+      .route(
+        /(?:fullstory\.com|hotjar\.com|datadoghq-browser-agent|doubleclick\.net|google-analytics\.com|analytics\.tiktok\.com|connect\.facebook\.net|bat\.bing\.com|clarity\.ms|mouseflow\.com|logrocket\.io)/i,
+        (route) => route.abort().catch(() => {})
+      )
+      .catch(() => {});
+
     page.on('response', async (response) => {
       try {
         const req = response.request();
