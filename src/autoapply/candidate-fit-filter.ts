@@ -17,13 +17,13 @@ export interface CandidateFitResult {
 const ISOLATED_TENANTS = new Set(['stripe', 'avoca', 'ssctech', 'paypal']);
 
 const SENIOR_TITLE_REGEX =
-  /\b(?:senior|sr\.?|staff|principal|lead|tech\s+lead|team\s+lead|engineering\s+manager|manager|director|vice\s+president|\bvp\b|head\s+of|chief|cto|cio|ciso|architect|distinguished|fellow|sde\s*(?:iii|3|iv|4)|engineer\s*(?:iii|3|iv|4|v|5)|level\s*[45678])\b/i;
+  /\b(?:senior|sr\.?|staff|principal|lead|leader|leadership|tech\s+lead|team\s+lead|engineering\s+manager|manager|director|vice\s+president|\bvp\b|head\s+of|chief|cto|cio|ciso|architect|distinguished|fellow|sde\s*(?:iii|3|iv|4)|engineer\s*(?:iii|3|iv|4|v|5)|level\s*[45678]|expert|advisor)\b/i;
 
 const JUNIOR_OVERRIDE_REGEX =
   /\b(?:intern|internship|apprentice|apprenticeship|new\s+grad|graduate|fresher|trainee|entry[\s-]*level|junior|jr\.?|associate)\b/i;
 
 const NON_TECH_TITLE_REGEX =
-  /\b(?:account\s+executive|account\s+manager|business\s+development|\bbdr\b|\bsdr\b|sales\s+representative|sales\s+manager|customer\s+success|recruiter|talent\s+acquisition|human\s+resources|\bhr\b|people\s+operations|payroll|accountant|accounting|tax\s+|audit\s+|financial\s+advisor|legal\s+counsel|attorney|paralegal|lawyer|marketing\s+manager|content\s+writer|copywriter|social\s+media|public\s+relations|graphic\s+designer|receptionist|executive\s+assistant|office\s+manager|facilities|warehouse|forklift|driver|nurse|nursing|physician|pharmacist|therapist|medical\s+assistant|dentist|veterinarian)\b/i;
+  /\b(?:account\s+executive|account\s+manager|business\s+development|\bbdr\b|\bsdr\b|sales\s+representative|sales\s+manager|customer\s+success|recruiter|talent\s+acquisition|human\s+resources|\bhr\b|people\s+operations|payroll|accountant|accounting|tax\s+|audit\s+|financial\s+advisor|legal\s+counsel|attorney|paralegal|lawyer|marketing\s+manager|content\s+writer|copywriter|social\s+media|public\s+relations|graphic\s+designer|receptionist|executive\s+assistant|office\s+manager|facilities|warehouse|forklift|driver|nurse|nursing|physician|pharmacist|therapist|medical\s+assistant|dentist|veterinarian|mechanical|mep\b|civil\s+engineer|plumbing|hvac|facility\s+engineer|shift\s+engineer|duty\s+engineer|desktop\s+and\s+site\s+support|desktop\s+support|representative|advisory|oncology|operations\s+analyst)\b/i;
 
 const TECH_ROLE_SIGNAL_REGEX =
   /\b(?:software|engineer|engineering|developer|programmer|\bsde\b|\bswe\b|backend|back-end|frontend|front-end|full[\s-]*stack|fullstack|data\s+scientist|data\s+engineer|data\s+analyst|machine\s+learning|\bml\b|\bai\b|artificial\s+intelligence|deep\s+learning|\bllm\b|\bnlp\b|genai|devops|\bsre\b|site\s+reliability|platform|infrastructure|cloud|kubernetes|security|cybersecurity|infosec|\bqa\b|quality\s+assurance|test|sdet|automation|mobile|android|ios|kotlin|flutter|react|node|python|java|golang|rust|c\+\+|database|clickhouse|spark|kafka|etl|analytics|quant|quantitative|systems|firmware|embedded|web\s+developer|application\s+developer|technical|technology\s+apprentice|member\s+of\s+technical\s+staff|\bmts\b)\b/i;
