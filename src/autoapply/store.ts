@@ -8,73 +8,98 @@ import { canonicalRequisition } from './identity.js';
 /** SQLite owns durable state. Legacy JSON is imported once and retained unchanged. */
 export class ApplicationStore {
   readonly filename: string;
-  private db: DatabaseSync;
+  private db!: DatabaseSync;
   private owner = randomUUID();
   private heartbeat: ReturnType<typeof setInterval>;
 
   constructor(statePath: string, private candidateId: string) {
     this.filename = /\.json$/i.test(statePath) ? statePath.replace(/\.json$/i, '.sqlite') : statePath;
     mkdirSync(path.dirname(this.filename), { recursive: true });
-    this.db = new DatabaseSync(this.filename);
-    this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=15000; PRAGMA temp_store=MEMORY; PRAGMA foreign_keys=ON;
-      CREATE TABLE IF NOT EXISTS metadata(key TEXT PRIMARY KEY,value TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS workers(owner TEXT PRIMARY KEY,pid INTEGER NOT NULL,expires INTEGER NOT NULL);
-      CREATE TABLE IF NOT EXISTS submission_attempts(candidate_id TEXT NOT NULL,day TEXT NOT NULL,attempt_id TEXT PRIMARY KEY);
-      CREATE TABLE IF NOT EXISTS tenant_attempts(candidate_id TEXT NOT NULL,tenant_hash TEXT NOT NULL,occurred_at INTEGER NOT NULL,attempt_id TEXT PRIMARY KEY);
-      CREATE INDEX IF NOT EXISTS tenant_attempts_window ON tenant_attempts(candidate_id,tenant_hash,occurred_at);
-      CREATE TABLE IF NOT EXISTS tenant_cooldowns(candidate_id TEXT NOT NULL,tenant_hash TEXT NOT NULL,until_ms INTEGER NOT NULL,PRIMARY KEY(candidate_id,tenant_hash));
-      CREATE TABLE IF NOT EXISTS application_events(candidate_id TEXT NOT NULL,job_id TEXT NOT NULL,timestamp TEXT NOT NULL,phase TEXT NOT NULL,reason_code TEXT,step_index INTEGER);
-      CREATE INDEX IF NOT EXISTS application_event_job ON application_events(candidate_id,job_id,timestamp);
-      CREATE TABLE IF NOT EXISTS applications(
-        candidate_id TEXT NOT NULL,id TEXT NOT NULL,canonical_key TEXT,normalized_url TEXT NOT NULL,
-        status TEXT NOT NULL,payload TEXT NOT NULL,owner TEXT,expires INTEGER,
-        PRIMARY KEY(candidate_id,id),UNIQUE(candidate_id,canonical_key),UNIQUE(candidate_id,normalized_url));
-      CREATE INDEX IF NOT EXISTS application_status ON applications(candidate_id,status);`);
-    try {
-      this.transaction(() => {
-        const bound = this.db.prepare('SELECT value FROM metadata WHERE key=?').get('candidate') as { value: string } | undefined;
-        if (bound && bound.value !== candidateId) throw new Error('Queue belongs to a different candidate');
-        if (!bound) {
-          this.db.prepare('INSERT INTO metadata VALUES(?,?)').run('candidate', candidateId);
-          if (this.filename !== statePath && existsSync(statePath)) {
-            const snapshot = JSON.parse(readFileSync(statePath, 'utf8'));
-            if ((snapshot.candidateId || 'default') !== candidateId) throw new Error('Queue belongs to a different candidate');
-            if (snapshot.version !== 1 || !Array.isArray(snapshot.jobs)) throw new Error('Invalid queue snapshot');
-            for (const job of snapshot.jobs) {
-              if (!job || typeof job.id !== 'string' || typeof job.jobUrl !== 'string' || !['queued', 'applying', 'applied', 'skipped', 'failed', 'paused_for_review'].includes(job.status)) throw new Error('Invalid saved queue job');
-              if (job.status === 'applying') { job.status = 'paused_for_review'; job.error = 'Interrupted legacy run; check employer receipt before retry'; }
-              job.canonicalKey ||= canonicalRequisition(job.jobUrl, job.externalJobId)?.key;
-              this.insert(job, new URL(job.jobUrl).href);
+
+    let lastError: unknown;
+    let initialized = false;
+
+    for (let attempt = 0; attempt < 10; attempt++) {
+      let candidateDb: DatabaseSync | null = null;
+      try {
+        candidateDb = new DatabaseSync(this.filename);
+        this.db = candidateDb;
+        candidateDb.exec('PRAGMA busy_timeout=15000;');
+        candidateDb.exec('PRAGMA journal_mode=WAL;');
+        candidateDb.exec(`PRAGMA temp_store=MEMORY; PRAGMA foreign_keys=ON;
+          CREATE TABLE IF NOT EXISTS metadata(key TEXT PRIMARY KEY,value TEXT NOT NULL);
+          CREATE TABLE IF NOT EXISTS workers(owner TEXT PRIMARY KEY,pid INTEGER NOT NULL,expires INTEGER NOT NULL);
+          CREATE TABLE IF NOT EXISTS submission_attempts(candidate_id TEXT NOT NULL,day TEXT NOT NULL,attempt_id TEXT PRIMARY KEY);
+          CREATE TABLE IF NOT EXISTS tenant_attempts(candidate_id TEXT NOT NULL,tenant_hash TEXT NOT NULL,occurred_at INTEGER NOT NULL,attempt_id TEXT PRIMARY KEY);
+          CREATE INDEX IF NOT EXISTS tenant_attempts_window ON tenant_attempts(candidate_id,tenant_hash,occurred_at);
+          CREATE TABLE IF NOT EXISTS tenant_cooldowns(candidate_id TEXT NOT NULL,tenant_hash TEXT NOT NULL,until_ms INTEGER NOT NULL,PRIMARY KEY(candidate_id,tenant_hash));
+          CREATE TABLE IF NOT EXISTS application_events(candidate_id TEXT NOT NULL,job_id TEXT NOT NULL,timestamp TEXT NOT NULL,phase TEXT NOT NULL,reason_code TEXT,step_index INTEGER);
+          CREATE INDEX IF NOT EXISTS application_event_job ON application_events(candidate_id,job_id,timestamp);
+          CREATE TABLE IF NOT EXISTS applications(
+            candidate_id TEXT NOT NULL,id TEXT NOT NULL,canonical_key TEXT,normalized_url TEXT NOT NULL,
+            status TEXT NOT NULL,payload TEXT NOT NULL,owner TEXT,expires INTEGER,
+            PRIMARY KEY(candidate_id,id),UNIQUE(candidate_id,canonical_key),UNIQUE(candidate_id,normalized_url));
+          CREATE INDEX IF NOT EXISTS application_status ON applications(candidate_id,status);`);
+        this.transaction(() => {
+          const bound = this.db.prepare('SELECT value FROM metadata WHERE key=?').get('candidate') as { value: string } | undefined;
+          if (bound && bound.value !== candidateId) throw new Error('Queue belongs to a different candidate');
+          if (!bound) {
+            this.db.prepare('INSERT INTO metadata VALUES(?,?)').run('candidate', candidateId);
+            if (this.filename !== statePath && existsSync(statePath)) {
+              const snapshot = JSON.parse(readFileSync(statePath, 'utf8'));
+              if ((snapshot.candidateId || 'default') !== candidateId) throw new Error('Queue belongs to a different candidate');
+              if (snapshot.version !== 1 || !Array.isArray(snapshot.jobs)) throw new Error('Invalid queue snapshot');
+              for (const job of snapshot.jobs) {
+                if (!job || typeof job.id !== 'string' || typeof job.jobUrl !== 'string' || !['queued', 'applying', 'applied', 'skipped', 'failed', 'paused_for_review'].includes(job.status)) throw new Error('Invalid saved queue job');
+                if (job.status === 'applying') { job.status = 'paused_for_review'; job.error = 'Interrupted legacy run; check employer receipt before retry'; }
+                job.canonicalKey ||= canonicalRequisition(job.jobUrl, job.externalJobId)?.key;
+                this.insert(job, new URL(job.jobUrl).href);
+              }
+              if (typeof snapshot.remainingCredits === 'number') this.setMetadata('remainingCredits', snapshot.remainingCredits);
             }
-            if (typeof snapshot.remainingCredits === 'number') this.setMetadata('remainingCredits', snapshot.remainingCredits);
+            this.db.prepare('INSERT OR REPLACE INTO metadata VALUES(?,?)').run('schema', '1');
           }
-          this.db.prepare('INSERT OR REPLACE INTO metadata VALUES(?,?)').run('schema', '1');
-        }
-        if (!this.db.prepare('SELECT value FROM metadata WHERE key=?').get('submission_budget_initialized')) {
-          const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' });
-          const rows = this.db.prepare('SELECT id,payload FROM applications WHERE candidate_id=? AND status=?').all(candidateId, 'applied') as Array<{ id: string; payload: string }>;
-          for (const row of rows) {
-            const job = JSON.parse(row.payload) as AutoaplyJobItem;
-            const timestamp = Date.parse(job.appliedAt || '');
-            if (Number.isFinite(timestamp)) this.db.prepare('INSERT OR IGNORE INTO submission_attempts VALUES(?,?,?)').run(candidateId, formatter.format(new Date(timestamp)), `legacy:${row.id}`);
+          if (!this.db.prepare('SELECT value FROM metadata WHERE key=?').get('submission_budget_initialized')) {
+            const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' });
+            const rows = this.db.prepare('SELECT id,payload FROM applications WHERE candidate_id=? AND status=?').all(candidateId, 'applied') as Array<{ id: string; payload: string }>;
+            for (const row of rows) {
+              const job = JSON.parse(row.payload) as AutoaplyJobItem;
+              const timestamp = Date.parse(job.appliedAt || '');
+              if (Number.isFinite(timestamp)) this.db.prepare('INSERT OR IGNORE INTO submission_attempts VALUES(?,?,?)').run(candidateId, formatter.format(new Date(timestamp)), `legacy:${row.id}`);
+            }
+            this.db.prepare('INSERT INTO metadata VALUES(?,?)').run('submission_budget_initialized', '1');
           }
-          this.db.prepare('INSERT INTO metadata VALUES(?,?)').run('submission_budget_initialized', '1');
-        }
-        if (!this.db.prepare('SELECT value FROM metadata WHERE key=?').get('experience_recheck_initialized')) {
-          const rows = this.db.prepare('SELECT id,payload FROM applications WHERE candidate_id=? AND status=?').all(candidateId, 'skipped') as Array<{ id: string; payload: string }>;
-          for (const row of rows) {
-            const job = JSON.parse(row.payload) as AutoaplyJobItem;
-            if (job.error !== 'ineligible_jd_experience' || job.receipt) continue;
-            job.error = 'experience_recheck_pending';
-            this.db.prepare('UPDATE applications SET payload=? WHERE candidate_id=? AND id=? AND status=?').run(JSON.stringify(job), candidateId, row.id, 'skipped');
-            this.recordEvent(row.id, 'experience_recheck_pending');
+          if (!this.db.prepare('SELECT value FROM metadata WHERE key=?').get('experience_recheck_initialized')) {
+            const rows = this.db.prepare('SELECT id,payload FROM applications WHERE candidate_id=? AND status=?').all(candidateId, 'skipped') as Array<{ id: string; payload: string }>;
+            for (const row of rows) {
+              const job = JSON.parse(row.payload) as AutoaplyJobItem;
+              if (job.error !== 'ineligible_jd_experience' || job.receipt) continue;
+              job.error = 'experience_recheck_pending';
+              this.db.prepare('UPDATE applications SET payload=? WHERE candidate_id=? AND id=? AND status=?').run(JSON.stringify(job), candidateId, row.id, 'skipped');
+              this.recordEvent(row.id, 'experience_recheck_pending');
+            }
+            this.db.prepare('INSERT INTO metadata VALUES(?,?)').run('experience_recheck_initialized', '1');
           }
-          this.db.prepare('INSERT INTO metadata VALUES(?,?)').run('experience_recheck_initialized', '1');
+        });
+        this.recover();
+        this.db.prepare('INSERT INTO workers VALUES(?,?,?)').run(this.owner, process.pid, Date.now() + 120000);
+        initialized = true;
+        break;
+      } catch (error: any) {
+        lastError = error;
+        try { candidateDb?.close(); } catch {}
+        if (/database is locked|busy/i.test(error?.message || '') && attempt < 9) {
+          Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 300);
+          continue;
         }
-      });
-      this.recover();
-      this.db.prepare('INSERT INTO workers VALUES(?,?,?)').run(this.owner, process.pid, Date.now() + 120000);
-    } catch (error) { this.db.close(); throw error; }
+        throw error;
+      }
+    }
+
+    if (!initialized && lastError) {
+      throw lastError;
+    }
+
     this.heartbeat = setInterval(() => {
       try {
         this.transaction(() => {
@@ -254,11 +279,15 @@ export class ApplicationStore {
 
   close(): void {
     clearInterval(this.heartbeat);
-    this.transaction(() => {
-      this.db.prepare('UPDATE applications SET status=?,owner=NULL,expires=NULL WHERE owner=? AND status=?').run('paused_for_review', this.owner, 'applying');
-      this.db.prepare('DELETE FROM metadata WHERE key=? AND value=?').run('active_worker_owner', this.owner);
-      this.db.prepare('DELETE FROM workers WHERE owner=?').run(this.owner);
-    });
-    this.db.close();
+    try {
+      this.transaction(() => {
+        this.db.prepare('UPDATE applications SET status=?,owner=NULL,expires=NULL WHERE owner=? AND status=?').run('paused_for_review', this.owner, 'applying');
+        this.db.prepare('DELETE FROM metadata WHERE key=? AND value=?').run('active_worker_owner', this.owner);
+        this.db.prepare('DELETE FROM workers WHERE owner=?').run(this.owner);
+      });
+    } catch {}
+    try {
+      this.db.close();
+    } catch {}
   }
 }
