@@ -143,12 +143,12 @@ export function enforceQueueDatabaseInvariants(targetDbPath?: string): {
       }
 
       if (hasApps) {
-        // 1. Sync applied status across DBs
+        // 1. Sync applied status across DBs using indexed normalized_url
         const promoteApp = db.prepare(
-          "UPDATE applications SET status = 'applied' WHERE (normalized_url = ? OR json_extract(payload, '$.url') = ? OR json_extract(payload, '$.jobUrl') = ?) AND status != 'applied'"
+          "UPDATE applications SET status = 'applied' WHERE normalized_url = ? AND status != 'applied'"
         );
         for (const url of allAppliedUrls) {
-          const info = promoteApp.run(url, url, url) as { changes?: number };
+          const info = promoteApp.run(url) as { changes?: number };
           appliedSynced += (info.changes ?? 0);
         }
 
