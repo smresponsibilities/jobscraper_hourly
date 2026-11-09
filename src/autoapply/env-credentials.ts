@@ -118,8 +118,10 @@ export function resolveEnvPortalCredentials(fallbackProfileEmail?: string): Port
   return { email, password, sourceKeyEmail, sourceKeyPassword };
 }
 
+export const WORKDAY_COMPLEXITY_FALLBACK_PASSWORD = 'Wk9#mP4$vL7@nQ2!';
+
 export function ensureWorkdayCompliantPassword(rawPassword: string): string {
-  if (!rawPassword) return 'Wk#2026!Rp9';
+  if (!rawPassword) return WORKDAY_COMPLEXITY_FALLBACK_PASSWORD;
   const isStrong =
     rawPassword.length >= 12 &&
     /[A-Z]/.test(rawPassword) &&

@@ -61,6 +61,7 @@ import { syncGitHubActionsPillars } from './sync-github-actions-pillars.js';
 // Enforce unattended overnight execution environment
 process.env.AUTOAPPLY_DISABLE_HITL_POPUP = '1';
 process.env.AUTOAPPLY_NO_MODEL = '1';
+export const MARATHON_BOOT_MS = Date.now();
 
 export function reapStrayChrome(): number {
   if (process.platform !== 'win32') return 0;
@@ -159,24 +160,8 @@ export function selectDiversifiedMultiLaneChunk(
     const key = getKey(job.jobUrl);
     const company = getCompany(job.company);
 
-    // Ticket GEN-242 & GEN-283: Allow up to 8 jobs per company/tenant on Fast-ATS (Greenhouse, Ashby, Lever) & is_hourly_fresh >= 2
-    const freshLevel = Number(
-      (job as any).is_hourly_fresh ??
-      (job as any).isHourlyFresh ??
-      (job as any).payload?.is_hourly_fresh ??
-      (job as any).payload?.isHourlyFresh ??
-      0
-    );
-    const urlLower = job.jobUrl.toLowerCase();
-    const isFastAts =
-      urlLower.includes('greenhouse.io') ||
-      urlLower.includes('ashbyhq.com') ||
-      urlLower.includes('lever.co') ||
-      (job as any).ats === 'greenhouse' ||
-      (job as any).ats === 'ashby' ||
-      (job as any).ats === 'lever';
-
-    const maxAllowed = (freshLevel >= 2 || isFastAts) ? 8 : 1;
+    // Ticket GEN-242 & GEN-283: Breadth-first pacing: max 2 jobs per company/tenant per 40-job chunk (0 roles permanently cut)
+    const maxAllowed = 2;
 
     const currentKeyCount = tenantCounts.get(key) || 0;
     const currentCompCount = company ? (companyCounts.get(company) || 0) : 0;
@@ -246,16 +231,39 @@ export function selectDiversifiedMultiLaneChunk(
   fastAtsCandidates.sort(sortByPriority);
   slowAtsCandidates.sort(sortByPriority);
 
-  // GEN-283: Dedicate 100% of chunk slots exclusively to Fast-ATS (Greenhouse, Ashby, Lever) while available
+  // Ticket GEN-283: 85% Fast-ATS (Greenhouse, Ashby, Lever) / 15% GCC (Workday, SmartRecruiters)
+  const fastAtsSlots = Math.round(chunkSize * 0.85); // 34 slots for chunkSize = 40
+
+  // 1. Fill up to 34 slots with Fast-ATS candidates
   for (const job of fastAtsCandidates) {
+    takeCandidate(job);
+    if (selected.length >= fastAtsSlots) break;
+  }
+
+  // 2. Fill up to 6 slots with GCC / Slow-ATS candidates (is_hourly_fresh >= 2 prioritized)
+  for (const job of slowAtsCandidates) {
     takeCandidate(job);
     if (selected.length >= chunkSize) return selected;
   }
 
-  // Only add slow ATS (Workday, SmartRecruiters, Other) if fewer than chunkSize fast-ATS jobs were available
-  for (const job of slowAtsCandidates) {
-    takeCandidate(job);
-    if (selected.length >= chunkSize) return selected;
+  // 3. If GCC candidates < 6, backfill remaining slots with any remaining Fast-ATS candidates
+  if (selected.length < chunkSize) {
+    for (const job of fastAtsCandidates) {
+      if (!selected.includes(job)) {
+        takeCandidate(job);
+        if (selected.length >= chunkSize) return selected;
+      }
+    }
+  }
+
+  // 4. If still under chunkSize, backfill with any remaining Slow-ATS candidates
+  if (selected.length < chunkSize) {
+    for (const job of slowAtsCandidates) {
+      if (!selected.includes(job)) {
+        takeCandidate(job);
+        if (selected.length >= chunkSize) return selected;
+      }
+    }
   }
 
   return selected;
@@ -497,34 +505,34 @@ export async function runOvernightMarathon(config: {
       console.log(`\n[MARATHON] [CYCLE #${cycleIndex}] Initializing chunk (Processed so far: ${totalProcessedOverall}/${maxJobs})...`);
       // Ticket GEN-90: Periodic 30-minute discovery sync
       const syncRecordPath = path.join(stateDir, 'last-discovery-sync.json');
-      let shouldSyncDiscovery = true;
-      try {
-        if (fs.existsSync(syncRecordPath)) {
-          const syncMeta = JSON.parse(fs.readFileSync(syncRecordPath, 'utf8'));
-          if (syncMeta.timestamp && (Date.now() - Date.parse(syncMeta.timestamp)) < 30 * 60 * 1000) {
-            shouldSyncDiscovery = false;
-          }
-        }
-      } catch {}
-
-      if (shouldSyncDiscovery) {
-        console.log('[MARATHON] Running 30-min discovery sync (syncGitHubActionsPillars)...');
-        try {
-          const syncRes = await syncGitHubActionsPillars(path.join(stateDir, 'queue.sqlite'));
-          console.log(`[MARATHON] Discovery sync complete: ingested ${syncRes.newJobsIngested} new jobs.`);
-          fs.writeFileSync(syncRecordPath, JSON.stringify({ timestamp: new Date().toISOString(), result: syncRes }, null, 2), 'utf8');
-        } catch (err) {
-          console.warn('[MARATHON] Discovery sync error (non-fatal):', err);
-        }
-      }
-
-
-      // Ticket GEN-282: Fast-launch check: if >= 40 Tier-2 jobs already queued, skip blocking harvest/sync (0ms startup)!
+      // Ticket GEN-282 & GEN-283: Fast-launch check (<0.5s startup):
+      // If >= 40 Tier-2 jobs are already queued, skip both discovery sync and blocking harvester!
       const queueDbPath = path.join(stateDir, 'queue.sqlite');
       const tier2Count = countQueuedTier2Jobs(queueDbPath);
       if (tier2Count >= 40) {
-        console.log(`[MARATHON] Fast-launch: ${tier2Count} Tier-2 jobs already queued. Skipping blocking harvest/sync (0ms startup)!`);
+        console.log(`[MARATHON] Fast-launch: ${tier2Count} Tier-2 jobs already queued. Skipping blocking harvest/sync (<0.5s startup)!`);
       } else {
+        let shouldSyncDiscovery = true;
+        try {
+          if (fs.existsSync(syncRecordPath)) {
+            const syncMeta = JSON.parse(fs.readFileSync(syncRecordPath, 'utf8'));
+            if (syncMeta.timestamp && (Date.now() - Date.parse(syncMeta.timestamp)) < 30 * 60 * 1000) {
+              shouldSyncDiscovery = false;
+            }
+          }
+        } catch {}
+
+        if (shouldSyncDiscovery) {
+          console.log('[MARATHON] Running 30-min discovery sync (syncGitHubActionsPillars)...');
+          try {
+            const syncRes = await syncGitHubActionsPillars(queueDbPath);
+            console.log(`[MARATHON] Discovery sync complete: ingested ${syncRes.newJobsIngested} new jobs.`);
+            fs.writeFileSync(syncRecordPath, JSON.stringify({ timestamp: new Date().toISOString(), result: syncRes }, null, 2), 'utf8');
+          } catch (err) {
+            console.warn('[MARATHON] Discovery sync error (non-fatal):', err);
+          }
+        }
+
         try {
           const harvestRes = await runHourly100JobsHarvester().catch(() => null);
           if (harvestRes && harvestRes.insertedOrBoosted > 0) {
@@ -627,33 +635,20 @@ export async function runOvernightMarathon(config: {
 
       const prioritizedCandidates = [...hourlyCandidates, ...backfillCandidates];
 
-      // Ticket GEN-97: Select Diversified Multi-Lane Chunk (Max 1 Job Per Host/Company, Ready Hosts First, Round-Robin across Lanes)
+      // Ticket GEN-97 & GEN-283: Select Diversified Multi-Lane Chunk (85% Fast-ATS / 15% GCC, max 2 per tenant)
       const chunkJobs = selectDiversifiedMultiLaneChunk(
         prioritizedCandidates,
         chunkSize,
         (url) => isHostReadyForRequest(url, 45000, hostHealthPath)
       );
-      const lanes = partitionJobsIntoProviderLanes(chunkJobs);
-      // GEN-283: If workday lane is idle because 100% fast-ATS jobs were selected,
-      // allow lane 'workday' to help run excess fast-ATS jobs (up to half of the heaviest lane)
-      if ((lanes.workday?.length ?? 0) === 0) {
-        const heaviest = (Object.keys(lanes) as Array<keyof typeof lanes>)
-          .filter(k => k !== 'workday' && (lanes[k]?.length ?? 0) > 8)
-          .sort((a, b) => (lanes[b]?.length ?? 0) - (lanes[a]?.length ?? 0))[0];
-        if (heaviest && lanes[heaviest] && lanes[heaviest]!.length > 8) {
-          const splitCount = Math.floor(lanes[heaviest]!.length / 2);
-          lanes.workday = lanes[heaviest]!.splice(-splitCount);
-        }
-      }
-      const activeLanes = (Object.keys(lanes) as Array<keyof typeof lanes>).filter(
-        k => (lanes[k]?.length ?? 0) > 0
-      );
 
+      // Ticket GEN-283: 4-lane shared work-stealing queue (lane-0..lane-3)
+      const laneKeys = ['lane-0', 'lane-1', 'lane-2', 'lane-3'];
       console.log(
-        `[MARATHON] [CYCLE #${cycleIndex}] Selected ${chunkJobs.length} jobs across active lanes: ` +
-          activeLanes.map(k => `${k}(${lanes[k]?.length ?? 0})`).join(', ')
+        `[MARATHON] [CYCLE #${cycleIndex}] Selected ${chunkJobs.length} jobs for 4-lane shared work-stealing execution across ${laneKeys.join(', ')}`
       );
 
+      let sharedCursor = 0;
       let chunkProcessedCount = 0;
       let chunkAppliedCount = 0;
 
@@ -740,6 +735,7 @@ export async function runOvernightMarathon(config: {
         }
 
         const timeoutConfig = getProviderTimeoutConfig(job.jobUrl);
+        timeoutConfig.maxTotalMs = /greenhouse\.io|ashbyhq\.com|lever\.co/i.test(job.jobUrl) ? 150_000 : 180_000;
 
         // Tailored resume for archetype
         let jobProfile = profile;
@@ -1014,15 +1010,13 @@ export async function runOvernightMarathon(config: {
         );
       };
 
-      // Launch lanes in parallel with staggered starts
-      const lanePromises = activeLanes.map(async (laneKey, idx) => {
+      // Ticket GEN-283: Launch 4 shared work-stealing lanes in parallel with staggered starts
+      const lanePromises = laneKeys.map(async (laneKey, idx) => {
         if (idx > 0) {
           await new Promise(r => setTimeout(r, idx * 3500));
         }
-        const jobs = lanes[laneKey] || [];
-        if (jobs.length === 0) return;
 
-        const laneProfileDir = path.resolve('state/autoapply', `browser-profile-lane-${laneKey}`);
+        const laneProfileDir = path.resolve('state/autoapply', `browser-profile-${laneKey}`);
         fs.mkdirSync(laneProfileDir, { recursive: true });
 
         for (const lockFile of ['SingletonLock', 'SingletonCookie', 'SingletonSocket']) {
@@ -1032,15 +1026,20 @@ export async function runOvernightMarathon(config: {
         const laneRunner = new AutoApplyRunner();
         try {
           await laneRunner.initBrowser(headless, undefined, laneProfileDir).catch(() => {});
-          for (const job of jobs) {
+          while (sharedCursor < chunkJobs.length) {
             if (totalProcessedOverall >= maxJobs || Date.now() - marathonStartMs >= maxDurationMs) break;
+            const jobIndex = sharedCursor++;
+            if (jobIndex >= chunkJobs.length) break;
+            const job = chunkJobs[jobIndex];
+            if (!job) continue;
+
             try {
               if (!laneRunner.isConnected()) {
                 await laneRunner.initBrowser(headless, undefined, laneProfileDir).catch(() => {});
               }
               await processJobInLane(job, laneRunner, laneProfileDir, laneKey);
             } catch (err: any) {
-              console.error(`[MARATHON] Error in lane ${laneKey} for ${job.company}:`, err?.message || err);
+              console.error(`[MARATHON] Error in ${laneKey} for ${job.company}:`, err?.message || err);
             }
           }
         } finally {
@@ -1078,6 +1077,20 @@ export async function runOvernightMarathon(config: {
         syncAppliedJobsToOutreachTargets(path.join(stateDir, 'queue.sqlite'));
       } catch (err) {
         console.error('[MARATHON] Failed compiling improvement report:', err);
+      }
+
+      // Ticket GEN-283: Inter-chunk hot reload. If compiled runner has been rebuilt since boot, respawn cleanly.
+      const runnerDistPath = path.resolve('out/dist/src/autoapply/runner.js');
+      if (fs.existsSync(runnerDistPath)) {
+        try {
+          const runnerStat = fs.statSync(runnerDistPath);
+          if (runnerStat.mtimeMs > MARATHON_BOOT_MS + 5000) {
+            console.log(
+              `[MARATHON] Hot-reload triggered: runner.js modified (${new Date(runnerStat.mtimeMs).toISOString()} > boot ${new Date(MARATHON_BOOT_MS).toISOString()}). Cleanly respawning process...`
+            );
+            process.exit(0);
+          }
+        } catch {}
       }
 
       // 3) Sleep 5 seconds before next chunk

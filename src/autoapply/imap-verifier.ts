@@ -46,16 +46,19 @@ export async function withImapMutex<T>(fn: () => Promise<T>): Promise<T> {
  */
 export function decodeQuotedPrintableMime(raw: string): string {
   if (!raw) return '';
-  return raw
-    .replace(/=(?:\r\n|\r|\n)/g, '')
-    .replace(/=([0-9A-Fa-f]{2})/g, (_match, hex) => {
-      try {
-        return String.fromCharCode(parseInt(hex, 16));
-      } catch {
-        return _match;
+  const withoutSoftBreaks = raw.replace(/=(?:\r\n|\r|\n)/g, '');
+  const decoded = withoutSoftBreaks.replace(/(?:=[0-9A-Fa-f]{2})+/g, (match) => {
+    try {
+      const bytes: number[] = [];
+      for (let i = 0; i < match.length; i += 3) {
+        bytes.push(parseInt(match.slice(i + 1, i + 3), 16));
       }
-    })
-    .replace(/&amp;/gi, '&');
+      return Buffer.from(bytes).toString('utf8');
+    } catch {
+      return match;
+    }
+  });
+  return decoded.replace(/&amp;/gi, '&');
 }
 
 /**

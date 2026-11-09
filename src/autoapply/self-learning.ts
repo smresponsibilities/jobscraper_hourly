@@ -265,6 +265,37 @@ export function inferAnswerFromOptionSignature(
     return { category: 'education_school_option', value: hit };
   }
 
+  // Ticket GEN-280 & GEN-284: Bottom-up option signature matchers: Mobile, Fluent, Full-time, Hybrid, L
+  // Phone device type signature (e.g. Workday / iCIMS phone type dropdown)
+  if (/\b(mobile|cell|cellular|home|work|landline|pager)\b/i.test(joined)) {
+    const hit = options.find(o => /^mobile\b/i.test(o.trim())) || options.find(o => /mobile|cell/i.test(o)) || options[0]!;
+    return { category: 'phone_device_type', value: hit };
+  }
+
+  // Language proficiency signature (Fluent / Native / Intermediate / Basic)
+  if (/\b(fluent|native|proficient|conversational|intermediate|basic|beginner)\b/i.test(joined)) {
+    const hit = options.find(o => /^fluent\b/i.test(o.trim())) || options.find(o => /^native\b/i.test(o.trim())) || options.find(o => /fluent|native|proficient/i.test(o)) || options[0]!;
+    return { category: 'language_proficiency', value: hit };
+  }
+
+  // Employment schedule / job type signature (Full-time / Part-time / Contract)
+  if (/\b(full[- ]time|part[- ]time|contract|internship|temporary)\b/i.test(joined)) {
+    const hit = options.find(o => /^full[- ]time\b/i.test(o.trim())) || options.find(o => /full[- ]time/i.test(o)) || options[0]!;
+    return { category: 'employment_type', value: hit };
+  }
+
+  // Workplace model signature (Hybrid / Remote / On-site)
+  if (/\b(hybrid|remote|on[- ]?site|in[- ]?office)\b/i.test(joined)) {
+    const hit = options.find(o => /^hybrid\b/i.test(o.trim())) || options.find(o => /^remote\b/i.test(o.trim())) || options.find(o => /hybrid|remote/i.test(o)) || options[0]!;
+    return { category: 'workplace_model', value: hit };
+  }
+
+  // Clothing / T-shirt size signature (XS, S, M, L, XL, XXL)
+  if (/\b(?:xs|small|medium|large|xl|xxl)\b/i.test(joined) || options.some(o => /^(?:xs|s|m|l|xl|xxl)$/i.test(o.trim()))) {
+    const hit = options.find(o => /^l\b/i.test(o.trim()) || /^large\b/i.test(o.trim())) || options.find(o => /^m\b/i.test(o.trim()) || /^medium\b/i.test(o.trim())) || options[0]!;
+    return { category: 'tshirt_size', value: hit };
+  }
+
   // Binary Yes/No options for disqualifying / specialized prompts
   if (options.length === 2 && options.some(o => /^yes\b/i.test(o.trim())) && options.some(o => /^no\b/i.test(o.trim()))) {
     const normQ = questionText.toLowerCase();

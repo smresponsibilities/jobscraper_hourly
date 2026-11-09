@@ -6,8 +6,8 @@ export class JobActivityWatchdog {
   private lastStage = 'init';
 
   constructor(
-    public readonly maxTotalMs = 95_000, // 95s max ceiling for Fast-ATS (GEN-284)
-    public readonly maxIdleMs = 40_000   // 40s max stall without progress
+    public readonly maxTotalMs = 150_000, // 150s max ceiling for Fast-ATS (GEN-283/284)
+    public readonly maxIdleMs = 50_000   // 50s max stall without progress
   ) {}
 
   public heartbeat(stage: string): void {
@@ -38,14 +38,14 @@ export class JobActivityWatchdog {
 
 export function getProviderTimeoutConfig(urlStr: string): { maxTotalMs: number; maxIdleMs: number } {
   const u = (urlStr || '').toLowerCase();
-  // Ticket GEN-284: 95s fast-fail timeout on Greenhouse, Ashby, Lever; 160s on Workday & SmartRecruiters
+  // Ticket GEN-283 & GEN-284: 150s OTP-safe timeout on Greenhouse, Ashby, Lever; 180s on Workday & SmartRecruiters
   const isFastAts = /greenhouse\.io|ashbyhq\.com|lever\.co/i.test(u);
   if (isFastAts) {
-    return { maxTotalMs: 95_000, maxIdleMs: 40_000 };
+    return { maxTotalMs: 150_000, maxIdleMs: 50_000 };
   }
   const isSlowAts = /myworkdayjobs\.com|smartrecruiters\.com/i.test(u);
   if (isSlowAts) {
-    return { maxTotalMs: 160_000, maxIdleMs: 65_000 };
+    return { maxTotalMs: 180_000, maxIdleMs: 65_000 };
   }
-  return { maxTotalMs: 95_000, maxIdleMs: 40_000 };
+  return { maxTotalMs: 150_000, maxIdleMs: 50_000 };
 }

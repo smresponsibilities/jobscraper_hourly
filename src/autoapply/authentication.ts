@@ -6,8 +6,8 @@ import { completeEmailVerification, type BrowserInteractions } from './verificat
 import { findVerification, type ApplicationMailbox, type VerificationRequest } from './mailbox.js';
 import { isRecruitmentPrivacyAcknowledgement } from './answers.js';
 import { reserveStateAction } from './state-guard.js';
-import { resolveEnvPortalCredentials, ensureWorkdayCompliantPassword } from './env-credentials.js';
-export { ensureWorkdayCompliantPassword } from './env-credentials.js';
+import { resolveEnvPortalCredentials, ensureWorkdayCompliantPassword, WORKDAY_COMPLEXITY_FALLBACK_PASSWORD } from './env-credentials.js';
+export { ensureWorkdayCompliantPassword, WORKDAY_COMPLEXITY_FALLBACK_PASSWORD } from './env-credentials.js';
 import { findAdaptiveLocator } from './adaptive-relocator.js';
 import { saveHostSessionState } from './session-pool.js';
 import { makeGmailTenantAlias, completeInPageEmailVerificationIfPrompted } from './imap-verifier.js';
@@ -553,6 +553,12 @@ export async function authenticateWorkdayPortal(
     const verified = await completeInPageEmailVerificationIfPrompted(page, page.mainFrame());
     if (verified) await postVerifyWorkdaySignIn();
     const errText = await page.locator('[role="alert"], [data-automation-id="errorMessage"], .error').allTextContents().catch(() => []);
+    const pwComplexityErr = errText.some(t => /password.*(?:match|complexity|requirements|criteria|must contain|characters|invalid)|does not meet/i.test(t));
+    if (pwComplexityErr) {
+      console.log('[AUTH] Workday password complexity error detected; retrying with 16-char fallback');
+      await fillAndSubmitCreateAccount(email, WORKDAY_COMPLEXITY_FALLBACK_PASSWORD);
+      await completeInPageEmailVerificationIfPrompted(page, page.mainFrame());
+    }
     const accountExists = errText.some(t => /already exists|already registered/i.test(t));
     if (accountExists) {
       markWorkdayHostVerified(currentHost);

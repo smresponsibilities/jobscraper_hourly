@@ -24,7 +24,7 @@ test('GEN-282: countQueuedTier2Jobs and skip blocking harvest when tier2Count >=
   );
 });
 
-test('GEN-283: selectDiversifiedMultiLaneChunk dedicates 100% of chunk to Fast-ATS (Greenhouse, Ashby, Lever) when available', () => {
+test('GEN-283: selectDiversifiedMultiLaneChunk dedicates 85% of chunk to Fast-ATS and 15% to GCC candidates', () => {
   const candidates: AutoaplyJobItem[] = [];
 
   // 20 Greenhouse candidates
@@ -78,33 +78,33 @@ test('GEN-283: selectDiversifiedMultiLaneChunk dedicates 100% of chunk to Fast-A
   const chunk = selectDiversifiedMultiLaneChunk(candidates, 40);
   assert.equal(chunk.length, 40, 'Chunk must select 40 jobs');
 
-  // Verify 0 Workday jobs and 0 SmartRecruiters jobs were taken because 40 Fast-ATS jobs (20 GH + 20 Ashby) filled all 40 slots!
-  const workdayInChunk = chunk.filter(j => j.jobUrl.toLowerCase().includes('myworkdayjobs.com'));
-  const srInChunk = chunk.filter(j => j.jobUrl.toLowerCase().includes('smartrecruiters.com'));
+  // Verify 34 Fast-ATS (85%) and 6 GCC (15%)
+  const gccInChunk = chunk.filter(
+    j => j.jobUrl.toLowerCase().includes('myworkdayjobs.com') || j.jobUrl.toLowerCase().includes('smartrecruiters.com')
+  );
   const fastAtsInChunk = chunk.filter(
     j => j.jobUrl.toLowerCase().includes('greenhouse.io') || j.jobUrl.toLowerCase().includes('ashbyhq.com') || j.jobUrl.toLowerCase().includes('lever.co')
   );
 
-  assert.equal(workdayInChunk.length, 0, 'Workday must be 0 when 40 fast-ATS jobs exist');
-  assert.equal(srInChunk.length, 0, 'SmartRecruiters must be 0 when 40 fast-ATS jobs exist');
-  assert.equal(fastAtsInChunk.length, 40, 'Fast-ATS jobs must fill 100% of chunk slots');
+  assert.equal(fastAtsInChunk.length, 34, 'Fast-ATS jobs must fill 34 slots (85%)');
+  assert.equal(gccInChunk.length, 6, 'GCC jobs must fill 6 slots (15%)');
 });
 
-test('GEN-284: Fast-ATS hard timeout is capped at <= 95_000ms (95s)', () => {
+test('GEN-284: Fast-ATS hard timeout is capped at 150_000ms (150s OTP-safe)', () => {
   const ghConfig = getProviderTimeoutConfig('https://boards.greenhouse.io/rubrik/jobs/123');
-  assert.equal(ghConfig.maxTotalMs, 95_000, 'Greenhouse max timeout must be 95_000ms');
+  assert.equal(ghConfig.maxTotalMs, 150_000, 'Greenhouse max timeout must be 150_000ms');
 
   const ashbyConfig = getProviderTimeoutConfig('https://jobs.ashbyhq.com/supabase/abc-123');
-  assert.equal(ashbyConfig.maxTotalMs, 95_000, 'Ashby max timeout must be 95_000ms');
+  assert.equal(ashbyConfig.maxTotalMs, 150_000, 'Ashby max timeout must be 150_000ms');
 
   const leverConfig = getProviderTimeoutConfig('https://jobs.lever.co/hevodata/def-456');
-  assert.equal(leverConfig.maxTotalMs, 95_000, 'Lever max timeout must be 95_000ms');
+  assert.equal(leverConfig.maxTotalMs, 150_000, 'Lever max timeout must be 150_000ms');
 
   const wdConfig = getProviderTimeoutConfig('https://citi.wd5.myworkdayjobs.com/careers/job/123');
-  assert.equal(wdConfig.maxTotalMs, 160_000, 'Workday max timeout must be 160_000ms');
+  assert.equal(wdConfig.maxTotalMs, 180_000, 'Workday max timeout must be 180_000ms');
 
   const srConfig = getProviderTimeoutConfig('https://jobs.smartrecruiters.com/company/456');
-  assert.equal(srConfig.maxTotalMs, 160_000, 'SmartRecruiters max timeout must be 160_000ms');
+  assert.equal(srConfig.maxTotalMs, 180_000, 'SmartRecruiters max timeout must be 180_000ms');
 
   assert.equal(typeof runWithHardTimeout, 'function');
 });

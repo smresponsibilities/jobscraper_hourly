@@ -6,6 +6,7 @@ import { syncHourlyFreshJobsFromOriginMain } from './sync-hourly-from-origin.js'
 import { isSupportedDirectAtsJobUrl } from '../src/autoapply/priority-scheduler.js';
 import { unwrapDirectAtsApplicationUrl } from '../src/autoapply/url-unwrapper.js';
 import { evaluateCandidateJobFit } from '../src/autoapply/candidate-fit-filter.js';
+import { enforceQueueDatabaseInvariants } from '../src/contracts/system-invariants.js';
 
 export const TARGET_DB_PATHS = [
   'state/autoapply/portal-review/queue.sqlite',
@@ -647,6 +648,15 @@ export async function runHourly100JobsHarvester(): Promise<{
     } finally {
       db.close();
     }
+  }
+
+  // Ticket GEN-282: Re-enforce queue database invariants immediately after batch commit
+  try {
+    for (const dbPath of currentDbPaths) {
+      enforceQueueDatabaseInvariants(dbPath);
+    }
+  } catch (err: any) {
+    console.warn('[HARVESTER] Invariant enforcement warning:', err?.message || err);
   }
 
   return {
