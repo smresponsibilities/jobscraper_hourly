@@ -1224,15 +1224,30 @@ export class AutoApplyRunner {
     this.isClosing = true;
     this.submissionObservation?.observer.close();
     this.submissionObservation = undefined;
+
+    const closeWithTimeout = async (action: () => Promise<any>, timeoutMs = 3500) => {
+      let timer: NodeJS.Timeout;
+      const timeoutPromise = new Promise((resolve) => {
+        timer = setTimeout(resolve, timeoutMs);
+      });
+      try {
+        await Promise.race([action().catch(() => {}), timeoutPromise]);
+      } finally {
+        clearTimeout(timer!);
+      }
+    };
+
     if (this.ownsContext) {
-      await this.context?.close().catch(() => {});
-      await this.browser?.close().catch(() => {});
+      await closeWithTimeout(() => this.context?.close() ?? Promise.resolve());
+      await closeWithTimeout(() => this.browser?.close() ?? Promise.resolve());
     } else if (this.ownsIsolatedContext) {
-      await this.context?.close().catch(() => {});
+      await closeWithTimeout(() => this.context?.close() ?? Promise.resolve());
     } else {
-      for (const page of this.applicationPages) await page.close().catch(() => {});
+      for (const page of this.applicationPages) {
+        await closeWithTimeout(() => page.close());
+      }
       if (this.page && !this.applicationPages.has(this.page)) {
-        await this.page.close().catch(() => {});
+        await closeWithTimeout(() => this.page!.close());
       }
     }
     this.browser = null;
@@ -1968,6 +1983,46 @@ export class AutoApplyRunner {
               return { url: page.url(), text: text.slice(0, 1000), verifiedAt: new Date().toISOString(), selector, applicationId, ...(EXISTING_APPLICATION.test(text) ? { existing: true } : {}) };
             }
           }
+        }
+
+        // Step 291 (GEN-292): Unmounted-Form + Container Confirmation Detection
+        const unmountedFormConfirmed = await page
+          .evaluate(() => {
+            const confirmEl = document.querySelector(
+              '#application_confirmation, .application-confirmation, oc-confirmation, [data-test*="confirmation" i], [data-automation-id="thankYouMessage"]'
+            ) as HTMLElement | null;
+            if (confirmEl && confirmEl.offsetParent !== null && (confirmEl.innerText || '').trim().length > 5) {
+              return (confirmEl.innerText || '').trim().slice(0, 140);
+            }
+            const visibleInputs = Array.from(
+              document.querySelectorAll<HTMLElement>(
+                'input:not([type="hidden"]):not([type="submit"]):not([type="button"]), textarea, select'
+              )
+            ).filter((el) => el.offsetParent !== null).length;
+            if (visibleInputs <= 1) {
+              const bodyTxt = (document.body?.innerText || '').slice(0, 3000);
+              const m = bodyTxt.match(
+                /(?:thank\s+you\s+for\s+(?:applying|your\s+application|submitting)|your\s+application\s+has\s+been\s+(?:received|submitted|sent)|application\s+submitted\s+successfully|we\s+have\s+received\s+your\s+application)/i
+              );
+              if (m) return m[0];
+            }
+            return null;
+          })
+          .catch(() => null);
+
+        if (unmountedFormConfirmed) {
+          this.page = page;
+          const applicationId =
+            new URL(page.url()).searchParams.get('applicationId') ||
+            new URL(page.url()).searchParams.get('application_id') ||
+            undefined;
+          return {
+            url: page.url(),
+            text: unmountedFormConfirmed.slice(0, 1000),
+            verifiedAt: new Date().toISOString(),
+            selector: 'unmounted_form_confirmation',
+            applicationId,
+          };
         }
       } catch {
         // A popup can close or its parent can navigate between any two awaits.

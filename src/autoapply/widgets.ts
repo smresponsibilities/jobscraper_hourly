@@ -438,7 +438,16 @@ export async function selectHarvestedOption(
     await opt.dispatchEvent('mousedown').catch(() => {});
     await opt.click({ force: true }).catch(() => {});
     await opt.dispatchEvent('mouseup').catch(() => {});
-    await frame.page().keyboard.press('Enter').catch(() => {});
+
+    // Ticket GEN-291: Guard Enter key so closed combobox doesn't trigger premature HTML5 <form onSubmit>
+    const menuStillOpen = await frame
+      .locator('[role="listbox"], .select__menu, [role="option"], .ui-menu-item')
+      .filter({ visible: true })
+      .count()
+      .catch(() => 0) > 0;
+    if (menuStillOpen) {
+      await frame.page().keyboard.press('Enter').catch(() => {});
+    }
   }
 
   // Failure 2C: Workday 2-level menu closes without selecting leaf
@@ -547,7 +556,9 @@ export async function fillAsyncLocationCombobox(frame: Frame, control: Locator, 
           await item.dispatchEvent('mousedown').catch(() => {});
           await item.click({ force: true, timeout: 1500 }).catch(() => {});
           await item.dispatchEvent('mouseup').catch(() => {});
-          await frame.page().keyboard.press('Enter').catch(() => {});
+          if ((await optionLocator.count().catch(() => 0)) > 0) {
+            await frame.page().keyboard.press('Enter').catch(() => {});
+          }
           await frame.page().keyboard.press('Escape').catch(() => {});
           return true;
         }
@@ -556,7 +567,9 @@ export async function fillAsyncLocationCombobox(frame: Frame, control: Locator, 
       await firstItem.dispatchEvent('mousedown').catch(() => {});
       await firstItem.click({ force: true, timeout: 1500 }).catch(() => {});
       await firstItem.dispatchEvent('mouseup').catch(() => {});
-      await frame.page().keyboard.press('Enter').catch(() => {});
+      if ((await optionLocator.count().catch(() => 0)) > 0) {
+        await frame.page().keyboard.press('Enter').catch(() => {});
+      }
       await frame.page().keyboard.press('Escape').catch(() => {});
       return true;
     }

@@ -235,6 +235,25 @@ export function enforceQueueDatabaseInvariants(targetDbPath?: string): {
       }
 
       db.exec('COMMIT');
+
+      // Ticket GEN-289: Add composite B-Tree indexes and run passive WAL checkpoint + optimizer
+      try {
+        if (hasJobs) {
+          db.exec(`
+            CREATE INDEX IF NOT EXISTS idx_jobs_status_fresh_id ON jobs(status, is_hourly_fresh DESC, id DESC);
+            CREATE INDEX IF NOT EXISTS idx_jobs_url ON jobs(url);
+            CREATE INDEX IF NOT EXISTS idx_jobs_company_status ON jobs(company, status);
+          `);
+        }
+        if (hasApps) {
+          db.exec(`
+            CREATE INDEX IF NOT EXISTS idx_apps_status_id ON applications(status, id);
+            CREATE INDEX IF NOT EXISTS idx_apps_normalized_url ON applications(normalized_url);
+          `);
+        }
+        db.exec('PRAGMA wal_checkpoint(PASSIVE);');
+        db.exec('PRAGMA optimize;');
+      } catch {}
     } catch (err: any) {
       try {
         db?.exec('ROLLBACK');

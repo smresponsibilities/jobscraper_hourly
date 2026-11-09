@@ -1065,9 +1065,25 @@ export async function runOvernightMarathon(config: {
         `[MARATHON] [RECYCLE] Stray Chrome processes reaped: ${reaped} (Active leaked automation Chrome: ${leakedAfterReap})`
       );
 
-      // GEN-54: Scrub bloated browser profile caches (Cache, Code Cache, GPUCache) while preserving Cookies
+      // GEN-54 & GEN-288: Scrub bloated browser profile caches and stale Singleton locks across lane profile directories
       const freed = scrubBrowserProfileCaches(stateDir);
       console.log(`[MARATHON] [RAM DIET] Scrubbed ${freed} cache directories across browser profiles.`);
+
+      const allLaneDirs = [
+        ...['lane-0', 'lane-1', 'lane-2', 'lane-3'].map(l => path.resolve('state/autoapply', `browser-profile-${l}`)),
+        ...['lane-0', 'lane-1', 'lane-2', 'lane-3'].map(l => path.resolve('state/autoapply', `browser-profile-lane-${l}`)),
+      ];
+      for (const pDir of allLaneDirs) {
+        if (!fs.existsSync(pDir)) continue;
+        for (const target of ['SingletonLock', 'SingletonCookie', 'SingletonSocket', 'Code Cache', 'GPUCache']) {
+          const fullPath = path.join(pDir, target);
+          try {
+            if (fs.existsSync(fullPath)) {
+              fs.rmSync(fullPath, { recursive: true, force: true });
+            }
+          } catch {}
+        }
+      }
 
       // 2) Update scoreboard and morning improvement report
       try {
