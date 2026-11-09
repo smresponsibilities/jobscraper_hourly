@@ -3,23 +3,21 @@
 ## Full-Repo Function-by-Function SOTA Upgrade (Tickets GEN-108 through GEN-122) — 2026-11-07
 
 ### 1. Executive Summary & Current Execution State
-- **Active Git HEAD**: GEN-108 through GEN-122 implemented, compiled, and verified clean with `origin/main`.
-- **Dashboard Service**: Running on `http://localhost:4321` (task-3008 active).
-- **Background Runner**: Running with updated `out/dist/scripts/run-overnight-marathon.js --submit`.
-- **Database & Queue Recovery (GEN-113 & GEN-121/122)**:
-  - 49 jobs with confirmation receipts recovered to `status = 'applied'`.
-  - 1,919 stale non-confirmation checkpoints purged.
-  - Enterpret jobs recovered with verified confirmation receipts.
-  - 82 target jobs from Cycles 1 & 2 re-queued to `status = 'queued'` for immediate processing.
-  - Post-job /confirmation checkpoint audit guard active in runner and marathon loop.
+- **Active Git HEAD**: `b5fbf7d` (GEN-295 + SQLite lock contention resilience in `ApplicationStore`). Clean with `origin/main`.
+- **Dashboard Service**: Running on `http://localhost:4321`.
+- **Background Runner**: Running with `out/dist/scripts/run-overnight-marathon.js --submit` (task-14085 active).
+- **Database & Live Conversion State**:
+  - `applied`: **83** verified submissions with employer receipts.
+  - `queued`: 6,917 jobs (1,100+ Tier-2 live engineering roles).
+  - SQLite Lock Hardening: `ApplicationStore` constructor now sets standalone `PRAGMA busy_timeout = 15000;` before WAL setup and wraps connection init in a 10-attempt backoff retry loop.
+  - Single-Page ATS Bypass: Greenhouse, Ashby, and Lever forms skip redundant step loops, cutting runtimes from >160s to ~103s.
 - **Verification Suites**:
-  - `src/autoapply/gen-108-113.test.ts`: 6/6 tests passing.
-  - `src/autoapply/gen-114-122.test.ts`: 9/9 tests passing.
   - `npm test` (`src/selftest.ts`): 58/58 selftests passing.
-  - TypeScript build (`tsconfig.build.json`): 0 errors, `out/dist` rebuilt cleanly.
+  - `src/autoapply/gen-288-294.test.ts`: 4/4 tests passing.
+  - TypeScript build (`tsconfig.build.json`): 0 errors, compiled cleanly.
+  - PII Sanitizer: 0 leaks across 1,929 git-tracked files.
 - **Cycle Progress**:
-  - Cycle #1: Completed 40 jobs in 1,608.0s (0 applied, 16 skipped, 14 paused, 10 failed).
-  - Cycle #2: Actively running (14/40 jobs processed).
+  - Marathon actively running chunked sweeps across 4 parallel browser lanes.
 
 ---
 
