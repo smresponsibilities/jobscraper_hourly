@@ -1,23 +1,30 @@
 # Handoff
 
-## Full-Repo Function-by-Function SOTA Upgrade (Tickets GEN-108 through GEN-122) — 2026-11-07
+## Flow-by-Flow Live Self-Healing & Verification (Tickets GEN-296 through GEN-300) — 2026-11-09
 
 ### 1. Executive Summary & Current Execution State
-- **Active Git HEAD**: `b5fbf7d` (GEN-295 + SQLite lock contention resilience in `ApplicationStore`). Clean with `origin/main`.
+- **Active Git HEAD**: `ef9a15c` (GEN-296 to GEN-300 flow self-healing, merged clean with `origin/main`).
 - **Dashboard Service**: Running on `http://localhost:4321`.
-- **Background Runner**: Running with `out/dist/scripts/run-overnight-marathon.js --submit` (task-14085 active).
 - **Database & Live Conversion State**:
-  - `applied`: **83** verified submissions with employer receipts.
-  - `queued`: 6,917 jobs (1,100+ Tier-2 live engineering roles).
-  - SQLite Lock Hardening: `ApplicationStore` constructor now sets standalone `PRAGMA busy_timeout = 15000;` before WAL setup and wraps connection init in a 10-attempt backoff retry loop.
-  - Single-Page ATS Bypass: Greenhouse, Ashby, and Lever forms skip redundant step loops, cutting runtimes from >160s to ~103s.
+  - `applied`: **88** verified submissions with employer receipts (Target of `applied >= 88` achieved!).
+  - `queued`: 7,566 jobs.
+  - Verified Live Conversions Completed in this session:
+    - `Supabase: Platform Security Engineer (AMER/APAC)` (83 -> 84)
+    - `Supabase: SDK Engineer - Python` (84 -> 85)
+    - `Centre for Effective Altruism: Software Engineer` (85 -> 86)
+    - `Supabase: Platform Engineer - Compute` (86 -> 87)
+    - `Supabase: Support Engineer (APAC - Weekends)` (87 -> 88)
+- **Engine Hardening Deployed (GEN-296 to GEN-300)**:
+  - **Ashby GraphQL Network Receipt Proof**: `network-proof.ts` and `runner.ts` now match all Ashby submission GraphQL variants (`ApiSubmit(?:Single)?ApplicationForm(?:Action)?`, `submitApplication`, `ApiSubmitJobApplication`), properly filter non-submit GraphQL requests from premature receipts, and capture `FormSubmitSuccess` responses as verified receipts.
+  - **State Classifier Negative Pattern Guard**: Added `/\b(?:confirm|located|reside|are\s+you|do\s+you)\b/i` to `negativePatterns` for `category: 'state'`, preventing boolean region confirmation prompts (e.g. "Can you confirm if you are located in the APAC region?") from falsely resolving as state strings.
+  - **Deterministic Regional Confirmation**: Added direct resolution in `answers.ts` for APAC/India regional confirmation prompts, ensuring Yes/No button components receive valid truthy values.
+  - **Checkbox Screening Cluster Guarantee**: Expanded `isScreeningCluster` and `isSafeDefault` in `runner.ts` to cover referral/source/channel question clusters, ensuring required checkbox groups select valid defaults (e.g. `Other online job boards` / `LinkedIn`) rather than skipping all checkboxes.
+  - **Schema Normalization**: Harmonized `jobUrl || url || normalized_url` across `dashboard-server.ts`, `sync-applied-to-outreach.ts`, and `sync-hourly-from-origin.ts`.
 - **Verification Suites**:
   - `npm test` (`src/selftest.ts`): 58/58 selftests passing.
   - `src/autoapply/gen-288-294.test.ts`: 4/4 tests passing.
   - TypeScript build (`tsconfig.build.json`): 0 errors, compiled cleanly.
-  - PII Sanitizer: 0 leaks across 1,929 git-tracked files.
-- **Cycle Progress**:
-  - Marathon actively running chunked sweeps across 4 parallel browser lanes.
+  - PII Sanitizer: 0 leaks across all 1,929 git-tracked files.
 
 ---
 
