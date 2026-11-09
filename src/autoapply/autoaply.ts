@@ -290,8 +290,7 @@ export class AutoaplyQueueManager {
    */
   skip(jobId: string, reason?: string): boolean {
     if (reason) {
-      this.list();
-      const item = this.queue.get(jobId);
+      const item = this.queue.get(jobId) || (this.list(), this.queue.get(jobId));
       if (!item || item.status === 'applied') return false;
       item.status = 'skipped';
       item.error = reason;
@@ -302,8 +301,7 @@ export class AutoaplyQueueManager {
   }
 
   reopenAtSource(jobId: string): boolean {
-    this.list();
-    const item = this.queue.get(jobId);
+    const item = this.queue.get(jobId) || (this.list(), this.queue.get(jobId));
     if (!item || item.status !== 'skipped' || item.receipt || !['closed_in_catalogue', 'closed_at_source', 'stale_catalogue_entry', 'experience_recheck_pending', 'unconfirmed_india_remote', 'requisition_identity_mismatch'].includes(item.error || '')) return false;
     item.status = 'queued';
     delete item.error;
@@ -315,8 +313,7 @@ export class AutoaplyQueueManager {
    * Marks a job as actively applying.
    */
   markApplying(jobId: string): boolean {
-    this.list();
-    const item = this.queue.get(jobId);
+    const item = this.queue.get(jobId) || (this.list(), this.queue.get(jobId));
     if (!item || item.status !== 'queued') return false;
     if (this.store && !this.store.claim(jobId)) return false;
     item.status = 'applying';
@@ -328,8 +325,7 @@ export class AutoaplyQueueManager {
    * Marks a job as successfully applied, deducting 1 application credit if metered.
    */
   markApplied(jobId: string, receipt?: BotRunReport['receipt']): boolean {
-    this.list();
-    const item = this.queue.get(jobId);
+    const item = this.queue.get(jobId) || (this.list(), this.queue.get(jobId));
     if (!item) return false;
     if (item.status === 'applied') {
       if (receipt?.emailConfirmationId) { item.receipt = { ...item.receipt, ...receipt }; this.persist(item); }
@@ -350,8 +346,7 @@ export class AutoaplyQueueManager {
    * Marks a job application as failed with an error reason.
    */
   markFailed(jobId: string, error: string): boolean {
-    this.list();
-    const item = this.queue.get(jobId);
+    const item = this.queue.get(jobId) || (this.list(), this.queue.get(jobId));
     if (!item || item.status === 'applied') return false;
 
     item.status = 'failed';
@@ -361,8 +356,7 @@ export class AutoaplyQueueManager {
   }
 
   pauseForReview(jobId: string, reason?: string): boolean {
-    this.list();
-    const item = this.queue.get(jobId);
+    const item = this.queue.get(jobId) || (this.list(), this.queue.get(jobId));
     if (!item || item.status === 'applied') return false;
     item.status = 'paused_for_review';
     if (reason) item.error = reason;
