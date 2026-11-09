@@ -119,7 +119,7 @@ export function syncAppliedJobsToOutreachTargets(dbPath?: string): number {
             const p = JSON.parse(r.payload);
             const comp = p.company || 'Company';
             const title = p.title || 'Software Engineer';
-            const jobUrl = String(p.jobUrl || r.normalized_url || '').trim();
+            const jobUrl = String(p.jobUrl || p.url || r.normalized_url || '').trim();
             const normKey = jobUrl.toLowerCase().replace(/\/$/, '');
             if (normKey && seenUrls.has(normKey)) continue;
             if (normKey) seenUrls.add(normKey);
@@ -139,7 +139,8 @@ export function syncAppliedJobsToOutreachTargets(dbPath?: string): number {
             });
           } catch {}
         }
-      } else if (hasJobsTable) {
+      }
+      if (hasJobsTable) {
         const rows = db.prepare("SELECT company, title, url FROM jobs WHERE status = 'applied'").all() as any[];
         for (const r of rows) {
           const comp = r.company || 'Company';

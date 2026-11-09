@@ -181,7 +181,7 @@ export function getAppliedJobsData() {
           if (seenKeys.has(key)) continue;
           seenKeys.add(key);
 
-          const rawUrl = p.jobUrl || r.normalized_url || '';
+          const rawUrl = p.jobUrl || p.url || r.normalized_url || '';
           const u = rawUrl.toLowerCase();
           const prov = p.canonicalKey ? p.canonicalKey.split(':')[0] :
             (u.includes('greenhouse.io') ? 'greenhouse' :

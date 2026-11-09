@@ -123,6 +123,11 @@ export function resolveExtendedPortalQuestionTaxonomy(
     return '12';
   }
 
+  // Regional location confirmation (APAC / India)
+  if (/\b(?:located\s+in|reside\s+in|based\s+in|living\s+in)\b.*\b(?:apac|asia|india|bengaluru|bangalore)\b/i.test(ql) || /\b(?:confirm\s+if\s+you\s+are\s+located\s+in\s+the\s+apac\s+region)\b/i.test(ql)) {
+    return 'Yes';
+  }
+
   // Ticket GEN-264: Monthly Stipend / Monthly Salary (80000 INR/month vs 1200000 annual)
   if (/\b(?:monthly\s+(?:salary|ctc|stipend|compensation)|stipend\s+per\s+month|expected\s+stipend)\b/i.test(ql)) {
     return '80000';

@@ -146,6 +146,8 @@ export function syncHourlyFreshJobsFromOriginMain(dbPath?: string): {
         if (existing.status === 'queued' && !existing.payload.isHourlyFresh) {
           existing.payload.isHourlyFresh = true;
           existing.payload.is_hourly_fresh = 2;
+          existing.payload.jobUrl = existing.payload.jobUrl || unwrappedUrl;
+          existing.payload.url = existing.payload.url || unwrappedUrl;
           existing.payload.priorityBonus = fit.priorityBonus;
           updateStmt.run(JSON.stringify(existing.payload), existing.id);
           boostedExisting++;
@@ -161,6 +163,7 @@ export function syncHourlyFreshJobsFromOriginMain(dbPath?: string): {
         title: String(raw.title || 'Software Engineer').trim(),
         company: String(raw.company || 'Unknown').trim(),
         jobUrl: unwrappedUrl,
+        url: unwrappedUrl,
         jobBoard: 'direct_ats',
         location: String(raw.location || 'India').trim(),
         postedAt: new Date().toISOString(),

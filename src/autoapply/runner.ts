@@ -150,7 +150,8 @@ export async function healInvalidFieldsAndRetrySubmit(
         (n instanceof HTMLInputElement || n instanceof HTMLTextAreaElement) &&
         (n.matches('input:invalid, textarea:invalid, input[aria-invalid="true"], textarea[aria-invalid="true"], input[required], textarea[required], input[aria-required="true"], textarea[aria-required="true"]') ||
           n.hasAttribute('invalid') ||
-          n.getAttribute('aria-invalid') === 'true')
+          n.getAttribute('aria-invalid') === 'true' ||
+          !!n.closest('.ashby-application-form-field-entry, [class*="form-group" i], [class*="field-entry" i]')?.querySelector('*[class*="required" i], *[aria-label*="required" i], span[class*="_required_"]'))
     );
     for (const inp of badInputs) {
       if (inp.type === 'hidden' || inp.type === 'file' || inp.disabled || inp.readOnly) continue;
@@ -630,7 +631,7 @@ export class AutoApplyRunner {
         const bodyText = (document.body?.innerText || '').slice(0, 2500).toLowerCase();
         const combined = `${title} ${h1Text} ${bodyText}`;
         if (
-          /this job is no longer available|job you are looking for is no longer open|no longer accepting applications|position has been filled|position is no longer available|board you are looking for is no longer active|posting is no longer available|job not found|page not found|404 not found|the page you are looking for doesn't exist/i.test(
+          /this job is no longer available|job you are looking for is no longer open|no longer accepting applications|position has been filled|position is no longer available|board you are looking for is no longer active|posting is no longer available|job not found|page not found|404 not found|not found|404 error|couldn't find anything here|might have closed|has been removed|the page you are looking for doesn't exist/i.test(
             combined
           )
         ) {
@@ -1048,10 +1049,16 @@ export class AutoApplyRunner {
         if (status < 200 || status >= 400) return;
         const respUrl = response.url();
         const isAtsSubmitEndpoint =
-          /ApiSubmitApplicationForm|submitApplication|\/embed\/job_app|\/oneclick-ui\/[^?]+\/(?:candidates|applications)|\/jobs\/\d+(?:\/applications)?|\/jobs\/\d+|\/apply\/submit|\/job_app/i.test(
+          /ApiSubmit(?:Single)?ApplicationForm(?:Action)?|ApiSubmitJobApplication|submitApplication|\/embed\/job_app|\/oneclick-ui\/[^?]+\/(?:candidates|applications)|\/jobs\/\d+(?:\/applications)?|\/jobs\/\d+|\/apply\/submit|\/job_app|\/api\/non-user-graphql/i.test(
             respUrl
           );
         if (!isAtsSubmitEndpoint) return;
+        if (respUrl.includes('/api/non-user-graphql')) {
+          const reqUrl = req.url();
+          const reqBody = req.postData() || '';
+          const isSubmitMutation = /op=ApiSubmit/i.test(reqUrl) || /Submit(?:Single)?ApplicationForm|submitApplication|SubmitJobApplication/i.test(reqBody);
+          if (!isSubmitMutation) return;
+        }
         // For GraphQL (Ashby), ensure response JSON doesn't contain errors
         const contentType = response.headers()['content-type'] || '';
         if (contentType.includes('application/json')) {
@@ -1061,8 +1068,10 @@ export class AutoApplyRunner {
               bodyText
             )
           ) {
+            this.log(`Submit endpoint returned error: ${bodyText.slice(0, 2000)}`);
             return;
           }
+          this.log(`Submit endpoint returned SUCCESS: ${bodyText.slice(0, 100)}`);
         }
         this.lastNetworkSubmissionReceipt = {
           url: respUrl,
@@ -2083,6 +2092,8 @@ export class AutoApplyRunner {
         if ((URL.canParse(frame.url()) && /\/(?:login|sign-?in|register|apply\/email|forgot.?password|reset.?password)(?:\/|$)/i.test(new URL(frame.url()).pathname)) || await frame.locator('#enterEmailSubmitButton,[data-automation-id="signInSubmitButton"],[data-automation-id="createAccountLink"],[data-automation-id="createAccountSubmitButton"],[data-automation-id="SignInWithEmailButton"],[data-automation-id="utilityButtonSignIn"],[data-automation-id="signInLink"],[data-automation-id="formField-email"] input').count()) login = true;
         for (const control of await frame.locator('input[type="password"], iframe[src*="recaptcha"], iframe[src*="hcaptcha"], iframe[src*="captcha-delivery.com"], iframe[src*="challenges.cloudflare.com"], iframe[title*="CAPTCHA" i], [data-sitekey]').all()) {
           if (!await control.isVisible()) continue;
+          const dataSize = await control.getAttribute('data-size');
+          if (dataSize === 'invisible') continue;
           const source = await control.getAttribute('src');
           if (source && URL.canParse(source, frame.url()) && /\/recaptcha\/(?:enterprise\/|api2\/)?anchor$/.test(new URL(source, frame.url()).pathname) && new URL(source, frame.url()).searchParams.get('size') === 'invisible') continue;
           if (await control.getAttribute('type') === 'password') login = true;
@@ -2344,7 +2355,7 @@ export class AutoApplyRunner {
         return { key, priority, postFillWaitMs, widget: element.getAttribute('role') === 'combobox' || element.getAttribute('aria-haspopup') === 'listbox' || element.getAttribute('data-uxi-widget-type') === 'selectinput', state: JSON.stringify([control.value, control.checked, element.getAttribute('aria-checked'), control.required, control.disabled, element.getAttribute('aria-required'), element.getAttribute('aria-invalid'), element.getAttribute('readonly')]) };
       }), { scan, serial, workday: report.ats === 'workday' });
       serial += fields.length;
-      for (const field of fields.filter(field => field.widget)) field.state += JSON.stringify(await frame.locator(`[data-autoapply-control=${JSON.stringify(field.key)}]`).evaluate(comboboxSelection).catch(() => []));
+      for (const field of fields.filter(field => field.widget && !processed.has(field.key))) field.state += JSON.stringify(await frame.locator(`[data-autoapply-control=${JSON.stringify(field.key)}]`).evaluate(comboboxSelection).catch(() => []));
       const unprocessed = fields.filter(field => processed.get(field.key) !== field.state);
       if (!unprocessed.length) {
         const inFlight = [...this.dependentRequests.values()].filter(p => !p.status);
@@ -2661,7 +2672,7 @@ export class AutoApplyRunner {
           if (isConsent) {
             value = true;
           } else if (/\b(?:hear|heard|source|find|learn)\b/i.test(info.questionTitle || info.label)) {
-            const matchesSource = (options.profile.referralSources || []).some(s => matchBestOption(s, [{ value: info.optionLabel, label: info.optionLabel }])) || /linkedin/i.test(info.optionLabel);
+            const matchesSource = (options.profile.referralSources || []).some(s => matchBestOption(s, [{ value: info.optionLabel, label: info.optionLabel }])) || /linkedin|other.*(?:job|online)|job.*board|website|newsletter|google\s*jobs/i.test(info.optionLabel);
             value = matchesSource ? true : false;
           }
         }
@@ -2717,7 +2728,8 @@ export class AutoApplyRunner {
         }
         attempts.set(fieldKey, (attempts.get(fieldKey) || 0) + 1);
         try {
-          if (options.mode === 'stealth') await this.page!.waitForTimeout(1500 + Math.random() * 2000);
+          const isSinglePageAts = ['greenhouse', 'ashby', 'lever'].includes(report.ats);
+          if (options.mode === 'stealth') await this.page!.waitForTimeout(isSinglePageAts ? 100 + Math.random() * 150 : 300 + Math.random() * 300);
           if (info.type === 'file' && document) {
             let docToUpload = document;
             // Ticket GEN-238: Check accept attribute for .docx-only file inputs
@@ -3124,9 +3136,9 @@ export class AutoApplyRunner {
             }
 
             // Ticket GEN-206: Guarantee screening & compensation clusters check >= 1 box (Particle41)
-            const isScreeningCluster = /\b(?:compensation|salary|range|package|current|desired|expected|budget|align|location|city|skills?|shift|eligib|agreement|confirm)\b/i.test(qText);
+            const isScreeningCluster = /\b(?:compensation|salary|range|package|current|desired|expected|budget|align|location|city|skills?|shift|eligib|agreement|confirm|hear|source|find|vacancy|channel)\b/i.test(qText);
             if (!targetBool && (info.required || isScreeningCluster)) {
-              const isSafeDefault = /yes|align|agree|confirm|comfortable|understand|accept|bengaluru|bangalore|india|remote|10|12|15|linkedin|none of the above|do not wish|prefer not/i.test(optText);
+              const isSafeDefault = /yes|align|agree|confirm|comfortable|understand|accept|bengaluru|bangalore|india|remote|10|12|15|linkedin|other.*(?:job|online)|job.*board|website|newsletter|google|none of the above|do not wish|prefer not/i.test(optText);
               if (isSafeDefault) targetBool = true;
             }
 
@@ -3256,7 +3268,7 @@ export class AutoApplyRunner {
           if (info.type === 'file' && document) uploadedFiles.set(key, document);
           report.fieldsFilled++;
           this.activeWatchdog?.heartbeat(`filled_${key}`);
-          const isLargeForm = fields.length >= 12;
+          const isLargeForm = fields.length >= 10 || ['greenhouse', 'ashby', 'lever'].includes(report.ats);
           if (options.mode === 'stealth') {
             await this.page!.waitForTimeout(isLargeForm ? getHumanKeyDelay(20, 50) : getHumanKeyDelay(50, 350));
           }
@@ -3810,6 +3822,10 @@ export class AutoApplyRunner {
         const currentGates = await this.browserGates();
         if ((!login && currentGates.login) || (!challenge && currentGates.challenge)) continue;
         if (challenge) {
+          const cap = await attemptAutonomousCaptchaSolve(this.page!);
+          if (cap.detected && cap.solved) {
+            continue;
+          }
           if (getResilientContextTier(this.context) !== 3) {
             this.log('Portal challenge detected during step execution; rotating to Tier 3 native context and retrying');
             const storageStatePath = options.sessionDir ? path.join(options.sessionDir, 'storage-state.json') : undefined;
@@ -3820,10 +3836,7 @@ export class AutoApplyRunner {
             if (options.url.toLowerCase().includes('smartrecruiters.com') || this.page!.url().toLowerCase().includes('smartrecruiters.com')) {
               await ensureSmartRecruitersApplicationStarted(this.page!);
             }
-            continue;
-          }
-          const cap = await attemptAutonomousCaptchaSolve(this.page!);
-          if (cap.detected && cap.solved) {
+            step = 0;
             continue;
           }
           if (!cap.solved) {
@@ -3851,7 +3864,11 @@ export class AutoApplyRunner {
         let invalid = false;
         for (const frame of this.page!.frames()) {
           for (const control of await frame.locator('input:invalid,select:invalid,textarea:invalid,[aria-invalid="true"]').all()) {
-            if (await control.isVisible()) invalid = true;
+            if (await control.isVisible()) {
+              invalid = true;
+              const ctrlDesc = await control.evaluate((el: Element) => `${el.tagName}#${el.id}[name="${el.getAttribute('name')}"][type="${el.getAttribute('type')}"]: ${(el as HTMLInputElement).validationMessage || el.getAttribute('aria-invalid')}`).catch(() => 'unknown');
+              this.log(`Invalid visible control: ${ctrlDesc}`);
+            }
           }
           for (const group of await frame.locator('fieldset[aria-required="true"],[role="group"][aria-required="true"]').all()) {
             if (!await group.isVisible()) continue;
@@ -3905,7 +3922,7 @@ export class AutoApplyRunner {
                 .filter(a => a.status === 'failed' && a.error === 'Required answer is missing')
                 .map(a => a.question)
                 .filter((q): q is string => typeof q === 'string' && q.length > 0);
-              if (missingQuestions.length > 0 && missingQuestions.length <= 4) {
+              if (missingQuestions.length > 0 && missingQuestions.length <= 4 && !process.env.AUTOAPPLY_DISABLE_HITL_POPUP) {
                 this.log(`HITL: Form has ${missingQuestions.length} missing required fields; requesting quick human assist popup`);
                 const storageStatePath = options.sessionDir ? path.join(options.sessionDir, 'storage-state.json') : undefined;
                 if (storageStatePath) await this.context?.storageState({ path: storageStatePath }).catch(() => {});

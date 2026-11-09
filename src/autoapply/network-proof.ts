@@ -6,7 +6,7 @@ export interface SubmissionExchange {
 export function terminalProvider(url: string): string | undefined {
   const parsed = new URL(url);
   const local = ['127.0.0.1', 'localhost', '[::1]'].includes(parsed.hostname);
-  if ((local || /(?:^|\.)ashbyhq\.com$/.test(parsed.hostname)) && /^(?:ApiSubmitJobApplication|ApiSubmitSingleApplicationFormAction)$/.test(parsed.searchParams.get('op') || '')) return 'ashby';
+  if ((local || /(?:^|\.)ashbyhq\.com$/.test(parsed.hostname)) && /^(?:ApiSubmit(?:Single)?ApplicationForm(?:Action)?|ApiSubmitJobApplication(?:Action)?|submitApplication)$/i.test(parsed.searchParams.get('op') || '')) return 'ashby';
   if ((local || /(?:^|\.)myworkday(?:jobs|site)?\.com$/.test(parsed.hostname)) && /\/wday\/cxs\//.test(parsed.pathname)) return 'workday';
   if ((local || /(?:^|\.)greenhouse\.io$/.test(parsed.hostname)) && (/\/(?:applications|embed\/job_app)\/?$/.test(parsed.pathname) || /\/jobs\/\d+\/?$/.test(parsed.pathname))) return 'greenhouse';
   if ((local || /(?:^|\.)lever\.co$/.test(parsed.hostname)) && /\/postings\/[^/]+\/apply\/?$/.test(parsed.pathname)) return 'lever';
@@ -34,9 +34,9 @@ export function submissionConfirmation(exchange: SubmissionExchange): { provider
   try {
     const data = JSON.parse(Buffer.from(response.bodyBase64, 'base64').toString('utf8'));
     if ((Array.isArray(data.errors) && data.errors.length) || data.error || (Array.isArray(data.validationErrors) && data.validationErrors.length)) return;
-    const application = provider === 'ashby' ? data.data?.submitSingleApplicationFormAction || data.data?.submitApplicationFormAction || data.data?.submitJobApplication || data.data?.jobApplicationSubmit : data;
+    const application = provider === 'ashby' ? data.data?.submitSingleApplicationFormAction || data.data?.submitApplicationFormAction || data.data?.submitJobApplication || data.data?.jobApplicationSubmit || data.data?.submitApplication : data;
     if (!application || application.error || (application.errors && Object.keys(application.errors).length)) return;
-    const confirmed = provider === 'ashby' ? (application.isSuccess === true || application.success === true || application.applicationFormResult?.__typename === 'FormSubmitSuccess') : provider === 'workday' ? application.stepType === 'Confirmation' : application.success === true || application.ok === true;
+    const confirmed = provider === 'ashby' ? (application.isSuccess === true || application.success === true || application.applicationFormResult?.__typename === 'FormSubmitSuccess' || !!application.applicationId) : provider === 'workday' ? application.stepType === 'Confirmation' : application.success === true || application.ok === true;
     if (!confirmed) return;
     const id = application.applicationId || application.application_id;
     return { provider, applicationId: typeof id === 'string' || typeof id === 'number' ? String(id) : undefined, ...(application.alreadyApplied === true || application.isDuplicate === true || application.existingApplication ? { existing: true } : {}) };

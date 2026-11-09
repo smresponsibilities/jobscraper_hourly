@@ -159,7 +159,7 @@ export const CLASSIFICATION_RULES: FieldRuleDef[] = [
     mediumPatterns: [
       /territory/i,
     ],
-    negativePatterns: [/united\s+states/i, /statement/i, /authorized|eligible|right\s+to\s+work/i, /country/i],
+    negativePatterns: [/united\s+states/i, /statement/i, /authorized|eligible|right\s+to\s+work/i, /country/i, /\b(?:confirm|located|reside|are\s+you|do\s+you)\b/i],
   },
   {
     category: 'postal_code',
