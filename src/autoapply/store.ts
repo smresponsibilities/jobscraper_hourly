@@ -93,6 +93,9 @@ export class ApplicationStore {
         this.db.exec('BEGIN IMMEDIATE');
         break;
       } catch (err: any) {
+        if (/cannot start a transaction within a transaction/i.test(err?.message || '')) {
+          return action();
+        }
         if (/database is locked/i.test(err?.message || '') && retries-- > 0) {
           Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 250);
           continue;
@@ -124,7 +127,18 @@ export class ApplicationStore {
 
   list(): AutoaplyJobItem[] {
     this.recover();
-    return (this.db.prepare('SELECT id,payload,status,canonical_key FROM applications WHERE candidate_id=? ORDER BY rowid').all(this.candidateId) as Array<{ id: string; payload: string; status: AutoaplyJobItem['status']; canonical_key: string | null }>).map(row => ({ ...JSON.parse(row.payload), id: row.id, status: row.status, canonicalKey: row.canonical_key || undefined }));
+    return (this.db.prepare('SELECT id,payload,status,canonical_key,normalized_url FROM applications WHERE candidate_id=? ORDER BY rowid').all(this.candidateId) as Array<{ id: string; payload: string; status: AutoaplyJobItem['status']; canonical_key: string | null; normalized_url: string }>).map(row => {
+      let p: any = {};
+      try { p = JSON.parse(row.payload); } catch {}
+      const targetUrl = p.jobUrl || p.url || row.normalized_url;
+      return {
+        ...p,
+        id: row.id,
+        status: row.status,
+        jobUrl: targetUrl,
+        canonicalKey: row.canonical_key || undefined,
+      };
+    });
   }
 
   acquireWorkerLock(): boolean {

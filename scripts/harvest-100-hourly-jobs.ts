@@ -578,6 +578,7 @@ export async function runHourly100JobsHarvester(): Promise<{
             const id = `harvest_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
             const payload = JSON.stringify({
               url: normUrl,
+              jobUrl: normUrl,
               company: job.company,
               title: job.title,
               location: job.location,
@@ -589,12 +590,16 @@ export async function runHourly100JobsHarvester(): Promise<{
             totalInsertedOrBoosted++;
           } else if (existing.status === 'queued' || existing.status === 'skipped') {
             const p = existing.payload || {};
+            p.url = p.url || normUrl;
+            p.jobUrl = p.jobUrl || normUrl;
             p.location = job.location || p.location || 'India';
             p.title = job.title || p.title;
             p.company = job.company || p.company;
             p.is_hourly_fresh = Math.max(p.is_hourly_fresh || 0, freshTier);
             p.boostedAt = new Date().toISOString();
             delete p.last_error;
+            delete p.error;
+            delete p.reasonCode;
             updateStmt.run(JSON.stringify(p), expiresDate, existing.id);
             if (existing.status === 'skipped') {
               resurrectAppStmt.run(existing.id);

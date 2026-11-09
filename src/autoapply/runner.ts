@@ -1413,7 +1413,7 @@ export class AutoApplyRunner {
           channel: 'chrome',
           headless: effectiveHeadless,
           args,
-          timeout: 45000,
+          timeout: 10000,
           viewport: null,
           locale: 'en-IN',
           timezoneId: 'Asia/Calcutta',
@@ -2387,12 +2387,17 @@ export class AutoApplyRunner {
         }, [String(ref), String(key || '')] as [string, string]).catch(() => {});
       }
 
-      const input = frame.locator(`[data-autoapply-ref="${ref}"], [data-autoapply-control=${JSON.stringify(key)}]`);
+      const input = frame.locator(`[data-autoapply-ref="${ref}"], [data-autoapply-control=${JSON.stringify(key)}]`).first();
       try {
-        if (!await input.count()) continue;
-        const yesNo = await input.evaluate(el => !!el.closest('.ashby-application-form-input-yesno'));
-        const visualTarget = yesNo ? input.locator('..') : input;
-        if ((await input.getAttribute('type') !== 'file' && !await visualTarget.evaluate(isVisibleApplicationControl)) || !await input.isEnabled() || await input.getAttribute('readonly') !== null && !await input.evaluate(isInteractiveChoiceReadOnly)) continue;
+        if (!await input.count().catch(() => 0)) continue;
+        const yesNo = await input.evaluate(el => !!el.closest('.ashby-application-form-input-yesno')).catch(() => false);
+        const visualTarget = yesNo ? input.locator('..').first() : input;
+        const inputType = await input.getAttribute('type').catch(() => null);
+        const isVisible = await visualTarget.evaluate(isVisibleApplicationControl).catch(() => false);
+        if (inputType !== 'file' && !isVisible) continue;
+        if (!await input.isEnabled().catch(() => false)) continue;
+        const isReadonly = await input.getAttribute('readonly').catch(() => null) !== null;
+        if (isReadonly && !await input.evaluate(isInteractiveChoiceReadOnly).catch(() => false)) continue;
         report.fieldsFound++;
         const info = await input.evaluate(el => {
           const root = el.getRootNode() as Document | ShadowRoot;
@@ -2434,7 +2439,8 @@ export class AutoApplyRunner {
             radioAnswered: roleRadio ? !!questionGroup?.querySelector('[role=radio][aria-checked=true]') : control.type === 'radio' && Array.from(root.querySelectorAll<HTMLInputElement>('input[type=radio]')).some(peer => peer.checked && (peer === control || (control.name && peer.name === control.name && peer.form === control.form))),
             value: control.value || '', kind, index: workdayRow ? rowKeys.indexOf(workdayRow[2]) : group ? peers.indexOf(group as HTMLFieldSetElement) : -1,
           };
-        });
+        }).catch(() => null);
+        if (!info) continue;
         const refKey = `${info.name}_${info.id}_${info.fieldPath}_${info.datePart}_${info.questionTitle || info.label}`.trim().toLowerCase();
         if (refKey && attemptedFieldRefs.has(refKey)) continue;
         if (refKey) attemptedFieldRefs.add(refKey);
@@ -4166,7 +4172,9 @@ export class AutoApplyRunner {
               await this.page!.waitForTimeout(remainingHumanFloorMs).catch(() => {});
             }
             reviewedSignature = currentSignature;
-            continue; // Rescan and validate after review dwell before preparing Submit.
+            if (!isSinglePageAts) {
+              continue; // Rescan and validate multi-page forms after review dwell before preparing Submit.
+            }
           }
         }
         const reservation = options.reserveSubmission?.();

@@ -357,9 +357,9 @@ export async function runWithDynamicActivityTimeout<T>(
   promise: Promise<T>,
   baseTimeoutMs = 95_000,
   label = 'Job',
-  jobId?: string
+  sessionDirOrJobId?: string
 ): Promise<T> {
-  const maxTimeoutMs = Math.round(baseTimeoutMs * 1.35);
+  const maxTimeoutMs = Math.round(baseTimeoutMs * 1.4);
   const startTime = Date.now();
   let currentDeadline = startTime + baseTimeoutMs;
   let lastCheckedCheckpointMtime = 0;
@@ -384,25 +384,31 @@ export async function runWithDynamicActivityTimeout<T>(
 
     arm();
 
-    if (jobId) {
-      const cpPath = path.resolve('state/autoapply/portal-review/applications', jobId, 'checkpoint.json');
+    if (sessionDirOrJobId) {
+      const candidatePaths = [
+        path.join(sessionDirOrJobId, 'checkpoint.json'),
+        path.resolve('state/autoapply/portal-review/applications', sessionDirOrJobId, 'checkpoint.json'),
+      ];
       checkInterval = setInterval(() => {
         try {
-          if (fs.existsSync(cpPath)) {
-            const stat = fs.statSync(cpPath);
-            if (stat.mtimeMs > lastCheckedCheckpointMtime) {
-              lastCheckedCheckpointMtime = stat.mtimeMs;
-              if (currentDeadline - Date.now() < 30_000) {
-                const newDeadline = Math.min(startTime + maxTimeoutMs, currentDeadline + 30_000);
-                if (newDeadline > currentDeadline) {
-                  currentDeadline = newDeadline;
-                  arm();
+          for (const cpPath of candidatePaths) {
+            if (fs.existsSync(cpPath)) {
+              const stat = fs.statSync(cpPath);
+              if (stat.mtimeMs > lastCheckedCheckpointMtime) {
+                lastCheckedCheckpointMtime = stat.mtimeMs;
+                if (currentDeadline - Date.now() < 30_000) {
+                  const newDeadline = Math.min(startTime + maxTimeoutMs, currentDeadline + 30_000);
+                  if (newDeadline > currentDeadline) {
+                    currentDeadline = newDeadline;
+                    arm();
+                  }
                 }
+                break;
               }
             }
           }
         } catch {}
-      }, 5_000);
+      }, 3_000);
     }
   });
 
@@ -562,12 +568,16 @@ export async function runOvernightMarathon(config: {
       // Filter isolated tenants and ineligible non-engineering / senior roles (Ticket GEN-48)
       const eligibleQueued: AutoaplyJobItem[] = [];
       for (const j of allQueued) {
+        const targetUrl = j.jobUrl || (j as any).url || (j as any).normalized_url;
+        if (!j.jobUrl && targetUrl) {
+          j.jobUrl = targetUrl;
+        }
         // Ticket GEN-91: Fast-fail non-direct ATS jobs
-        if (!isSupportedDirectAtsJobUrl(j.jobUrl)) {
+        if (!targetUrl || !isSupportedDirectAtsJobUrl(targetUrl)) {
           queue.skip(j.id, 'unsupported_non_direct_ats_url');
           continue;
         }
-        if (isStrictlyIsolatedTenant(j.company, j.jobUrl)) {
+        if (isStrictlyIsolatedTenant(j.company, targetUrl)) {
           queue.skip(j.id, 'strictly_isolated_tenant');
           continue;
         }
@@ -797,7 +807,7 @@ export async function runOvernightMarathon(config: {
         await waitUntilNetworkOnline();
 
         try {
-          report = await runWithDynamicActivityTimeout(childRunner.run(options), timeoutConfig.maxTotalMs, `Job ${job.company}`, job.id);
+          report = await runWithDynamicActivityTimeout(childRunner.run(options), timeoutConfig.maxTotalMs, `Job ${job.company}`, sessionDir);
         } catch (err: any) {
           const measuredDurationMs = Date.now() - jobStartMs;
           const isNetDrop = isOfflineDinoOrNetworkError(err?.message || '') ||
@@ -809,7 +819,9 @@ export async function runOvernightMarathon(config: {
           let cpStepNumber = 1;
           let cpCurrentUrl = '';
           let cpReceipt: any = undefined;
-          const cpPath = path.resolve('state/autoapply/portal-review/applications', job.id, 'checkpoint.json');
+          const cpPath = fs.existsSync(path.join(sessionDir, 'checkpoint.json'))
+            ? path.join(sessionDir, 'checkpoint.json')
+            : path.resolve('state/autoapply/portal-review/applications', job.id, 'checkpoint.json');
           if (fs.existsSync(cpPath)) {
             try {
               const cp = JSON.parse(fs.readFileSync(cpPath, 'utf8'));
