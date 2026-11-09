@@ -23,6 +23,15 @@ No live application may be duplicated or counted as newly submitted merely
 because an existing-application response was observed. Existing user-approved
 candidate facts and consents must be preserved without broadening their scope.
 
+## Live Acceptance Status (2026-11-09)
+
+- **Total Confirmed Live Applications**: **88** verified live submissions with employer receipts stored in `state/autoapply/portal-review/queue.sqlite`.
+- **Top Verified Platforms**:
+  - **Ashby**: Full end-to-end live flow verified, including GraphQL mutation matching (`ApiSubmit(?:Single)?ApplicationForm(?:Action)?`), yes/no components, custom question resolution, and DOM unmounted status confirmation (`[role="status"]`).
+  - **Greenhouse**: Single-page ATS fast-path, React-Select combobox handling, confirmation URL detection (`/confirmation`), and 180s watchdog tolerance for high-field forms.
+  - **Lever**: Fast-exit for closed/expired postings, resume upload parsing deadline tracking, and autonomous challenge deferral (`captcha_deferred`).
+  - **Workday**: Container-scoped field resolution, sign-in header recognition (`utilityButtonSignIn`), and B-tree indexed transactional queue operations.
+
 ## Acceptance evidence, 2026-10-30
 
 The user chose "Keep changes local" after reviewing the separate-branch CI

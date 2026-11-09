@@ -7,9 +7,9 @@ primary interaction mechanism. The map supplements them for legacy controls.
 | Platform | Form contract | Navigation and evidence |
 | --- | --- | --- |
 | Workday | Container-scoped `formField-*` controls; UXI prompts, split dates, named history groups and hidden uploads | Footer controls, active-step transitions, visible loading indicators, scoped leaf selection and retained values |
-| Greenhouse | Existing application form and custom controls | Existing local browser and observed-form snapshot coverage |
-| Lever | Existing application form | Existing local browser and transport coverage |
-| Ashby | Existing custom yes/no and list controls | Retained React/ARIA state checks and existing browser coverage |
+| Greenhouse | Existing application form and custom controls | Existing local browser and observed-form snapshot coverage; `/confirmation` URL receipt & React-Select combobox handling |
+| Lever | Existing application form | Existing local browser, transport coverage, and autonomous `captcha_deferred` rotation |
+| Ashby | Existing custom yes/no and list controls | Retained React/ARIA state checks, GraphQL mutation proof (`ApiSubmitSingleApplicationFormAction`), and `[role="status"]` receipt |
 | iCIMS | Main wrapper or content iframe | All browser frames, including nested cross-origin frames; native Next/Continue inputs |
 | SmartRecruiters | `.smartrec-apply` | Send Application through the shared submission observer |
 | Workable | `section[data-ui="application-form"]` | Native inputs and existing combobox selection; shared Next/Submit handling |
