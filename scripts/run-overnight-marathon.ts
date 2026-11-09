@@ -1016,7 +1016,7 @@ export async function runOvernightMarathon(config: {
           await new Promise(r => setTimeout(r, idx * 3500));
         }
 
-        const laneProfileDir = path.resolve('state/autoapply', `browser-profile-${laneKey}`);
+        const laneProfileDir = path.resolve('state/autoapply', `browser-profile-lane-${idx}`);
         fs.mkdirSync(laneProfileDir, { recursive: true });
 
         for (const lockFile of ['SingletonLock', 'SingletonCookie', 'SingletonSocket']) {

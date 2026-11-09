@@ -140,35 +140,6 @@ export function enforceQueueDatabaseInvariants(targetDbPath?: string): {
           )
           .run() as { changes?: number };
         isolatedQuarantined += (isoInfo.changes ?? 0);
-
-        // 3. Audit all queued rows with is_hourly_fresh > 0: demote any row that fails candidate fit or direct ATS URL check
-        const freshRows = db
-          .prepare(
-            "SELECT id, company, title, location, url, is_hourly_fresh FROM jobs WHERE status = 'queued' AND COALESCE(is_hourly_fresh, 0) > 0"
-          )
-          .all() as any[];
-
-        const demoteStmt = db.prepare(
-          "UPDATE jobs SET status = 'skipped', is_hourly_fresh = 0, last_error = ? WHERE id = ?"
-        );
-        for (const r of freshRows) {
-          const url = String(r.url || '').trim();
-          if (!isSupportedDirectAtsJobUrl(url)) {
-            demoteStmt.run('invariant_non_direct_ats_url', r.id);
-            pollutedTierDemoted++;
-            continue;
-          }
-          const fit = evaluateCandidateJobFit({
-            company: r.company,
-            title: r.title,
-            location: r.location,
-            url,
-          });
-          if (!fit.allowed) {
-            demoteStmt.run(`invariant_${fit.reason || 'fit_rejected'}`, r.id);
-            pollutedTierDemoted++;
-          }
-        }
       }
 
       if (hasApps) {
@@ -197,40 +168,6 @@ export function enforceQueueDatabaseInvariants(targetDbPath?: string): {
           p.last_error = 'isolated_tenant_invariant';
           updateApp.run(JSON.stringify(p), r.id);
           isolatedQuarantined++;
-        }
-
-        // 3. Audit all queued rows with is_hourly_fresh > 0
-        const freshApps = db
-          .prepare(
-            "SELECT id, normalized_url, payload FROM applications WHERE status = 'queued' AND COALESCE(json_extract(payload, '$.is_hourly_fresh'), 0) > 0"
-          )
-          .all() as any[];
-
-        for (const r of freshApps) {
-          let p: any = {};
-          try { p = JSON.parse(r.payload || '{}'); } catch {}
-          const url = String(p.url || p.jobUrl || r.normalized_url || '').trim();
-          if (!isSupportedDirectAtsJobUrl(url)) {
-            p.status = 'skipped';
-            p.is_hourly_fresh = 0;
-            p.last_error = 'invariant_non_direct_ats_url';
-            updateApp.run(JSON.stringify(p), r.id);
-            pollutedTierDemoted++;
-            continue;
-          }
-          const fit = evaluateCandidateJobFit({
-            company: p.company || '',
-            title: p.title || '',
-            location: p.location || '',
-            url,
-          });
-          if (!fit.allowed) {
-            p.status = 'skipped';
-            p.is_hourly_fresh = 0;
-            p.last_error = `invariant_${fit.reason || 'fit_rejected'}`;
-            updateApp.run(JSON.stringify(p), r.id);
-            pollutedTierDemoted++;
-          }
         }
       }
 

@@ -1272,6 +1272,9 @@ export class AutoApplyRunner {
   }
 
   async forkApplicationContext(storageStatePath?: string): Promise<AutoApplyRunner> {
+    if (!this.isConnected() || !this.context) {
+      await this.initBrowser(true);
+    }
     const browser = this.browser || (this.context as any)?.browser?.() || null;
     const context = browser
       ? await createResilientBrowserContext(browser, storageStatePath)
@@ -1405,16 +1408,27 @@ export class AutoApplyRunner {
       for (const lockFile of ['SingletonLock', 'SingletonCookie', 'SingletonSocket']) {
         try { unlinkSync(path.join(browserProfileDir, lockFile)); } catch {}
       }
-      this.context = await chromium.launchPersistentContext(browserProfileDir, {
-        channel: 'chrome',
-        headless: effectiveHeadless,
-        args,
-        timeout: 90000,
-        viewport: null,
-        locale: 'en-IN',
-        timezoneId: 'Asia/Calcutta',
-      });
-      (this.context as any).__resilientTier = 1;
+      try {
+        this.context = await chromium.launchPersistentContext(browserProfileDir, {
+          channel: 'chrome',
+          headless: effectiveHeadless,
+          args,
+          timeout: 45000,
+          viewport: null,
+          locale: 'en-IN',
+          timezoneId: 'Asia/Calcutta',
+        });
+        (this.context as any).__resilientTier = 1;
+      } catch (err: any) {
+        console.warn(`[RUNNER] Persistent launch failed on ${browserProfileDir}: ${err?.message || err}. Falling back to clean isolated browser.`);
+        for (const lockFile of ['SingletonLock', 'SingletonCookie', 'SingletonSocket']) {
+          try { unlinkSync(path.join(browserProfileDir, lockFile)); } catch {}
+        }
+        this.browser = await chromium.launch({ channel: 'chrome', headless: effectiveHeadless, args });
+        const storageStatePath = sessionDir ? path.join(sessionDir, 'storage-state.json') : undefined;
+        this.context = await createResilientBrowserContext(this.browser, storageStatePath);
+        this.ownsContext = true;
+      }
     } else {
       this.browser = await chromium.launch({ channel: 'chrome', headless: effectiveHeadless, args });
       const storageStatePath = sessionDir ? path.join(sessionDir, 'storage-state.json') : undefined;
@@ -3388,9 +3402,8 @@ export class AutoApplyRunner {
           this.page = await this.context.newPage();
           this.trackPage(this.page);
         } else {
-          const atsName = identifyApplicationAts(options.url) || 'other';
-          const laneName = options.lane || (atsName === 'greenhouse' ? 'greenhouse' : atsName === 'ashby' ? 'ashby' : atsName === 'workday' ? 'workday' : 'other');
-          const defaultProfileDir = path.resolve('state/autoapply', `browser-profile-lane-${laneName}`);
+          const normLane = (options.lane || '0').replace(/^lane-?/, '');
+          const defaultProfileDir = path.resolve('state/autoapply', `browser-profile-lane-${normLane}`);
           await this.initBrowser(options.headless ?? true, options.sessionDir, options.browserProfileDir || defaultProfileDir);
         }
       }

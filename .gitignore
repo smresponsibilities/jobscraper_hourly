@@ -80,5 +80,6 @@ state/autoapply/portal-review/workday-accounts.json
 state/autoapply/portal-review/outreach-leads.json
 state/autoapply/portal-review/applications/
 state/outreach/
+data/*.sqlite*
 scratch/
 scripts/test-temp.mjs
