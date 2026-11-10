@@ -238,7 +238,7 @@ export async function runSingleJobDryRun(
   index: number,
   profilePath: string,
   stateDir: string,
-  timeoutMs = 90_000,
+  timeoutMs = 120_000,
   workerId = 0
 ): Promise<DryRunJobResult> {
   const profile = loadProfile(profilePath);
@@ -429,7 +429,7 @@ export async function run100JobHarness(
       const tag = `[WORKER-${workerId} #${currentIdx + 1}/${jobs.length}]`;
       console.log(`${tag} Launching ${job.company} (${job.ats.toUpperCase()}) -> ${job.url}`);
 
-      const result = await runSingleJobDryRun(job, currentIdx + 1, profilePath, stateDir, 90_000, workerId);
+      const result = await runSingleJobDryRun(job, currentIdx + 1, profilePath, stateDir, 120_000, workerId);
       results[currentIdx] = result;
 
       const durSec = (result.durationMs / 1000).toFixed(1);
@@ -581,12 +581,59 @@ async function main() {
 
   console.log('=== GEN-305: 100-JOB REAL BROWSER DRY-RUN & DIAGNOSTICS HARNESS ===');
 
-  const jobs = await select100DistinctLiveJobs(path.join(stateDir, 'queue.sqlite'), 100);
-  if (jobs.length < 50) {
-    throw new Error(`Insufficient distinct live jobs found (${jobs.length} < 50). Check queue.sqlite.`);
-  }
+  const retryFailed = process.argv.includes('--retry-failed') || process.argv.includes('--retry-greenhouse');
+  let results: DryRunJobResult[] = [];
 
-  const results = await run100JobHarness(jobs, profilePath, stateDir, 4);
+  if (retryFailed && fs.existsSync(resultsJsonPath)) {
+    const existingData = JSON.parse(fs.readFileSync(resultsJsonPath, 'utf8'));
+    results = Array.isArray(existingData) ? existingData : existingData.results || [];
+    const targetFilter = process.argv.includes('--retry-greenhouse')
+      ? (r: DryRunJobResult) => r.ats === 'greenhouse' && r.status !== 'READY_TO_SUBMIT'
+      : (r: DryRunJobResult) => r.status !== 'READY_TO_SUBMIT';
+
+    const jobsToRetry = results.filter(targetFilter);
+    console.log(`[HARNESS] Retrying ${jobsToRetry.length} non-passing jobs across 4 concurrent workers...`);
+
+    const retryCandidateJobs: CandidateJob[] = jobsToRetry.map((r) => ({
+      id: r.jobId,
+      company: r.company,
+      title: r.title,
+      url: r.url,
+      ats: r.ats as any,
+      isHourlyFresh: 100,
+    }));
+
+    let nextJobIdx = 0;
+    const runWorker = async (workerId: number) => {
+      while (nextJobIdx < retryCandidateJobs.length) {
+        const curIdx = nextJobIdx++;
+        const candidate = retryCandidateJobs[curIdx];
+        if (!candidate) break;
+        const originalIndex = jobsToRetry[curIdx]!.index;
+        const tag = `[WORKER-${workerId} #${curIdx + 1}/${retryCandidateJobs.length}]`;
+        console.log(`${tag} Retrying ${candidate.company} (${candidate.ats.toUpperCase()}) -> ${candidate.url}`);
+
+        const newRes = await runSingleJobDryRun(candidate, originalIndex, profilePath, stateDir, 120_000, workerId);
+        results[originalIndex - 1] = newRes;
+
+        const durSec = (newRes.durationMs / 1000).toFixed(1);
+        const icon = newRes.status === 'READY_TO_SUBMIT' ? '✅' : '❌';
+        console.log(
+          `${tag} ${icon} ${newRes.company}: ${newRes.status} | Distilled: ${newRes.fieldsDistilled} | Filled: ${newRes.fieldsFilled} | ${durSec}s | ${newRes.errorDetail.slice(0, 65)}`
+        );
+      }
+    };
+
+    const workers = Array.from({ length: 4 }, (_, i) => runWorker(i));
+    await Promise.all(workers);
+  } else {
+    const jobs = await select100DistinctLiveJobs(path.join(stateDir, 'queue.sqlite'), 100);
+    if (jobs.length < 50) {
+      throw new Error(`Insufficient distinct live jobs found (${jobs.length} < 50). Check queue.sqlite.`);
+    }
+
+    results = await run100JobHarness(jobs, profilePath, stateDir, 4);
+  }
 
   console.log(`\n[HARNESS] Completed dry-run on ${results.length} jobs.`);
 

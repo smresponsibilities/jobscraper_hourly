@@ -1,5 +1,34 @@
 # Handoff
 
+## Live-Submit Production Verification, Greenhouse 302-Redirect Recovery & 141+ Confirmed Applied (Tickets GEN-326 to GEN-329) — 2026-11-10
+
+### 1. Executive Summary & Production Status
+- **Target Achieved**: Confirmed `applied` count in `state/autoapply/portal-review/queue.sqlite` reached **141** (Target `>= 140` exceeded, climbed from 119 to 141 with +22 live submissions verified with receipts).
+- **Greenhouse Case 1 vs Case 2 Remediation (`src/autoapply/runner.ts`)**:
+  - **Case 1 (Page stayed on `greenhouse.io` / `job-boards.greenhouse.io`)**: Runner preserves modern Remix single-page application structure without corrupting navigations to `/embed/job_app`. Scrolls `#application-form, #app, form` into view and triggers Apply pill clicks if inputs are collapsed.
+  - **Case 2 (Page 302 redirected off `greenhouse.io` to external marketing domains)**: Automatically captures external redirect destination, unrolls query parameters (`gh_jid`, tokens), and recovers direct application embed via `https://${ghHost}/embed/job_app?for=${slug}&token=${id}`.
+  - **Single-Page ATS Combobox Performance**: Restricted iterative multi-element CDP `comboboxSelection` evaluation loop strictly to Workday (`if (report.ats === 'workday')`), saving dozens of round-trip CDP roundtrips per field on Greenhouse/Ashby/Lever. Replaced bezier mouse pacing with direct clicks on single-page ATS.
+- **Production Live Submissions Verified**:
+  - **Greenhouse (6 live conversions with receipts)**:
+    - *Keen Software House*: `https://job-boards.eu.greenhouse.io/keensoftwarehouseas/jobs/4057755101/confirmation`
+    - *Amwins Global Risks*: `https://job-boards.greenhouse.io/embed/job_app/confirmation?for=agr&token=4462470009` (302 redirect recovered via embed)
+    - *Diligent Robotics*: `https://boards.greenhouse.io/diligentrobotics/jobs/7651459003`
+    - *JFrog*: `https://boards.greenhouse.io/embed/jfrog/jobs/8255863` (302 redirect recovered via embed)
+    - *Udemy*: `https://job-boards.greenhouse.io/embed/job_app/confirmation?for=udemy&token=4739285004` (302 redirect recovered via embed)
+    - *splice*: `https://job-boards.greenhouse.io/splice/jobs/8707299002/confirmation`
+  - **Ashby (16 live conversions with receipts)**:
+    - *GRVT TECHNOLOGIES* (2x), *Thorit*, *Euphoric Global*, *Saronic Technologies* (3x), *Sprinter Health* (2x), *Sailpeak* (2x), *Fundamental*, *Thought Machine*, *DOSS*, *Immersive*, *Apify Technologies*.
+- **Documentation & Verification**:
+  - `DRYRUN-100-EVIDENCE.md`: Updated with Section 5 live-submit verified receipts table.
+  - `SOTA-100-TICKETS.md`: Created detailing architectural breakdown for tickets GEN-301 through GEN-329.
+  - `npm test` (`src/selftest.ts`): All 58/58 test suites pass cleanly.
+  - `npx tsc -p tsconfig.build.json`: Clean compile, 0 errors.
+  - `npx tsx scripts/sanitize-for-git-push.ts`: PASS (0 PII / secret / credential leaks).
+- **Persistent Background Daemon**:
+  - 4-lane `--submit` worker daemon running in background (`out/dist/scripts/drain-backfill-and-hourly.js --max-jobs 80 --submit`).
+
+---
+
 ## Adaptive RAM Auto-Scaler, Zombie `chrome.exe` Reaper & 60s Health Watchdog (Tickets GEN-311 to GEN-315) — 2026-11-10
 
 ### 1. Executive Summary & Production Status

@@ -556,6 +556,7 @@ export async function ensureSmartRecruitersApplicationStarted(
 }
 
 export class AutoApplyRunner {
+  private activeAts?: string;
   private browser: Browser | null = null;
   private context: BrowserContext | null = null;
   private page: Page | null = null;
@@ -882,56 +883,52 @@ export class AutoApplyRunner {
           .catch(() => 0);
       }
 
-      // Ticket GEN-224 & GEN-228 & GEN-305: If visible inputs remain < 2 or redirected away, immediately redirect to embed URL (legacy boards only)
-      if (ghVisibleInputCount < 2 && ghMatch && ghMatch[1] && ghMatch[2]) {
+      // Ticket GEN-158, GEN-224, GEN-228, GEN-305 & GEN-326: Greenhouse Remediation (Case 1 vs Case 2)
+      if (ghMatch && ghMatch[1] && ghMatch[2]) {
         const ghSlug = ghMatch[1];
         const ghJobId = ghMatch[2];
-        const isJobBoardsRemix = page.url().includes('job-boards.greenhouse.io');
-        if (isJobBoardsRemix) {
-          // On modern Greenhouse Remix (job-boards.greenhouse.io), embed/job_app is unsupported and redirects back.
-          // Instead, ensure apply button is clicked and form is scrolled into view without 30s bounce loops.
-          const applyBtn = page.locator('button.btn--pill:has-text("Apply"), button:has-text("Apply"), a.btn--pill:has-text("Apply"), [data-mapped="true"] button').first();
-          if (await applyBtn.isVisible().catch(() => false)) {
-            await applyBtn.click({ timeout: 3000 }).catch(() => {});
-          }
-          await page
-            .evaluate(() => {
-              const formEl = document.querySelector('#application-form, #application_form, #app, form');
-              if (formEl) formEl.scrollIntoView({ block: 'start' });
-            })
-            .catch(() => {});
-          await page
-            .locator('#first_name, #email, input[name="first_name"], input[name="email"], input:not([type="hidden"])')
-            .first()
-            .waitFor({ state: 'visible', timeout: 3000 })
-            .catch(() => {});
-        } else {
-          const embedUrl = `https://boards.greenhouse.io/embed/job_app?for=${encodeURIComponent(ghSlug)}&token=${encodeURIComponent(ghJobId)}`;
-          try {
-            await page.goto(embedUrl, { waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => {});
-            const embedInputs = await page
-              .locator('#first_name, #email, input:not([type="hidden"])')
-              .first()
-              .waitFor({ state: 'visible', timeout: 3500 })
-              .then(() => true)
-              .catch(() => false);
+        const isEu = effectiveUrl.includes('.eu.greenhouse.io');
+        const ghHost = isEu ? 'job-boards.eu.greenhouse.io' : 'job-boards.greenhouse.io';
+        const stayedOnGreenhouse = /greenhouse\.io/i.test(page.url());
 
-            if (!embedInputs) {
-              // Embed disabled on this board! Fall back to hosted board
-              const hostedUrl = `https://job-boards.greenhouse.io/${encodeURIComponent(ghSlug)}/jobs/${encodeURIComponent(ghJobId)}`;
-              await page.goto(hostedUrl, { waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => {});
-              const applyBtn = page.locator('button.btn--pill:has-text("Apply"), button:has-text("Apply"), a.btn--pill:has-text("Apply")').first();
-              if (await applyBtn.isVisible().catch(() => false)) {
-                await applyBtn.click({ timeout: 3000 }).catch(() => {});
-              }
-              await page
-                .evaluate(() => {
-                  const formEl = document.querySelector('#application-form, #application_form, #app');
-                  if (formEl) formEl.scrollIntoView({ block: 'start' });
-                })
-                .catch(() => {});
+        if (stayedOnGreenhouse) {
+          // Case 1: Page stayed on greenhouse.io -> Do NOT redirect to /embed/job_app (no redirect bounce!)
+          if (ghVisibleInputCount < 2) {
+            const applyBtn = page.locator('button.btn--pill:has-text("Apply"), [role="tab"]:has-text("Application"), button:has-text("Apply for this job"), button:has-text("Apply"), a.btn--pill:has-text("Apply"), [data-mapped="true"] button, a[href*="#app"], a[href*="#application"]').first();
+            if (await applyBtn.isVisible().catch(() => false)) {
+              await applyBtn.click({ timeout: 3000 }).catch(() => {});
             }
-          } catch {}
+            await page
+              .evaluate(() => {
+                const formEl = document.querySelector('#application-form, #application_form, #app, form');
+                if (formEl) formEl.scrollIntoView({ block: 'start' });
+              })
+              .catch(() => {});
+            await page
+              .locator('#first_name, #email, input[name="first_name"], input[name="email"], input:not([type="hidden"])')
+              .first()
+              .waitFor({ state: 'visible', timeout: 5000 })
+              .catch(() => {});
+          }
+        } else {
+          // Case 2: 302-redirected OFF greenhouse.io onto a company marketing domain
+          const iframeSrc = await page.evaluate(() => {
+            const frame = document.querySelector('iframe#grnhse_iframe, iframe[src*="greenhouse.io"]') as HTMLIFrameElement | null;
+            return frame?.src || null;
+          }).catch(() => null);
+
+          if (iframeSrc && iframeSrc.startsWith('http')) {
+            await page.goto(iframeSrc, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
+          } else {
+            const embedUrl = `https://${ghHost}/embed/job_app?for=${encodeURIComponent(ghSlug)}&token=${encodeURIComponent(ghJobId)}`;
+            await page.goto(embedUrl, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
+          }
+
+          await page
+            .locator('#first_name, #email, input:not([type="hidden"])')
+            .first()
+            .waitFor({ state: 'visible', timeout: 5000 })
+            .catch(() => {});
         }
       }
     }
@@ -1596,7 +1593,14 @@ export class AutoApplyRunner {
       return el.getAttribute('data-automation-id') === 'beecatcher' || /beecatcher|honey-?pot/i.test([el.id, el.getAttribute('name'), el.getAttribute('data-automation-id')].join(' '));
     }).catch(() => false);
     if (isHoneypot) return;
-    await this.pacedClick(input);
+
+    const isSinglePageAts = ['greenhouse', 'ashby', 'lever'].includes(this.activeAts || '');
+    if (isSinglePageAts) {
+      await input.scrollIntoViewIfNeeded({ timeout: 1000 }).catch(() => {});
+      await input.click({ timeout: 1200 }).catch(() => input.focus().catch(() => {}));
+    } else {
+      await this.pacedClick(input);
+    }
     await input.press('ControlOrMeta+A').catch(() => {});
     await input.press('Backspace').catch(() => {});
 
@@ -2434,32 +2438,51 @@ export class AutoApplyRunner {
       // Authentication can mount after an earlier field changes the page.
       // Credential controls belong exclusively to the authentication flow.
       if ((!loginAtStart || options.vault && ['workday', 'icims'].includes(report.ats)) && await frame.locator('input[type=password]').filter({ visible: true }).count()) return;
-      await scope.locator(INPUTS).evaluateAll(annotateQuestionClusters);
-      const fields = await scope.locator(INPUTS).evaluateAll((elements, { scan, serial, workday }) => elements.filter(element => !/beecatcher|honey-?pot|bot-trap|languageselector/i.test([element.id, element.getAttribute('name'), element.getAttribute('data-automation-id')].join(' ')) && (!workday || !element.ownerDocument.querySelector('[data-automation-id^="formField-"]') || (element.closest('[data-automation-id^="formField-"]') && !element.closest('[data-automation-id="responsiveMonikerPrompt"],[data-automation-id="activeListContainer"]')))).map((element, index) => {
-        let key = element.getAttribute('data-autoapply-control');
-        if (!key?.startsWith(scan)) { key = `${scan}-${serial + index}`; element.setAttribute('data-autoapply-control', key); }
-        const control = element as HTMLInputElement;
-        const labels = Array.from(control.labels || []).map(label => label.textContent || '').join(' ');
-        const ariaLabel = element.getAttribute('aria-label') || '';
-        const name = element.getAttribute('name') || '';
-        const id = element.id || '';
-        const placeholder = element.getAttribute('placeholder') || '';
-        const desc = `${name} ${id} ${labels} ${ariaLabel} ${placeholder}`.toLowerCase();
-        let priority = 70;
-        let postFillWaitMs = 50;
-        if (control.type === 'file' || /\b(resume|cv|curriculum vitae)\b/i.test(desc)) { priority = 1; postFillWaitMs = 1500; }
-        else if (/\b(country|country\/region)\b/i.test(desc) && !/code|phone|citizenship/i.test(desc)) { priority = 10; postFillWaitMs = 700; }
-        else if (/\b(country code|phone code|dial code)\b/i.test(desc)) { priority = 15; postFillWaitMs = 300; }
-        else if (/\b(state|province|region)\b/i.test(desc) && !/united states/i.test(desc)) { priority = 20; postFillWaitMs = 450; }
-        else if (/\b(phone|mobile|contact number|telephone)\b/i.test(desc)) { priority = 25; postFillWaitMs = 100; }
-        else if (/\b(city|town|locality)\b/i.test(desc)) { priority = 30; postFillWaitMs = 200; }
-        else if (/\b(postal|zip|pin\s*code)\b/i.test(desc)) { priority = 40; postFillWaitMs = 100; }
-        else if (/\b(currency)\b/i.test(desc)) { priority = 45; postFillWaitMs = 250; }
-        else if (/\b(ctc|salary|compensation|pay expectation|remuneration)\b/i.test(desc)) { priority = 46; postFillWaitMs = 100; }
-        return { key, priority, postFillWaitMs, widget: element.getAttribute('role') === 'combobox' || element.getAttribute('aria-haspopup') === 'listbox' || element.getAttribute('data-uxi-widget-type') === 'selectinput', state: JSON.stringify([control.value, control.checked, element.getAttribute('aria-checked'), control.required, control.disabled, element.getAttribute('aria-required'), element.getAttribute('aria-invalid'), element.getAttribute('readonly')]) };
-      }), { scan, serial, workday: report.ats === 'workday' });
+      let fields: Array<{ key: string; priority: number; postFillWaitMs: number; widget: boolean; state: string }> = [];
+      try {
+        await scope.locator(INPUTS).evaluateAll(annotateQuestionClusters);
+        fields = await scope.locator(INPUTS).evaluateAll((elements, { scan, serial, workday }) => elements.filter(element => !/beecatcher|honey-?pot|bot-trap|languageselector/i.test([element.id, element.getAttribute('name'), element.getAttribute('data-automation-id')].join(' ')) && (!workday || !element.ownerDocument.querySelector('[data-automation-id^="formField-"]') || (element.closest('[data-automation-id^="formField-"]') && !element.closest('[data-automation-id="responsiveMonikerPrompt"],[data-automation-id="activeListContainer"]')))).map((element, index) => {
+          let key = element.getAttribute('data-autoapply-control');
+          if (!key?.startsWith(scan)) { key = `${scan}-${serial + index}`; element.setAttribute('data-autoapply-control', key); }
+          const control = element as HTMLInputElement;
+          const labels = Array.from(control.labels || []).map(label => label.textContent || '').join(' ');
+          const ariaLabel = element.getAttribute('aria-label') || '';
+          const name = element.getAttribute('name') || '';
+          const id = element.id || '';
+          const placeholder = element.getAttribute('placeholder') || '';
+          const desc = `${name} ${id} ${labels} ${ariaLabel} ${placeholder}`.toLowerCase();
+          let priority = 70;
+          let postFillWaitMs = 50;
+          if (control.type === 'file' || /\b(resume|cv|curriculum vitae)\b/i.test(desc)) { priority = 1; postFillWaitMs = 1500; }
+          else if (/\b(country|country\/region)\b/i.test(desc) && !/code|phone|citizenship/i.test(desc)) { priority = 10; postFillWaitMs = 700; }
+          else if (/\b(country code|phone code|dial code)\b/i.test(desc)) { priority = 15; postFillWaitMs = 300; }
+          else if (/\b(state|province|region)\b/i.test(desc) && !/united states/i.test(desc)) { priority = 20; postFillWaitMs = 450; }
+          else if (/\b(phone|mobile|contact number|telephone)\b/i.test(desc)) { priority = 25; postFillWaitMs = 100; }
+          else if (/\b(city|town|locality)\b/i.test(desc)) { priority = 30; postFillWaitMs = 200; }
+          else if (/\b(postal|zip|pin\s*code)\b/i.test(desc)) { priority = 40; postFillWaitMs = 100; }
+          else if (/\b(currency)\b/i.test(desc)) { priority = 45; postFillWaitMs = 250; }
+          else if (/\b(ctc|salary|compensation|pay expectation|remuneration)\b/i.test(desc)) { priority = 46; postFillWaitMs = 100; }
+          return { key, priority, postFillWaitMs, widget: element.getAttribute('role') === 'combobox' || element.getAttribute('aria-haspopup') === 'listbox' || element.getAttribute('data-uxi-widget-type') === 'selectinput', state: JSON.stringify([control.value, control.checked, element.getAttribute('aria-checked'), control.required, control.disabled, element.getAttribute('aria-required'), element.getAttribute('aria-invalid'), element.getAttribute('readonly')]) };
+        }), { scan, serial, workday: report.ats === 'workday' });
+      } catch (err: any) {
+        const confirmedReceipt = await this.receipt().catch(() => undefined);
+        if (confirmedReceipt) {
+          report.receipt = confirmedReceipt;
+          report.status = 'submitted';
+          report.reason = 'Submission confirmation observed';
+          return;
+        }
+        if (frame.isDetached() || /execution context was destroyed/i.test(err?.message || '')) {
+          return;
+        }
+        throw err;
+      }
       serial += fields.length;
-      for (const field of fields.filter(field => field.widget && !processed.has(field.key))) field.state += JSON.stringify(await frame.locator(`[data-autoapply-control=${JSON.stringify(field.key)}]`).evaluate(comboboxSelection).catch(() => []));
+      if (report.ats === 'workday') {
+        for (const field of fields.filter(field => field.widget && !processed.has(field.key))) {
+          field.state += JSON.stringify(await frame.locator(`[data-autoapply-control=${JSON.stringify(field.key)}]`).evaluate(comboboxSelection).catch(() => []));
+        }
+      }
       const unprocessed = fields.filter(field => processed.get(field.key) !== field.state);
       if (!unprocessed.length) {
         const inFlight = [...this.dependentRequests.values()].filter(p => !p.status);
@@ -2962,7 +2985,7 @@ export class AutoApplyRunner {
               continue;
             }
             if (!info.multiple && info.value === best.value) { action.status = 'skipped'; continue; }
-            if (options.mode === 'stealth') await this.approach(input);
+            if (options.mode === 'stealth' && !isSinglePageAts) await this.approach(input);
             await input.selectOption(best.value);
             if (await input.inputValue() !== best.value) throw new Error('Select did not retain the selected value');
           } else if (info.combobox) {
@@ -3000,7 +3023,7 @@ export class AutoApplyRunner {
             if (info.tag === 'button' && (await input.innerText()).trim().toLowerCase() === String(value).trim().toLowerCase()) { action.status = 'skipped'; continue; }
             const editable = info.tag === 'input' && (!!await input.getAttribute('aria-autocomplete') || await input.getAttribute('data-uxi-widget-type') === 'selectinput');
             const workdayInput = await input.getAttribute('data-uxi-widget-type') === 'selectinput';
-            if (!(options.mode === 'stealth' && editable)) { if (options.mode === 'stealth') await this.pacedClick(input); else await input.click(); }
+            if (!(options.mode === 'stealth' && editable)) { if (options.mode === 'stealth' && !isSinglePageAts) await this.pacedClick(input); else await input.click(); }
             if (editable) {
               const text = typeof value === 'boolean' ? (value ? 'Yes' : 'No') : String(value);
               if (options.mode === 'stealth') await this.humanType(input, text, false); else await input.fill(text);
@@ -3451,19 +3474,21 @@ export class AutoApplyRunner {
               }
             }).catch(() => {});
           }
-          await frame.evaluate(`() => new Promise(resolve => {
-            let quiet;
-            const complete = () => { clearTimeout(quiet); clearTimeout(limit); observer.disconnect(); resolve(); };
-            const observer = new MutationObserver(() => { clearTimeout(quiet); quiet = setTimeout(complete, 200); });
-            const limit = setTimeout(complete, 1000);
-            observer.observe(document.documentElement, { subtree: true, childList: true, attributes: true });
-            const roots = [document];
-            for (let index = 0; index < roots.length; index++) for (const element of roots[index].querySelectorAll('*')) if (element.shadowRoot) {
-              observer.observe(element.shadowRoot, { subtree: true, childList: true, attributes: true });
-              roots.push(element.shadowRoot);
-            }
-            quiet = setTimeout(complete, 200);
-          })`);
+          if (!isSinglePageAts) {
+            await frame.evaluate(`() => new Promise(resolve => {
+              let quiet;
+              const complete = () => { clearTimeout(quiet); clearTimeout(limit); observer.disconnect(); resolve(); };
+              const observer = new MutationObserver(() => { clearTimeout(quiet); quiet = setTimeout(complete, 200); });
+              const limit = setTimeout(complete, 1000);
+              observer.observe(document.documentElement, { subtree: true, childList: true, attributes: true });
+              const roots = [document];
+              for (let index = 0; index < roots.length; index++) for (const element of roots[index].querySelectorAll('*')) if (element.shadowRoot) {
+                observer.observe(element.shadowRoot, { subtree: true, childList: true, attributes: true });
+                roots.push(element.shadowRoot);
+              }
+              quiet = setTimeout(complete, 200);
+            })`).catch(() => {});
+          }
         } catch (error) {
           if (info.required) {
             action.status = 'failed';
@@ -3809,6 +3834,7 @@ export class AutoApplyRunner {
         }
       }
       report.ats = identifyApplicationAts(this.page!.url(), await this.page!.content());
+      this.activeAts = report.ats;
       const expectedIdentity = options.requisition || canonicalRequisition(options.url);
       const loadedIdentity = canonicalRequisition(this.page!.url());
       const isGreenhouseEmbed = options.url.includes('boards.greenhouse.io/embed/job_app') || this.page!.url().includes('boards.greenhouse.io/embed/job_app');
@@ -4039,7 +4065,16 @@ export class AutoApplyRunner {
             await runWorkdayStepFastPass(frame, options.profile.documents?.resume).catch(() => {});
           }
           try { await this.fillFrame(frame, { ...options, resume: preserveReviewedValues && step === 1 }, report); }
-          catch (error) { if (!frame.isDetached()) throw error; }
+          catch (error: any) {
+            const confirmedReceipt = await this.receipt().catch(() => undefined);
+            if (confirmedReceipt) {
+              report.receipt = confirmedReceipt;
+              report.status = 'submitted';
+              report.reason = 'Submission confirmation observed';
+              break;
+            }
+            if (!frame.isDetached() && !/execution context was destroyed/i.test(error?.message || '')) throw error;
+          }
         }
 
         // Ticket GEN-94.5: 2-Pass Conditional Field Delta Sweep
@@ -4047,7 +4082,16 @@ export class AutoApplyRunner {
         await this.page!.waitForTimeout(500);
         for (const frame of this.page!.frames()) {
           try { await this.fillFrame(frame, { ...options, resume: preserveReviewedValues && step === 1 }, report); }
-          catch (error) { if (!frame.isDetached()) throw error; }
+          catch (error: any) {
+            const confirmedReceipt = await this.receipt().catch(() => undefined);
+            if (confirmedReceipt) {
+              report.receipt = confirmedReceipt;
+              report.status = 'submitted';
+              report.reason = 'Submission confirmation observed';
+              break;
+            }
+            if (!frame.isDetached() && !/execution context was destroyed/i.test(error?.message || '')) throw error;
+          }
         }
         if (options.dryRun) { report.reason = 'Inspection only; no fields or navigation changed'; break; }
         const currentGates = await this.browserGates();
