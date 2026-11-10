@@ -33,6 +33,7 @@ import { filterUnattemptedJobs, recordAttemptedJob } from '../src/autoapply/atte
 import { scrubBrowserProfileCaches } from '../src/autoapply/ram-and-pacing.js';
 import { syncGitHubActionsPillars } from './sync-github-actions-pillars.js';
 import { ContinuousRamAndHealthWatchdog, check30MinZeroFillDroughtAndAutoHeal } from '../src/autoapply/health-and-ram-watchdog.js';
+import { syncInboxLifecycleEvents } from '../src/autoapply/inbox-lifecycle-tracker.js';
 
 export function partitionJobsIntoProviderLanes<T extends { url?: string; jobUrl?: string; provider?: string; externalJobId?: string }>(jobs: T[]): Record<string, T[]> {
   const lanes: Record<string, T[]> = {
@@ -598,6 +599,10 @@ async function main(): Promise<void> {
         if (docReport.healed) {
           console.log(`[DRAIN] Doctor self-healing applied: actions=[${docReport.actionsTaken.join(', ')}]`);
         }
+      } catch {}
+
+      try {
+        syncInboxLifecycleEvents(25).catch(() => {});
       } catch {}
 
       const allJobs = queue.list();

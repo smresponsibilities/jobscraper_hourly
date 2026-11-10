@@ -11,6 +11,12 @@ import {
   type JobArchetype,
   type OutreachLeadItem,
 } from './backfill-applied-outreach.js';
+import {
+  loadInboxLifecycleEvents,
+  type InboxLifecycleEvent,
+  type LifecycleStage,
+} from '../src/autoapply/inbox-lifecycle-tracker.js';
+import { recordWonderPillDeadEnd } from '../src/outreach/dual-mode-lead-finder.js';
 
 // Load .env variables into process.env if present
 export function loadEnvFile(envPath = '.env'): void {
@@ -95,6 +101,57 @@ export function isDomainOrCompanyOnCooldown(
   });
 }
 
+export function isDomainSuppressedByInboxLifecycle(
+  company: string,
+  domain: string,
+  events: InboxLifecycleEvent[]
+): { suppressed: boolean; stage?: LifecycleStage; reason?: string } {
+  const cleanComp = (company || '').toLowerCase().trim();
+  const cleanDom = (domain || '').toLowerCase().trim();
+
+  for (const ev of events) {
+    if (
+      ev.stage === 'APPLICATION_REJECTED' ||
+      ev.stage === 'INTERVIEW_OR_OA_INVITE' ||
+      ev.stage === 'RECRUITER_DIRECT_REPLY'
+    ) {
+      const evDom = (ev.fromDomain || '').toLowerCase().trim();
+      const evComp = (ev.company || '').toLowerCase().trim();
+      if (
+        (cleanDom && evDom && (evDom === cleanDom || evDom.endsWith('.' + cleanDom) || cleanDom.endsWith('.' + evDom))) ||
+        (cleanComp && evComp && (evComp === cleanComp || evComp.includes(cleanComp) || cleanComp.includes(evComp)))
+      ) {
+        return {
+          suppressed: true,
+          stage: ev.stage,
+          reason: `suppressed_by_inbox_lifecycle (${ev.stage})`,
+        };
+      }
+    }
+  }
+  return { suppressed: false };
+}
+
+export function resolveBounceFallbackEmail(
+  targetEmail: string,
+  domain: string,
+  events: InboxLifecycleEvent[],
+  explicitFallback?: string
+): { email: string; wasBounced: boolean } {
+  const cleanTarget = (targetEmail || '').toLowerCase().trim();
+  const isBounced = events.some(
+    (e) => e.stage === 'HARD_BOUNCE_550' && e.bouncedRecipient?.toLowerCase().trim() === cleanTarget
+  );
+  if (!isBounced) {
+    return { email: targetEmail, wasBounced: false };
+  }
+  const fallback = (explicitFallback || (domain ? `talent@${domain}` : '')).toLowerCase().trim();
+  if (fallback && fallback !== cleanTarget) {
+    return { email: fallback, wasBounced: true };
+  }
+  return { email: targetEmail, wasBounced: true };
+}
+
 export function resolveResumeAttachmentForArchetype(
   archetype: JobArchetype,
   resumesDir = 'state/autoapply/resumes'
@@ -169,6 +226,7 @@ export async function runOutreachBatch(options: {
   limit?: number;
   leadsPath?: string;
   ledgerPath?: string;
+  lifecycleEvents?: InboxLifecycleEvent[];
 }): Promise<OutreachBatchResult> {
   loadEnvFile();
 
@@ -194,6 +252,7 @@ export async function runOutreachBatch(options: {
 
   const leads: OutreachLeadItem[] = JSON.parse(fs.readFileSync(leadsPath, 'utf8'));
   const ledger = loadSentLedger(ledgerPath);
+  const lifecycleEvents = options.lifecycleEvents || loadInboxLifecycleEvents();
 
   const resultItems: OutreachBatchResult['items'] = [];
   const seenDomainsInBatch = new Set<string>();
@@ -207,10 +266,56 @@ export async function runOutreachBatch(options: {
       break;
     }
 
-    const email = (lead.targetEmail || '').trim().toLowerCase();
+    let email = (lead.targetEmail || '').trim().toLowerCase();
     const company = (lead.company || '').trim();
     const roleTitle = (lead.roleTitle || '').trim();
-    const domain = email.includes('@') ? email.split('@')[1]!.trim().toLowerCase() : '';
+    let domain = email.includes('@') ? email.split('@')[1]!.trim().toLowerCase() : '';
+
+    // GEN-456: Suppress domain if lifecycle event indicates rejection, interview/OA, or recruiter direct reply
+    const suppressCheck = isDomainSuppressedByInboxLifecycle(company, domain, lifecycleEvents);
+    if (suppressCheck.suppressed) {
+      resultItems.push({
+        company,
+        targetEmail: email,
+        roleTitle,
+        archetype: lead.archetype || determineJobArchetype(roleTitle),
+        resumePdf: '',
+        status: 'skipped',
+        reason: suppressCheck.reason || 'suppressed_by_inbox_lifecycle',
+      });
+      skippedCount++;
+      continue;
+    }
+
+    // GEN-456: Fallback if recipient previously suffered 550 hard bounce
+    const fallbackCheck = resolveBounceFallbackEmail(email, domain, lifecycleEvents, (lead as any).fallbackEmail);
+    if (fallbackCheck.wasBounced) {
+      recordWonderPillDeadEnd({
+        sourceOrigin: 'imap_bounce_550',
+        whatWentWrong: `SMTP 550 hard bounce observed for ${email}`,
+        whyDisqualifying: 'Recipient address not found or permanently rejected by MTA',
+        company,
+        domain,
+      });
+
+      if (fallbackCheck.email && fallbackCheck.email !== email) {
+        console.log(`[OUTREACH_BATCH] Bounced recipient ${email} detected; falling back to ${fallbackCheck.email}`);
+        email = fallbackCheck.email;
+        domain = email.includes('@') ? email.split('@')[1]!.trim().toLowerCase() : domain;
+      } else {
+        resultItems.push({
+          company,
+          targetEmail: email,
+          roleTitle,
+          archetype: lead.archetype || determineJobArchetype(roleTitle),
+          resumePdf: '',
+          status: 'skipped',
+          reason: 'Hard bounce 550 with no secondary fallback',
+        });
+        skippedCount++;
+        continue;
+      }
+    }
 
     // 1. Poison prefix shield
     if (isPoisonPrefixEmail(email)) {

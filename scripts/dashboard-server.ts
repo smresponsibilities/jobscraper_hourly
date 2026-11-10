@@ -9,6 +9,7 @@ import { syncGitHubActionsPillars } from './sync-github-actions-pillars.js';
 import { executeFullDatabaseRecovery } from './recover-gen100-103-jobs.js';
 import { runOutreachBatch } from './send-outreach-batch.js';
 import { getDoctorStatus } from '../src/autoapply/health-and-ram-watchdog.js';
+import { loadInboxLifecycleEvents } from '../src/autoapply/inbox-lifecycle-tracker.js';
 
 const PORT = Number(process.env.AUTOAPPLY_DASHBOARD_PORT || 4321);
 const LOG_PATH = path.resolve('out/hourly-daemon.log');
@@ -722,6 +723,20 @@ function renderDashboardHtml(initialTelemetry?: any, initialErrors?: any, initia
 </head>
 <body>
 <div class="container">
+  <!-- GEN-455: Glowing Green Urgent Interviews & OAs Radar Banner -->
+  <div id="inbox-interview-banner" style="display: none; margin-bottom: 16px; background: rgba(16, 185, 129, 0.15); border: 1px solid #10b981; border-radius: 8px; padding: 14px 20px; box-shadow: 0 0 15px rgba(16, 185, 129, 0.3);">
+    <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <span style="font-size: 24px;">🎯</span>
+        <div>
+          <div style="font-weight: 700; font-size: 15px; color: #34d399;" id="inbox-banner-title">INTERVIEWS & ONLINE ASSESSMENTS RADAR</div>
+          <div style="font-size: 12.5px; color: var(--text-primary); margin-top: 2px;" id="inbox-banner-subtitle">Recruiter replies or technical assessments detected in your inbox!</div>
+        </div>
+      </div>
+      <div id="inbox-banner-pills" style="display: flex; gap: 8px; flex-wrap: wrap;"></div>
+    </div>
+  </div>
+
   <header>
     <div class="header-title">
       <div class="pulse-dot"></div>
@@ -1959,11 +1974,53 @@ async function triggerOutreachBatch(isDryRun) {
   }
 }
 
+function updateInboxLifecycleUi(events) {
+  if (!Array.isArray(events)) return;
+  const urgentEvents = events.filter(function(e) {
+    return e.stage === 'INTERVIEW_OR_OA_INVITE' || e.stage === 'RECRUITER_DIRECT_REPLY';
+  });
+  const banner = document.getElementById('inbox-interview-banner');
+  if (!banner) return;
+  if (urgentEvents.length > 0) {
+    banner.style.display = 'block';
+    const subTitle = document.getElementById('inbox-banner-subtitle');
+    if (subTitle) {
+      subTitle.textContent = urgentEvents.length + ' urgent lifecycle event(s) detected: ' + urgentEvents.map(function(e) {
+        return (e.fromDomain || e.company || e.fromAddress);
+      }).join(', ');
+    }
+    const pillsContainer = document.getElementById('inbox-banner-pills');
+    if (pillsContainer) {
+      pillsContainer.innerHTML = urgentEvents.slice(0, 4).map(function(e) {
+        const tag = e.stage === 'INTERVIEW_OR_OA_INVITE' ? '🎯 OA/Interview' : '💬 Recruiter Reply';
+        return '<span class="badge badge-success" style="font-size: 11px; padding: 4px 8px;" title="' + (e.snippet || '').replace(/"/g, '&quot;') + '">' + tag + ': ' + (e.fromDomain || e.company || e.fromAddress) + '</span>';
+      }).join('');
+    }
+  } else {
+    banner.style.display = 'none';
+  }
+}
+
+async function pollInboxLifecycle() {
+  try {
+    const res = await fetch('/api/inbox-lifecycle');
+    if (res.ok) {
+      const data = await res.json();
+      updateInboxLifecycleUi(data.events || []);
+    }
+  } catch (err) {
+    console.error('Inbox lifecycle fetch error:', err);
+  } finally {
+    setTimeout(pollInboxLifecycle, 5000);
+  }
+}
+
 pollTelemetry();
 pollAppliedJobs();
 pollHourlyJobs();
 pollOvernightErrors();
 pollOutreachLeads();
+pollInboxLifecycle();
 
 </script>
 </body>
@@ -2206,6 +2263,22 @@ export function startDashboardServer(port = PORT): http.Server {
       } catch (err: any) {
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: err?.message || 'Internal telemetry error' }));
+      }
+      return;
+    }
+
+    if (url.pathname === '/api/inbox-lifecycle') {
+      try {
+        const events = loadInboxLifecycleEvents();
+        res.writeHead(200, {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Cache-Control': 'no-store, no-cache, must-revalidate',
+          'Access-Control-Allow-Origin': '*',
+        });
+        res.end(JSON.stringify({ events, count: events.length }));
+      } catch (err: any) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err?.message || 'Error reading inbox lifecycle events' }));
       }
       return;
     }
