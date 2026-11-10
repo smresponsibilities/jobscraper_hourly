@@ -743,6 +743,27 @@ export async function ensureSmartRecruitersApplicationStarted(
     }
   }
 
+  // Ticket GEN-453: Resolve 36-char UUID from SmartRecruiters API if not transitioned to /oneclick-ui/
+  if (!/\/oneclick-ui\//i.test(page.url())) {
+    try {
+      const match = page.url().match(/smartrecruiters\.com\/(?:ni\/)?([^/?#]+)\/([a-f0-9-]{15,}|[0-9]{10,})/i);
+      if (match && match[1] && match[2]) {
+        const company = match[1];
+        const postingId = match[2];
+        const apiUrl = `https://api.smartrecruiters.com/v1/companies/${company}/postings/${postingId}`;
+        const res = await page.request.get(apiUrl, { timeout: 5000 }).catch(() => null);
+        if (res && res.ok()) {
+          const json = (await res.json().catch(() => null)) as { id?: string } | null;
+          const uuid = json?.id;
+          if (uuid && typeof uuid === 'string' && uuid.length >= 32) {
+            const oneClickUrl = `https://www.smartrecruiters.com/oneclick-ui/company/${company}/publication/${uuid}`;
+            await page.goto(oneClickUrl, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
+          }
+        }
+      }
+    } catch {}
+  }
+
   return await waitForOneClickInputs(15000);
 }
 
@@ -1875,6 +1896,64 @@ export class AutoApplyRunner {
     }
 
     const tag = (await input.evaluate(el => el.tagName.toLowerCase()).catch(() => 'input')) || 'input';
+    if (text.length > 35) {
+      // Ticket GEN-452 / GEN-104: Fast-chunk strings with text.length > 35 (typing 4 chars then .fill(text) in 150ms)
+      await input.pressSequentially(text.slice(0, 4), { delay: 15 }).catch(() => {});
+      await input.fill(text, { timeout: 2500 }).catch(() => {});
+      await this.page?.waitForTimeout?.(150).catch(() => {});
+      await input
+        .evaluate((el, val) => {
+          if ((el as HTMLElement).isContentEditable || el.getAttribute('contenteditable') === 'true') {
+            (el as HTMLElement).focus();
+            el.textContent = val;
+            el.dispatchEvent(
+              new InputEvent('input', {
+                bubbles: true,
+                composed: true,
+                data: val,
+                inputType: 'insertText',
+              })
+            );
+            el.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+            el.dispatchEvent(new FocusEvent('blur', { bubbles: true, composed: true }));
+            return;
+          }
+          const target = el as HTMLInputElement | HTMLTextAreaElement;
+          const proto =
+            target instanceof HTMLTextAreaElement
+              ? window.HTMLTextAreaElement.prototype
+              : window.HTMLInputElement.prototype;
+          const nativeSetter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+          try {
+            const tracker = (target as unknown as { _valueTracker?: { setValue: (v: string) => void } })._valueTracker;
+            if (tracker && typeof tracker.setValue === 'function') {
+              tracker.setValue('');
+            }
+          } catch {}
+          if (nativeSetter) {
+            nativeSetter.call(target, val);
+          } else {
+            target.value = val;
+          }
+          target.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+          target.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+          target.dispatchEvent(new FocusEvent('blur', { bubbles: true, composed: true }));
+          const root = target.getRootNode?.();
+          if (root && (root as ShadowRoot).host) {
+            const host = (root as ShadowRoot).host as HTMLElement & { value?: unknown };
+            try {
+              if ('value' in host) {
+                host.value = val;
+              }
+              host.dispatchEvent(new CustomEvent('valueChange', { detail: val, bubbles: true, composed: true }));
+              host.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+              host.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+            } catch {}
+          }
+        }, text)
+        .catch(() => {});
+      return;
+    }
     if (text.length > 2) {
       // Ticket GEN-104.2 / GEN-115 / GEN-159 / GEN-196: Fast-chunk text with React _valueTracker reset & timeout
       await input.pressSequentially(text.slice(0, 2), { delay: 15 }).catch(() => {});
@@ -4869,8 +4948,8 @@ export class AutoApplyRunner {
           if (reviewedSignature !== currentSignature) {
             const formOpenedAtMs = Date.parse(report.startTime) || Date.now();
             const alreadyElapsedMs = Date.now() - formOpenedAtMs;
-            // Ticket GEN-104.1 / GEN-159: Lower required elapsed floor from 18s-22s down to 4000ms (4s)
-            const remainingHumanFloorMs = alreadyElapsedMs >= 4000 ? 0 : Math.min(3000, 4000 - alreadyElapsedMs);
+            // Ticket GEN-452 / GEN-104: Set pre-submit sleep to 0ms when alreadyElapsedMs >= 18000
+            const remainingHumanFloorMs = alreadyElapsedMs >= 18000 ? 0 : (alreadyElapsedMs >= 4000 ? 0 : Math.min(3000, 4000 - alreadyElapsedMs));
             if (remainingHumanFloorMs > 0) {
               await this.page!.waitForTimeout(remainingHumanFloorMs).catch(() => {});
             }

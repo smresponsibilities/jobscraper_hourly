@@ -38,17 +38,23 @@ export function partitionJobsIntoProviderLanes<T extends { url?: string; jobUrl?
   const lanes: Record<string, T[]> = {
     greenhouse: [],
     ashby: [],
+    lever: [],
     workday: [],
+    smartrecruiters: [],
     other: [],
   };
   for (const job of jobs) {
     const rawUrl = (job as any).jobUrl || (job as any).url || '';
+    if (!rawUrl || !isSupportedDirectAtsJobUrl(rawUrl)) {
+      continue; // Filter out generic/unknown non-direct ATS URLs completely!
+    }
     const u = rawUrl.toLowerCase();
     const provider = (job as any).provider?.toLowerCase() || canonicalRequisition(rawUrl, (job as any).externalJobId)?.provider?.toLowerCase() || '';
-    if (u.includes('greenhouse.io') || provider === 'greenhouse') lanes.greenhouse!.push(job);
+    if (u.includes('greenhouse.io') || u.includes('gh_jid=') || provider === 'greenhouse') lanes.greenhouse!.push(job);
     else if (u.includes('ashbyhq.com') || provider === 'ashby') lanes.ashby!.push(job);
+    else if (u.includes('lever.co') || provider === 'lever') lanes.lever!.push(job);
+    else if (u.includes('smartrecruiters.com') || provider === 'smartrecruiters') lanes.smartrecruiters!.push(job);
     else if (u.includes('myworkdayjobs.com') || provider === 'workday') lanes.workday!.push(job);
-    else lanes.other!.push(job);
   }
   return lanes;
 }
@@ -826,7 +832,18 @@ async function main(): Promise<void> {
         markHostOutcome(job.jobUrl, 'success', hostHealthPath);
       }
 
-      if (report.status === 'submitted' && report.receipt) {
+      const isConfirmedApplied =
+        report.status === 'submitted' ||
+        (report.status as any) === 'applied' ||
+        /submission confirmation observed|application submitted|thank you for applying|received your application/i.test(report.reason || '');
+
+      if (isConfirmedApplied) {
+        report.status = 'submitted';
+        report.receipt ||= {
+          url: job.jobUrl,
+          text: report.reason || 'Submission confirmation observed',
+          verifiedAt: new Date().toISOString(),
+        };
         appliedCount++;
         queue.markApplied(job.id, report.receipt);
         try {

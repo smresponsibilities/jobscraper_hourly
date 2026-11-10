@@ -196,6 +196,8 @@ export async function runOutreachBatch(options: {
   const ledger = loadSentLedger(ledgerPath);
 
   const resultItems: OutreachBatchResult['items'] = [];
+  const seenDomainsInBatch = new Set<string>();
+  const seenCompaniesInBatch = new Set<string>();
   let sentCount = 0;
   let skippedCount = 0;
 
@@ -228,6 +230,14 @@ export async function runOutreachBatch(options: {
       continue;
     }
 
+    // 3.5 Intra-batch deduplication: at most 1 email per company domain / company in a single batch!
+    const domainKey = domain.toLowerCase();
+    const companyKey = company.toLowerCase();
+    if (seenDomainsInBatch.has(domainKey) || seenCompaniesInBatch.has(companyKey)) {
+      skippedCount++;
+      continue;
+    }
+
     // 4. DNS MX record validation
     let mxOk = lead.mxVerified;
     if (!mxOk && domain) {
@@ -256,6 +266,9 @@ export async function runOutreachBatch(options: {
       skippedCount++;
       continue;
     }
+
+    seenDomainsInBatch.add(domainKey);
+    seenCompaniesInBatch.add(companyKey);
 
     if (dryRun) {
       console.log(

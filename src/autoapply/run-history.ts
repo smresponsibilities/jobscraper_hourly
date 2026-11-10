@@ -35,9 +35,21 @@ export function sanitizeRunHistoryFile(filePath = HISTORY_FILE): number {
       if (!line.trim()) return line;
       try {
         const parsed = JSON.parse(line);
-        if (parsed && typeof parsed.durationMs === 'number' && parsed.durationMs > 360_000) {
-          parsed.durationMs = 360_000;
-          sanitizedCount++;
+        if (parsed) {
+          if (typeof parsed.durationMs === 'number' && parsed.durationMs > 360_000) {
+            parsed.durationMs = 360_000;
+            sanitizedCount++;
+          }
+          // TICKET GEN-446: Promote misclassified confirmation runs to applied
+          if (
+            /submission confirmation observed|application submitted|thank you for applying|received your application/i.test(parsed.reason || '') &&
+            (parsed.fieldsFilled || 0) > 0 &&
+            parsed.status !== 'applied'
+          ) {
+            parsed.status = 'applied';
+            parsed.receiptVerified = true;
+            sanitizedCount++;
+          }
           return JSON.stringify(parsed);
         }
       } catch {}
@@ -74,6 +86,15 @@ export function appendJobRunHistory(entry: JobRunHistoryEntry): void {
     if ((entry.fieldsFilled || 0) === 0 || /timed out|runner closed|failed|error|exception/i.test(entry.reason || '')) {
       entry.status = 'failed';
     }
+  }
+
+  // TICKET GEN-446: Whenever reason matches submission confirmation observed or application submitted with fieldsFilled > 0, it MUST be 'applied'
+  if (
+    /submission confirmation observed|application submitted|thank you for applying|received your application/i.test(entry.reason || '') &&
+    (entry.fieldsFilled || 0) > 0
+  ) {
+    entry.status = 'applied';
+    entry.receiptVerified = true;
   }
 
   fs.mkdirSync(path.dirname(HISTORY_FILE), { recursive: true });

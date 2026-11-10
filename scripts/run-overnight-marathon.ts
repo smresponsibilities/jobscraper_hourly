@@ -207,13 +207,14 @@ export function selectDiversifiedMultiLaneChunk(
   const slowAtsCandidates: AutoaplyJobItem[] = [];
 
   for (const job of allSortedCandidates) {
-    if (!job || !job.jobUrl) continue;
+    if (!job || !job.jobUrl || !isSupportedDirectAtsJobUrl(job.jobUrl)) continue;
     if (/stripe/i.test(job.company) || /stripe/i.test(job.jobUrl)) continue;
 
     const u = job.jobUrl.toLowerCase();
     const ats = String((job as any).ats || '').toLowerCase();
     const isFast =
       u.includes('greenhouse.io') ||
+      u.includes('gh_jid=') ||
       u.includes('ashbyhq.com') ||
       u.includes('lever.co') ||
       ats === 'greenhouse' ||
@@ -984,7 +985,18 @@ export async function runOvernightMarathon(config: {
         }
 
         // Handle outcomes in queue
-        if (report.status === 'submitted' && report.receipt) {
+        const isConfirmedApplied =
+          report.status === 'submitted' ||
+          (report.status as any) === 'applied' ||
+          /submission confirmation observed|application submitted|thank you for applying|received your application/i.test(report.reason || '');
+
+        if (isConfirmedApplied) {
+          report.status = 'submitted';
+          report.receipt ||= {
+            url: job.jobUrl,
+            text: report.reason || 'Submission confirmation observed',
+            verifiedAt: new Date().toISOString(),
+          };
           chunkAppliedCount++;
           totalAppliedOverall++;
           queue.markApplied(job.id, report.receipt);

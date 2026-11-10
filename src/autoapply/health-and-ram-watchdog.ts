@@ -52,6 +52,19 @@ export function identifyOrphanedChromePids(
 
 let totalZombiesReaped = 0;
 
+export function hasJobsInFlight(): boolean {
+  try {
+    const journalPath = path.resolve('state/autoapply/portal-review/in-flight-checkpoint.json');
+    if (fs.existsSync(journalPath)) {
+      const data = JSON.parse(fs.readFileSync(journalPath, 'utf8'));
+      if (typeof data === 'object' && data !== null && Object.keys(data).length > 0) {
+        return true;
+      }
+    }
+  } catch {}
+  return ActiveBrowserRegistry.size > 0;
+}
+
 /**
  * Queries Windows chrome.exe processes and kills any chrome.exe older than maxAgeSeconds not in ActiveBrowserRegistry.
  * If forceKillAll is true (used strictly at 0-in-flight chunk boundaries), kills ALL chrome.exe processes.
@@ -62,6 +75,11 @@ export function reapZombieChromeProcesses(maxAgeSeconds = 180, forceKillAll = fa
   reapedCount: number;
 } {
   if (process.platform !== 'win32') {
+    return { remainingChromeCount: 0, chromeWorkingSetMb: 0, reapedCount: 0 };
+  }
+
+  // TICKET GEN-445: NEVER run taskkill on automation chrome while jobs are in flight!
+  if (!forceKillAll && hasJobsInFlight()) {
     return { remainingChromeCount: 0, chromeWorkingSetMb: 0, reapedCount: 0 };
   }
 

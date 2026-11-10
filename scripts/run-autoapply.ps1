@@ -1,6 +1,30 @@
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
 $ErrorActionPreference = "Continue"
+
+# TICKET GEN-445: Check worker.lock liveness AT THE VERY TOP before touching any chrome.exe or doing any work!
+$AllLockFiles = @(
+    "D:\Jobscraper-next\state\autoapply\portal-review\worker.lock",
+    "D:\Jobscraper-next\state\autoapply\worker.lock"
+)
+foreach ($lf in $AllLockFiles) {
+    if (Test-Path $lf) {
+        try {
+            $lockJson = Get-Content $lf -Raw -ErrorAction SilentlyContinue | ConvertFrom-Json
+            if ($lockJson.pid) {
+                $workerPid = $lockJson.pid
+                $proc = Get-Process -Id $workerPid -ErrorAction SilentlyContinue
+                if ($proc -and $proc.ProcessName -match "node") {
+                    $now = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+                    $msg = "[$now] [WATCHDOG] Daemon PID $workerPid already active (lock held in $lf) — exiting immediately without killing Chrome."
+                    Write-Output $msg
+                    exit 0
+                }
+            }
+        } catch {}
+    }
+}
+
 $env:NODE_NO_WARNINGS = "1"
 $PSDefaultParameterValues['Out-File:Encoding'] = 'utf8'
 Set-Location "D:\Jobscraper-next"
