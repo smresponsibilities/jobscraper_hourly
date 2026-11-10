@@ -8,6 +8,7 @@ import {
   ContinuousRamAndHealthWatchdog,
   reapZombieChromeProcesses,
   scrubBrowserCachesAndTempDirs,
+  computeRecommendedLanes,
 } from './health-and-ram-watchdog.js';
 
 test('GEN-311: LOW_RAM_CHROMIUM_ARGS caps memory and processes', () => {
@@ -63,4 +64,52 @@ test('GEN-314: ContinuousRamAndHealthWatchdog wired into marathon, drain and sco
 
   const dashboardSrc = fs.readFileSync('scripts/dashboard-server.ts', 'utf8');
   assert.ok(dashboardSrc.includes('/api/ram-health'), 'dashboard must expose /api/ram-health');
+});
+
+test('GEN-426: Recalibrated lane thresholds run 4 lanes at 1.17 GB free RAM and verify boundary conditions', () => {
+  // Baseline test: 1.17 GB free RAM and ~85% used RAM runs 4 lanes in NORMAL mode
+  const at117Gb = computeRecommendedLanes(1.17, 85.0);
+  assert.equal(at117Gb.recommendedLaneCount, 4, '1.17 GB free RAM must run 4 lanes');
+  assert.equal(at117Gb.healthStatus, 'NORMAL');
+
+  // CRITICAL_RAM_RECOVERY: only when freeRamGb < 0.45 OR usedRamPct >= 95
+  const critLowRam = computeRecommendedLanes(0.44, 80.0);
+  assert.equal(critLowRam.recommendedLaneCount, 1);
+  assert.equal(critLowRam.healthStatus, 'CRITICAL_RAM_RECOVERY');
+
+  const critHighUsed = computeRecommendedLanes(1.5, 95.0);
+  assert.equal(critHighUsed.recommendedLaneCount, 1);
+  assert.equal(critHighUsed.healthStatus, 'CRITICAL_RAM_RECOVERY');
+
+  // THROTTLE_DOWN_LOW_RAM: when 0.45 <= freeRamGb < 0.85 OR usedRamPct >= 91
+  const throttleLowRam = computeRecommendedLanes(0.45, 80.0);
+  assert.equal(throttleLowRam.recommendedLaneCount, 2);
+  assert.equal(throttleLowRam.healthStatus, 'THROTTLE_DOWN_LOW_RAM');
+
+  const throttleUpperLowRam = computeRecommendedLanes(0.84, 80.0);
+  assert.equal(throttleUpperLowRam.recommendedLaneCount, 2);
+  assert.equal(throttleUpperLowRam.healthStatus, 'THROTTLE_DOWN_LOW_RAM');
+
+  const throttleHighUsed = computeRecommendedLanes(1.2, 91.0);
+  assert.equal(throttleHighUsed.recommendedLaneCount, 2);
+  assert.equal(throttleHighUsed.healthStatus, 'THROTTLE_DOWN_LOW_RAM');
+
+  // NORMAL: when 0.85 <= freeRamGb < 2.4
+  const normalLower = computeRecommendedLanes(0.85, 80.0);
+  assert.equal(normalLower.recommendedLaneCount, 4);
+  assert.equal(normalLower.healthStatus, 'NORMAL');
+
+  const normalUpper = computeRecommendedLanes(2.39, 75.0);
+  assert.equal(normalUpper.recommendedLaneCount, 4);
+  assert.equal(normalUpper.healthStatus, 'NORMAL');
+
+  // OPTIMAL_SCALE_UP: when freeRamGb >= 2.4 AND usedRamPct <= 80
+  const optimal = computeRecommendedLanes(2.4, 80.0);
+  assert.equal(optimal.recommendedLaneCount, 6);
+  assert.equal(optimal.healthStatus, 'OPTIMAL_SCALE_UP');
+
+  // If freeRamGb >= 2.4 but usedRamPct > 80, drops back to NORMAL (4 lanes)
+  const optimalBlockedByUsedRam = computeRecommendedLanes(2.5, 80.1);
+  assert.equal(optimalBlockedByUsedRam.recommendedLaneCount, 4);
+  assert.equal(optimalBlockedByUsedRam.healthStatus, 'NORMAL');
 });

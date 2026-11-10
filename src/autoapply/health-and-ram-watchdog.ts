@@ -99,11 +99,51 @@ export function scrubBrowserCachesAndTempDirs(): number {
     }
   } catch {}
 
+  // Windows Working-Set trimmer: trim unused memory pages from background processes via PowerShell [System.GC]::Collect() & Node global.gc?.()
+  if (process.platform === 'win32') {
+    try {
+      execSync(
+        'powershell -NoProfile -NonInteractive -Command "try { Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.WorkingSet64 -gt 30MB } | ForEach-Object { try { $_.MinWorkingSet = $_.MinWorkingSet } catch {} } } catch {}; [System.GC]::Collect()"',
+        { stdio: 'ignore', timeout: 4000, windowsHide: true }
+      );
+    } catch {}
+  }
+
   try {
-    if (typeof (global as any).gc === 'function') (global as any).gc();
+    // @ts-ignore
+    global.gc?.();
+    (global as any).gc?.();
   } catch {}
 
   return cleaned;
+}
+
+export function computeRecommendedLanes(
+  freeRamGb: number,
+  usedRamPct: number,
+  remainingChromeCount = 0
+): {
+  recommendedLaneCount: number;
+  healthStatus: SystemRamAndHealthSnapshot['healthStatus'];
+} {
+  let recommendedLaneCount = 4;
+  let healthStatus: SystemRamAndHealthSnapshot['healthStatus'] = 'NORMAL';
+
+  if (freeRamGb < 0.45 || usedRamPct >= 95) {
+    recommendedLaneCount = 1;
+    healthStatus = 'CRITICAL_RAM_RECOVERY';
+  } else if (freeRamGb < 0.85 || usedRamPct >= 91 || remainingChromeCount > 38) {
+    recommendedLaneCount = 2;
+    healthStatus = 'THROTTLE_DOWN_LOW_RAM';
+  } else if (freeRamGb >= 2.4 && usedRamPct <= 80 && remainingChromeCount < 24) {
+    recommendedLaneCount = 6;
+    healthStatus = 'OPTIMAL_SCALE_UP';
+  } else {
+    recommendedLaneCount = 4;
+    healthStatus = 'NORMAL';
+  }
+
+  return { recommendedLaneCount, healthStatus };
 }
 
 /**
@@ -129,22 +169,11 @@ export function evaluateSystemHealthAndAdaptiveLanes(runReaper = true): SystemRa
     usedRamPct = Number((((totalBytes - freeBytes) / totalBytes) * 100).toFixed(1));
   }
 
-  let recommendedLaneCount = 4;
-  let healthStatus: SystemRamAndHealthSnapshot['healthStatus'] = 'NORMAL';
-
-  if (freeRamGb < 1.6 || usedRamPct >= 90) {
-    recommendedLaneCount = 1;
-    healthStatus = 'CRITICAL_RAM_RECOVERY';
-  } else if (freeRamGb < 2.8 || usedRamPct >= 82 || reaperStats.remainingChromeCount > 38) {
-    recommendedLaneCount = 2;
-    healthStatus = 'THROTTLE_DOWN_LOW_RAM';
-  } else if (freeRamGb >= 5.2 && usedRamPct <= 68 && reaperStats.remainingChromeCount < 24) {
-    recommendedLaneCount = 6;
-    healthStatus = 'OPTIMAL_SCALE_UP';
-  } else {
-    recommendedLaneCount = 4;
-    healthStatus = 'NORMAL';
-  }
+  const { recommendedLaneCount, healthStatus } = computeRecommendedLanes(
+    freeRamGb,
+    usedRamPct,
+    reaperStats.remainingChromeCount
+  );
 
   const snapshot: SystemRamAndHealthSnapshot = {
     timestamp: new Date().toISOString(),
