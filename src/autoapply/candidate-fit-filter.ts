@@ -23,7 +23,7 @@ const JUNIOR_OVERRIDE_REGEX =
   /\b(?:intern|internship|apprentice|apprenticeship|new\s+grad|graduate|fresher|trainee|entry[\s-]*level|junior|jr\.?|associate)\b/i;
 
 const NON_TECH_TITLE_REGEX =
-  /\b(?:account\s+executive|account\s+manager|business\s+development|\bbdr\b|\bsdr\b|sales\s+representative|sales\s+manager|customer\s+success|recruiter|talent\s+acquisition|human\s+resources|\bhr\b|people\s+operations|payroll|accountant|accounting|tax\s+|audit\s+|financial\s+advisor|legal\s+counsel|attorney|paralegal|lawyer|marketing\s+manager|content\s+writer|copywriter|social\s+media|public\s+relations|graphic\s+designer|receptionist|executive\s+assistant|office\s+manager|facilities|warehouse|forklift|driver|nurse|nursing|physician|pharmacist|therapist|medical\s+assistant|dentist|veterinarian|mechanical|mep\b|civil\s+engineer|plumbing|hvac|facility\s+engineer|shift\s+engineer|duty\s+engineer|desktop\s+and\s+site\s+support|desktop\s+support|representative|advisory|oncology|operations\s+analyst)\b/i;
+  /\b(?:account\s+executive|account\s+manager|business\s+development|\bbdr\b|\bsdr\b|sales\s+representative|sales\s+manager|customer\s+success|recruiter|talent\s+acquisition|human\s+resources|\bhr\b|people\s+operations|payroll|accountant|accounting|tax\s+|audit\s+|financial\s+advisor|legal\s+counsel|attorney|paralegal|lawyer|marketing\s+manager|content\s+writer|copywriter|social\s+media|public\s+relations|graphic\s+designer|receptionist|executive\s+assistant|office\s+manager|facilities|warehouse|forklift|driver|nurse|nursing|physician|pharmacist|therapist|medical\s+assistant|dentist|veterinarian|mechanical|mep\b|civil\s+engineer|plumbing|hvac|facility\s+engineer|shift\s+engineer|duty\s+engineer|desktop\s+and\s+site\s+support|desktop\s+support|representative|advisory|oncology|operations\s+analyst|structural\s+project|structural\s+engineer|civil\s+engineer|mechanical\s+engineer|warranty\s+engineer|construction|manufacturing\s+engineer|plant\s+engineer|chemical\s+engineer|industrial\s+engineer|research\s+compliance|compliance\s+specialist|supervisor|apartment\s+life|vein\s+center|clinical\s+nurse|event\s+coordinator)\b/i;
 
 const TECH_ROLE_SIGNAL_REGEX =
   /\b(?:software|engineer|engineering|developer|programmer|\bsde\b|\bswe\b|backend|back-end|frontend|front-end|full[\s-]*stack|fullstack|data\s+scientist|data\s+engineer|data\s+analyst|machine\s+learning|\bml\b|\bai\b|artificial\s+intelligence|deep\s+learning|\bllm\b|\bnlp\b|genai|devops|\bsre\b|site\s+reliability|platform|infrastructure|cloud|kubernetes|security|cybersecurity|infosec|\bqa\b|quality\s+assurance|test|sdet|automation|mobile|android|ios|kotlin|flutter|react|node|python|java|golang|rust|c\+\+|database|clickhouse|spark|kafka|etl|analytics|quant|quantitative|systems|firmware|embedded|web\s+developer|application\s+developer|technical|technology\s+apprentice|member\s+of\s+technical\s+staff|\bmts\b)\b/i;
@@ -38,7 +38,7 @@ const FOREIGN_ONLY_LOCATION_REGEX =
 
 export function evaluateCandidateJobFit(input: CandidateFitInput): CandidateFitResult {
   const company = String(input.company || '').trim().toLowerCase();
-  if (ISOLATED_TENANTS.has(company)) {
+  if (ISOLATED_TENANTS.has(company) || /\b(?:spacex|apartment\s+life|vein\s+center)\b/i.test(company)) {
     return { allowed: false, reason: 'isolated_tenant', priorityBonus: 0, isBengaluru: false, isIndia: false };
   }
 

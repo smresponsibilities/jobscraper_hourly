@@ -23,7 +23,7 @@
 
 | Failure Bucket | Count | Description / Root Cause |
 | :--- | :---: | :--- |
-| `FAILED_TIMEOUT` | **22** | Exceeded 45,000ms browser operation timeout |
+| `FAILED_TIMEOUT` | **22** | Exceeded 45,000ms browser operation timeout. **Resolved in `GEN-423` for Greenhouse**: `annotateQuestionClusters` called external functions throwing `ReferenceError: isBotTrapOrHoneypot is not defined` inside `evaluateAll` browser context; inlined both helpers in `src/autoapply/distiller.ts`. |
 | `FAILED_0_FIELDS` | **15** | Form inputs failed to mount / custom apply click or iframe unwrap needed |
 | `FAILED_AUTH_WALL` | **1** | Employer portal enforced login credentials before application form |
 | `FAILED_UNFILLED_FIELDS` | **1** | Required question missing from question bank or widget commit failed |

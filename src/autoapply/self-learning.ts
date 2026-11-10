@@ -947,5 +947,80 @@ export function resolveOvernightLearnedQuestions(
     return 'No';
   }
 
+  // 15. Verified Accepted Applications Promotion Ledger Lookup (Ticket GEN-403)
+  const verifiedHit = lookupVerifiedAcceptedAnswer(q);
+  if (verifiedHit !== null) {
+    if (options && options.length > 0) {
+      const match = options.find(o => o.trim().toLowerCase() === verifiedHit.trim().toLowerCase()) ||
+                    options.find(o => o.toLowerCase().includes(verifiedHit.toLowerCase()));
+      if (match) return match;
+    } else {
+      return verifiedHit;
+    }
+  }
+
   return null;
+}
+
+export interface VerifiedAcceptedAnswer {
+  jobUrl: string;
+  questionText: string;
+  answer: string;
+  widgetKind?: string;
+  sectionHeading?: string;
+  recordedAt: string;
+}
+
+export const VERIFIED_ACCEPTED_ANSWERS_PATH = path.resolve('state/autoapply/verified-accepted-answers.json');
+
+export function lookupVerifiedAcceptedAnswer(
+  questionText: string,
+  filePath = VERIFIED_ACCEPTED_ANSWERS_PATH
+): string | null {
+  if (!questionText) return null;
+  try {
+    if (!fs.existsSync(filePath)) return null;
+    const existing = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    const key = normalizeQuestionKey(questionText);
+    if (key && existing[key]?.answer !== undefined && existing[key]?.answer !== null) {
+      return String(existing[key].answer);
+    }
+  } catch {}
+  return null;
+}
+
+export function recordVerifiedAcceptedApplicationAnswers(
+  jobUrl: string,
+  entries: Array<{ questionText: string; answer: string; widgetKind?: string; sectionHeading?: string }>,
+  filePath = VERIFIED_ACCEPTED_ANSWERS_PATH
+): void {
+  if (!entries || entries.length === 0) return;
+  try {
+    let existing: Record<string, VerifiedAcceptedAnswer> = {};
+    if (fs.existsSync(filePath)) {
+      try {
+        existing = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+      } catch {
+        existing = {};
+      }
+    }
+    const now = new Date().toISOString();
+    for (const entry of entries) {
+      if (!entry.questionText || entry.answer === undefined || entry.answer === null) continue;
+      const key = normalizeQuestionKey(entry.questionText);
+      if (!key || key.length < 2) continue;
+      existing[key] = {
+        jobUrl,
+        questionText: entry.questionText.slice(0, 300),
+        answer: String(entry.answer).slice(0, 500),
+        widgetKind: entry.widgetKind,
+        sectionHeading: entry.sectionHeading,
+        recordedAt: now,
+      };
+    }
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, JSON.stringify(existing, null, 2), 'utf8');
+  } catch {
+    // Non-fatal recording error
+  }
 }

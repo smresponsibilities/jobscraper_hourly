@@ -79,7 +79,8 @@ function buildMaster1000QuestionCorpus(): QuestionBankEntry[] {
   // Domain 2: Contact & Coding Profiles
   add('contact', [
     'Mobile Phone', 'Phone Number', 'Primary Phone', 'Contact Number', 'Mobile Number',
-    'Cell Phone', 'Telephone Number', 'WhatsApp Number', 'Alternate Phone Number', 'Emergency Contact Number'
+    'Cell Phone', 'Telephone Number', 'WhatsApp Number', 'Alternate Phone Number', 'Emergency Contact Number',
+    'Mobile Phone Number', 'National Phone Number'
   ], '9876543210');
   add('contact', ['Country Phone Code', 'Phone Country Code', 'Dialing Code', 'ISD Code', 'Mobile Country Code'], '+91', 'India (+91)', '91');
   add('contact', ['Phone Device Type', 'Phone Type', 'Primary Phone Type', 'Device Type'], 'Mobile', 'Mobile');
@@ -227,6 +228,10 @@ function buildMaster1000QuestionCorpus(): QuestionBankEntry[] {
     'Does this compensation range align with your expectations?', 'Do you agree with the budgeted compensation range?',
     'Our compensation is based on experience. Does this range align?'
   ], 'Yes', 'Yes', '1');
+  add('compensation', [
+    'Salary Currency', 'Compensation Currency', 'Currency', 'Preferred Currency',
+    'Select Currency', 'Choose your currency'
+  ], 'INR', 'INR (Indian Rupee)', 'INR - Indian Rupee');
 
   // Domain 10: Notice Period, Buyout & Joining Date
   add('notice', [

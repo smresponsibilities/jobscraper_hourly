@@ -8,7 +8,9 @@ export function unwrapDirectAtsApplicationUrl(rawUrl: string): string {
     // 1. Unwrap ANY corporate wrapper URL containing ?gh_jid=<TOKEN> directly to Greenhouse's fast embed form!
     const ghJid = u.searchParams.get('gh_jid');
     if (ghJid && /^\d+$/.test(ghJid.trim()) && !u.hostname.includes('greenhouse.io')) {
-      return `https://boards.greenhouse.io/embed/job_app?token=${ghJid.trim()}`;
+      const isEu = u.hostname.endsWith('.eu') || u.hostname.includes('.eu.') || rawUrl.includes('.eu.') || rawUrl.includes('.eu/');
+      const ghHost = isEu ? 'job-boards.eu.greenhouse.io' : 'boards.greenhouse.io';
+      return `https://${ghHost}/embed/job_app?token=${ghJid.trim()}`;
     }
 
     // 2. Ensure Ashby job URLs jump straight to the /application tab instead of hanging on the JD overview tab!

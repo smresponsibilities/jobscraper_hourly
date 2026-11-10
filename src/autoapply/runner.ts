@@ -32,7 +32,7 @@ import { expandWorkdayApplications, findWorkdayApplication, workdayApplicationsE
 import { ensureWorkdayApplicationStarted } from './workday-entry.js';
 import { authenticateWorkdayPortal } from './authentication.js';
 import { runWorkdayStepFastPass } from './workday-wizard.js';
-import { recordLearnedSuccess, logUnknownFieldForLearning, resolveBySemanticSelfLearning, inferAnswerFromOptionSignature } from './self-learning.js';
+import { recordLearnedSuccess, logUnknownFieldForLearning, resolveBySemanticSelfLearning, inferAnswerFromOptionSignature, recordVerifiedAcceptedApplicationAnswers } from './self-learning.js';
 import { resolveEmployerDomain, findFreeCompanyLeads, generateColdOutreachDraft, recordOutreachLead } from '../leads/free-email-finder.js';
 import { captureElementFingerprint, saveAdaptiveFingerprint, findAdaptiveLocator } from './adaptive-relocator.js';
 import { loadHostSessionState, markHostOutcome } from './session-pool.js';
@@ -1089,6 +1089,27 @@ export class AutoApplyRunner {
         if (/^[a-z0-9.-]+\.[a-z]{2,}(?:\/.*)?$/i.test(val)) return `https://${val}`;
         return 'https://shivammahajan.com';
       }
+    }
+    // Ticket GEN-340: HTML5 Month and Date Sanitizer
+    if (meta.type === 'month') {
+      if (/graduat|degree|education|college|university|completion/i.test(questionText)) {
+        return '2026-08';
+      }
+      return '2025-08';
+    }
+    if (meta.type === 'date') {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(val)) return val;
+      if (/^\d{2}\/\d{2}\/\d{4}$/.test(val)) {
+        const [mm, dd, yyyy] = val.split('/');
+        return `${yyyy}-${mm}-${dd}`;
+      }
+      if (/graduat|degree|education|completion|attend/i.test(questionText)) {
+        return '2026-08-01';
+      }
+      if (/start|from|begin/i.test(questionText)) {
+        return '2025-08-01';
+      }
+      return new Date().toISOString().slice(0, 10);
     }
 
     // Ticket GEN-206: Truncate single-line inputs cleanly to maxLength (Artefact)
@@ -3432,6 +3453,25 @@ export class AutoApplyRunner {
                 continue;
               }
             }
+            if (info.type === 'range') {
+              const appliedVal = await input.evaluate((el) => {
+                const inp = el as HTMLInputElement;
+                const maxVal = inp.max || '5';
+                const protoSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+                if (protoSetter) {
+                  protoSetter.call(inp, maxVal);
+                } else {
+                  inp.value = maxVal;
+                }
+                inp.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+                inp.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+                return maxVal;
+              }).catch(() => '5');
+              action.status = 'filled';
+              action.value = appliedVal || '5';
+              report.fieldsFilled++;
+              continue;
+            }
             let stringVal = String(value);
             if (info.type === 'date' && !/^\d{4}-\d{2}-\d{2}$/.test(stringVal.trim())) {
               const isGraduation = /graduat|degree|education|completion|attend/i.test(descriptor + ' ' + (info.questionTitle || ''));
@@ -3770,14 +3810,16 @@ export class AutoApplyRunner {
       await this.page!.locator('body').waitFor({ state: 'attached' });
       await this.waitReady(Math.min(options.timeoutMs ?? 5000, 5000));
 
-      // Ticket GEN-224: Greenhouse 302 marketing site redirect fallback
-      const ghNavMatch = (target || options.url).match(/(?:boards|job-boards(?:\.eu)?)\.greenhouse\.io\/([^/?#]+)\/jobs\/(\d+)/i);
+      // Ticket GEN-224 & GEN-347: Greenhouse 302 marketing site redirect fallback with EU host preservation
+      const ghNavMatch = (target || options.url).match(/(?:(?:boards|job-boards)(?:\.eu)?)\.greenhouse\.io\/([^/?#]+)\/jobs\/(\d+)/i);
       if (ghNavMatch && ghNavMatch[1] && ghNavMatch[2]) {
         const ghSlug = ghNavMatch[1];
         const ghJobId = ghNavMatch[2];
+        const isEu = (target || options.url).includes('.eu.greenhouse.io');
+        const ghHost = isEu ? 'job-boards.eu.greenhouse.io' : 'boards.greenhouse.io';
         const currentUrl = this.page!.url().toLowerCase();
         if (!currentUrl.includes('greenhouse.io')) {
-          const embedUrl = `https://boards.greenhouse.io/embed/job_app?for=${encodeURIComponent(ghSlug)}&token=${encodeURIComponent(ghJobId)}`;
+          const embedUrl = `https://${ghHost}/embed/job_app?for=${encodeURIComponent(ghSlug)}&token=${encodeURIComponent(ghJobId)}`;
           this.log(`Redirected off Greenhouse to marketing page (${currentUrl}); recovering via embed URL: ${embedUrl}`);
           await this.page!.goto(embedUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
           await this.page!.locator('body').waitFor({ state: 'attached' }).catch(() => {});
@@ -4036,6 +4078,14 @@ export class AutoApplyRunner {
             .catch(() => 0);
 
           if (ghVisibleInputCount < 2) {
+            const rawSrc = await ghIframe.getAttribute('src').catch(() => null);
+            const iframeSrc = rawSrc ? (rawSrc.startsWith('http') ? rawSrc : new URL(rawSrc, this.page!.url()).href) : null;
+            if (iframeSrc && /greenhouse\.io/i.test(iframeSrc)) {
+              this.log(`Unwrapping greenhouse iframe directly to top-level: ${iframeSrc}`);
+              await this.page!.goto(iframeSrc, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
+              await this.page!.locator('body').waitFor({ state: 'attached' }).catch(() => {});
+            }
+
             const applyPillSelectors = [
               'button.btn--pill:has-text("Apply")',
               'button:has-text("Apply for this job")',
@@ -4914,7 +4964,13 @@ export class AutoApplyRunner {
           const summaryPath = path.resolve('state/autoapply/portal-review/queue-summary.json');
           if (existsSync(summaryPath)) {
             const s = JSON.parse(readFileSync(summaryPath, 'utf8'));
-            if (finalStatus === 'applied') s.applied = (s.applied || 0) + 1;
+            if (finalStatus === 'applied') {
+              s.applied = (s.applied || 0) + 1;
+              const verifiedEntries = (report.actions || [])
+                .filter((a): a is typeof a & { question: string } => a.status === 'filled' && typeof a.question === 'string' && a.value !== undefined && a.value !== null)
+                .map((a) => ({ questionText: a.question, answer: String(a.value) }));
+              recordVerifiedAcceptedApplicationAnswers(options.url, verifiedEntries);
+            }
             else if (finalStatus === 'failed') s.failed = (s.failed || 0) + 1;
             else if (finalStatus === 'paused_for_review') s.paused_for_review = (s.paused_for_review || 0) + 1;
             else if (finalStatus === 'skipped') s.skipped = (s.skipped || 0) + 1;

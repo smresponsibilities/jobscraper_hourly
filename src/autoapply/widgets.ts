@@ -67,8 +67,8 @@ export async function verifyChoiceReadBack(
         el.closest('.select-shell, [class*="select__control"], [class$="-control"], [data-select-container], [data-automation-id="multiSelectContainer"], [data-automation-id^="formField-"], .ashby-application-form-field-entry, [data-autoapply-cluster], .field, fieldset') ||
         el.parentElement;
 
-      // 4. Pills and selected value display elements
-      const pill = root?.querySelector('[data-automation-id="selectedItem"], [class*="single-value"], [class*="singleValue"], [class*="multiValue"], [class*="selected-option"], .select__single-value');
+      // 4. Pills and selected value display elements (React-Select, Ashby, Workday - Ticket GEN-333)
+      const pill = root?.querySelector('[data-automation-id="selectedItem"], .select__multi-value__label, .select__single-value, [class*="single-value"], [class*="singleValue"], [class*="multi-value"], [class*="multiValue"], [class*="selected-option"]');
       const pillText = (pill?.textContent || '').trim();
       if (pillText && !isPlaceholder(pillText)) return true;
 
@@ -144,14 +144,14 @@ export async function harvestControlOptions(
   else await control.click({ timeout: 800 }).catch(() => {});
 
   const popupId = await control.getAttribute('aria-controls') || await control.getAttribute('aria-owns');
-  let popup = popupId ? frame.locator(`[id=${JSON.stringify(popupId)}]`) : frame.locator('[role=listbox],[data-automation-id="activeListContainer"],[data-automation-id="responsiveMonikerPrompt"]').filter({ visible: true });
+  let popup = popupId ? frame.locator(`[id=${JSON.stringify(popupId)}]`) : frame.locator('[role=listbox],[data-automation-id="activeListContainer"],[data-automation-id="responsiveMonikerPrompt"],[data-radix-popper-content-wrapper],.MuiAutocomplete-popper,.ant-select-dropdown:not(.ant-select-dropdown-hidden),.select2-dropdown,.chosen-drop').filter({ visible: true });
 
   // Failure 2B: Ambiguous visible menus -> select last mounted
   if (await popup.count() > 1) {
     popup = popup.last();
   }
 
-  let choices = popup.locator('[role=option],[data-automation-id="promptOption"],.select__option,._option_1svni_32,.itta-item').filter({ visible: true });
+  let choices = popup.locator('[role=option],[data-automation-id="promptOption"],.select__option,._option_1svni_32,.itta-item,[data-radix-collection-item],.MuiAutocomplete-option,.MuiMenuItem-root,.ant-select-item-option,[id^="headlessui-listbox-option"],[id*="downshift-"][role="option"],.select2-results__option,.chosen-results li.active-result,.pac-item').filter({ visible: true });
   await choices.first().waitFor({ state: 'visible', timeout: 500 }).catch(() => {});
   let rawChoices = (await choices.allTextContents()).map(text => text.trim()).filter(Boolean);
 
@@ -176,7 +176,7 @@ export async function harvestControlOptions(
       await control.fill(seed).catch(() => {});
     }
     await new Promise(resolve => setTimeout(resolve, 250));
-    choices = popup.locator('[role=option],[data-automation-id="promptOption"],.select__option,._option_1svni_32,.itta-item').filter({ visible: true });
+    choices = popup.locator('[role=option],[data-automation-id="promptOption"],.select__option,._option_1svni_32,.itta-item,[data-radix-collection-item],.MuiAutocomplete-option,.MuiMenuItem-root,.ant-select-item-option,[id^="headlessui-listbox-option"],[id*="downshift-"][role="option"],.select2-results__option,.chosen-results li.active-result,.pac-item').filter({ visible: true });
     let typeaheadChoices = (await choices.allTextContents()).map(text => text.trim()).filter(Boolean);
     if (typeaheadChoices.some(t => ASYNC_LOADING_PLACEHOLDER_REGEX.test(t)) && (Date.now() - harvestStart < HARVEST_TIMEOUT_MS)) {
       await frame.page().waitForTimeout(300);
@@ -301,6 +301,18 @@ export function translateCanonicalAnswerToOption(
     if (blrOpt) return blrOpt.raw;
   }
 
+  // 10. Country ("India" ISO-3166-1 - GEN-342)
+  if (ans === 'india' || /^india$/i.test(ans)) {
+    const indOpt = opts.find((o) => /^(?:india|in|ind|republic\s+of\s+india|india\s*\(\+?91\)|india\s*\+91)$/i.test(o.norm));
+    if (indOpt) return indOpt.raw;
+  }
+
+  // 11. State ("Karnataka" ISO-3166-2:IN - GEN-343)
+  if (ans === 'karnataka' || /^karnataka$/i.test(ans)) {
+    const kaOpt = opts.find((o) => /^(?:karnataka|ka|in-ka)$/i.test(o.norm));
+    if (kaOpt) return kaOpt.raw;
+  }
+
   return null;
 }
 
@@ -368,7 +380,7 @@ export async function selectHarvestedOption(
 
   // GEN-127: Check if options / listbox are currently visible; if 0 visible options, re-open portal
   const countVisibleOpts = async () => {
-    return await frame.locator('[role="option"], .select__option, [data-automation-id="promptOption"], [class*="_option_"]').filter({ visible: true }).count().catch(() => 0);
+    return await frame.locator('[role="option"], .select__option, [data-automation-id="promptOption"], [class*="_option_"], [data-radix-collection-item], .MuiAutocomplete-option, .MuiMenuItem-root, .ant-select-item-option, [id^="headlessui-listbox-option"], [id*="downshift-"][role="option"], .select2-results__option, .chosen-results li.active-result, .pac-item, .itta-item').filter({ visible: true }).count().catch(() => 0);
   };
 
   let visibleCount = await countVisibleOpts();
@@ -390,14 +402,14 @@ export async function selectHarvestedOption(
   const popupId = await control.getAttribute('aria-controls') || await control.getAttribute('aria-owns');
   let popup = popupId
     ? frame.locator(`[id=${JSON.stringify(popupId)}]`)
-    : frame.locator('[role=listbox], .select__menu, [class*="-menu"], [data-automation-id="activeListContainer"]').filter({ visible: true });
+    : frame.locator('[role=listbox], .select__menu, [class*="-menu"], [data-automation-id="activeListContainer"], [data-radix-popper-content-wrapper], .MuiAutocomplete-popper, .ant-select-dropdown:not(.ant-select-dropdown-hidden), .select2-dropdown, .chosen-drop').filter({ visible: true });
   if (await popup.count() > 1) popup = popup.last();
   if (await popup.count() === 0) {
-    popup = frame.locator('.select__menu-portal, [role="listbox"]').filter({ visible: true });
+    popup = frame.locator('.select__menu-portal, [role="listbox"], [data-radix-popper-content-wrapper]').filter({ visible: true });
     if (await popup.count() === 0) return false;
   }
 
-  const matchOptions = popup.locator('[role="option"], .select__option, [data-automation-id="promptOption"], [class*="_option_"], spl-select-option, li[role="option"]');
+  const matchOptions = popup.locator('[role="option"], .select__option, [data-automation-id="promptOption"], [class*="_option_"], spl-select-option, li[role="option"], [data-radix-collection-item], .MuiAutocomplete-option, .MuiMenuItem-root, .ant-select-item-option, [id^="headlessui-listbox-option"], [id*="downshift-"][role="option"], .select2-results__option, .chosen-results li.active-result, .pac-item, .itta-item');
 
   // Ticket GEN-217, GEN-232 & GEN-274: Wait for async options if Loading/Searching is present, and filter placeholders
   let targetOption = option;
@@ -539,9 +551,20 @@ export async function selectHarvestedOption(
 
 /** Runs in the browser and preserves visible fixed-position and below-fold controls. */
 export function isVisibleApplicationControl(element: Element): boolean {
-  if (/beecatcher|honey-?pot|bot-trap/i.test([element.id, element.getAttribute('name'), element.getAttribute('data-automation-id')].join(' '))) return false;
-  if (!element.isConnected || !element.getClientRects().length) return false;
+  const meta = [
+    element.id,
+    element.getAttribute('name'),
+    element.getAttribute('class'),
+    element.getAttribute('data-automation-id'),
+    element.getAttribute('autocomplete'),
+  ].filter(Boolean).join(' ');
+  if (/beecatcher|honey-?pot|bot[-_]?trap|website_url_confirm|fax_number|b_name/i.test(meta)) return false;
+  if (element.getAttribute('aria-hidden') === 'true' || element.closest('[aria-hidden="true"], [hidden]')) return false;
   const input = element as HTMLInputElement;
+  if (input.disabled === true || element.getAttribute('aria-disabled') === 'true' || element.closest('fieldset[disabled]')) return false;
+  const isCombobox = element.getAttribute('role') === 'combobox' || element.getAttribute('data-uxi-widget-type') === 'selectinput';
+  if (input.tabIndex === -1 && !isCombobox && (input.type === 'text' || input.type === 'email' || input.type === 'url')) return false;
+  if (!element.isConnected || !element.getClientRects().length) return false;
   const labels = Array.from(input.labels || []);
   const visibleLabel = labels.some(label => {
     if (!label.getClientRects().length) return false;
@@ -604,7 +627,7 @@ export async function fillAsyncLocationCombobox(frame: Frame, control: Locator, 
     // Wait up to 900ms for async location autocomplete options to mount
     const optionLocator = frame
       .locator(
-        '.select__menu .select__option, [role="listbox"] [role="option"], .ui-menu-item, .itta-results .itta-item, .location-results li, .pac-item, spl-select-option, .spl-autocomplete-option, li[role="option"]'
+        '.select__menu .select__option, [role="listbox"] [role="option"], .ui-menu-item, .itta-results .itta-item, .location-results li, .pac-container .pac-item, .pac-item, spl-select-option, .spl-autocomplete-option, li[role="option"]'
       )
       .filter({ visible: true });
 

@@ -77,6 +77,33 @@ export function resolveExtendedPortalQuestionTaxonomy(
     }
   }
 
+  // Ticket GEN-323: Composite Phone Splitter (Phone Country Code vs Mobile Phone Number)
+  if (/\b(?:phone\s+country\s+code|country\s+phone\s+code|dialing\s+code|calling\s+code|phone\s+code|dial\s+code)\b/i.test(ql)) {
+    return '+91';
+  }
+  if (/\b(?:mobile\s+phone\s+number|national\s+phone\s+number)\b/i.test(ql)) {
+    const raw = process.env.AUTOAPPLY_PHONE || '9876543210';
+    return raw.replace(/^\+91/, '').replace(/\D/g, '').slice(-10);
+  }
+
+  // Ticket GEN-324: Salary Currency / Compensation Currency (INR)
+  if (/\b(?:salary\s+currency|compensation\s+currency|^currency\*?$)\b/i.test(ql)) {
+    return 'INR';
+  }
+
+  // Ticket GEN-325: Split Date Component Fallbacks (Day, Month, Year)
+  if (/^(?:day|\w+\s+day)\*?$/i.test(ql)) {
+    return '01';
+  }
+  if (/^(?:month|\w+\s+month)\*?$/i.test(ql)) {
+    if (/\b(?:start|begin|joining)\b/i.test(ql)) return '08';
+    return '08';
+  }
+  if (/^(?:year|\w+\s+year)\*?$/i.test(ql)) {
+    if (/\b(?:start|begin|joining)\b/i.test(ql)) return '2025';
+    return '2026';
+  }
+
   // Ticket GEN-212: 1,050+ Question Portal Ontology Engine
   const bankHit = lookupQuestionIn1000Bank(q, widgetKind);
   if (bankHit !== undefined) {

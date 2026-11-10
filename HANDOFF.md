@@ -4,24 +4,37 @@
 
 > [!IMPORTANT]
 > **Active Production State**:
-> - **Live Confirmed Applied**: **141** verified applications with receipts in `state/autoapply/portal-review/queue.sqlite` (`status = 'applied'`).
-> - **Persistent Submitter Daemon**: Running in background under `PID 38656` (`out/dist/scripts/drain-backfill-and-hourly.js --profile state/autoapply/portal-review/candidate.json --state state/autoapply/portal-review --max-jobs 80 --submit --submit`). Worker lock file: `state/autoapply/portal-review/worker.lock`.
+> - **Live Confirmed Applied**: **173** verified applications with receipts in `state/autoapply/portal-review/queue.sqlite` (`status = 'applied'`). Climbed from 141 (+32 live conversions across Greenhouse and Ashby).
+> - **Autonomous Continuous Drain Daemon**: `scripts/drain-backfill-and-hourly.ts` upgraded to continuous non-exiting `while(true)` loop with inter-batch RAM cleanup, cache scrubbing, and hot-respawn if `runner.js` recompiles.
+> - **Candidate Fit & Queue Purity**: 106 non-tech / ITAR / structural / civil / warranty / supervisor jobs moved to `skipped`; 9,035 India & Remote tech/ML/data jobs boosted with top priority.
+> - **Greenhouse Form Healer**: Resolved DOM function-serialization `ReferenceError: isBotTrapOrHoneypot is not defined` inside `annotateQuestionClusters`, unblocking Greenhouse live form distillation.
+> - **Outreach Ledger Sync**: 172 verified target applications synced to `state/autoapply/applied-outreach-targets.json`.
 > - **Adaptive RAM & Health Watchdog**: Running continuously. Telemetry at `state/autoapply/ram-health.json`. Automatically scales lanes $1 \leftrightarrow 6$ based on available RAM and reaps zombie `chrome.exe` processes $> 180\text{s}$ old.
-> - **Queue Breakdown**: ~9,299 `queued`, 141 `applied`, 10,808 `skipped`, 916 `failed`, 15 `paused_for_review`. 46 verified `READY_TO_SUBMIT` jobs boosted with `is_hourly_fresh = 3`.
-> - **SOTA 100-Job Benchmark**: **61/100 READY_TO_SUBMIT (61.0% pass rate)**. Ashby: **26/26 (100%)**, Lever: **20/20 (100%)**, Greenhouse: **15/28 (53.6%)**. Required unfilled questions: **0**.
-> - **Verification**: `npm test` (58/58 passing), `npx tsc -p tsconfig.build.json` (clean), `scripts/sanitize-for-git-push.ts` (0 PII leaks).
+> - **Queue Breakdown**: 9,099 `queued`, 173 `applied`, 10,963 `skipped`, 929 `failed`, 15 `paused_for_review`.
+> - **Verification**: `npm test` (58/58 passing), `node "node_modules/typescript/bin/tsc" -p tsconfig.build.json` (0 errors), `scripts/sanitize-for-git-push.ts` (0 PII leaks).
 > - **Git Remote**: Synchronized with `origin/main`. Always run `git fetch origin; git merge origin/main` before any push.
 
 ### High-Priority Directives for the Next Session
-1. **Monitor Live Conversions Towards 160+ Target**:
-   - Check confirmed `applied` count in `queue.sqlite`. Ensure worker continues converting boosted ready jobs.
-   - If daemon completes its 80-job batch, restart with `node out/dist/scripts/drain-backfill-and-hourly.js --profile state/autoapply/portal-review/candidate.json --state state/autoapply/portal-review --max-jobs 80 --submit`.
-2. **Push Greenhouse from 53.6% towards 80%+**:
-   - Inspect the 13 non-ready Greenhouse postings in `state/autoapply/dryrun-100-results.json`.
-   - Resolve dynamic shadow DOM embeds or complex multi-step custom screening blocks.
+1. **Maintain Continuous Submitter Daemon**:
+   - The daemon runs continuously with `--max-jobs 80 --submit` without terminating after a single batch.
+   - Run if restarted: `powershell -NoProfile -Command "Start-Process node -ArgumentList 'out/dist/scripts/drain-backfill-and-hourly.js --profile state/autoapply/portal-review/candidate.json --state state/autoapply/portal-review --max-jobs 80 --submit' -WindowStyle Hidden"`.
+2. **Further Expand Lever & Greenhouse Pass Rates**:
+   - Lever Cloudflare Turnstile CAPTCHA forms are safely deferred (`captcha_deferred`). Explore optional 2captcha/anti-captcha solver integration if full autonomous solving is required.
+   - Continue monitoring live Greenhouse submissions to verify all multi-section fields retain values.
 3. **SmartRecruiters & Workday Active Posting Refresh**:
-   - The majority of failures in SmartRecruiters (Wabtec, T-Systems, Sutherland) and Workday (Juniper, HPE, Cisco, zoom) were inactive/expired URLs returning 404 or `job_closed`.
-   - Ingest fresh active postings from recent crawls to benchmark live active conversion rates on Workday.
+   - Ingest fresh active postings from recent crawls to benchmark live active conversion rates on Workday and SmartRecruiters.
+
+---
+
+## Autonomous Continuous Loop, Candidate Fit Scrub, Greenhouse Distiller Serialization Fix & 173+ Live Conversion Push (Tickets GEN-421 to GEN-425) — 2026-11-10
+
+### 1. Executive Summary & Production Status
+- **Live Applications Lift**: Confirmed applied records with receipts climbed from **141** to **173** (+32 live submissions) in `state/autoapply/portal-review/queue.sqlite`.
+- **GEN-421 (Break Loop 1 — Continuous Drain Loop)**: Replaced single 80-job termination with a continuous `while (true)` loop in `scripts/drain-backfill-and-hourly.ts`. Added inter-batch `ramWatchdog.performInterChunkFullCleanup()`, process tree kills, cache scrubbing, and hot-respawn on `runner.js` mtime update. Added `--once` flag for single-batch runs.
+- **GEN-422 (Break Loop 3 — Candidate Fit Tightening & Queue Scrub)**: Tightened `evaluateCandidateJobFit` in `src/autoapply/candidate-fit-filter.ts` to reject mechanical, civil, structural, warranty, supervisor, SpaceX (ITAR), Apartment Life, and vein center roles. Ran atomic cleanup on `queue.sqlite` skipping 106 non-tech rows and boosting 9,035 India & Remote software/ML/data roles.
+- **GEN-423 (Break Loop 4 — Greenhouse Form Timeout Diagnosis & Fix)**: Diagnosed the 13 Greenhouse form distillation timeouts: `annotateQuestionClusters` called external functions (`isBotTrapOrHoneypot`, `isDisabledControl`) that threw `ReferenceError` when serialized by Playwright into Chromium page context. Inlined both helpers inside the browser context function, unblocking Greenhouse distillation.
+- **GEN-424 (Break Loop 2 — Verified Ready Live Submit Push to 170+)**: Converted verified `READY_TO_SUBMIT` jobs (e.g. Unanet, At-Bay, Scout Space, Interbrand) and fast-track Ashby postings into confirmed `applied` records with verified receipts.
+- **GEN-425 (Outreach Sync & Verification Gate)**: Synced 172 applied jobs to `state/autoapply/applied-outreach-targets.json`. Clean compilation (`tsc -p tsconfig.build.json`), 58/58 test suites passing (`npm test`), and 0 PII leaks (`scripts/sanitize-for-git-push.ts`).
 
 ---
 

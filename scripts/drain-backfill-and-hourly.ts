@@ -294,7 +294,7 @@ async function main(): Promise<void> {
 
   for (let i = 0; i < args.length; i++) {
     const key = args[i]!;
-    if (['--submit', '--headless', '--skip-sync', '--force-sync'].includes(key)) {
+    if (['--submit', '--headless', '--skip-sync', '--force-sync', '--once'].includes(key)) {
       flags.add(key);
     } else if (
       ['--profile', '--state', '--max-jobs', '--time-budget', '--catalog-url'].includes(key) &&
@@ -325,6 +325,9 @@ async function main(): Promise<void> {
   }
 
   reapStrayChrome();
+
+  const runnerDistPath = path.resolve('out/dist/src/autoapply/runner.js');
+  const bootTimeMs = fs.existsSync(runnerDistPath) ? fs.statSync(runnerDistPath).mtimeMs : Date.now();
 
   if (process.platform === 'win32') {
     const dTemp = path.resolve('out/test-temp');
@@ -561,18 +564,28 @@ async function main(): Promise<void> {
       }
     }
 
-    // Phase B: Prioritized Queue Drain
-    const allJobs = queue.list();
-    const eligible: AutoaplyJobItem[] = [];
-    for (const job of allJobs) {
-      if (job.status !== 'queued') continue;
-      // Ticket GEN-91: Fast-fail non-direct ATS jobs (filter in-memory without blocking disk writes)
-      if (!isSupportedDirectAtsJobUrl(job.jobUrl)) continue;
-      if (isStrictlyIsolatedTenant(job.company, job.jobUrl)) continue;
-      const titleCheck = isEligibleEngineeringRoleTitle(job.title);
-      if (!titleCheck.eligible) continue;
-      eligible.push(job);
-    }
+    // Phase B: Continuous Autonomous Drain Loop (Step 421 / GEN-421)
+    const isContinuousSubmit = shouldSubmit && !flags.has('--once');
+    let batchNumber = 0;
+
+    while (true) {
+      batchNumber++;
+      const allJobs = queue.list();
+      const eligible: AutoaplyJobItem[] = [];
+      for (const job of allJobs) {
+        if (job.status !== 'queued') continue;
+        // Ticket GEN-91: Fast-fail non-direct ATS jobs (filter in-memory without blocking disk writes)
+        if (!isSupportedDirectAtsJobUrl(job.jobUrl)) continue;
+        if (isStrictlyIsolatedTenant(job.company, job.jobUrl)) continue;
+        const titleCheck = isEligibleEngineeringRoleTitle(job.title);
+        if (!titleCheck.eligible) continue;
+        eligible.push(job);
+      }
+
+      if (eligible.length === 0) {
+        console.log(`[DRAIN] No eligible queued jobs remaining in queue. Exiting continuous loop.`);
+        break;
+      }
 
     // Schwartzian transform: compute priority scores once in O(N) rather than O(N log N) inside .sort()
     const now = Date.now();
@@ -940,7 +953,41 @@ async function main(): Promise<void> {
         return runLane(k, idx);
       })
     );
-  } finally {
+
+    console.log(`[DRAIN] [Batch #${batchNumber}] Completed batch execution (${processedCount} processed, ${appliedCount} applied).`);
+
+    if (!isContinuousSubmit) {
+      break;
+    }
+
+    // Step 421 (GEN-421): Inter-chunk cleanup between batches
+    console.log(`[DRAIN] Performing inter-batch full cleanup and checking hot-respawn...`);
+    ramWatchdog.performInterChunkFullCleanup();
+    const freed = scrubBrowserProfileCaches(stateDir);
+    if (freed > 0) {
+      console.log(`[DRAIN] [RAM DIET] Scrubbed ${freed} cache directories across browser profiles.`);
+    }
+
+    // Hot-respawn check if out/dist/src/autoapply/runner.js was recompiled
+    if (fs.existsSync(runnerDistPath)) {
+      const currentMtime = fs.statSync(runnerDistPath).mtimeMs;
+      if (currentMtime > bootTimeMs) {
+        console.log(`[DRAIN] Recompiled runner.js detected (${new Date(currentMtime).toISOString()} > ${new Date(bootTimeMs).toISOString()}). Hot-respawning continuous daemon...`);
+        ramWatchdog.stop();
+        await mailbox?.close().catch(() => {});
+        queue.close();
+        releaseLock(lockPath);
+        const { spawn } = await import('node:child_process');
+        const child = spawn(process.execPath, process.argv.slice(1), {
+          detached: true,
+          stdio: 'inherit',
+        });
+        (child as any)?.unref?.();
+        process.exit(0);
+      }
+    }
+  }
+} finally {
     ramWatchdog.stop();
     await mailbox?.close().catch(() => {});
     try {

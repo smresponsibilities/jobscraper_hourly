@@ -145,11 +145,38 @@ function _extractRawCleanQuestionText(box: Element, els: Element[] = []): string
     }
   }
 
-  // 3. Linked aria-labelledby
-  const elLinked = first && typeof first.getAttribute === 'function' ? (first.getAttribute('aria-labelledby') || '').split(/\s+/).map(id => findById(id)?.textContent || '').join(' ').trim() : '';
-  const boxLinked = typeof box.getAttribute === 'function' ? (box.getAttribute('aria-labelledby') || '').split(/\s+/).map(id => findById(id)?.textContent || '').join(' ').trim() : '';
+  // 3. Linked aria-labelledby (W3C AccName-AAM multi-ID traversal - GEN-321)
+  const resolveAriaLabelledBy = (el: Element | null): string => {
+    if (!el || typeof el.getAttribute !== 'function') return '';
+    const attr = el.getAttribute('aria-labelledby');
+    if (!attr) return '';
+    return attr
+      .split(/\s+/)
+      .map(id => findById(id)?.textContent?.trim() || '')
+      .filter(Boolean)
+      .join(' ')
+      .trim();
+  };
+  const elLinked = resolveAriaLabelledBy(first);
+  const boxLinked = resolveAriaLabelledBy(box);
   const linked = elLinked || boxLinked;
   if (isCleanQuestionCandidate(linked)) return linked.replace(/\s+/g, ' ').trim().slice(0, 1500);
+
+  // 3b. Table cell / Definition list label lookup (browser-use - GEN-326 & GEN-327)
+  const td = (first || box)?.closest('td');
+  if (td) {
+    const prevTdText = td.previousElementSibling?.textContent?.replace(/\s+/g, ' ').trim();
+    if (prevTdText && isCleanQuestionCandidate(prevTdText)) {
+      return prevTdText.slice(0, 1500);
+    }
+  }
+  const dd = (first || box)?.closest('dd');
+  if (dd) {
+    const prevDtText = dd.previousElementSibling?.textContent?.replace(/\s+/g, ' ').trim();
+    if (prevDtText && isCleanQuestionCandidate(prevDtText)) {
+      return prevDtText.slice(0, 1500);
+    }
+  }
 
   // 4. Explicit legends / Ashby titles / single question labels
   const explicitTitle = box.querySelector(
@@ -235,9 +262,37 @@ export function groupKeyFor(el: Element): string | null {
   return null;
 }
 
+export function isBotTrapOrHoneypot(el: Element): boolean {
+  const meta = [
+    el.id,
+    el.getAttribute('name'),
+    el.getAttribute('class'),
+    el.getAttribute('data-automation-id'),
+    el.getAttribute('autocomplete'),
+  ].filter(Boolean).join(' ');
+
+  if (/beecatcher|honey-?pot|bot[-_]?trap|website_url_confirm|fax_number|b_name/i.test(meta)) return true;
+  if (el.getAttribute('aria-hidden') === 'true' || el.closest('[aria-hidden="true"], [hidden]')) return true;
+
+  const input = el as HTMLInputElement;
+  const isCombobox = el.getAttribute('role') === 'combobox' || el.getAttribute('data-uxi-widget-type') === 'selectinput';
+  if (input.tabIndex === -1 && !isCombobox && (input.type === 'text' || input.type === 'email' || input.type === 'url')) {
+    return true;
+  }
+  return false;
+}
+
+export function isDisabledControl(el: Element): boolean {
+  const input = el as HTMLInputElement;
+  if (input.disabled === true || el.getAttribute('aria-disabled') === 'true') return true;
+  if (el.closest('fieldset[disabled]')) return true;
+  return false;
+}
+
 export function collectControls(elements: Element[]): Element[] {
   return elements.filter(el => {
-    if (/beecatcher|honey-?pot|bot-trap/i.test([el.id, el.getAttribute('name'), el.getAttribute('data-automation-id')].join(' '))) return false;
+    if (isBotTrapOrHoneypot(el)) return false;
+    if (isDisabledControl(el)) return false;
     // Ticket GEN-93.3: Exclude elements inside navigation, header, footer, cookies
     if (el.closest('header, nav, footer, [role="navigation"], [role="banner"], [role="contentinfo"], [id*="cookie" i], [class*="cookie" i]')) {
       return false;
@@ -253,8 +308,34 @@ export function collectControls(elements: Element[]): Element[] {
 
 /** Runs inside each frame; Playwright locators already pierce open shadow roots. */
 export function annotateQuestionClusters(elements: Element[]): void {
+  const checkBotTrap = (el: Element): boolean => {
+    const meta = [
+      el.id,
+      el.getAttribute('name'),
+      el.getAttribute('class'),
+      el.getAttribute('data-automation-id'),
+      el.getAttribute('autocomplete'),
+    ].filter(Boolean).join(' ');
+    if (/beecatcher|honey-?pot|bot[-_]?trap|website_url_confirm|fax_number|b_name/i.test(meta)) return true;
+    if (el.getAttribute('aria-hidden') === 'true' || el.closest('[aria-hidden="true"], [hidden]')) return true;
+    const input = el as HTMLInputElement;
+    const isCombobox = el.getAttribute('role') === 'combobox' || el.getAttribute('data-uxi-widget-type') === 'selectinput';
+    if (input.tabIndex === -1 && !isCombobox && (input.type === 'text' || input.type === 'email' || input.type === 'url')) {
+      return true;
+    }
+    return false;
+  };
+
+  const checkDisabled = (el: Element): boolean => {
+    const input = el as HTMLInputElement;
+    if (input.disabled === true || el.getAttribute('aria-disabled') === 'true') return true;
+    if (el.closest('fieldset[disabled]')) return true;
+    return false;
+  };
+
   const controls = elements.filter(el => {
-    if (/beecatcher|honey-?pot|bot-trap/i.test([el.id, el.getAttribute('name'), el.getAttribute('data-automation-id')].join(' '))) return false;
+    if (checkBotTrap(el)) return false;
+    if (checkDisabled(el)) return false;
     // Ticket GEN-93.3: Exclude elements inside navigation, header, footer, cookies
     if (el.closest('header, nav, footer, [role="navigation"], [role="banner"], [role="contentinfo"], [id*="cookie" i], [class*="cookie" i]')) {
       return false;
@@ -278,8 +359,13 @@ export function annotateQuestionClusters(elements: Element[]): void {
       }
     }
     const root = el.getRootNode() as Document | ShadowRoot;
-    const elLinked = (el.getAttribute('aria-labelledby') || '').split(/\s+/).map(id => root.getElementById(id)?.textContent || '').join(' ').trim();
-    const boxLinked = (box.getAttribute('aria-labelledby') || '').split(/\s+/).map(id => root.getElementById(id)?.textContent || '').join(' ').trim();
+    const findNodeById = (id: string): Element | null => {
+      if (!id) return null;
+      if (typeof (root as Document).getElementById === 'function') return (root as Document).getElementById(id);
+      try { return root.querySelector(`[id="${id.replace(/"/g, '\\\"')}"]`); } catch { return null; }
+    };
+    const elLinked = (el.getAttribute('aria-labelledby') || '').split(/\s+/).map(id => findNodeById(id)?.textContent?.trim() || '').filter(Boolean).join(' ').trim();
+    const boxLinked = (box.getAttribute('aria-labelledby') || '').split(/\s+/).map(id => findNodeById(id)?.textContent?.trim() || '').filter(Boolean).join(' ').trim();
     const linked = elLinked || boxLinked;
     const isRadioOrCheckbox = ['radio', 'checkbox'].includes(input.type) || el.getAttribute('role') === 'radio';
     const groupPrompt = isRadioOrCheckbox
@@ -322,6 +408,66 @@ export function annotateQuestionClusters(elements: Element[]): void {
         question = `${cleanQ} (Education)`;
       } else if (el.closest('[data-automation-id="workExperienceSection"], [class*="experience" i], [id*="experience" i], [class*="employment" i]')) {
         question = `${cleanQ} (Work Experience)`;
+      }
+    }
+
+    // Ticket GEN-323, GEN-324, GEN-325: Cluster Sub-Control Disambiguation
+    const siblingsInBox = controls.filter(other => box.contains(other));
+    if (siblingsInBox.length > 1) {
+      const boxText = (box.textContent || '').replace(/\s+/g, ' ').trim();
+
+      // 1. Composite Phone Splitter (GEN-323)
+      const isPhoneCluster = /\b(?:phone|mobile|telephone|contact\s*number)\b/i.test(cleanQ) || /\b(?:phone|mobile|telephone|contact\s*number)\b/i.test(boxText);
+      if (isPhoneCluster) {
+        const hasDialSelect = siblingsInBox.some(s => s.tagName === 'SELECT' || s.getAttribute('role') === 'combobox' || /country[-_]?code|dial[-_]?code|calling[-_]?code|isd|prefix/i.test([s.id, (s as HTMLInputElement).name, s.getAttribute('aria-label') || ''].join(' ')));
+        const hasPhoneInput = siblingsInBox.some(s => s.tagName === 'INPUT' && ['tel', 'text', 'number'].includes((s as HTMLInputElement).type) && !/country[-_]?code|dial[-_]?code|calling[-_]?code/i.test([s.id, (s as HTMLInputElement).name].join(' ')));
+        if (hasDialSelect && hasPhoneInput) {
+          const isDial = el.tagName === 'SELECT' || el.getAttribute('role') === 'combobox' || /country[-_]?code|dial[-_]?code|calling[-_]?code|isd|prefix/i.test([el.id, input.name, el.getAttribute('aria-label') || ''].join(' '));
+          if (isDial) {
+            question = 'Phone Country Code';
+          } else {
+            question = 'Mobile Phone Number';
+          }
+        }
+      }
+
+      // 2. Compensation Currency + Amount Pair (GEN-324)
+      const isCompCluster = /\b(?:salary|compensation|ctc|pay|remuneration)\b/i.test(cleanQ) || /\b(?:salary|compensation|ctc|pay|remuneration)\b/i.test(boxText);
+      if (isCompCluster) {
+        const hasCurrencySelect = siblingsInBox.some(s => s.tagName === 'SELECT' || s.getAttribute('role') === 'combobox' || /currency/i.test([s.id, (s as HTMLInputElement).name, s.getAttribute('aria-label') || ''].join(' ')));
+        const hasAmountInput = siblingsInBox.some(s => s.tagName === 'INPUT' && ['text', 'number'].includes((s as HTMLInputElement).type) && !/currency/i.test([s.id, (s as HTMLInputElement).name].join(' ')));
+        if (hasCurrencySelect && hasAmountInput) {
+          const isCurrency = el.tagName === 'SELECT' || el.getAttribute('role') === 'combobox' || /currency/i.test([el.id, input.name, el.getAttribute('aria-label') || ''].join(' '));
+          if (isCurrency) {
+            question = 'Salary Currency';
+          } else {
+            question = 'Expected CTC';
+          }
+        }
+      }
+
+      // 3. Split Date Field Grouping (GEN-325)
+      const isDateCluster = /\b(?:date|graduation|completion|attendance|start|end|from|to|birth)\b/i.test(cleanQ) || /\b(?:graduation|attendance|start\s*date|end\s*date|date\s*of\s*birth)\b/i.test(boxText);
+      if (isDateCluster) {
+        const metaStr = [el.id, input.name, el.getAttribute('aria-label') || '', el.getAttribute('placeholder') || ''].join(' ');
+        const hasMonthSibling = siblingsInBox.some(s => /month/i.test([s.id, (s as HTMLInputElement).name, s.getAttribute('aria-label') || '', s.getAttribute('placeholder') || ''].join(' ')));
+        const hasYearSibling = siblingsInBox.some(s => /year/i.test([s.id, (s as HTMLInputElement).name, s.getAttribute('aria-label') || '', s.getAttribute('placeholder') || ''].join(' ')));
+        if (hasMonthSibling || hasYearSibling) {
+          const scope = el.closest('[data-automation-id="educationSection"], [class*="education" i], [id*="education" i]')
+            ? ' (Education)'
+            : el.closest('[data-automation-id="workExperienceSection"], [class*="experience" i], [id*="experience" i], [class*="employment" i]')
+            ? ' (Work Experience)'
+            : '';
+          const isStart = /\b(?:start|from|begin)\b/i.test(cleanQ);
+          const isEnd = /\b(?:end|to|graduation|completion)\b/i.test(cleanQ);
+          if (/month/i.test(metaStr)) {
+            question = (isStart ? 'Start Month' : isEnd ? 'End Month' : 'Month') + scope;
+          } else if (/day/i.test(metaStr)) {
+            question = (isStart ? 'Start Day' : isEnd ? 'End Day' : 'Day') + scope;
+          } else if (/year/i.test(metaStr)) {
+            question = (isStart ? 'Start Year' : isEnd ? 'End Year' : 'Year') + scope;
+          }
+        }
       }
     }
 
@@ -400,22 +546,31 @@ export async function distillFormStep(frame: Frame): Promise<DistilledField[]> {
     }
   }).catch(() => {});
 
-  const controls = frame.locator('input:not([type=hidden]):not([type=submit]):not([type=button]):not([type=reset]):not([data-autoapply-skip-file="true"]),select,textarea,[role=combobox],button[aria-haspopup=listbox],button.ashby-application-form-input-yesno-option,button[data-autoapply-btngroup-option],[contenteditable="true"],.ql-editor[contenteditable="true"]');
+  const controls = frame.locator('input:not([type=hidden]):not([type=submit]):not([type=button]):not([type=reset]):not([data-autoapply-skip-file="true"]),select,textarea,[role=combobox],[role=slider],button[aria-haspopup=listbox],button.ashby-application-form-input-yesno-option,button[data-autoapply-btngroup-option],[contenteditable="true"],.ql-editor[contenteditable="true"]');
   await controls.evaluateAll(annotateQuestionClusters);
   const fields = await controls.evaluateAll(elements => {
     const splitDates = new Set<Element>();
     const radioGroups = new Set<string>();
     const ashbyGroups = new Set<Element>();
     return elements.filter(el => {
-      if (/beecatcher|honey-?pot|bot-trap/i.test([el.id, el.getAttribute('name'), el.getAttribute('data-automation-id')].join(' '))) return false;
+      const meta = [
+        el.id,
+        el.getAttribute('name'),
+        el.getAttribute('class'),
+        el.getAttribute('data-automation-id'),
+        el.getAttribute('autocomplete'),
+      ].filter(Boolean).join(' ');
+      if (/beecatcher|honey-?pot|bot[-_]?trap|website_url_confirm|fax_number|b_name/i.test(meta)) return false;
       if (el.getAttribute('data-autoapply-skip-file') === 'true') return false;
       const input = el as HTMLInputElement;
+      if (input.disabled === true || el.getAttribute('aria-disabled') === 'true' || el.closest('fieldset[disabled]')) return false;
       const isButtonToggle = el.hasAttribute('data-autoapply-btngroup-option');
       const isChoice = el.getAttribute('role') === 'combobox' || el.getAttribute('role') === 'listbox' || el.getAttribute('data-uxi-widget-type') === 'selectinput' || !!el.getAttribute('aria-haspopup') || !!el.getAttribute('aria-controls') || !!el.getAttribute('aria-owns') || el.classList.contains('ashby-application-form-input-yesno-option') || isButtonToggle;
       if (input.readOnly && !isChoice) return false;
+      if (input.tabIndex === -1 && !isChoice && (input.type === 'text' || input.type === 'email' || input.type === 'url')) return false;
       if (input.type !== 'file' && (!el.getClientRects().length || el.closest('[hidden],[aria-hidden=true]'))) return false;
       const rect = el.getBoundingClientRect();
-      if (rect.right < -1000 || rect.bottom < -1000) return false;
+      if (rect.right < -1000 || rect.bottom < -1000 || rect.left < -5000) return false;
       const radio = el as HTMLInputElement;
       if (radio.type === 'radio' && radio.name) {
         const key = `${elements.findIndex(peer => peer.getRootNode() === el.getRootNode() && (peer as HTMLInputElement).form === radio.form)}:${radio.name}`;
@@ -454,7 +609,7 @@ export async function distillFormStep(frame: Frame): Promise<DistilledField[]> {
         ? 'BOOLEAN_TOGGLE'
         : el.tagName === 'SELECT' || el.getAttribute('role') === 'combobox' || el.getAttribute('aria-haspopup') === 'listbox' || el.getAttribute('data-uxi-widget-type') === 'selectinput' || isGreenhouseSelect
         ? ((el as HTMLSelectElement).multiple ? 'MULTI_SELECT' : 'SINGLE_SELECT')
-        : input.type === 'number'
+        : input.type === 'number' || input.type === 'range' || el.getAttribute('role') === 'slider'
         ? 'NUMBER'
         : input.type === 'date'
         ? 'DATE_NATIVE'
@@ -469,6 +624,18 @@ export async function distillFormStep(frame: Frame): Promise<DistilledField[]> {
         : el.tagName === 'SELECT'
         ? Array.from((el as HTMLSelectElement).options).map(option => option.textContent || '')
         : choices.map(peer => Array.from((peer as HTMLInputElement).labels || []).map(label => label.textContent || '').join(' ') || (peer as HTMLInputElement).value);
+
+      // Ticket GEN-322: Combobox pattern - inspect aria-controls / aria-owns for pre-rendered options
+      if (options.length === 0 && (el.getAttribute('role') === 'combobox' || el.getAttribute('aria-haspopup') === 'listbox')) {
+        const listboxId = el.getAttribute('aria-controls') || el.getAttribute('aria-owns');
+        if (listboxId) {
+          const listboxEl = (root as Document).getElementById ? (root as Document).getElementById(listboxId) : root.querySelector(`[id="${listboxId.replace(/"/g, '\\\"')}"]`);
+          if (listboxEl) {
+            const preOpts = Array.from(listboxEl.querySelectorAll('[role="option"], li')).map(o => (o.textContent || '').trim()).filter(Boolean);
+            if (preOpts.length > 0) options.push(...preOpts);
+          }
+        }
+      }
       const target = el.getAttribute('data-autoapply-target');
       let question = el.getAttribute('data-autoapply-question') || el.getAttribute('aria-label') || Array.from(input.labels || []).map(label => label.textContent).join(' ') || input.name || el.id || 'Field';
       const cleanQ = question.replace(/\s+/g, ' ').trim();

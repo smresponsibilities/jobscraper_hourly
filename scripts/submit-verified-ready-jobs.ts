@@ -9,6 +9,8 @@ import { removeAttemptedJob } from '../src/autoapply/attempted-registry.js';
 import { canonicalRequisition } from '../src/autoapply/identity.js';
 import { evaluateSystemHealthAndAdaptiveLanes } from '../src/autoapply/health-and-ram-watchdog.js';
 
+import { evaluateCandidateJobFit } from '../src/autoapply/candidate-fit-filter.js';
+
 interface ReadyJob {
   jobId: string;
   company: string;
@@ -43,10 +45,10 @@ async function main() {
   });
 
   let currentApplied = getConfirmedAppliedCount(sqlitePath);
-  const TARGET_APPLIED = 140;
+  const TARGET_APPLIED = 175;
 
   console.log('===============================================================');
-  console.log(`[LIVE-SUBMIT] Starting Live Submission Loop (GEN-328)`);
+  console.log(`[LIVE-SUBMIT] Starting Live Submission Loop (GEN-424)`);
   console.log(`[LIVE-SUBMIT] Current confirmed applied: ${currentApplied}`);
   console.log(`[LIVE-SUBMIT] Target confirmed applied: >= ${TARGET_APPLIED}`);
   console.log('===============================================================');
@@ -65,6 +67,10 @@ async function main() {
     console.log(`[LIVE-SUBMIT] Loaded ${verifiedReady.length} verified READY_TO_SUBMIT jobs from ${dryrunPath}`);
 
     for (const r of verifiedReady) {
+      // Validate candidate fit
+      const fit = evaluateCandidateJobFit({ title: r.title, company: r.company, url: r.url });
+      if (!fit.allowed) continue;
+
       // Clear attempted locks
       removeAttemptedJob(r.jobId, r.url);
 
@@ -87,16 +93,19 @@ async function main() {
   const db = new DatabaseSync(sqlitePath, { readOnly: true });
   try {
     const freshRows = db.prepare(`
-      SELECT id, normalized_url, json_extract(payload, '$.company') as company, json_extract(payload, '$.title') as title
+      SELECT id, normalized_url, json_extract(payload, '$.company') as company, json_extract(payload, '$.title') as title, json_extract(payload, '$.location') as location
       FROM applications
       WHERE status = 'queued'
         AND (normalized_url LIKE '%ashbyhq.com%' OR normalized_url LIKE '%lever.co%' OR normalized_url LIKE '%greenhouse.io%')
       ORDER BY COALESCE(json_extract(payload, '$.is_hourly_fresh'), 0) DESC, id DESC
-      LIMIT 60
-    `).all() as Array<{ id: string; normalized_url: string; company: string; title: string }>;
+      LIMIT 120
+    `).all() as Array<{ id: string; normalized_url: string; company: string; title: string; location: string }>;
 
     for (const row of freshRows) {
       if (!readyPool.some((p) => p.url === row.normalized_url || p.jobId === row.id)) {
+        const fit = evaluateCandidateJobFit({ title: row.title, company: row.company, location: row.location, url: row.normalized_url });
+        if (!fit.allowed) continue;
+
         const ats = row.normalized_url.includes('ashbyhq.com') ? 'ashby' : row.normalized_url.includes('lever.co') ? 'lever' : 'greenhouse';
         readyPool.push({
           jobId: row.id,
@@ -114,8 +123,8 @@ async function main() {
 
   console.log(`[LIVE-SUBMIT] Total candidate submission pool: ${readyPool.length} jobs.`);
 
-  // 4. Adaptive Concurrency: 2 to 3 workers
-  const CONCURRENCY = 2;
+  // 4. Concurrency: 3 workers
+  const CONCURRENCY = 3;
   let jobIndex = 0;
   let stopRequested = false;
 
