@@ -54,6 +54,7 @@ import {
   scrubBrowserProfileCaches,
   getRecommendedLaneConcurrency,
 } from '../src/autoapply/ram-and-pacing.js';
+import { ContinuousRamAndHealthWatchdog } from '../src/autoapply/health-and-ram-watchdog.js';
 import { startDashboardServer } from './dashboard-server.js';
 import { filterUnattemptedJobs, recordAttemptedJob, removeAttemptedJob } from '../src/autoapply/attempted-registry.js';
 import { syncGitHubActionsPillars } from './sync-github-actions-pillars.js';
@@ -450,6 +451,9 @@ export async function runOvernightMarathon(config: {
   const shouldSubmit = config.submit ?? true;
   const headless = config.headless ?? true;
 
+  const ramWatchdog = new ContinuousRamAndHealthWatchdog(45_000);
+  ramWatchdog.start();
+
   try { startDashboardServer(4321); } catch {}
   const lockPath = path.join(stateDir, 'worker.lock');
   if (!acquireLock(lockPath)) {
@@ -663,8 +667,8 @@ export async function runOvernightMarathon(config: {
         (url) => isHostReadyForRequest(url, 45000, hostHealthPath)
       );
 
-      // Ticket GEN-283: 4-lane shared work-stealing queue (lane-0..lane-3)
-      const laneKeys = ['lane-0', 'lane-1', 'lane-2', 'lane-3'];
+      // Ticket GEN-283 & GEN-314: Up to 6-lane shared work-stealing queue with adaptive RAM scaling
+      const laneKeys = ['lane-0', 'lane-1', 'lane-2', 'lane-3', 'lane-4', 'lane-5'];
       console.log(
         `[MARATHON] [CYCLE #${cycleIndex}] Selected ${chunkJobs.length} jobs for 4-lane shared work-stealing execution across ${laneKeys.join(', ')}`
       );
@@ -1060,6 +1064,11 @@ export async function runOvernightMarathon(config: {
           await laneRunner.initBrowser(headless, undefined, laneProfileDir).catch(() => {});
           while (sharedCursor < chunkJobs.length) {
             if (totalProcessedOverall >= maxJobs || Date.now() - marathonStartMs >= maxDurationMs) break;
+            while (idx >= ramWatchdog.getRecommendedLanes() && sharedCursor < chunkJobs.length) {
+              if (totalProcessedOverall >= maxJobs || Date.now() - marathonStartMs >= maxDurationMs) break;
+              await new Promise(r => setTimeout(r, 4000));
+            }
+            if (sharedCursor >= chunkJobs.length) break;
             const jobIndex = sharedCursor++;
             if (jobIndex >= chunkJobs.length) break;
             const job = chunkJobs[jobIndex];
@@ -1085,6 +1094,9 @@ export async function runOvernightMarathon(config: {
       });
 
       await Promise.all(lanePromises);
+
+      // Ticket GEN-314: Inter-chunk full cleanup to guarantee 0 leaked chrome.exe processes
+      ramWatchdog.performInterChunkFullCleanup();
 
       // Close SQLite queue manager connection cleanly before recycling
       queue.close();
@@ -1151,9 +1163,11 @@ export async function runOvernightMarathon(config: {
       await new Promise(r => setTimeout(r, 5000));
     }
   } finally {
+    ramWatchdog.stop();
     await mailbox?.close().catch(() => {});
     releaseLock(lockPath);
     reapStrayChrome();
+    ramWatchdog.performInterChunkFullCleanup();
     console.log(`[MARATHON] Run completed. Total processed: ${totalProcessedOverall}, Applied: ${totalAppliedOverall}.`);
   }
 }

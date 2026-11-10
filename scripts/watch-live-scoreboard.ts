@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import { runAllSystemInvariantsAndAutoHeal } from '../src/contracts/system-invariants.js';
+import { evaluateSystemHealthAndAdaptiveLanes } from '../src/autoapply/health-and-ram-watchdog.js';
 
 export function printLiveScoreboardSnapshot(options: { checkInvariants?: boolean } = {}): void {
   if (options.checkInvariants) {
@@ -108,6 +109,13 @@ export function printLiveScoreboardSnapshot(options: { checkInvariants?: boolean
       console.warn('Failed to parse run-history.jsonl:', err?.message || err);
     }
   }
+
+  try {
+    const health = evaluateSystemHealthAndAdaptiveLanes(true);
+    console.log(
+      `[RAM & HEALTH] Free: ${health.freeRamGb}GB / ${health.totalRamGb}GB (${health.usedRamPct}% used) | Chrome: ${health.chromeProcessCount} procs (${health.chromeWorkingSetMb}MB) | Target Lanes: ${health.recommendedLaneCount} | Reaped: ${health.zombiesReapedTotal} | Status: ${health.healthStatus}`
+    );
+  } catch {}
 }
 
 const isDirectRun = Boolean(

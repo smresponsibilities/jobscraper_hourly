@@ -48,6 +48,31 @@ import { resolveUniversalPermissiveFallback } from './permissive-fallback.js';
 import { composeGroundedNarrative } from './narrative-composer.js';
 import { evaluateCandidateJobFit } from './candidate-fit-filter.js';
 
+export const LOW_RAM_CHROMIUM_ARGS = [
+  '--headless=new',
+  '--renderer-process-limit=2',
+  '--js-flags=--max-old-space-size=384',
+  '--disable-gpu',
+  '--disable-software-rasterizer',
+  '--disable-dev-shm-usage',
+  '--disable-background-networking',
+  '--disable-background-timer-throttling',
+  '--disable-backgrounding-occluded-windows',
+  '--disable-breakpad',
+  '--disable-component-extensions-with-background-pages',
+  '--disable-default-apps',
+  '--disable-extensions',
+  '--disable-features=Translate,BackForwardCache,AcceptCHFrame,MediaRouter,OptimizationHints',
+  '--disable-ipc-flooding-protection',
+  '--disable-renderer-backgrounding',
+  '--disable-sync',
+  '--metrics-recording-only',
+  '--mute-audio',
+  '--no-default-browser-check',
+  '--no-first-run',
+  '--aggressive-cache-discard',
+];
+
 export async function healInvalidFieldsAndRetrySubmit(
   frame: Frame,
   profileEmail: string,
@@ -1470,17 +1495,13 @@ export class AutoApplyRunner {
     const effectiveHeadless = showBrowser ? false : (headless ?? true);
     const baseArgs = [
       '--no-sandbox',
-      '--disable-gpu',
       '--window-size=1280,900',
       '--disable-blink-features=AutomationControlled',
-      '--no-first-run',
-      '--no-default-browser-check',
-      '--disable-background-timer-throttling',
-      '--disable-renderer-backgrounding',
       '--webrtc-ip-handling-policy=disable_non_proxied_udp',
       '--force-webrtc-ip-handling-policy',
+      ...LOW_RAM_CHROMIUM_ARGS.filter(a => effectiveHeadless || !a.startsWith('--headless')),
     ];
-    const args = effectiveHeadless ? ['--headless=new', ...baseArgs] : baseArgs;
+    const args = Array.from(new Set(baseArgs));
 
     if (browserProfileDir) {
       mkdirSync(browserProfileDir, { recursive: true });
@@ -1544,16 +1565,14 @@ export class AutoApplyRunner {
       const showBrowser = process.env.DEBUG_SHOW_BROWSER === '1';
       const effectiveHeadless = showBrowser ? false : true;
       const baseArgs = [
+        '--no-sandbox',
         '--window-size=1280,900',
         '--disable-blink-features=AutomationControlled',
-        '--no-first-run',
-        '--no-default-browser-check',
-        '--disable-background-timer-throttling',
-        '--disable-renderer-backgrounding',
         '--webrtc-ip-handling-policy=disable_non_proxied_udp',
         '--force-webrtc-ip-handling-policy',
+        ...LOW_RAM_CHROMIUM_ARGS.filter(a => effectiveHeadless || !a.startsWith('--headless')),
       ];
-      const args = effectiveHeadless ? ['--headless=new', ...baseArgs] : baseArgs;
+      const args = Array.from(new Set(baseArgs));
       this.browser = await chromium.launch({ channel: 'chrome', headless: effectiveHeadless, args });
       this.ownsContext = true;
       this.ownsIsolatedContext = false;

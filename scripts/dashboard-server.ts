@@ -1943,6 +1943,26 @@ export function startDashboardServer(port = PORT): http.Server {
       return;
     }
 
+    if (url.pathname === '/api/ram-health') {
+      try {
+        const ramHealthPath = path.resolve('state/autoapply/ram-health.json');
+        let data: any = {};
+        if (fs.existsSync(ramHealthPath)) {
+          data = JSON.parse(fs.readFileSync(ramHealthPath, 'utf8'));
+        }
+        res.writeHead(200, {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Cache-Control': 'no-store, no-cache, must-revalidate',
+          'Access-Control-Allow-Origin': '*',
+        });
+        res.end(JSON.stringify(data));
+      } catch (err: any) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err?.message || 'Error reading ram health' }));
+      }
+      return;
+    }
+
     if (url.pathname === '/api/telemetry') {
       try {
         const telemetry = cachedTelemetry || getDashboardTelemetry();

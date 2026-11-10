@@ -32,6 +32,7 @@ import { startDashboardServer } from './dashboard-server.js';
 import { filterUnattemptedJobs, recordAttemptedJob } from '../src/autoapply/attempted-registry.js';
 import { scrubBrowserProfileCaches } from '../src/autoapply/ram-and-pacing.js';
 import { syncGitHubActionsPillars } from './sync-github-actions-pillars.js';
+import { ContinuousRamAndHealthWatchdog } from '../src/autoapply/health-and-ram-watchdog.js';
 
 export function partitionJobsIntoProviderLanes<T extends { url?: string; jobUrl?: string; provider?: string; externalJobId?: string }>(jobs: T[]): Record<string, T[]> {
   const lanes: Record<string, T[]> = {
@@ -313,6 +314,9 @@ async function main(): Promise<void> {
   const skipSync = flags.has('--skip-sync');
   const forceSync = flags.has('--force-sync');
   const discoveryCachePath = path.join(stateDir, 'last-discovery-sync.json');
+
+  const ramWatchdog = new ContinuousRamAndHealthWatchdog(45_000);
+  ramWatchdog.start();
 
   try { startDashboardServer(4321); } catch {}
   const lockPath = path.join(stateDir, 'worker.lock');
@@ -874,7 +878,7 @@ async function main(): Promise<void> {
       );
     };
 
-    const runLane = async (laneKey: keyof typeof lanes): Promise<void> => {
+    const runLane = async (laneKey: keyof typeof lanes, laneIdx = 0): Promise<void> => {
       const jobs = lanes[laneKey] || [];
       if (jobs.length === 0) return;
       const laneProfileDir = path.resolve('state/autoapply', `browser-profile-lane-${laneKey}`);
@@ -905,6 +909,10 @@ async function main(): Promise<void> {
 
         for (const job of jobs) {
           if (processedCount >= maxJobs || Date.now() - startTime >= maxDurationMs) break;
+          while (laneIdx >= ramWatchdog.getRecommendedLanes() && processedCount < maxJobs && Date.now() - startTime < maxDurationMs) {
+            await new Promise(r => setTimeout(r, 4000));
+          }
+          if (processedCount >= maxJobs || Date.now() - startTime >= maxDurationMs) break;
           try {
             if (!laneRunner.isConnected()) {
               await laneRunner.close().catch(() => {});
@@ -929,10 +937,11 @@ async function main(): Promise<void> {
         if (idx > 0) {
           await new Promise(r => setTimeout(r, idx * 3500));
         }
-        return runLane(k);
+        return runLane(k, idx);
       })
     );
   } finally {
+    ramWatchdog.stop();
     await mailbox?.close().catch(() => {});
     try {
       generateParkIssuesScoreboard(path.join(stateDir, 'queue.sqlite'));
@@ -942,6 +951,7 @@ async function main(): Promise<void> {
     queue.close();
     releaseLock(lockPath);
     reapStrayChrome();
+    ramWatchdog.performInterChunkFullCleanup();
     const freed = scrubBrowserProfileCaches(stateDir);
     if (freed > 0) {
       console.log(`[DRAIN] [RAM DIET] Scrubbed ${freed} cache directories across browser profiles.`);

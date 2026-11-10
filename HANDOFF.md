@@ -1,5 +1,29 @@
 # Handoff
 
+## Adaptive RAM Auto-Scaler, Zombie `chrome.exe` Reaper & 60s Health Watchdog (Tickets GEN-311 to GEN-315) — 2026-11-10
+
+### 1. Executive Summary & Production Status
+- **Orphaned `chrome.exe` Purge**: Executed immediate zeroing of stray Chromium processes via `taskkill /F /IM chrome.exe /T` and memory-mapped cache scrubbing.
+- **Low-RAM Chromium Launch Flags Deployed**:
+  - Exported `LOW_RAM_CHROMIUM_ARGS` in `src/autoapply/runner.ts` and injected into all `chromium.launch` / `launchPersistentContext` calls.
+  - Flags include `--renderer-process-limit=2`, `--js-flags=--max-old-space-size=384`, `--disable-gpu`, `--disable-dev-shm-usage`, `--aggressive-cache-discard`, `--headless=new`. Stops Chromium from spawning excessive sub-processes and caps V8 heap to 384 MB per tab.
+- **Adaptive RAM Auto-Scaler & 60s Health Watchdog**:
+  - Implemented `src/autoapply/health-and-ram-watchdog.ts` with `evaluateSystemHealthAndAdaptiveLanes`, `reapZombieChromeProcesses`, `scrubBrowserCachesAndTempDirs`, and `ContinuousRamAndHealthWatchdog`.
+  - Dynamically throttles lanes down (`6 -> 4 -> 2 -> 1`) when RAM is tight (`< 2.8 GB` free or `> 82%` used) and scales up to 6 lanes when free RAM is `>= 5.2 GB`.
+  - Reaps stale `chrome.exe` processes (`> 140s` or `> 200s` old) automatically every sweep and performs full cleanups at inter-chunk boundaries.
+- **Script & API Integrations**:
+  - Wired into `scripts/run-overnight-marathon.ts` and `scripts/drain-backfill-and-hourly.ts` before each lane takes its next job.
+  - Inter-chunk full cleanup (`performInterChunkFullCleanup`) called at chunk boundaries to guarantee 0 leaked `chrome.exe` processes survive.
+  - Exposed `GET /api/ram-health` in `scripts/dashboard-server.ts` returning `state/autoapply/ram-health.json`.
+  - Integrated live `[RAM & HEALTH]` telemetry line into `scripts/watch-live-scoreboard.ts`.
+- **Verification Suites**:
+  - `src/autoapply/gen-311-315.test.ts`: All 4 test suites pass (`✔ GEN-311`, `✔ GEN-312`, `✔ GEN-313`, `✔ GEN-314`).
+  - `npm test` (`src/selftest.ts`): All 58/58 test suites pass.
+  - `npx tsc -p tsconfig.build.json`: Clean compile, 0 errors.
+  - `npx tsx scripts/sanitize-for-git-push.ts`: PASS (0 PII leaks across 1,931 git-tracked files).
+
+---
+
 ## Pass-3 100-Job Real Browser Dry-Run, Anti-Lockup Fixes & 119+ Live Conversions (Tickets GEN-306 to GEN-310) — 2026-11-10
 
 ### 1. Executive Summary & Production Status
