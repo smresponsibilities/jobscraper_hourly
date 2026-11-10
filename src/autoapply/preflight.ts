@@ -105,6 +105,11 @@ export function isSupportedDirectAtsJobUrl(rawUrl: string): boolean {
     return parts.length >= 2 && parts.some(p => /^\d+/.test(p));
   }
 
+  // 7. Workable (GEN-458)
+  if (host === 'apply.workable.com' && /^\/[^/]+\/j\/[A-Za-z0-9]+/i.test(path)) {
+    return true;
+  }
+
   return false;
 }
 

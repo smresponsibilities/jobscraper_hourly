@@ -50,6 +50,15 @@ export function unwrapDirectAtsApplicationUrl(rawUrl: string): string {
       }
     }
 
+    // 5. Workable (GEN-458): Ensure apply.workable.com/{company}/j/{shortcode} jumps straight to /apply tab!
+    if (u.hostname === 'apply.workable.com') {
+      const m = u.pathname.match(/^\/([^/]+)\/j\/([A-Za-z0-9]+)\/?$/i);
+      if (m) {
+        u.pathname = `/${m[1]}/j/${m[2]}/apply`;
+        return u.toString();
+      }
+    }
+
     return rawUrl;
   } catch {
     return rawUrl;

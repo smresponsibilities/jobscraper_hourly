@@ -433,4 +433,58 @@ export async function runWorkdayStepFastPass(frame: Frame, resumePdfPath?: strin
       }
     }
   }
+
+  // 10. Workday Voluntary Disclosures / Self-Identify EEO listbox buttons (Gender, Ethnicity, Veteran, Disability)
+  const selectWorkdayListboxOption = async (containerSel: string, preferredRegex: RegExp) => {
+    const btn = frame.locator(`${containerSel} button[aria-haspopup="listbox"]`).filter({ visible: true }).first();
+    if (!(await btn.isVisible().catch(() => false))) return;
+    const currentTxt = ((await btn.innerText().catch(() => '')) || '').trim();
+    if (currentTxt && !/^(select one|select|choose|--)$/i.test(currentTxt)) return;
+
+    await btn.click({ timeout: 2000 }).catch(() => {});
+    await frame.waitForTimeout(350);
+    const opts = frame.locator('[role="listbox"] [role="option"], [data-automation-id="promptOption"]').filter({ visible: true });
+    const count = await opts.count().catch(() => 0);
+    for (let i = 0; i < count; i++) {
+      const txt = ((await opts.nth(i).innerText().catch(() => '')) || '').trim();
+      if (preferredRegex.test(txt)) {
+        await opts.nth(i).click({ timeout: 1500 }).catch(() => {});
+        await frame.waitForTimeout(200);
+        return;
+      }
+    }
+    if (count > 0) {
+      await opts.first().click({ timeout: 1500 }).catch(() => {});
+    }
+  };
+
+  await selectWorkdayListboxOption('[data-automation-id*="gender" i]', /male|decline|prefer not/i);
+  await selectWorkdayListboxOption('[data-automation-id*="ethnicity" i], [data-automation-id*="race" i]', /asian|indian|decline|prefer not/i);
+  await selectWorkdayListboxOption('[data-automation-id*="veteran" i]', /not a .*veteran|no\b|decline|do not/i);
+  await selectWorkdayListboxOption('[data-automation-id*="disability" i]', /no, i do not|do not have a disability|decline|do not wish/i);
+
+  // 11. Workday Full Legal Name e-Signature on Self-Identify / Terms page
+  const sigNameInput = frame
+    .locator('[data-automation-id="formField-selfIdentifiedNameData--name"] input, input[data-automation-id*="name" i][aria-required="true"]')
+    .filter({ visible: true })
+    .first();
+  if (await sigNameInput.isVisible().catch(() => false)) {
+    const curVal = await sigNameInput.inputValue().catch(() => '');
+    if (!curVal.trim()) {
+      await sigNameInput.fill('Shivam Mahajan').catch(() => {});
+    }
+  }
+
+  // 12. Workday Terms & Conditions / Consent Checkbox
+  const termsCb = frame
+    .locator(
+      '[data-automation-id*="termsAndConditions" i] input[type="checkbox"], [data-automation-id*="consent" i] input[type="checkbox"], [data-automation-id*="agreement" i] input[type="checkbox"]'
+    )
+    .filter({ visible: true });
+  const cbCount = await termsCb.count().catch(() => 0);
+  for (let i = 0; i < cbCount; i++) {
+    if (!(await termsCb.nth(i).isChecked().catch(() => false))) {
+      await termsCb.nth(i).click({ force: true }).catch(() => {});
+    }
+  }
 }

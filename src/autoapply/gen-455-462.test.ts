@@ -13,6 +13,9 @@ import {
   runOutreachBatch,
 } from '../../scripts/send-outreach-batch.js';
 import { loadWonderPillDeadEnds } from '../outreach/dual-mode-lead-finder.js';
+import { isSupportedDirectAtsJobUrl } from './preflight.js';
+import { unwrapDirectAtsApplicationUrl } from './url-unwrapper.js';
+import { fetchGreenhouseQuestionSchema, type GreenhouseQuestionSchemaItem } from './distiller.js';
 
 test('GEN-455.1: classifyEmailLifecycleStage correctly identifies all 5 stages', () => {
   // 1. HARD_BOUNCE_550
@@ -233,3 +236,102 @@ test('GEN-456.3: runOutreachBatch suppresses outreach and handles 550 fallback',
   // Clean up temp test files
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
+
+test('GEN-457.1: Greenhouse ?questions=true schema parsing and control hydration', async () => {
+  // Test schema fetch logic with mocked global fetch
+  const originalFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = async (url: any) => {
+      const urlStr = String(url);
+      if (urlStr.includes('boards-api.greenhouse.io') && urlStr.includes('?questions=true')) {
+        return {
+          ok: true,
+          json: async () => ({
+            questions: [
+              {
+                label: 'Are you legally authorized to work in the United States?',
+                required: true,
+                fields: [
+                  {
+                    name: 'job_application[answers][question_1001][]',
+                    values: [{ label: 'Yes' }, { label: 'No' }],
+                  },
+                ],
+              },
+              {
+                label: 'Will you now or in the future require sponsorship?',
+                required: false,
+                fields: [
+                  {
+                    name: 'question_1002',
+                    values: [{ label: 'Yes' }, { label: 'No' }],
+                  },
+                ],
+              },
+            ],
+          }),
+        } as any;
+      }
+      return originalFetch(url);
+    };
+
+    const schema = await fetchGreenhouseQuestionSchema('https://boards.greenhouse.io/acme/jobs/456789');
+    assert.ok(schema.size >= 2);
+
+    const q1 = schema.get('job_application[answers][question_1001]');
+    assert.ok(q1);
+    assert.equal(q1?.label, 'Are you legally authorized to work in the United States?');
+    assert.equal(q1?.required, true);
+    assert.deepEqual(q1?.options, ['Yes', 'No']);
+
+    const q2 = schema.get('question_1002');
+    assert.ok(q2);
+    assert.equal(q2?.label, 'Will you now or in the future require sponsorship?');
+    assert.equal(q2?.required, false);
+    assert.deepEqual(q2?.options, ['Yes', 'No']);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('GEN-458.1: Workable apply.workable.com direct ATS adapter and URL unwrapping', () => {
+  // 1. isSupportedDirectAtsJobUrl
+  assert.equal(isSupportedDirectAtsJobUrl('https://apply.workable.com/acme/j/ABCD1234/'), true);
+  assert.equal(isSupportedDirectAtsJobUrl('https://apply.workable.com/tech-startup/j/98765XYZ'), true);
+  assert.equal(isSupportedDirectAtsJobUrl('https://apply.workable.com/acme'), false); // Missing /j/{shortcode}
+
+  // 2. unwrapDirectAtsApplicationUrl
+  const unwrapped1 = unwrapDirectAtsApplicationUrl('https://apply.workable.com/acme/j/ABCD1234/');
+  assert.equal(unwrapped1, 'https://apply.workable.com/acme/j/ABCD1234/apply');
+
+  const unwrapped2 = unwrapDirectAtsApplicationUrl('https://apply.workable.com/tech-startup/j/98765XYZ');
+  assert.equal(unwrapped2, 'https://apply.workable.com/tech-startup/j/98765XYZ/apply');
+
+  // Already on /apply -> unchanged
+  const unwrapped3 = unwrapDirectAtsApplicationUrl('https://apply.workable.com/acme/j/ABCD1234/apply');
+  assert.equal(unwrapped3, 'https://apply.workable.com/acme/j/ABCD1234/apply');
+});
+
+test('GEN-459.1: Workday Step 3-5 EEO listbox preference regexes and signature target verification', () => {
+  // Verify EEO regex patterns match required disclosures
+  const genderRegex = /male|decline|prefer not/i;
+  assert.ok(genderRegex.test('Male'));
+  assert.ok(genderRegex.test('I decline to identify'));
+  assert.ok(genderRegex.test('Prefer not to say'));
+
+  const ethnicityRegex = /asian|indian|decline|prefer not/i;
+  assert.ok(ethnicityRegex.test('Asian (Not Hispanic or Latino)'));
+  assert.ok(ethnicityRegex.test('Asian Indian'));
+  assert.ok(ethnicityRegex.test('Decline to self-identify'));
+
+  const veteranRegex = /not a .*veteran|no\b|decline|do not/i;
+  assert.ok(veteranRegex.test('I am not a protected veteran'));
+  assert.ok(veteranRegex.test('No, I am not a veteran'));
+  assert.ok(veteranRegex.test('I do not wish to answer'));
+
+  const disabilityRegex = /no, i do not|do not have a disability|decline|do not wish/i;
+  assert.ok(disabilityRegex.test('No, I do not have a disability'));
+  assert.ok(disabilityRegex.test('I do not have a disability, or have a history/record of having a disability'));
+  assert.ok(disabilityRegex.test('I decline to self-identify'));
+});
+

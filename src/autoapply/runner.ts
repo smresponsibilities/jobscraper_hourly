@@ -902,7 +902,7 @@ export class AutoApplyRunner {
     // Fast check: native click on Ashby / OneTrust cookie banner buttons
     const fastCookie = page
       .locator(
-        'button:has-text("Accept All"), [role="dialog"] button:has-text("Necessary Only"), #onetrust-accept-btn-handler, button:has-text("Accept Cookies"), [data-automation-id="legalNoticeAcceptButton"]'
+        'button:has-text("Accept All"), [role="dialog"] button:has-text("Necessary Only"), #onetrust-accept-btn-handler, button:has-text("Accept Cookies"), [data-automation-id="legalNoticeAcceptButton"], button[data-ui="cookie-consent-accept"]'
       )
       .first();
     if (await fastCookie.isVisible().catch(() => false)) {
@@ -2563,7 +2563,7 @@ export class AutoApplyRunner {
       try {
         if (pattern === SUBMIT || pattern.source.includes('submit')) {
           const submits = frame.locator(
-            'button[data-test="job-apply-submit"], button[data-test="footer-submit"], oc-button[data-test*="submit"] button, spl-button[type="submit"], oc-button button, spl-button button, button[type="submit"], input[type="submit"]'
+            'button[data-test="job-apply-submit"], button[data-test="footer-submit"], button[data-ui="application-form-submit"], oc-button[data-test*="submit"] button, spl-button[type="submit"], oc-button button, spl-button button, button[type="submit"], input[type="submit"]'
           );
           for (const control of await submits.all()) {
             if (await control.isVisible().catch(() => false) && await control.isEnabled().catch(() => false)) {
@@ -4738,7 +4738,7 @@ export class AutoApplyRunner {
               const nextDirect = root.querySelector('[data-test="footer-next"], oc-button[data-test="footer-next"], button[data-test="footer-next"]') as HTMLElement | null;
               if (nextDirect) return { el: nextDirect, kind: 'next' };
 
-              const submitDirect = root.querySelector('[data-test="footer-submit"], oc-button[data-test="footer-submit"], button[data-test="footer-submit"]') as HTMLElement | null;
+              const submitDirect = root.querySelector('[data-ui="application-form-submit"], [data-test="footer-submit"], oc-button[data-test="footer-submit"], button[data-test="footer-submit"]') as HTMLElement | null;
               if (submitDirect) {
                 const txt = (submitDirect.textContent || '').trim();
                 if (/^(?:next|continue|save\s*(?:and|&)\s*continue|proceed)$/i.test(txt)) {
@@ -4755,7 +4755,7 @@ export class AutoApplyRunner {
                   if (testAttr === 'footer-next' || /^(?:next|continue|save\s*(?:and|&)\s*continue|proceed)$/i.test(txt)) {
                     return { el: el as HTMLElement, kind: 'next' };
                   }
-                  if (testAttr === 'footer-submit' || /^(?:submit|submit application|send application|apply)$/i.test(txt)) {
+                  if (testAttr === 'footer-submit' || el.getAttribute('data-ui') === 'application-form-submit' || /^(?:submit|submit application|send application|apply)$/i.test(txt)) {
                     return { el: el as HTMLElement, kind: 'submit' };
                   }
                 }
@@ -4881,7 +4881,7 @@ export class AutoApplyRunner {
         }
         let submit = submitControl || (await this.button(SUBMIT, ATS_STRATEGIES[report.ats]?.submit, 'flow_submit_button'));
         if (!submit && this.page) {
-          const shadowBtn = this.page.locator('[data-autoapply-shadow-submit="true"], [data-test="footer-submit"], oc-button[data-test="footer-submit"], [role="button"]:has-text("Submit"), [role="button"]:has-text("Apply"), button[data-automation-id*="submit" i], a.btn-submit').first();
+          const shadowBtn = this.page.locator('[data-autoapply-shadow-submit="true"], button[data-ui="application-form-submit"], [data-test="footer-submit"], oc-button[data-test="footer-submit"], [role="button"]:has-text("Submit"), [role="button"]:has-text("Apply"), button[data-automation-id*="submit" i], a.btn-submit').first();
           if (await shadowBtn.count().catch(() => 0) > 0 && await shadowBtn.isVisible().catch(() => false)) {
             submit = shadowBtn;
           }
@@ -4890,7 +4890,7 @@ export class AutoApplyRunner {
           // Ticket GEN-169 / GEN-199: Child-frame submitControl piercer
           for (const f of this.page.frames()) {
             if (f === this.page.mainFrame()) continue;
-            const childSubmit = f.locator('button[type="submit"], input[type="submit"], #submit_app, button:has-text("Submit Application"), button:has-text("Submit"), [data-test="footer-submit"], [role="button"]:has-text("Submit"), [role="button"]:has-text("Apply"), button[data-automation-id*="submit" i], a.btn-submit').first();
+            const childSubmit = f.locator('button[type="submit"], input[type="submit"], #submit_app, button[data-ui="application-form-submit"], button:has-text("Submit Application"), button:has-text("Submit"), [data-test="footer-submit"], [role="button"]:has-text("Submit"), [role="button"]:has-text("Apply"), button[data-automation-id*="submit" i], a.btn-submit').first();
             if (await childSubmit.count().catch(() => 0) > 0 && await childSubmit.isVisible().catch(() => false)) {
               submit = childSubmit;
               break;

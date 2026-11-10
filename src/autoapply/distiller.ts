@@ -17,6 +17,63 @@ export interface DistilledField {
   controlSelector: string;
 }
 
+export interface GreenhouseQuestionSchemaItem {
+  fieldName: string;
+  label: string;
+  required: boolean;
+  options: string[];
+}
+
+const greenhouseSchemaCache = new Map<string, { data: Map<string, GreenhouseQuestionSchemaItem>; expiresAt: number }>();
+
+export async function fetchGreenhouseQuestionSchema(jobUrl: string): Promise<Map<string, GreenhouseQuestionSchemaItem>> {
+  const map = new Map<string, GreenhouseQuestionSchemaItem>();
+  try {
+    const u = new URL(jobUrl);
+    const cached = greenhouseSchemaCache.get(jobUrl);
+    if (cached && Date.now() < cached.expiresAt) {
+      return cached.data;
+    }
+
+    const parts = u.pathname.split('/').filter(Boolean);
+    const board = u.searchParams.get('for') || (parts[0] !== 'embed' ? parts[0] : null);
+    const jobId =
+      u.pathname.match(/\/jobs\/(\d+)/)?.[1] ||
+      u.searchParams.get('token') ||
+      u.searchParams.get('gh_jid');
+
+    if (!board || !jobId) return map;
+    const apiUrl = `https://boards-api.greenhouse.io/v1/boards/${encodeURIComponent(board)}/jobs/${encodeURIComponent(jobId)}?questions=true`;
+    const res = await fetch(apiUrl, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(4000) });
+    if (!res.ok) return map;
+
+    const data = (await res.json()) as {
+      questions?: Array<{
+        label?: string;
+        required?: boolean;
+        fields?: Array<{ name?: string; values?: Array<{ label?: string }> }>;
+      }>;
+    };
+
+    for (const q of data.questions || []) {
+      const label = (q.label || '').trim();
+      if (!label) continue;
+      for (const f of q.fields || []) {
+        if (!f.name) continue;
+        const opts = (f.values || []).map(v => (v.label || '').trim()).filter(Boolean);
+        map.set(f.name.replace(/\[\]$/, ''), {
+          fieldName: f.name,
+          label,
+          required: Boolean(q.required),
+          options: opts,
+        });
+      }
+    }
+    greenhouseSchemaCache.set(jobUrl, { data: map, expiresAt: Date.now() + 600_000 });
+  } catch {}
+  return map;
+}
+
 export function isInteractiveChoiceReadOnly(el: Element): boolean {
   const role = el.getAttribute('role');
   const uxi = el.getAttribute('data-uxi-widget-type');
@@ -909,5 +966,40 @@ export async function distillFormStep(frame: Frame): Promise<DistilledField[]> {
       };
     });
   });
+
+  // Ticket GEN-457: Hydrate Greenhouse question labels and options from ?questions=true schema API
+  if (frame.url().includes('greenhouse.io')) {
+    try {
+      const ghSchema = await fetchGreenhouseQuestionSchema(frame.url());
+      if (ghSchema.size > 0) {
+        for (const f of fields) {
+          for (const [key, item] of ghSchema.entries()) {
+            const keyClean = key.toLowerCase();
+            const matchesKey =
+              f.refKey.toLowerCase().includes(keyClean) ||
+              (f.controlSelector && f.controlSelector.toLowerCase().includes(keyClean));
+            if (matchesKey) {
+              const hasGenericLabel =
+                !f.questionText || /^(?:field|question_\d+|input_\d+|select_\d+|custom_fields_\d+)$/i.test(f.questionText.trim());
+              if (hasGenericLabel && item.label) {
+                f.questionText = item.label;
+              }
+              if (item.required) {
+                f.isRequired = true;
+              }
+              if ((!f.options || f.options.length === 0) && item.options && item.options.length > 0) {
+                f.options = [...item.options];
+                if (f.widgetKind === 'TEXT') {
+                  f.widgetKind = 'SINGLE_SELECT';
+                }
+              }
+              break;
+            }
+          }
+        }
+      }
+    } catch {}
+  }
+
   return fields.map(field => ({ ...field, refKey: createHash('sha256').update(`${frame.url()}|${field.refKey}`).digest('hex') }));
 }
