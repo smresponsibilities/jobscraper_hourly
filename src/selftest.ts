@@ -2621,5 +2621,91 @@ try {
   check('system invariants failure: ' + (err?.message || err), true, false);
 }
 
+console.log('GEN-427 to GEN-434 Verification Gates:');
+import { classifyDynamicArchetype } from './resume/deterministic-builder.js';
+check('GEN-427: matches BACKEND_DISTRIBUTED archetype', classifyDynamicArchetype('Distributed Kafka ClickHouse backend'), 'BACKEND_DISTRIBUTED');
+check('GEN-427: matches FULLSTACK_REACT archetype', classifyDynamicArchetype('Frontend React Next.js TypeScript'), 'FULLSTACK_REACT');
+check('GEN-427: matches DATA_ENGINEERING archetype', classifyDynamicArchetype('Data Engineer PySpark ETL Pipeline'), 'DATA_ENGINEERING');
+check('GEN-427: matches AI_ML_SYSTEMS archetype', classifyDynamicArchetype('Machine Learning AI PyTorch XGBoost'), 'AI_ML_SYSTEMS');
+check('GEN-427: matches SYSTEMS_LOWLEVEL archetype', classifyDynamicArchetype('Embedded C WebAssembly Systems Rust'), 'SYSTEMS_LOWLEVEL');
+check('GEN-427: matches GENERAL_SWE archetype', classifyDynamicArchetype('General Software Engineer'), 'GENERAL_SWE');
+
+import { extractCleanQuestionText } from './autoapply/distiller.js';
+const mockRadioInput = {
+  tagName: 'INPUT',
+  type: 'radio',
+  matches: () => true,
+  getRootNode: () => null,
+  getAttribute: (k: string) => k === 'type' ? 'radio' : null,
+  closest: (sel: string) => {
+    if (sel.includes('application-question') || sel.includes('field')) {
+      return {
+        textContent: 'Are you legally authorized to work in the United States? Yes No',
+        querySelectorAll: () => [],
+        querySelector: () => null,
+      };
+    }
+    return null;
+  },
+};
+const cleanedLabel = extractCleanQuestionText(mockRadioInput as any);
+check('GEN-428: strips binary option values from radio question label', cleanedLabel.includes('Yes') || cleanedLabel.includes('No'), false);
+check('GEN-428: retains core question text in radio group walk', cleanedLabel.includes('legally authorized to work'), true);
+
+import { checkWorkdayStepLoopAndRecover } from './autoapply/workday-wizard.js';
+const dummyLoopState = { lastStepHash: 'step_1', consecutiveCount: 1 };
+const mockSameStepPage = {
+  locator: () => ({ allInnerTexts: async () => ['step_1'], count: async () => 0 }),
+  mainFrame: function() { return this; },
+};
+const loopRes = await checkWorkdayStepLoopAndRecover(mockSameStepPage as any, dummyLoopState);
+check('GEN-429: detects stuck step loop on second consecutive click', loopRes.loopDetected, true);
+
+import { attachNetworkReceiptListener, validateSubmissionReceipt } from './autoapply/runner.js';
+const receiptUnconfirmed = validateSubmissionReceipt({ formUnmounted: true, networkReceiptVerified: false, hasConfirmationHeading: false });
+check('GEN-430: rejects applied state on unconfirmed form disappearance', receiptUnconfirmed.isApplied, false);
+check('GEN-430: sets review_required on unconfirmed disappearance', receiptUnconfirmed.status, 'review_required');
+const receiptVerified = validateSubmissionReceipt({ networkReceiptVerified: true });
+check('GEN-430: marks applied on network-verified receipt', receiptVerified.isApplied, true);
+
+import { NON_TECH_TITLE_REGEX, WHITELIST_SOFTWARE_TITLE_REGEX } from './autoapply/candidate-fit-filter.js';
+check('GEN-431: catches non-tech HR/sales titles', NON_TECH_TITLE_REGEX.test('Director of Human Resources'), true);
+check('GEN-431: catches HVAC tech title', NON_TECH_TITLE_REGEX.test('HVAC Tech'), true);
+check('GEN-431: catches Civil Drafter title', NON_TECH_TITLE_REGEX.test('Civil Drafter'), true);
+check('GEN-431: catches Quality Inspector title', NON_TECH_TITLE_REGEX.test('Quality Inspector'), true);
+check('GEN-431: catches Hardware Technician title', NON_TECH_TITLE_REGEX.test('Hardware Technician'), true);
+check('GEN-431: whitelists core SWE and Data roles', WHITELIST_SOFTWARE_TITLE_REGEX.test('Data Engineer'), true);
+check('GEN-431: zero-leak filter does not reject whitelisted SWE roles', NON_TECH_TITLE_REGEX.test('Software Engineer') && !WHITELIST_SOFTWARE_TITLE_REGEX.test('Software Engineer'), false);
+
+import { PerDomainRateLimiter } from './index.js';
+const testLimiter = new PerDomainRateLimiter(500);
+check('GEN-432: PerDomainRateLimiter allows initial request', testLimiter.canRequest('example.com'), true);
+testLimiter.recordRequest('example.com');
+check('GEN-432: PerDomainRateLimiter enforces cooldown immediately after request', testLimiter.canRequest('example.com'), false);
+testLimiter.penalize('example.com', 2);
+check('GEN-432: PerDomainRateLimiter penalty increases cooldown', testLimiter.getCooldown('example.com') > 500, true);
+testLimiter.reset('example.com');
+check('GEN-432: PerDomainRateLimiter reset clears state', testLimiter.canRequest('example.com'), true);
+
+import { isPoisonPrefixEmail } from './outreach/free-contact-discovery.js';
+import { canSendOutreachToDomain, matchCandidateProjectToCompanyStack } from './outreach/outreach-ledger.js';
+check('GEN-433: flags poison prefixes', isPoisonPrefixEmail('jobs@company.com'), true);
+check('GEN-433: allows legitimate named emails', isPoisonPrefixEmail('alex.developer@company.com'), false);
+const ledgerWithRecent = { records: [{ email: 'dev@target.com', company: 'Target', roleTitle: 'Dev', sentAt: new Date().toISOString() }] };
+check('GEN-433: enforces 30-day domain cooldown', canSendOutreachToDomain('target.com', ledgerWithRecent).allowed, false);
+check('GEN-433: matches ClickHouse stack to ClickHouse project', matchCandidateProjectToCompanyStack('ClickHouse Kafka').projectTitle.includes('ClickHouse'), true);
+
+import { ActiveBrowserRegistry, registerActiveBrowserPid, unregisterActiveBrowserPid, identifyOrphanedChromePids, computeRecommendedLanes } from './autoapply/health-and-ram-watchdog.js';
+ActiveBrowserRegistry.clear();
+registerActiveBrowserPid(8888);
+check('GEN-434: ActiveBrowserRegistry records active PID', ActiveBrowserRegistry.has(8888), true);
+unregisterActiveBrowserPid(8888);
+check('GEN-434: ActiveBrowserRegistry unregisters PID', ActiveBrowserRegistry.has(8888), false);
+const candidateZombies = identifyOrphanedChromePids([{ pid: 101, ageSeconds: 200 }], 180);
+check('GEN-434: identifies orphaned Chrome PID > 180s', candidateZombies.includes(101), true);
+const criticalRam = computeRecommendedLanes(0.3, 97);
+check('GEN-434: clamps lanes to 1 on critical low RAM', criticalRam.recommendedLaneCount, 1);
+check('GEN-434: sets CRITICAL_RAM_RECOVERY status', criticalRam.healthStatus, 'CRITICAL_RAM_RECOVERY');
+
 console.log(failures === 0 ? '\nall checks pass' : `\n${failures} failing check(s)`);
 process.exit(failures === 0 ? 0 : 1);

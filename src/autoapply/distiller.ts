@@ -95,35 +95,79 @@ export function extractCleanQuestionText(box: Element, els: Element[] = []): str
   return finalQ;
 }
 
+const STRIP_OPTION_VALUES_REGEX = /\b(yes|no|male|female|decline to state|i agree|agree|disagree|decline|prefer not to say|other|i accept|accept)\b/gi;
+
+export function stripOptionLabels(text: string): string {
+  return String(text || '')
+    .replace(STRIP_OPTION_VALUES_REGEX, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function _extractRawCleanQuestionText(box: Element, els: Element[] = []): string {
-  const root = box.getRootNode() as Document | ShadowRoot;
+  const root = (typeof box.getRootNode === 'function' ? box.getRootNode() : null) as Document | ShadowRoot | null;
   const findById = (id: string): Element | null => {
-    if (!id) return null;
+    if (!id || !root) return null;
     if (typeof (root as Document).getElementById === 'function') return (root as Document).getElementById(id);
     try { return root.querySelector(`[id="${id.replace(/"/g, '\\\"')}"]`); } catch { return null; }
   };
   const first = els[0] || (box.matches('input,select,textarea,[role="combobox"]') ? box : box.querySelector('input,select,textarea,[role="combobox"]'));
-  const isRadioOrCheckbox = first instanceof HTMLInputElement && (first.type === 'radio' || first.type === 'checkbox');
+  const isRadioOrCheckbox = Boolean(
+    first &&
+      (((first as any).type === 'radio' || (first as any).type === 'checkbox') ||
+        (typeof HTMLInputElement !== 'undefined' && first instanceof HTMLInputElement && (first.type === 'radio' || first.type === 'checkbox')))
+  );
 
-  // GEN-129: Group question prompts on Lever, Greenhouse, Workday, Ashby (prevent option labels like "0-1 years" from poisoning question prompt)
+  // GEN-129 & GEN-428: W3C ARIA Accessible Name tree walk for radio/checkbox groups
   if (isRadioOrCheckbox && first) {
-    const leverQuestion = first.closest('.application-question')?.querySelector('.text, .application-label, label')?.textContent?.trim();
-    if (isCleanQuestionCandidate(leverQuestion)) return leverQuestion!.replace(/\s+/g, ' ').trim().slice(0, 1500);
+    // 1. Legend of closest fieldset
+    const legend = first.closest('fieldset')?.querySelector?.('legend')?.textContent?.trim();
+    if (legend) {
+      const cleanLegend = stripOptionLabels(legend);
+      if (isCleanQuestionCandidate(cleanLegend)) return cleanLegend.slice(0, 1500);
+    }
 
-    const legend = first.closest('fieldset')?.querySelector('legend')?.textContent?.trim();
-    if (isCleanQuestionCandidate(legend)) return legend!.replace(/\s+/g, ' ').trim().slice(0, 1500);
+    // 2. Container check: .field, .application-question, fieldset, or parent container
+    const container = first.closest('.field, .application-question, [class*="question"], fieldset, [data-automation-id^="formField-"], [class*="_fieldEntry_"]');
+    if (container) {
+      // Check explicit label.main-label or .question-label or legend first
+      const mainLabel = container.querySelector?.('label.main-label, .main-label, legend, label.question-label, [class*="question-title"], [class*="prompt"]')?.textContent?.trim();
+      if (mainLabel) {
+        const cleanMain = stripOptionLabels(mainLabel);
+        if (isCleanQuestionCandidate(cleanMain)) return cleanMain.slice(0, 1500);
+      }
 
-    const wdLabel = first.closest('[data-automation-id^="formField-"]')?.querySelector('label[data-automation-id*="formLabel"], legend')?.textContent?.trim();
-    if (isCleanQuestionCandidate(wdLabel)) return wdLabel!.replace(/\s+/g, ' ').trim().slice(0, 1500);
+      // Preceding sibling elements with class names containing question, label, or title
+      let sibling = (first.closest('.field, .application-question, label, .radio, .checkbox') || first).previousElementSibling;
+      while (sibling) {
+        const cls = (sibling.className || '').toLowerCase();
+        const tag = sibling.tagName.toLowerCase();
+        if (cls.includes('question') || cls.includes('label') || cls.includes('title') || tag === 'label' || tag === 'legend' || tag === 'p' || tag === 'h3' || tag === 'h4') {
+          const sibText = stripOptionLabels(sibling.textContent || '');
+          if (isCleanQuestionCandidate(sibText)) return sibText.slice(0, 1500);
+        }
+        sibling = sibling.previousElementSibling;
+      }
 
-    const ashbyLabel = first.closest('.ashby-application-form-field-entry, [class*="_fieldEntry_"]')?.querySelector('.ashby-application-form-question-title, label')?.textContent?.trim();
-    if (isCleanQuestionCandidate(ashbyLabel)) return ashbyLabel!.replace(/\s+/g, ' ').trim().slice(0, 1500);
+      // Lever/Workday/Ashby direct question label
+      const leverQuestion = container.querySelector('.text, .application-label, label:not([class*="option"])')?.textContent?.trim();
+      if (leverQuestion) {
+        const cleanLever = stripOptionLabels(leverQuestion);
+        if (isCleanQuestionCandidate(cleanLever)) return cleanLever.slice(0, 1500);
+      }
+
+      // W3C composite container text minus option labels
+      const composite = stripOptionLabels(container.textContent || '');
+      if (isCleanQuestionCandidate(composite)) {
+        return composite.slice(0, 1500);
+      }
+    }
 
     const rg = first.closest('[role="radiogroup"], [role="group"]');
     if (rg) {
-      const rgAria = (rg.getAttribute('aria-label') || '').trim();
+      const rgAria = stripOptionLabels((rg.getAttribute('aria-label') || '').trim());
       if (isCleanQuestionCandidate(rgAria)) return rgAria.slice(0, 1500);
-      const rgLinked = (rg.getAttribute('aria-labelledby') || '').split(/\s+/).map(id => findById(id)?.textContent || '').join(' ').trim();
+      const rgLinked = stripOptionLabels((rg.getAttribute('aria-labelledby') || '').split(/\s+/).map(id => findById(id)?.textContent || '').join(' ').trim());
       if (isCleanQuestionCandidate(rgLinked)) return rgLinked.slice(0, 1500);
     }
   }

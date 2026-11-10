@@ -38,6 +38,7 @@ export function canSendOutreachToTarget(
   const now = Date.now();
   const cleanEmail = email.trim().toLowerCase();
   const cleanCompany = company.trim().toLowerCase();
+  const domain = cleanEmail.includes('@') ? cleanEmail.split('@')[1]!.trim().toLowerCase() : '';
 
   let sendsLast24h = 0;
   for (const r of ledger.records) {
@@ -49,6 +50,9 @@ export function canSendOutreachToTarget(
       if (r.email.trim().toLowerCase() === cleanEmail) {
         return { allowed: false, reason: 'recipient_contacted_within_30d' };
       }
+      if (domain && r.email.trim().toLowerCase().endsWith(`@${domain}`)) {
+        return { allowed: false, reason: 'domain_contacted_within_30d' };
+      }
       if (r.company.trim().toLowerCase() === cleanCompany) {
         return { allowed: false, reason: 'company_contacted_within_30d' };
       }
@@ -59,6 +63,24 @@ export function canSendOutreachToTarget(
     return { allowed: false, reason: `daily_cap_reached_${maxDailySends}` };
   }
 
+  return { allowed: true };
+}
+
+export function canSendOutreachToDomain(
+  domain: string,
+  ledger: OutreachLedgerState
+): { allowed: boolean; reason?: string } {
+  const cleanDomain = domain.trim().toLowerCase().replace(/^@/, '');
+  const now = Date.now();
+  for (const r of ledger.records) {
+    const ts = Date.parse(r.sentAt) || 0;
+    if (now - ts <= THIRTY_DAYS_MS) {
+      const recEmail = r.email.trim().toLowerCase();
+      if (recEmail.endsWith(`@${cleanDomain}`)) {
+        return { allowed: false, reason: 'domain_contacted_within_30d' };
+      }
+    }
+  }
   return { allowed: true };
 }
 
@@ -87,4 +109,63 @@ export function pickRoleTailoredProjectsSummary(roleTitle: string): string {
     return "SM'S DEX & Terminal Wordle Engine (2.4 KB native C99 WebAssembly polynomial-hash engine, Rust OS pointer utility, and automated GitHub Actions CI validator) and ClickHouse Data Ingestion Tool";
   }
   return 'QuizDeck (real-time WebSocket engine stress-tested for 500 concurrent users at 31ms average latency), ClickHouse Data Ingestion Tool, and Chaincode (placed 3rd out of 200+ teams at HackIndia)';
+}
+
+export function matchCandidateProjectToCompanyStack(stackOrDescription: string): {
+  projectTitle: string;
+  narrative: string;
+} {
+  const s = String(stackOrDescription || '').toLowerCase();
+  if (/\b(?:clickhouse|kafka|distributed(?:\s+systems)?|spark|olap|etl)\b/i.test(s)) {
+    return {
+      projectTitle: 'ClickHouse Data Ingestion Pipeline (5M+ rows)',
+      narrative: 'Engineered high-throughput OLAP data ingestion pipeline processing 5,000,000+ records with Kafka streaming and batch validation.',
+    };
+  }
+  if (/\b(?:real-?time|websockets?|react|node(?:\.js)?)\b/i.test(s)) {
+    return {
+      projectTitle: 'QuizDeck Real-Time Learning Platform (500 players, 31ms)',
+      narrative: 'Architected distributed WebSocket game engine supporting 500 concurrent players with 31ms average round-trip latency.',
+    };
+  }
+  if (/\b(?:machine\s+learning|ml\b|python|xgboost|ai\b)\b/i.test(s)) {
+    return {
+      projectTitle: 'Fertilizer Recommendation Microservice (XGBoost)',
+      narrative: 'Built predictive machine learning microservice utilizing XGBoost and FastAPI delivering real-time recommendation inference.',
+    };
+  }
+  return {
+    projectTitle: 'QuizDeck Real-Time Learning Platform (500 players, 31ms)',
+    narrative: 'Fullstack distributed application with WebSocket synchronization and real-time state management.',
+  };
+}
+
+export const DEFAULT_APPLIED_OUTREACH_TARGETS_PATH = path.resolve('state/autoapply/applied-outreach-targets.json');
+
+export interface AppliedOutreachTarget {
+  company: string;
+  domain: string;
+  targetRole?: string;
+  contactEmail?: string;
+  matchedProject: string;
+  mxVerified: boolean;
+  discoveredAt: string;
+}
+
+export function saveAppliedOutreachTarget(
+  target: AppliedOutreachTarget,
+  filePath = DEFAULT_APPLIED_OUTREACH_TARGETS_PATH
+): void {
+  try {
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    let existing: AppliedOutreachTarget[] = [];
+    if (fs.existsSync(filePath)) {
+      try {
+        const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+        if (Array.isArray(parsed)) existing = parsed;
+      } catch {}
+    }
+    existing.push(target);
+    fs.writeFileSync(filePath, JSON.stringify(existing, null, 2), 'utf8');
+  } catch {}
 }

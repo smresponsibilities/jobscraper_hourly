@@ -1,4 +1,6 @@
 import { appendFile, mkdir, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { BoardState, Company, Job, RawJob } from './types.js';
 import { FETCHERS } from './fetchers/index.js';
 import { mapLimit, mapLimitByKey } from './fetchers/util.js';
@@ -552,7 +554,60 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+export class PerDomainRateLimiter {
+  private domains = new Map<string, { lastRequest: number; cooldownMs: number; errorCount: number }>();
+  private defaultCooldownMs: number;
+
+  constructor(defaultCooldownMs = 1000) {
+    this.defaultCooldownMs = defaultCooldownMs;
+  }
+
+  canRequest(domain: string): boolean {
+    const entry = this.domains.get(domain);
+    if (!entry) return true;
+    return Date.now() - entry.lastRequest >= entry.cooldownMs;
+  }
+
+  recordRequest(domain: string): void {
+    const entry = this.domains.get(domain) || { lastRequest: 0, cooldownMs: this.defaultCooldownMs, errorCount: 0 };
+    entry.lastRequest = Date.now();
+    this.domains.set(domain, entry);
+  }
+
+  penalize(domain: string, retryAfterSecondsOrMultiplier: number = 60): void {
+    const entry = this.domains.get(domain) || { lastRequest: Date.now(), cooldownMs: this.defaultCooldownMs, errorCount: 0 };
+    entry.errorCount++;
+    if (retryAfterSecondsOrMultiplier <= 10) {
+      entry.cooldownMs = Math.min(entry.cooldownMs * retryAfterSecondsOrMultiplier, 60_000);
+    } else {
+      entry.cooldownMs = Math.min(retryAfterSecondsOrMultiplier * 1000, 300_000);
+    }
+    entry.lastRequest = Date.now();
+    this.domains.set(domain, entry);
+  }
+
+  getCooldown(domain: string): number {
+    const entry = this.domains.get(domain);
+    if (!entry) return 0;
+    const remaining = entry.cooldownMs - (Date.now() - entry.lastRequest);
+    return Math.max(0, remaining);
+  }
+
+  reset(domain: string): void {
+    this.domains.delete(domain);
+  }
+}
+
+const isDirectCliExecution =
+  process.argv[1] &&
+  (fileURLToPath(import.meta.url) === path.resolve(process.argv[1]) ||
+    process.argv[1].endsWith('index.ts') ||
+    process.argv[1].endsWith('index.js'));
+
+if (isDirectCliExecution) {
+  main().catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
+}
+

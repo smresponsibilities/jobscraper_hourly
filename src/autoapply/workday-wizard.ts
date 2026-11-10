@@ -1,5 +1,5 @@
 // src/autoapply/workday-wizard.ts
-import type { Frame } from 'patchright';
+import type { Frame, Page } from 'patchright';
 
 export async function fillWorkdaySpinbuttonDates(frame: Frame): Promise<number> {
   let filled = 0;
@@ -18,9 +18,9 @@ export async function fillWorkdaySpinbuttonDates(frame: Frame): Promise<number> 
     const inEducation = await field.evaluate((el) => Boolean(el.closest('[data-automation-id="educationSection"], [class*="education" i]'))).catch(() => false);
     const inWorkExp = await field.evaluate((el) => Boolean(el.closest('[data-automation-id="workExperienceSection"], [class*="experience" i], [class*="employment" i]'))).catch(() => false);
 
-    const isEducation = inEducation || (/education|school|university|degree/i.test(fullContext) && !/self[-_\s]*identify|disability|signature/i.test(fullContext));
+    const isEducation = !inWorkExp && (inEducation || (/education|school|university|degree/i.test(text) && !/self[-_\s]*identify|disability|signature/i.test(text)) || (/education|school|university|degree/i.test(headingText) && !/work\s*experience|employment|job/i.test(headingText)));
     const isStart = /from|start/i.test(text);
-    const isSignatureOrToday = /self[-_\s]*identify|disability|signature|today|date\s+signed/i.test(fullContext) || (/date/i.test(text) && !/from|to|start|end/i.test(text));
+    const isSignatureOrToday = !isEducation && !inWorkExp && (/self[-_\s]*identify|disability|signature|today|date\s+signed/i.test(fullContext) || (/date/i.test(text) && !/from|to|start|end/i.test(text)));
 
     const now = new Date();
     let month = '08';
@@ -32,14 +32,14 @@ export async function fillWorkdaySpinbuttonDates(frame: Frame): Promise<number> 
       day = String(now.getDate()).padStart(2, '0');
       year = String(now.getFullYear());
     } else if (isEducation) {
-      month = isStart ? '08' : '06';
+      // Graduation: 08/2026 for Chitkara University; Start: 08/2022
+      month = '08';
       year = isStart ? '2022' : '2026';
     } else if (inWorkExp || /work\s*experience|employment|job/i.test(fullContext)) {
-      // Work experience (Morgan Stanley: Aug 2025 - Aug 2026)
+      // Work experience (Morgan Stanley: Aug 2025 - Aug 2026) -> Start: 08/2025
       month = '08';
       year = isStart ? '2025' : '2026';
     } else {
-      // Work experience (Morgan Stanley: Aug 2025 - Aug 2026)
       month = '08';
       year = isStart ? '2025' : '2026';
     }
@@ -73,7 +73,20 @@ export async function fillWorkdaySpinbuttonDates(frame: Frame): Promise<number> 
         filled++;
       }
     }
+
+    // Handle unified spinbutton date inputs (MM/YYYY or MM/DD/YYYY)
+    const unifiedInput = field.locator('input[role="spinbutton"], input[data-automation-id*="date" i]').first();
+    if (await unifiedInput.isVisible().catch(() => false)) {
+      const cur = (await unifiedInput.inputValue().catch(() => '')).trim();
+      if (!cur || /^(?:mm|yyyy)/i.test(cur)) {
+        const dateVal = isSignatureOrToday ? `${month}/${day}/${year}` : `${month}/${year}`;
+        await unifiedInput.click({ timeout: 1500 }).catch(() => {});
+        await unifiedInput.fill(dateVal).catch(() => {});
+        filled++;
+      }
+    }
   }
+
   return filled;
 }
 
@@ -91,46 +104,96 @@ export async function fillWorkdaySelectInputFast(
     return true;
   }
 
-  const input = container.locator('input[data-uxi-widget-type="selectinput"], input').first();
-  if (!(await input.isVisible().catch(() => false))) return false;
+  const control = container.locator('input[data-uxi-widget-type="selectinput"], input, button[role="combobox"]').first();
+  if (!(await control.isVisible().catch(() => false))) return false;
 
-  const trySearch = async (term: string): Promise<boolean> => {
-    await input.click({ timeout: 2000 }).catch(() => {});
-    await input.fill(term).catch(() => {});
-    await input.press('Enter').catch(() => {});
-    await frame.waitForTimeout(700);
+  const page = frame.page();
+  const trySelect = async (targetText: string): Promise<boolean> => {
+    // Ensure portal is triggered and open
+    await control.click().catch(() => {});
+    await page.waitForTimeout(150);
 
-    const opt = frame
+    const portalOption = page
       .locator('[data-automation-id="promptOption"], [role="option"]')
-      .filter({ visible: true })
+      .filter({ hasText: targetText })
       .first();
-    if (await opt.isVisible().catch(() => false)) {
-      await opt.click({ timeout: 2000 }).catch(() => {});
-      await frame.waitForTimeout(500);
-      // If 2-level hierarchical menu (e.g. Source -> Website -> Corporate Website), click child leaf
-      if ((await container.locator('[data-automation-id="selectedItem"]').count().catch(() => 0)) === 0) {
-        const childOpt = frame
-          .locator('[data-automation-id="promptOption"], [role="option"]')
-          .filter({ visible: true })
-          .first();
-        if (await childOpt.isVisible().catch(() => false)) {
-          await childOpt.click({ timeout: 2000 }).catch(() => {});
-          await frame.waitForTimeout(400);
-        }
-      }
-      await frame.page().keyboard.press('Escape').catch(() => {});
-      return (await container.locator('[data-automation-id="selectedItem"]').count().catch(() => 0)) > 0;
+
+    if ((await portalOption.count().catch(() => 0)) > 0) {
+      await portalOption.scrollIntoViewIfNeeded().catch(() => {});
+      await portalOption.click({ force: true }).catch(() => {});
+    } else {
+      await page.keyboard.type(targetText.slice(0, 4)).catch(() => {});
+      await page.waitForTimeout(300);
+      await page.keyboard.press('Enter').catch(() => {});
     }
-    return false;
+
+    await page.waitForTimeout(200);
+    // If 2-level hierarchical menu (e.g. Source -> Website -> Corporate Website), click child leaf
+    if ((await container.locator('[data-automation-id="selectedItem"]').count().catch(() => 0)) === 0) {
+      const childOpt = page
+        .locator('[data-automation-id="promptOption"], [role="option"]')
+        .filter({ visible: true })
+        .first();
+      if (await childOpt.isVisible().catch(() => false)) {
+        await childOpt.click({ force: true }).catch(() => {});
+        await page.waitForTimeout(200);
+      }
+    }
+    await page.keyboard.press('Escape').catch(() => {});
+    return (await container.locator('[data-automation-id="selectedItem"]').count().catch(() => 0)) > 0;
   };
 
-  if (await trySearch(searchTerm)) return true;
+  if (await trySelect(searchTerm)) return true;
   const fallbacks = Array.isArray(fallbackTerm) ? fallbackTerm : (fallbackTerm ? [fallbackTerm] : []);
   for (const fb of fallbacks) {
-    if (await trySearch(fb)) return true;
+    if (await trySelect(fb)) return true;
   }
-  await frame.page().keyboard.press('Escape').catch(() => {});
   return false;
+}
+
+export interface WorkdayStepLoopState {
+  lastStepHash: string;
+  consecutiveCount: number;
+}
+
+export async function checkWorkdayStepLoopAndRecover(
+  page: Page | Frame,
+  loopState: WorkdayStepLoopState
+): Promise<{ loopDetected: boolean; errorMessages: string[]; healed: boolean }> {
+  const currentStepText = await page
+    .locator('[data-automation-id="pageHeader"], [data-automation-id="progressBarActiveStep"], [data-automation-id="pageHeaderTitle"]')
+    .allInnerTexts()
+    .then((texts: string[]) => texts.map((t: string) => t.trim()).join(' | '))
+    .catch(() => '');
+
+  const stepHash = currentStepText || 'default_step';
+  if (stepHash === loopState.lastStepHash) {
+    loopState.consecutiveCount++;
+  } else {
+    loopState.lastStepHash = stepHash;
+    loopState.consecutiveCount = 1;
+  }
+
+  if (loopState.consecutiveCount >= 2) {
+    const errorLocators = page.locator('[data-automation-id="errorMessage"], [data-automation-id="errorWidget"], [data-automation-id*="error" i], [aria-invalid="true"]');
+    const count = await errorLocators.count().catch(() => 0);
+    const errorMessages: string[] = [];
+    for (let i = 0; i < count; i++) {
+      const txt = (await errorLocators.nth(i).innerText().catch(() => '')).trim();
+      if (txt) errorMessages.push(txt);
+    }
+
+    let healed = false;
+    try {
+      const frame = 'mainFrame' in page ? (page as Page).mainFrame() : (page as Frame);
+      await runWorkdayStepFastPass(frame);
+      healed = true;
+    } catch {}
+
+    return { loopDetected: true, errorMessages, healed };
+  }
+
+  return { loopDetected: false, errorMessages: [], healed: false };
 }
 
 export async function runWorkdayStepFastPass(frame: Frame, resumePdfPath?: string): Promise<void> {

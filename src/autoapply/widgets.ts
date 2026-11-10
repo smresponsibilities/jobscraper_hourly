@@ -517,6 +517,17 @@ export async function selectHarvestedOption(
     if (menuStillOpen) {
       await frame.page().keyboard.press('Enter').catch(() => {});
     }
+
+    // Ticket GEN-428: For custom select comboboxes (.select2-container, .chosen-container), ensure options are chosen via keyboard navigation
+    const isCustomContainer = await control.evaluate((el) => {
+      return Boolean(el.closest('.select2-container, .chosen-container, [class*="select2"], [class*="chosen"]'));
+    }).catch(() => false);
+    if (isCustomContainer) {
+      await control.focus().catch(() => {});
+      await frame.page().keyboard.press('ArrowDown').catch(() => {});
+      await frame.page().waitForTimeout(50);
+      await frame.page().keyboard.press('Enter').catch(() => {});
+    }
   }
 
   // Failure 2C: Workday 2-level menu closes without selecting leaf
@@ -547,6 +558,35 @@ export async function selectHarvestedOption(
   }
 
   return (await control.evaluate(comboboxSelection)).values.includes(option) || (await control.innerText()).trim() === option || await verifyChoiceReadBack(control, control);
+}
+
+export async function selectCustomComboboxWithKeyboardFallback(
+  frame: Frame,
+  control: Locator,
+  targetText: string
+): Promise<boolean> {
+  try {
+    await control.click({ timeout: 1500 });
+    await frame.page().waitForTimeout(100);
+    const opt = frame
+      .locator('.select2-results__option, .chosen-results li, [role="option"]')
+      .filter({ hasText: targetText })
+      .first();
+    if (await opt.isVisible().catch(() => false)) {
+      await opt.click({ force: true, timeout: 1500 });
+      return true;
+    }
+  } catch {}
+
+  try {
+    await control.focus().catch(() => {});
+    await frame.page().keyboard.press('ArrowDown').catch(() => {});
+    await frame.page().waitForTimeout(100);
+    await frame.page().keyboard.press('Enter').catch(() => {});
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Runs in the browser and preserves visible fixed-position and below-fold controls. */

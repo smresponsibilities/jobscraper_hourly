@@ -1,5 +1,5 @@
 import { chromium, type Browser, type BrowserContext, type Page, type Locator, type Frame, type Request } from 'patchright';
-import { copyFileSync, mkdirSync, readFileSync, writeFileSync, renameSync, existsSync, unlinkSync, utimesSync } from 'node:fs';
+import { copyFileSync, mkdirSync, readFileSync, writeFileSync, renameSync, existsSync, unlinkSync, utimesSync, appendFileSync } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { execSync } from 'node:child_process';
@@ -31,7 +31,7 @@ import { prepareText, type ApplicationBrief } from './prepare.js';
 import { expandWorkdayApplications, findWorkdayApplication, workdayApplicationsEmpty, workdayCandidateHomeUrl } from './workday-reconciliation.js';
 import { ensureWorkdayApplicationStarted } from './workday-entry.js';
 import { authenticateWorkdayPortal } from './authentication.js';
-import { runWorkdayStepFastPass } from './workday-wizard.js';
+import { runWorkdayStepFastPass, checkWorkdayStepLoopAndRecover, type WorkdayStepLoopState } from './workday-wizard.js';
 import { recordLearnedSuccess, logUnknownFieldForLearning, resolveBySemanticSelfLearning, inferAnswerFromOptionSignature, recordVerifiedAcceptedApplicationAnswers } from './self-learning.js';
 import { resolveEmployerDomain, findFreeCompanyLeads, generateColdOutreachDraft, recordOutreachLead } from '../leads/free-email-finder.js';
 import { captureElementFingerprint, saveAdaptiveFingerprint, findAdaptiveLocator } from './adaptive-relocator.js';
@@ -47,6 +47,91 @@ import { capturePageDiagnostics, recordOvernightError, normalizeReasonCode } fro
 import { resolveUniversalPermissiveFallback } from './permissive-fallback.js';
 import { composeGroundedNarrative } from './narrative-composer.js';
 import { evaluateCandidateJobFit } from './candidate-fit-filter.js';
+
+export interface ReceiptValidationOptions {
+  hasConfirmationUrl?: boolean;
+  hasValidationErrorText?: boolean;
+  networkReceiptVerified?: boolean;
+  hasConfirmationHeading?: boolean;
+  formUnmounted?: boolean;
+  errorFilePath?: string;
+  candidateId?: string;
+  jobUrl?: string;
+  company?: string;
+}
+
+export interface ReceiptValidationResult {
+  status: 'applied' | 'failed' | 'review_required' | 'unconfirmed';
+  reason?: string;
+  isApplied: boolean;
+}
+
+export function recordOvernightSubmissionError(
+  errorData: Record<string, any>,
+  filePath = 'state/autoapply/overnight-errors.jsonl'
+): void {
+  try {
+    const fullPath = path.resolve(filePath);
+    mkdirSync(path.dirname(fullPath), { recursive: true });
+    appendFileSync(fullPath, JSON.stringify({ timestamp: new Date().toISOString(), ...errorData }) + '\n', 'utf8');
+  } catch {
+    // Silent recovery
+  }
+}
+
+export const attachNetworkReceiptListener = (page: Page): { getStatus: () => boolean } => {
+  let networkReceiptVerified = false;
+  page.on('response', async (response) => {
+    try {
+      const method = typeof (response as any).request === 'function' ? response.request()?.method?.() : undefined;
+      if (method && method !== 'POST' && method !== 'PUT') return;
+      const url = response.url();
+      const isSubmitEndpoint =
+        /(?:\/applications\b|\/jobs\/[^/?#]+\/applications|\/api\/submit(?:Single)?ApplicationForm|\/apply\b|\/oneclick-ui\/[^/?#]+\/submit|\/submit\b|\/apply\/)/i.test(url) ||
+        /api\/v\d+\/applications|candidates\/apply|submit_application|job_application/i.test(url);
+      if (isSubmitEndpoint && [200, 201, 204].includes(response.status())) {
+        try {
+          const text = await response.text();
+          if (!/error|invalid|failed|"(?:isSuccess|success)"\s*:\s*false/i.test(text.slice(0, 1000))) {
+            networkReceiptVerified = true;
+          }
+        } catch {
+          networkReceiptVerified = true;
+        }
+      }
+    } catch {}
+  });
+  return { getStatus: () => networkReceiptVerified };
+};
+
+export function validateSubmissionReceipt(opts: ReceiptValidationOptions): ReceiptValidationResult {
+  const isApplied = Boolean(
+    (opts.hasConfirmationUrl && !opts.hasValidationErrorText) ||
+    opts.networkReceiptVerified ||
+    opts.hasConfirmationHeading
+  );
+
+  if (isApplied) {
+    return { status: 'applied', isApplied: true, reason: 'Submission confirmation verified' };
+  }
+
+  if (opts.formUnmounted && !opts.networkReceiptVerified && !opts.hasConfirmationHeading) {
+    recordOvernightSubmissionError({
+      candidateId: opts.candidateId,
+      jobUrl: opts.jobUrl,
+      company: opts.company,
+      reason: 'UNCONFIRMED_FORM_DISAPPEARANCE',
+      details: 'Form unmounted without verified network receipt or confirmation heading'
+    }, opts.errorFilePath);
+    return {
+      status: 'review_required',
+      isApplied: false,
+      reason: 'UNCONFIRMED_FORM_DISAPPEARANCE'
+    };
+  }
+
+  return { status: 'unconfirmed', isApplied: false, reason: 'Pending verification' };
+}
 
 export const LOW_RAM_CHROMIUM_ARGS = [
   '--headless=new',
@@ -72,6 +157,86 @@ export const LOW_RAM_CHROMIUM_ARGS = [
   '--no-first-run',
   '--aggressive-cache-discard',
 ];
+
+export async function populateGreenhouseSecurityCode(
+  frameOrPage: Frame | Page,
+  code: string
+): Promise<boolean> {
+  const cleanCode = String(code || '').trim();
+  if (!cleanCode) return false;
+
+  return await frameOrPage.evaluate((otp: string) => {
+    const splitBoxes = Array.from(
+      document.querySelectorAll<HTMLInputElement>(
+        'input[id^="security-input-"], input[id^="security-code-"], .security-code-input input, fieldset input[maxlength="1"], #security-code input'
+      )
+    );
+
+    const nativeSetter = Object.getOwnPropertyDescriptor(
+      window.HTMLInputElement.prototype,
+      'value'
+    )?.set;
+
+    if (splitBoxes.length >= 4) {
+      const chars = otp.split('');
+      splitBoxes.forEach((box, idx) => {
+        const ch = chars[idx] ?? '';
+        box.focus();
+        if (nativeSetter) {
+          nativeSetter.call(box, ch);
+        } else {
+          box.value = ch;
+        }
+        box.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+        box.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+      });
+
+      try {
+        const dt = new DataTransfer();
+        dt.setData('text/plain', otp);
+        const pasteEvt = new ClipboardEvent('paste', {
+          clipboardData: dt,
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+        });
+        splitBoxes[0]?.dispatchEvent(pasteEvt);
+      } catch {}
+
+      return true;
+    }
+
+    const singleInput = document.querySelector<HTMLInputElement>(
+      '#security-code, input#security-code, input[name*="security_code" i], input[id*="security_code" i], input[data-automation-id*="securityCode" i]'
+    );
+    if (singleInput) {
+      singleInput.focus();
+      if (nativeSetter) {
+        nativeSetter.call(singleInput, otp);
+      } else {
+        singleInput.value = otp;
+      }
+      singleInput.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+      singleInput.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+
+      try {
+        const dt = new DataTransfer();
+        dt.setData('text/plain', otp);
+        const pasteEvt = new ClipboardEvent('paste', {
+          clipboardData: dt,
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+        });
+        singleInput.dispatchEvent(pasteEvt);
+      } catch {}
+
+      return true;
+    }
+
+    return false;
+  }, cleanCode).catch(() => false);
+}
 
 export async function healInvalidFieldsAndRetrySubmit(
   frame: Frame,
@@ -299,6 +464,7 @@ export interface AutoApplyOptions {
   browserProfileDir?: string;
   lane?: string;
   jobId?: string;
+  candidateId?: string;
   resume?: boolean;
   preserveReviewedValues?: boolean;
   reuseCompanyApplication?: boolean;
@@ -826,8 +992,11 @@ export class AutoApplyRunner {
             tokenJobId = ghMatch[2] || '';
           }
           if (forSlug && tokenJobId) {
-            const hostedUrl = `https://job-boards.greenhouse.io/${encodeURIComponent(forSlug)}/jobs/${encodeURIComponent(tokenJobId)}`;
-            await page.goto(hostedUrl, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
+            const isEu = page.url().includes('.eu.greenhouse.io') || (effectiveUrl || '').includes('.eu.greenhouse.io');
+            const ghHost = isEu ? 'job-boards.eu.greenhouse.io' : 'job-boards.greenhouse.io';
+            const searchParams = new URL(page.url()).search;
+            const hostedUrl = `https://${ghHost}/${encodeURIComponent(forSlug)}/jobs/${encodeURIComponent(tokenJobId)}${searchParams}`;
+            await page.goto(hostedUrl, { waitUntil: 'domcontentloaded', timeout: 15000, referer: page.url() }).catch(() => {});
             const applyBtn = page.locator('button.btn--pill:has-text("Apply"), button:has-text("Apply"), a.btn--pill:has-text("Apply")').first();
             if (await applyBtn.isVisible().catch(() => false)) {
               await applyBtn.click({ timeout: 3000 }).catch(() => {});
@@ -3819,9 +3988,16 @@ export class AutoApplyRunner {
         const ghHost = isEu ? 'job-boards.eu.greenhouse.io' : 'boards.greenhouse.io';
         const currentUrl = this.page!.url().toLowerCase();
         if (!currentUrl.includes('greenhouse.io')) {
-          const embedUrl = `https://${ghHost}/embed/job_app?for=${encodeURIComponent(ghSlug)}&token=${encodeURIComponent(ghJobId)}`;
+          let extraQuery = '';
+          try {
+            const origUrl = new URL(target || options.url);
+            origUrl.searchParams.forEach((v, k) => {
+              if (k !== 'for' && k !== 'token') extraQuery += `&${encodeURIComponent(k)}=${encodeURIComponent(v)}`;
+            });
+          } catch {}
+          const embedUrl = `https://${ghHost}/embed/job_app?for=${encodeURIComponent(ghSlug)}&token=${encodeURIComponent(ghJobId)}${extraQuery}`;
           this.log(`Redirected off Greenhouse to marketing page (${currentUrl}); recovering via embed URL: ${embedUrl}`);
-          await this.page!.goto(embedUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+          await this.page!.goto(embedUrl, { waitUntil: 'domcontentloaded', timeout: 30000, referer: target || options.url }).catch(() => {});
           await this.page!.locator('body').waitFor({ state: 'attached' }).catch(() => {});
         }
       }
@@ -3971,6 +4147,7 @@ export class AutoApplyRunner {
       }
       const timeout = options.timeoutMs ?? 10000;
       let reviewedSignature: string | undefined;
+      const workdayLoopState: WorkdayStepLoopState = { lastStepHash: '', consecutiveCount: 0 };
       for (let step = 1; step <= maxSteps; step++) {
         this.attemptedFieldRefs = new Set<string>();
         if (this.isClosing || !this.page || this.page.isClosed()) {
@@ -4560,6 +4737,18 @@ export class AutoApplyRunner {
               }
             }
           }
+          if (!changed && this.page && !this.page.isClosed() && (report.ats === 'workday' || this.page.url().toLowerCase().includes('myworkdayjobs.com'))) {
+            const recovery = await checkWorkdayStepLoopAndRecover(this.page, workdayLoopState);
+            if (recovery.loopDetected) {
+              this.log(`[GEN-429] Workday step loop detected: ${recovery.errorMessages.join('; ')}`);
+              if (recovery.healed) {
+                if (options.mode === 'stealth') await this.pacedClick(next); else await next.click().catch(() => {});
+                if (await this.waitChanged(before, timeout, workdayStep)) {
+                  changed = true;
+                }
+              }
+            }
+          }
           if (!changed) {
             report.reason = 'Next did not change the form';
             await this.recordUnknownFieldsFromErrors(options, report);
@@ -4858,7 +5047,24 @@ export class AutoApplyRunner {
             report.reason = 'Submit clicked; validation or client error observed. Verify the outcome before retrying.';
             await this.recordUnknownFieldsFromErrors(options, report);
           } else {
-            report.reviewKind = 'receipt'; report.reason = 'Submit clicked but no receipt observed; verify manually before retrying';
+            const isUnmounted = await this.page?.evaluate(() => {
+              return document.querySelectorAll('input:not([type="hidden"]), select, textarea').length <= 1;
+            }).catch(() => false);
+            if (isUnmounted) {
+              recordOvernightSubmissionError({
+                candidateId: options.candidateId,
+                jobUrl: options.url,
+                company: options.company,
+                reason: 'UNCONFIRMED_FORM_DISAPPEARANCE',
+                error: 'Form unmounted without verified network receipt or confirmation heading'
+              });
+              report.status = 'failed';
+              report.reviewKind = 'receipt';
+              report.reason = 'UNCONFIRMED_FORM_DISAPPEARANCE';
+            } else {
+              report.reviewKind = 'receipt';
+              report.reason = 'Submit clicked but no receipt observed; verify manually before retrying';
+            }
           }
         }
         if (report.receipt) {

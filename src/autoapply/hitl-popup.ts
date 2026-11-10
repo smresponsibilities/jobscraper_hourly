@@ -19,7 +19,7 @@ export async function runOnDemandHumanPopup(params: {
   pageToAssist?: Page;
 }): Promise<HitlInterventionResult> {
   // Never allow more than 1 human popup window at a time!
-  if (activeHitlPopupOpen || process.env.AUTOAPPLY_DISABLE_HITL_POPUP === '1') {
+  if (activeHitlPopupOpen || process.env.AUTOAPPLY_DISABLE_HITL_POPUP === '1' || process.env.DRY_RUN === '1') {
     return { intervened: false, captchaSolved: false, learnedFields: [] };
   }
   activeHitlPopupOpen = true;

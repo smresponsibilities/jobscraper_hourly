@@ -17,13 +17,34 @@ export interface SystemRamAndHealthSnapshot {
   healthStatus: 'OPTIMAL_SCALE_UP' | 'NORMAL' | 'THROTTLE_DOWN_LOW_RAM' | 'CRITICAL_RAM_RECOVERY';
 }
 
+export const ActiveBrowserRegistry = new Set<number>();
+
+export function registerActiveBrowserPid(pid: number): void {
+  if (typeof pid === 'number' && pid > 0) {
+    ActiveBrowserRegistry.add(pid);
+  }
+}
+
+export function unregisterActiveBrowserPid(pid: number): void {
+  ActiveBrowserRegistry.delete(pid);
+}
+
+export function identifyOrphanedChromePids(
+  runningProcesses: Array<{ pid: number; ageSeconds: number }>,
+  maxAgeSeconds = 180
+): number[] {
+  return runningProcesses
+    .filter((p) => p.ageSeconds > maxAgeSeconds && !ActiveBrowserRegistry.has(p.pid))
+    .map((p) => p.pid);
+}
+
 let totalZombiesReaped = 0;
 
 /**
- * Queries Windows chrome.exe processes and kills any chrome.exe older than maxAgeSeconds.
+ * Queries Windows chrome.exe processes and kills any chrome.exe older than maxAgeSeconds not in ActiveBrowserRegistry.
  * If forceKillAll is true (used strictly at 0-in-flight chunk boundaries), kills ALL chrome.exe processes.
  */
-export function reapZombieChromeProcesses(maxAgeSeconds = 195, forceKillAll = false): {
+export function reapZombieChromeProcesses(maxAgeSeconds = 180, forceKillAll = false): {
   remainingChromeCount: number;
   chromeWorkingSetMb: number;
   reapedCount: number;
@@ -41,8 +62,10 @@ export function reapZombieChromeProcesses(maxAgeSeconds = 195, forceKillAll = fa
   }
 
   try {
-    const psCmd = `powershell -NoProfile -Command "$now = Get-Date; $procs = @(Get-Process chrome -ErrorAction SilentlyContinue); $reaped = 0; $rem = 0; $ws = 0; foreach ($p in $procs) { try { $age = ($now - $p.StartTime).TotalSeconds; if ($age -gt ${maxAgeSeconds}) { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue; $reaped++ } else { $rem++; $ws += $p.WorkingSet64 } } catch {} }; Write-Output ($rem.ToString() + '|' + [math]::Round($ws / 1048576) + '|' + $reaped.ToString())"`;
-    const out = execSync(psCmd, { encoding: 'utf8', timeout: 5000 }).trim();
+    const activePidsList = Array.from(ActiveBrowserRegistry).filter((p) => typeof p === 'number' && p > 0);
+    const activePidsArg = activePidsList.length > 0 ? activePidsList.join(',') : '-1';
+    const psCmd = `powershell -NoProfile -Command "$now = Get-Date; $active = @(${activePidsArg}); $procs = @(Get-CimInstance Win32_Process -Filter \\"Name = 'chrome.exe'\\" -ErrorAction SilentlyContinue); $reaped = 0; $rem = 0; $ws = 0; foreach ($p in $procs) { try { $pidNum = [int]$p.ProcessId; if ($active -contains $pidNum) { $rem++; $ws += [double]$p.WorkingSetSize; continue }; $age = ($now - $p.CreationDate).TotalSeconds; if ($age -gt ${maxAgeSeconds}) { taskkill /F /T /PID $pidNum 2>$null; $reaped++ } else { $rem++; $ws += [double]$p.WorkingSetSize } } catch {} }; Write-Output ($rem.ToString() + '|' + [math]::Round($ws / 1048576) + '|' + $reaped.ToString())"`;
+    const out = execSync(psCmd, { encoding: 'utf8', timeout: 8000 }).trim();
     const [remStr, wsStr, reapedStr] = out.split('|');
     const reaped = Number(reapedStr) || 0;
     totalZombiesReaped += reaped;
@@ -129,10 +152,16 @@ export function computeRecommendedLanes(
   let recommendedLaneCount = 4;
   let healthStatus: SystemRamAndHealthSnapshot['healthStatus'] = 'NORMAL';
 
-  if (freeRamGb < 0.45 || usedRamPct >= 95) {
+  if (freeRamGb < 0.50 || usedRamPct >= 95) {
     recommendedLaneCount = 1;
     healthStatus = 'CRITICAL_RAM_RECOVERY';
-  } else if (freeRamGb < 0.85 || usedRamPct >= 91 || remainingChromeCount > 38) {
+    try {
+      if (typeof (global as any).gc === 'function') {
+        (global as any).gc();
+      }
+    } catch {}
+    console.warn('[WATCHDOG] CRITICAL_RAM_RECOVERY: Free RAM below 500MB, clamped to 1 lane');
+  } else if (freeRamGb < 1.0 || usedRamPct >= 90 || remainingChromeCount > 38) {
     recommendedLaneCount = 2;
     healthStatus = 'THROTTLE_DOWN_LOW_RAM';
   } else if (freeRamGb >= 2.4 && usedRamPct <= 80 && remainingChromeCount < 24) {

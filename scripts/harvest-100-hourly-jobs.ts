@@ -7,6 +7,7 @@ import { isSupportedDirectAtsJobUrl } from '../src/autoapply/priority-scheduler.
 import { unwrapDirectAtsApplicationUrl } from '../src/autoapply/url-unwrapper.js';
 import { evaluateCandidateJobFit } from '../src/autoapply/candidate-fit-filter.js';
 import { enforceQueueDatabaseInvariants } from '../src/contracts/system-invariants.js';
+import { PerDomainRateLimiter } from '../src/index.js';
 
 export const TARGET_DB_PATHS = [
   'state/autoapply/portal-review/queue.sqlite',
@@ -425,10 +426,13 @@ export async function harvestLiveFastAtsBoardsFromCompaniesJson(maxBoards = 650)
   return harvested;
 }
 
-const VERIFIED_WORKDAY_BENGALURU_GCCS: Array<{ name: string; origin: string; tenant: string; site: string }> = [
-  { name: 'Cisco', origin: 'https://cisco.wd5.myworkdayjobs.com', tenant: 'cisco', site: 'Cisco_Careers' },
-  { name: 'Salesforce', origin: 'https://salesforce.wd12.myworkdayjobs.com', tenant: 'salesforce', site: 'External_Career_Site' },
+export const VERIFIED_WORKDAY_BENGALURU_GCCS: Array<{ name: string; origin: string; tenant: string; site: string }> = [
+  { name: 'Walmart', origin: 'https://walmart.wd5.myworkdayjobs.com', tenant: 'walmart', site: 'WalmartExternal' },
+  { name: 'Target', origin: 'https://target.wd5.myworkdayjobs.com', tenant: 'target', site: 'targetcareers' },
   { name: 'Adobe', origin: 'https://adobe.wd5.myworkdayjobs.com', tenant: 'adobe', site: 'external_experienced' },
+  { name: 'Cisco', origin: 'https://cisco.wd5.myworkdayjobs.com', tenant: 'cisco', site: 'Cisco_Careers' },
+  { name: 'Autodesk', origin: 'https://autodesk.wd1.myworkdayjobs.com', tenant: 'autodesk', site: 'Ext' },
+  { name: 'Salesforce', origin: 'https://salesforce.wd12.myworkdayjobs.com', tenant: 'salesforce', site: 'External_Career_Site' },
   { name: 'NVIDIA', origin: 'https://nvidia.wd5.myworkdayjobs.com', tenant: 'nvidia', site: 'NVIDIAExternalCareerSite' },
   { name: 'Mastercard', origin: 'https://mastercard.wd1.myworkdayjobs.com', tenant: 'mastercard', site: 'CorporateCareers' },
   { name: 'NatWest Group', origin: 'https://natwest.wd3.myworkdayjobs.com', tenant: 'natwest', site: 'RBS' },
@@ -437,27 +441,80 @@ const VERIFIED_WORKDAY_BENGALURU_GCCS: Array<{ name: string; origin: string; ten
   { name: 'Dell', origin: 'https://dell.wd1.myworkdayjobs.com', tenant: 'dell', site: 'External' },
 ];
 
-export async function harvestLiveWorkdayBengaluruGccJobs(): Promise<HarvestedJob[]> {
+export const workdayRateLimiter = new PerDomainRateLimiter(600);
+
+export async function harvestLiveWorkdayBengaluruGccJobs(maxPages = 2): Promise<HarvestedJob[]> {
   const out: HarvestedJob[] = [];
-  await Promise.all(
-    VERIFIED_WORKDAY_BENGALURU_GCCS.map(async (gcc) => {
+  const offsets = Array.from({ length: maxPages }, (_, i) => i * 20);
+
+  for (const gcc of VERIFIED_WORKDAY_BENGALURU_GCCS) {
+    const domain = new URL(gcc.origin).hostname;
+    for (const offset of offsets) {
+      if (!workdayRateLimiter.canRequest(domain)) {
+        const waitMs = workdayRateLimiter.getCooldown(domain);
+        if (waitMs > 0) {
+          await new Promise((r) => setTimeout(r, waitMs));
+        }
+      }
+      workdayRateLimiter.recordRequest(domain);
+
       const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 4500);
+      const timer = setTimeout(() => ctrl.abort(), 5500);
       try {
         const cxsUrl = `${gcc.origin}/wday/cxs/${gcc.tenant}/${gcc.site}/jobs`;
-        const res = await fetch(cxsUrl, {
+        const facetPayload = {
+          appliedFacets: { locationHierarchy1: ['d8a43690d8071000a6e34c9c8ef10000'] },
+          limit: 20,
+          offset,
+          searchText: '',
+        };
+
+        let res = await fetch(cxsUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             Accept: 'application/json',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124.0.0.0',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36',
           },
-          body: JSON.stringify({ appliedFacets: {}, limit: 20, offset: 0, searchText: 'Software Engineer Bengaluru' }),
+          body: JSON.stringify(facetPayload),
           signal: ctrl.signal,
         });
-        if (!res.ok) return;
-        const data = (await res.json().catch(() => null)) as any;
-        const postings = Array.isArray(data?.jobPostings) ? data.jobPostings : [];
+
+        if (res.status === 429) {
+          workdayRateLimiter.penalize(domain, 2);
+          break;
+        }
+
+        let data = (res.ok ? await res.json().catch(() => null) : null) as any;
+        let postings = Array.isArray(data?.jobPostings) ? data.jobPostings : [];
+
+        if (postings.length === 0) {
+          const searchPayload = {
+            appliedFacets: {},
+            limit: 20,
+            offset,
+            searchText: 'Bengaluru',
+          };
+          const sRes = await fetch(cxsUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Accept: 'application/json',
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36',
+            },
+            body: JSON.stringify(searchPayload),
+            signal: ctrl.signal,
+          });
+          if (sRes.status === 429) {
+            workdayRateLimiter.penalize(domain, 2);
+            break;
+          }
+          if (sRes.ok) {
+            data = await sRes.json().catch(() => null);
+            postings = Array.isArray(data?.jobPostings) ? data.jobPostings : [];
+          }
+        }
+
         for (const p of postings) {
           if (!p.externalPath || !p.title) continue;
           const loc = String(p.locationsText || 'Bengaluru, India');
@@ -468,15 +525,18 @@ export async function harvestLiveWorkdayBengaluruGccJobs(): Promise<HarvestedJob
             location: loc,
             url,
             ats: 'workday',
+            postedRecent: isPostedWithinHours(p.postedOn, 72),
           });
         }
+
+        if (postings.length < 20) break;
       } catch {
-        // Ignore single GCC timeout
+        // Continue to next company on network error
       } finally {
         clearTimeout(timer);
       }
-    })
-  );
+    }
+  }
   return out;
 }
 
@@ -584,7 +644,8 @@ export async function runHourly100JobsHarvester(): Promise<{
               location: job.location,
               ats: job.ats,
               discoveredAt: new Date().toISOString(),
-              is_hourly_fresh: freshTier,
+              is_hourly_fresh: 3,
+              priorityBonus: 5000,
             });
             insertStmt.run(candidateId, id, normUrl, normUrl, payload, expiresDate);
             totalInsertedOrBoosted++;
@@ -595,7 +656,8 @@ export async function runHourly100JobsHarvester(): Promise<{
             p.location = job.location || p.location || 'India';
             p.title = job.title || p.title;
             p.company = job.company || p.company;
-            p.is_hourly_fresh = Math.max(p.is_hourly_fresh || 0, freshTier);
+            p.is_hourly_fresh = 3;
+            p.priorityBonus = Math.max(p.priorityBonus || 0, 5000);
             p.boostedAt = new Date().toISOString();
             delete p.last_error;
             delete p.error;

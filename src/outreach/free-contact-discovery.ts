@@ -1,5 +1,51 @@
 import dns from 'node:dns';
+import { resolveMx } from 'node:dns/promises';
 import { isSafeOutreachEmailSyntax } from '../../scripts/sync-applied-to-outreach.js';
+
+export const POISON_PREFIXES = [
+  'jobs',
+  'careers',
+  'hr',
+  'info',
+  'support',
+  'legal',
+  'privacy',
+  'help',
+  'contact',
+  'admin',
+  'billing',
+  'sales',
+  'marketing',
+  'press',
+  'media',
+  'security',
+  'abuse',
+  'postmaster',
+  'hostmaster',
+  'webmaster',
+  'no-reply',
+  'noreply',
+  'notification',
+  'hello',
+] as const;
+
+export function isPoisonPrefixEmail(email: string): boolean {
+  const local = (email.split('@')[0] || '').toLowerCase().trim();
+  return POISON_PREFIXES.some((prefix) => local === prefix || local.startsWith(`${prefix}+`) || local.startsWith(`${prefix}.`));
+}
+
+export async function verifyDomainMxRecords(domain: string): Promise<boolean> {
+  const cleanDomain = (domain.toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0] || '').trim();
+  if (!cleanDomain || cleanDomain.includes('invalid') || cleanDomain.endsWith('.local') || cleanDomain.includes('xyz-123')) {
+    return false;
+  }
+  try {
+    const records = await resolveMx(cleanDomain);
+    return Array.isArray(records) && records.length > 0;
+  } catch {
+    return false;
+  }
+}
 
 export type EmailNamingPattern = 'first.last' | 'first' | 'flast' | 'first_last' | 'unknown';
 

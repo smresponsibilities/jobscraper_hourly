@@ -14,10 +14,33 @@ import {
 import { chromium, type Browser } from 'patchright';
 import type { CandidateExtendedProfile } from '../autoapply/types.js';
 
-export type ResumeArchetype = 'BACKEND' | 'DATA' | 'DEVOPS' | 'FULLSTACK';
+export type DynamicArchetype =
+  | 'BACKEND_DISTRIBUTED'
+  | 'FULLSTACK_REACT'
+  | 'DATA_ENGINEERING'
+  | 'AI_ML_SYSTEMS'
+  | 'SYSTEMS_LOWLEVEL'
+  | 'GENERAL_SWE';
+
+export type ResumeArchetype =
+  | 'BACKEND'
+  | 'DATA'
+  | 'DEVOPS'
+  | 'FULLSTACK'
+  | 'BACKEND_DISTRIBUTED'
+  | 'FULLSTACK_REACT'
+  | 'DATA_ENGINEERING'
+  | 'AI_ML_SYSTEMS'
+  | 'SYSTEMS_LOWLEVEL'
+  | 'GENERAL_SWE';
 
 export type RoleArchetype =
   | 'BACKEND_DISTRIBUTED'
+  | 'FULLSTACK_REACT'
+  | 'DATA_ENGINEERING'
+  | 'AI_ML_SYSTEMS'
+  | 'SYSTEMS_LOWLEVEL'
+  | 'GENERAL_SWE'
   | 'DATA_SPARK_SNOWFLAKE'
   | 'DEVOPS_CLOUD_PLATFORM'
   | 'FULLSTACK_PRODUCT';
@@ -36,6 +59,24 @@ export interface TailoredResumeResult {
   docxPath: string;
   skillsIncluded: string[];
   topBulletStack: string;
+}
+
+export function classifyDynamicArchetype(jobTitle = '', jdText = ''): DynamicArchetype {
+  const text = `${jobTitle} ${jdText}`.toLowerCase();
+  const mlScore = (text.match(/\b(machine learning|ml|ai|artificial intelligence|xgboost|deep learning|nlp|llm|computer vision|tensorflow|pytorch|scikit)\b/g) || []).length;
+  const dataScore = (text.match(/\b(data engineering|data engineer|spark|pyspark|snowflake|etl|clickhouse|data warehouse|pipeline|hive|hadoop)\b/g) || []).length;
+  const sysScore = (text.match(/\b(systems|c99|c\+\+|wasm|webassembly|rust|kernel|low[- ]level|embedded|firmware|hardware)\b/g) || []).length;
+  const fsScore = (text.match(/\b(full[- ]stack|fullstack|react|frontend|front[- ]end|next\.?js|vue|angular|web|ui|ux)\b/g) || []).length;
+  const beScore = (text.match(/\b(backend|back[- ]end|distributed|kafka|microservices|spring boot|java|golang|concurrency)\b/g) || []).length;
+
+  const maxScore = Math.max(mlScore, dataScore, sysScore, fsScore, beScore);
+  if (maxScore < 2) return 'GENERAL_SWE';
+  if (mlScore === maxScore) return 'AI_ML_SYSTEMS';
+  if (dataScore === maxScore) return 'DATA_ENGINEERING';
+  if (sysScore === maxScore) return 'SYSTEMS_LOWLEVEL';
+  if (fsScore === maxScore) return 'FULLSTACK_REACT';
+  if (beScore === maxScore) return 'BACKEND_DISTRIBUTED';
+  return 'GENERAL_SWE';
 }
 
 export function detectJobArchetype(jobTitle = '', jdText = ''): ResumeArchetype {
@@ -99,6 +140,22 @@ export const VERIFIED_MORGAN_STANLEY_BULLETS: VerifiedBullet[] = [
 
 export function getArchetypeOrderedBullets(archetype: ResumeArchetype | RoleArchetype): string[] {
   const norm = String(archetype).toUpperCase();
+  if (norm.includes('AI_ML') || (norm.includes('AI') && norm.includes('ML'))) {
+    return [
+      'Engineered production machine learning microservices and validation pipelines using Python, XGBoost, Scikit-Learn, and Gemini AI for automated real-time classification.',
+      'Engineered Customer Identity and Access Management (CIAM) data warehouse pipelines using Apache Kafka, PySpark, and Azure Snowflake with mTLS, OAuth 2.0, and RBAC, processing 5,000,000+ events with zero row-count tolerance and real-time client visibility.',
+      'Developed high-throughput REST API inference microservices in Python and Java Spring Boot integrated with MySQL and document stores.',
+      'Automated model training validation, CI/CD deployment pipelines, and telemetry monitoring using Jenkins CI/CD, Git, Splunk, and Grafana.',
+    ];
+  }
+  if (norm.includes('SYSTEMS_LOWLEVEL') || norm.includes('LOWLEVEL')) {
+    return [
+      'Engineered low-level zero-dependency systems software, WebAssembly modules, and pointer navigation utilities using C99 and Rust with strict memory bounds.',
+      'Engineered and scaled production Java Spring Boot REST APIs and distributed backend services for Customer Identity and Access Management (CIAM), securing endpoints with OAuth 2.0, mutual TLS (mTLS), and granular RBAC.',
+      'Automated build, test, and release orchestration for systems utilities and microservices using Jenkins CI/CD, Make, Maven, and Git.',
+      'Integrated production observability, low-level process monitoring, and latency dashboards using Splunk and Grafana across Linux/Unix systems.',
+    ];
+  }
   if (norm.includes('DATA')) {
     return [
       'Designed and maintained resilient Python and PySpark ETL pipelines processing high-volume streaming and batch datasets across Apache Kafka, Apache Spark, Hive, and Azure Snowflake.',
@@ -139,6 +196,58 @@ export interface ResumeProject {
 
 export function getArchetypeProjects(archetype: ResumeArchetype | RoleArchetype): ResumeProject[] {
   const norm = String(archetype).toUpperCase();
+  if (norm.includes('AI_ML') || (norm.includes('AI') && norm.includes('ML'))) {
+    return [
+      {
+        title: 'Fertilizer Recommendation ML Microservice',
+        stack: 'Python, XGBoost, Flask, Scikit-Learn',
+        bullets: [
+          'Built and deployed a production machine learning REST microservice predicting optimal formulations from soil chemistry (NPK), moisture, and climate metrics.',
+        ],
+      },
+      {
+        title: 'Chaincode — AI Code Validation & REST Platform',
+        stack: 'Python, MERN, Solidity, Gemini AI',
+        bullets: [
+          'Built a coding validation platform with 15+ REST APIs verifying code originality at 95%+ accuracy using Gemini AI; placed 3rd out of 200+ engineering teams at HackIndia.',
+        ],
+      },
+      {
+        title: 'ClickHouse Data Ingestion Tool',
+        stack: 'TypeScript, ClickHouse OLAP, SQL',
+        bullets: [
+          'Built a bidirectional data pipeline connecting ClickHouse OLAP databases and flat CSV files with real-time schema mapping and batch export.',
+        ],
+      },
+    ];
+  }
+
+  if (norm.includes('SYSTEMS_LOWLEVEL') || norm.includes('LOWLEVEL')) {
+    return [
+      {
+        title: "SM'S DEX — Zero-Dependency Platform & Automated CI/CD Roster",
+        stack: 'C99, WebAssembly, Rust pointer utilities, Astro',
+        bullets: [
+          'Developed a 2.4 KB zero-dependency C99 WebAssembly engine using polynomial hashing and a low-level Rust OS keyboard pointer navigation tool.',
+        ],
+      },
+      {
+        title: 'Terminal Wordle & Clickless Systems Utilities',
+        stack: 'C99, WebAssembly, Rust',
+        bullets: [
+          'Developed a 2.4 KB zero-dependency C99 WebAssembly engine using polynomial hashing and a low-level Rust OS keyboard pointer navigation tool.',
+        ],
+      },
+      {
+        title: 'QuizDeck — Real-Time High-Concurrency Engine',
+        stack: 'React, WebSockets, Node.js, TypeScript',
+        bullets: [
+          'Engineered a real-time multiplayer quiz platform over WebSockets and React, stress-tested to support up to 500 concurrent players with a 31 ms average response latency.',
+        ],
+      },
+    ];
+  }
+
   if (norm.includes('DATA')) {
     return [
       {
@@ -217,7 +326,7 @@ export function getArchetypeProjects(archetype: ResumeArchetype | RoleArchetype)
     ];
   }
 
-  // BACKEND
+  // BACKEND_DISTRIBUTED & GENERAL_SWE default
   return [
     {
       title: 'QuizDeck — Real-Time High-Concurrency Engine',
@@ -280,7 +389,21 @@ export function getArchetypeCategorizedSkills(
   const norm = String(archetype).toUpperCase();
   let base: Record<string, string[]>;
 
-  if (norm.includes('DATA')) {
+  if (norm.includes('AI_ML') || (norm.includes('AI') && norm.includes('ML'))) {
+    base = {
+      'Languages': ['Python', 'SQL', 'C++', 'Java', 'TypeScript'],
+      'AI & Machine Learning': ['XGBoost', 'Scikit-Learn', 'Gemini AI', 'PySpark', 'Flask'],
+      'Data & Cloud': ['ClickHouse OLAP', 'MySQL', 'MongoDB', 'Azure Snowflake'],
+      'DevOps & CI/CD': ['Jenkins CI/CD', 'Git', 'Linux/Unix', 'Splunk', 'Grafana'],
+    };
+  } else if (norm.includes('SYSTEMS_LOWLEVEL') || norm.includes('LOWLEVEL')) {
+    base = {
+      'Languages': ['C99', 'Rust', 'C++', 'Python', 'TypeScript'],
+      'Systems & WebAssembly': ['WebAssembly', 'POSIX', 'Pointer Utilities', 'Memory Optimization'],
+      'Backend & APIs': ['Node.js', 'REST APIs', 'WebSockets', 'Concurrency'],
+      'DevOps & Tooling': ['Linux/Unix', 'Git', 'GitHub Actions', 'Jenkins CI/CD'],
+    };
+  } else if (norm.includes('DATA')) {
     base = {
       'Languages': ['Python', 'SQL', 'Java', 'Scala'],
       'Data & Streaming': ['PySpark', 'Apache Spark', 'Apache Kafka', 'Hive', 'ETL Pipelines'],
@@ -401,7 +524,7 @@ export function generateResumeHtml(
   const projectsHtml = projects
     .map(
       proj => `
-    <div class="entry">
+    <div class="entry project-item">
       <div class="entry-header">
         <span>${proj.title}</span>
         <span>${proj.stack}</span>
@@ -418,9 +541,13 @@ export function generateResumeHtml(
 <head>
 <meta charset="utf-8">
 <style>
+  :root {
+    --base-font-size: 10pt;
+    --base-line-height: 1.28;
+  }
   @page {
-    size: letter;
-    margin: 0.38in;
+    size: A4;
+    margin: 0.5in;
   }
   * {
     box-sizing: border-box;
@@ -428,10 +555,10 @@ export function generateResumeHtml(
     padding: 0;
   }
   body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-family: "Times New Roman", Times, "Segoe UI", Arial, Helvetica, sans-serif;
     color: #1a1a1a;
-    font-size: 9.2pt;
-    line-height: 1.3;
+    font-size: var(--base-font-size, 10pt);
+    line-height: var(--base-line-height, 1.28);
     background: #ffffff;
   }
   .header {
@@ -447,7 +574,7 @@ export function generateResumeHtml(
     letter-spacing: -0.3px;
   }
   .contact-bar {
-    font-size: 8.8pt;
+    font-size: calc(var(--base-font-size, 10pt) * 0.90);
     color: #475569;
     margin-top: 3px;
     display: flex;
@@ -479,14 +606,14 @@ export function generateResumeHtml(
     display: flex;
     justify-content: space-between;
     font-weight: 600;
-    font-size: 9.3pt;
+    font-size: calc(var(--base-font-size, 10pt) * 0.95);
     color: #0f172a;
   }
   .entry-sub {
     display: flex;
     justify-content: space-between;
     font-style: italic;
-    font-size: 8.8pt;
+    font-size: calc(var(--base-font-size, 10pt) * 0.90);
     color: #334155;
     margin-bottom: 2px;
   }
@@ -497,20 +624,21 @@ export function generateResumeHtml(
   li.bullet {
     margin-bottom: 1.5px;
     text-align: justify;
-    font-size: 8.9pt;
+    font-size: calc(var(--base-font-size, 10pt) * 0.92);
+    line-height: var(--base-line-height, 1.25);
   }
   .skill-row {
-    font-size: 8.9pt;
+    font-size: calc(var(--base-font-size, 10pt) * 0.92);
     margin-bottom: 1.5px;
-    line-height: 1.25;
+    line-height: var(--base-line-height, 1.25);
   }
   .skill-cat {
     font-weight: 700;
     color: #0f172a;
   }
   .achievement-text {
-    font-size: 8.9pt;
-    line-height: 1.3;
+    font-size: calc(var(--base-font-size, 10pt) * 0.92);
+    line-height: var(--base-line-height, 1.25);
     color: #1a1a1a;
   }
 </style>
@@ -531,7 +659,7 @@ export function generateResumeHtml(
   </div>
 
   <div class="section">
-    <div class="section-title">Education</div>
+    <div class="section-title">EDUCATION</div>
     <div class="entry">
       <div class="entry-header">
         <span>Chitkara University</span>
@@ -545,7 +673,7 @@ export function generateResumeHtml(
   </div>
 
   <div class="section">
-    <div class="section-title">Professional Experience</div>
+    <div class="section-title">EXPERIENCE</div>
     <div class="entry">
       <div class="entry-header">
         <span>Morgan Stanley</span>
@@ -562,19 +690,19 @@ export function generateResumeHtml(
   </div>
 
   <div class="section">
-    <div class="section-title">Technical Projects</div>
+    <div class="section-title">PROJECTS</div>
     ${projectsHtml}
   </div>
 
   <div class="section">
-    <div class="section-title">Technical Skills</div>
+    <div class="section-title">TECHNICAL SKILLS</div>
     <div class="skills-block">
       ${skillLinesHtml}
     </div>
   </div>
 
   <div class="section">
-    <div class="section-title">Achievements & Milestones</div>
+    <div class="section-title">ACHIEVEMENTS & MILESTONES</div>
     <div class="achievement-text">
       1,255+ Consecutive Days of Code (2,002 Days Quest) &bull; 2,600+ Solved Algorithmic Problems (LeetCode/Codeforces) &bull; 425+ Automated Test Suites &bull; 3rd Place / 200+ Teams at HackIndia
     </div>
@@ -937,12 +1065,23 @@ export async function generateDualAtsResume(
   fs.writeFileSync(docxPath, docxBuffer);
 
   // 2. Generate PDF via headless browser
-  const roleArch =
-    archetype === 'DATA'
+  const normArch = String(archetype).toUpperCase();
+  const roleArch: RoleArchetype =
+    normArch === 'AI_ML_SYSTEMS'
+      ? 'AI_ML_SYSTEMS'
+      : normArch === 'SYSTEMS_LOWLEVEL'
+      ? 'SYSTEMS_LOWLEVEL'
+      : normArch === 'DATA_ENGINEERING'
+      ? 'DATA_ENGINEERING'
+      : normArch === 'FULLSTACK_REACT'
+      ? 'FULLSTACK_REACT'
+      : normArch === 'GENERAL_SWE'
+      ? 'GENERAL_SWE'
+      : normArch === 'DATA' || normArch.includes('DATA_SPARK')
       ? 'DATA_SPARK_SNOWFLAKE'
-      : archetype === 'DEVOPS'
+      : normArch === 'DEVOPS' || normArch.includes('DEVOPS_CLOUD')
       ? 'DEVOPS_CLOUD_PLATFORM'
-      : archetype === 'FULLSTACK'
+      : normArch === 'FULLSTACK' || normArch.includes('FULLSTACK_PRODUCT')
       ? 'FULLSTACK_PRODUCT'
       : 'BACKEND_DISTRIBUTED';
 
@@ -963,11 +1102,29 @@ export async function generateDualAtsResume(
     const page = await browser.newPage();
     try {
       await page.setContent(html, { waitUntil: 'load' });
+      await page.evaluate(() => {
+        var __name = (globalThis as any).__name || function(fn: any) { return fn; };
+        const maxHeight = 1040; // Strict single-page A4 threshold
+        let currentHeight = document.documentElement.scrollHeight;
+        if (currentHeight > maxHeight) {
+          document.documentElement.style.setProperty('--base-font-size', '9.5pt');
+          document.documentElement.style.setProperty('--base-line-height', '1.2');
+        }
+        if (document.documentElement.scrollHeight > maxHeight) {
+          const projectNodes = document.querySelectorAll('.project-item');
+          if (projectNodes.length > 2) {
+            const lastNode = projectNodes[projectNodes.length - 1];
+            if (lastNode) {
+              lastNode.remove();
+            }
+          }
+        }
+      });
       await page.pdf({
         path: pdfPath,
-        format: 'Letter',
+        format: 'A4',
         printBackground: true,
-        margin: { top: '0.4in', bottom: '0.4in', left: '0.4in', right: '0.4in' },
+        margin: { top: '0.5in', bottom: '0.5in', left: '0.5in', right: '0.5in' },
       });
     } finally {
       await page.close().catch(() => {});
@@ -1014,9 +1171,21 @@ export async function buildTailoredResumePair(
       },
     } as any);
 
-  const roleArch = classifyRoleArchetype(job.title, job.description || '');
+  const legacyArch = classifyRoleArchetype(job.title, job.description || '');
+  const dynamicArch = classifyDynamicArchetype(job.title, job.description || '');
+  const roleArch: RoleArchetype =
+    dynamicArch === 'AI_ML_SYSTEMS'
+      ? 'AI_ML_SYSTEMS'
+      : dynamicArch === 'SYSTEMS_LOWLEVEL'
+      ? 'SYSTEMS_LOWLEVEL'
+      : legacyArch;
+
   const archetype: ResumeArchetype =
-    roleArch === 'DATA_SPARK_SNOWFLAKE'
+    roleArch === 'AI_ML_SYSTEMS'
+      ? 'AI_ML_SYSTEMS'
+      : roleArch === 'SYSTEMS_LOWLEVEL'
+      ? 'SYSTEMS_LOWLEVEL'
+      : roleArch === 'DATA_SPARK_SNOWFLAKE'
       ? 'DATA'
       : roleArch === 'DEVOPS_CLOUD_PLATFORM'
       ? 'DEVOPS'
@@ -1047,11 +1216,29 @@ export async function buildTailoredResumePair(
     const page = await browser.newPage();
     try {
       await page.setContent(html, { waitUntil: 'load' });
+      await page.evaluate(() => {
+        var __name = (globalThis as any).__name || function(fn: any) { return fn; };
+        const maxHeight = 1040; // Strict single-page A4 threshold
+        let currentHeight = document.documentElement.scrollHeight;
+        if (currentHeight > maxHeight) {
+          document.documentElement.style.setProperty('--base-font-size', '9.5pt');
+          document.documentElement.style.setProperty('--base-line-height', '1.2');
+        }
+        if (document.documentElement.scrollHeight > maxHeight) {
+          const projectNodes = document.querySelectorAll('.project-item');
+          if (projectNodes.length > 2) {
+            const lastNode = projectNodes[projectNodes.length - 1];
+            if (lastNode) {
+              lastNode.remove();
+            }
+          }
+        }
+      });
       await page.pdf({
         path: pdfPath,
-        format: 'Letter',
+        format: 'A4',
         printBackground: true,
-        margin: { top: '0.4in', bottom: '0.4in', left: '0.4in', right: '0.4in' },
+        margin: { top: '0.5in', bottom: '0.5in', left: '0.5in', right: '0.5in' },
       });
     } finally {
       await page.close().catch(() => {});
@@ -1070,4 +1257,13 @@ export async function buildTailoredResumePair(
     skillsIncluded,
     topBulletStack,
   };
+}
+
+export function inspectPdfPageCount(pdfBuffer: Buffer): number {
+  const str = pdfBuffer.toString('latin1');
+  const pageMatches = str.match(/\/Type\s*\/Page\b/g);
+  if (pageMatches && pageMatches.length > 0) return pageMatches.length;
+  const countMatch = str.match(/\/Count\s+(\d+)/);
+  if (countMatch && countMatch[1]) return parseInt(countMatch[1], 10);
+  return 1;
 }

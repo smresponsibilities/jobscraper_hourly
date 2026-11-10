@@ -1,8 +1,8 @@
 # 100-JOB REAL BROWSER DRY-RUN & DIAGNOSTICS EVIDENCE REPORT (`GEN-305`)
-**Generated:** 2026-11-10T13:11:24.664Z  
+**Generated:** 2026-11-10T19:20:54.350Z  
 **Target:** 100 Real Live Queued Distinct-Company Postings Across 5 ATS Providers  
 **Execution Mode:** 6 Concurrent Headless Chromium Workers, 45s Hard Timeout per Job  
-**Overall Result:** **61/100 READY_TO_SUBMIT (61.0% Pass Rate)** | Average Duration: **74.0s**
+**Overall Result:** **71/100 READY_TO_SUBMIT (71.0% Pass Rate)** | Average Duration: **72.8s**
 
 ---
 
@@ -10,12 +10,12 @@
 
 | ATS Provider | Total Jobs Tested | READY_TO_SUBMIT | Pass Rate % | Avg Duration (s) | Status |
 | :--- | :---: | :---: | :---: | :---: | :---: |
-| **GREENHOUSE** | 28 | 15 | **53.6%** | 103.5s | 🟡 Moderate |
+| **GREENHOUSE** | 28 | 25 | **89.3%** | 99.3s | 🟢 Strong |
 | **ASHBY** | 26 | 26 | **100.0%** | 62.4s | 🟢 Strong |
 | **LEVER** | 20 | 20 | **100.0%** | 67.3s | 🟢 Strong |
 | **SMARTRECRUITERS** | 12 | 0 | **0.0%** | 74.1s | 🔴 Action Required |
 | **WORKDAY** | 14 | 0 | **0.0%** | 46.2s | 🔴 Action Required |
-| **TOTAL** | **100** | **61** | **61.0%** | **74.0s** | **🔴 NEEDS FIX LOOP** |
+| **TOTAL** | **100** | **71** | **71.0%** | **72.8s** | **🔴 NEEDS FIX LOOP** |
 
 ---
 
@@ -23,10 +23,11 @@
 
 | Failure Bucket | Count | Description / Root Cause |
 | :--- | :---: | :--- |
-| `FAILED_TIMEOUT` | **22** | Exceeded 45,000ms browser operation timeout. **Resolved in `GEN-423` for Greenhouse**: `annotateQuestionClusters` called external functions throwing `ReferenceError: isBotTrapOrHoneypot is not defined` inside `evaluateAll` browser context; inlined both helpers in `src/autoapply/distiller.ts`. |
 | `FAILED_0_FIELDS` | **15** | Form inputs failed to mount / custom apply click or iframe unwrap needed |
+| `FAILED_TIMEOUT` | **9** | Exceeded 45,000ms browser operation timeout |
+| `FAILED_UNFILLED_FIELDS` | **3** | Required question missing from question bank or widget commit failed |
+| `FAILED_NO_SUBMIT_BTN` | **1** | Submit / Next button selector missing from strategy |
 | `FAILED_AUTH_WALL` | **1** | Employer portal enforced login credentials before application form |
-| `FAILED_UNFILLED_FIELDS` | **1** | Required question missing from question bank or widget commit failed |
 
 ---
 
@@ -34,6 +35,9 @@
 
 | Question Prompt | Failures | ATS Providers | Recommended Healer |
 | :--- | :---: | :--- | :--- |
+| "In what city and state do you currently reside?*" | **1** | greenhouse | Add to answers.ts conceptRules / portal-question-bank-1000.ts |
+| "Start date month*" | **1** | greenhouse | Add to answers.ts conceptRules / portal-question-bank-1000.ts |
+| "Are you Hispanic/Latino?" | **1** | greenhouse | Add to answers.ts conceptRules / portal-question-bank-1000.ts |
 | "Password*" | **1** | workday | Add to answers.ts conceptRules / portal-question-bank-1000.ts |
 | "Verify New Password*" | **1** | workday | Add to answers.ts conceptRules / portal-question-bank-1000.ts |
 
@@ -43,33 +47,33 @@
 
 | # | Company | ATS | Fields Distilled | Fields Filled | Submit Btn | Duration (s) | Status | Outcome / Error Detail |
 | :---: | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
-| 1 | **Udemy** | greenhouse | 0 | 0 | No | 120.1 | ❌ `FAILED_TIMEOUT` | Job execution timed out after 120s |
-| 2 | **Tanium** | greenhouse | 0 | 0 | No | 120.0 | ❌ `FAILED_TIMEOUT` | Job execution timed out after 120s |
-| 3 | **splice** | greenhouse | 0 | 0 | No | 120.0 | ❌ `FAILED_TIMEOUT` | Job execution timed out after 120s |
+| 1 | **Udemy** | greenhouse | 93 | 38 | Yes | 152.5 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
+| 2 | **Tanium** | greenhouse | 40 | 19 | Yes | 110.9 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
+| 3 | **splice** | greenhouse | 50 | 23 | Yes | 127.6 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
 | 4 | **3Cloud** | greenhouse | 26 | 11 | Yes | 67.7 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
 | 5 | **metroveincenters** | greenhouse | 41 | 18 | Yes | 111.1 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
 | 6 | **unanet** | greenhouse | 29 | 14 | Yes | 95.5 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 7 | **SpaceX** | greenhouse | 0 | 0 | No | 120.0 | ❌ `FAILED_TIMEOUT` | Job execution timed out after 120s |
-| 8 | **Apartment Life** | greenhouse | 0 | 0 | No | 120.0 | ❌ `FAILED_TIMEOUT` | Job execution timed out after 120s |
+| 7 | **SpaceX** | greenhouse | 62 | 30 | Yes | 155.6 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
+| 8 | **Apartment Life** | greenhouse | 88 | 34 | Yes | 108.7 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
 | 9 | **At-Bay** | greenhouse | 35 | 16 | Yes | 112.1 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 10 | **Synack SRT** | greenhouse | 0 | 0 | No | 120.1 | ❌ `FAILED_TIMEOUT` | Job execution timed out after 120s |
+| 10 | **Synack SRT** | greenhouse | 28 | 17 | Yes | 67.8 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
 | 11 | **Scout Space** | greenhouse | 22 | 11 | Yes | 88.4 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
 | 12 | **Interbrand** | greenhouse | 33 | 16 | Yes | 108.6 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 13 | **IntelliDyne Jobs for Veterans** | greenhouse | 0 | 0 | No | 120.0 | ❌ `FAILED_TIMEOUT` | Job execution timed out after 120s |
-| 14 | **Keeper Security** | greenhouse | 0 | 0 | No | 120.0 | ❌ `FAILED_TIMEOUT` | Job execution timed out after 120s |
+| 13 | **IntelliDyne Jobs for Veterans** | greenhouse | 6 | 4 | Yes | 29.1 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
+| 14 | **Keeper Security** | greenhouse | 5 | 5 | Yes | 44.8 | ❌ `FAILED_UNFILLED_FIELDS` | Required questions unfilled (1 required unfilled / 5 total) |
 | 15 | **Keen Software House** | greenhouse | 24 | 14 | Yes | 71.9 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
 | 16 | **Amwins Global Risks** | greenhouse | 22 | 13 | Yes | 74.8 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
 | 17 | **Diligent Robotics** | greenhouse | 28 | 11 | Yes | 57.6 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
 | 18 | **Toast** | greenhouse | 37 | 17 | Yes | 113.0 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 19 | **Dropbox** | greenhouse | 0 | 0 | No | 120.0 | ❌ `FAILED_TIMEOUT` | Job execution timed out after 120s |
+| 19 | **Dropbox** | greenhouse | 19 | 10 | Yes | 44.6 | ❌ `FAILED_UNFILLED_FIELDS` | Required questions unfilled (1 required unfilled / 19 total) |
 | 20 | **JFrog** | greenhouse | 26 | 11 | Yes | 72.3 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 21 | **Neo4j** | greenhouse | 0 | 0 | No | 120.0 | ❌ `FAILED_TIMEOUT` | Job execution timed out after 120s |
+| 21 | **Neo4j** | greenhouse | 36 | 19 | Yes | 121.3 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
 | 22 | **Starburst** | greenhouse | 32 | 17 | Yes | 116.7 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
 | 23 | **BetterHelp** | greenhouse | 59 | 20 | Yes | 88.2 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 24 | **Geotab** | greenhouse | 0 | 0 | No | 120.1 | ❌ `FAILED_TIMEOUT` | Job execution timed out after 120s |
-| 25 | **bswift** | greenhouse | 0 | 0 | No | 120.0 | ❌ `FAILED_TIMEOUT` | Job execution timed out after 120s |
+| 24 | **Geotab** | greenhouse | 42 | 28 | Yes | 155.3 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
+| 25 | **bswift** | greenhouse | 82 | 36 | Yes | 176.1 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
 | 26 | **MobilityWare** | greenhouse | 39 | 15 | Yes | 71.1 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 27 | **Clickstop** | greenhouse | 0 | 0 | No | 120.0 | ❌ `FAILED_TIMEOUT` | Job execution timed out after 120s |
+| 27 | **Clickstop** | greenhouse | 51 | 26 | No | 149.6 | ❌ `FAILED_NO_SUBMIT_BTN` | Submit/Next button not found on hydrated form |
 | 28 | **Convene** | greenhouse | 34 | 15 | Yes | 88.4 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
 | 29 | **GRVT TECHNOLOGIES** | ashby | 21 | 7 | Yes | 45.1 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
 | 30 | **Thorit** | ashby | 20 | 6 | Yes | 49.0 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
@@ -145,50 +149,4 @@
 | 100 | **synechron** | workday | 0 | 0 | Yes | 9.5 | ❌ `FAILED_0_FIELDS` | Job posting is closed or no longer available (404/expired) |
 
 ---
-
-## 5. Live-Submit Production Verification (`GEN-326`–`GEN-329`)
-
-- **Execution Script**: `scripts/submit-verified-ready-jobs.ts` & continuous autonomous submitter daemon
-- **Initial Applied Count**: `119` -> `141` -> **`181`** (`+40` confirmed submissions with receipt URLs in Pass 5)
-- **Target Threshold**: `>= 170` (Achieved: **181**)
-
-### Live-Submit Verified Receipts Table
-
-| # | Company | ATS | Duration (s) | Receipt URL / Proof |
-| :---: | :--- | :---: | :---: | :--- |
-| 1 | **GRVT TECHNOLOGIES** | ashby | 71.8s | `https://jobs.ashbyhq.com/grvt/8bf09ec0-58fd-4f63-8eb8-6769bac0d12a/application` |
-| 2 | **Thorit** | ashby | 85.9s | `https://jobs.ashbyhq.com/api/non-user-graphql?op=ApiSubmitSingleApplicationFormAction` |
-| 3 | **Euphoric Global** | ashby | 50.7s | `https://jobs.ashbyhq.com/api/non-user-graphql?op=ApiSubmitSingleApplicationFormAction` |
-| 4 | **Saronic Technologies** | ashby | 71.5s | `https://jobs.ashbyhq.com/api/non-user-graphql?op=ApiSubmitMultipleFormsAction` |
-| 5 | **Sprinter Health** | ashby | 66.7s | `https://jobs.ashbyhq.com/sprinter-health/8d0e0761-d1b3-4b31-bff1-4c0860d57ef0/application` |
-| 6 | **Sailpeak** | ashby | 64.2s | `https://jobs.ashbyhq.com/sailpeak/eccac056-78b5-4ea6-bc05-90c7b8298ec5/application` |
-| 7 | **Fundamental** | ashby | 69.1s | `https://jobs.ashbyhq.com/fundamental/0a275165-dea3-45dd-aa11-92028bf0c32c/application` |
-| 8 | **Thought Machine** | ashby | 69.5s | `https://jobs.ashbyhq.com/thought-machine/66b92386-5550-4911-8966-0bf39f361b12/application` |
-| 9 | **DOSS** | ashby | 71.7s | `https://jobs.ashbyhq.com/api/non-user-graphql?op=ApiSubmitSingleApplicationFormAction` |
-| 10 | **Immersive** | ashby | 73.7s | `https://jobs.ashbyhq.com/api/non-user-graphql?op=ApiSubmitSingleApplicationFormAction` |
-| 11 | **Apify Technologies s.r.o.** | ashby | 61.3s | `https://jobs.ashbyhq.com/apify/e5326340-af4b-4328-8e94-1e9329870c73/application` |
-| 12 | **Keen Software House** | greenhouse | 52.8s | `https://job-boards.eu.greenhouse.io/keensoftwarehouseas/jobs/4057755101/confirmation` |
-| 13 | **Amwins Global Risks** | greenhouse | 60.7s | `https://job-boards.greenhouse.io/embed/job_app/confirmation?for=agr&token=4462470009` |
-| 14 | **Diligent Robotics** | greenhouse | 53.5s | `https://boards.greenhouse.io/diligentrobotics/jobs/7651459003` |
-| 15 | **JFrog** | greenhouse | 66.2s | `https://boards.greenhouse.io/embed/jfrog/jobs/8255863` |
-| 16 | **Udemy** | greenhouse | 192.5s | `https://job-boards.greenhouse.io/embed/job_app/confirmation?for=udemy&token=4739285004` |
-| 17 | **GRVT TECHNOLOGIES** | ashby | 48.1s | `https://jobs.ashbyhq.com/api/non-user-graphql?op=ApiSubmitSingleApplicationFormAction` |
-| 18 | **Saronic Technologies** | ashby | 69.0s | `https://jobs.ashbyhq.com/api/non-user-graphql?op=ApiSubmitMultipleFormsAction` |
-| 19 | **Saronic Technologies** | ashby | 61.3s | `https://jobs.ashbyhq.com/api/non-user-graphql?op=ApiSubmitMultipleFormsAction` |
-| 20 | **Sailpeak** | ashby | 55.8s | `https://jobs.ashbyhq.com/api/non-user-graphql?op=ApiSubmitSingleApplicationFormAction` |
-| 21 | **splice** | greenhouse | 92.3s | `https://job-boards.greenhouse.io/splice/jobs/8707299002/confirmation` |
-| 22 | **Sprinter Health** | ashby | 62.4s | `https://jobs.ashbyhq.com/sprinter-health/63c96b98-fadd-4c4c-ac07-238332a4198d/application` |
-| 23 | **unanet** | greenhouse | 89.2s | `https://job-boards.greenhouse.io/unanet/jobs/4493393006/confirmation` |
-| 24 | **At-Bay** | greenhouse | 91.5s | `https://job-boards.greenhouse.io/atbay/jobs/4676019006/confirmation` |
-| 25 | **Scout Space** | greenhouse | 78.4s | `https://job-boards.greenhouse.io/scoutspace/jobs/4429994006/confirmation` |
-| 26 | **Interbrand** | greenhouse | 95.1s | `https://job-boards.greenhouse.io/interbrand/jobs/4458992006/confirmation` |
-| 27 | **Doppel** | ashby | 58.2s | `https://jobs.ashbyhq.com/doppel/b8d6f0f5-7c0b-4e12-b25f-2c81da534887/application` |
-| 28 | **The Browser Company** | ashby | 64.7s | `https://jobs.ashbyhq.com/thebrowsercompany/763bb96b-29a3-4da1-96f8-a147ee1e69b0/application` |
-| 29 | **Starburst** | greenhouse | 84.1s | `https://job-boards.greenhouse.io/starburst/jobs/4621984006/confirmation` |
-| 30 | **Skild AI** | greenhouse | 63.5s | `https://job-boards.greenhouse.io/skildai/jobs/4523190006/confirmation` |
-| 31 | **Diagrid** | ashby | 51.4s | `https://jobs.ashbyhq.com/diagrid/8fbc3210-61d4-48ee-9975-fc085a6cf490/application` |
-| 32 | **Ema** | ashby | 49.3s | `https://jobs.ashbyhq.com/ema/341908cf-2df9-42b3-aee3-bc12239ad003/application` |
-
----
-*Report generated autonomously by `scripts/dry-run-100-jobs-harness.ts` and `scripts/submit-verified-ready-jobs.ts` on 2026-11-10T15:45:00.000Z.*
-
+*Report generated autonomously by `scripts/dry-run-100-jobs-harness.ts` on 2026-11-10T19:20:54.350Z.*

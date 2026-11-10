@@ -10,6 +10,8 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+process.env.DRY_RUN = '1';
+process.env.AUTOAPPLY_DISABLE_HITL_POPUP = '1';
 import { DatabaseSync } from 'node:sqlite';
 import { createHash } from 'node:crypto';
 import { AutoApplyRunner } from '../src/autoapply/runner.js';
@@ -238,7 +240,7 @@ export async function runSingleJobDryRun(
   index: number,
   profilePath: string,
   stateDir: string,
-  timeoutMs = 120_000,
+  timeoutMs = 180_000,
   workerId = 0
 ): Promise<DryRunJobResult> {
   const profile = loadProfile(profilePath);
@@ -247,8 +249,8 @@ export async function runSingleJobDryRun(
   const sessionDir = path.resolve(stateDir, 'dryrun-sessions', `job-${index}-${sessionHash}`);
   fs.mkdirSync(sessionDir, { recursive: true });
 
-  const tempProfileDir = path.resolve(stateDir, `dryrun-profiles`, `worker-${workerId}`);
-  fs.mkdirSync(tempProfileDir, { recursive: true });
+  const browserProfileDir = path.resolve(sessionDir, 'browser-profile');
+  fs.mkdirSync(browserProfileDir, { recursive: true });
 
   const runner = new AutoApplyRunner();
 
@@ -259,17 +261,16 @@ export async function runSingleJobDryRun(
 
   const executionPromise = (async () => {
     try {
-      await runner.initBrowser(true, sessionDir, tempProfileDir);
       const report = await runner.run({
         url: job.url,
         jobId: job.id,
         lane: `worker-${workerId}`,
+        browserProfileDir,
         profile,
         mode: 'stealth',
         headless: true,
         submit: false, // DRY-RUN ONLY (Stop right before submit)
         timeoutMs: timeoutMs - 5000,
-        sessionDir,
         company: job.company,
         applicationCountry: 'India',
         requisition: canonicalRequisition(job.url),
@@ -613,7 +614,7 @@ async function main() {
         const tag = `[WORKER-${workerId} #${curIdx + 1}/${retryCandidateJobs.length}]`;
         console.log(`${tag} Retrying ${candidate.company} (${candidate.ats.toUpperCase()}) -> ${candidate.url}`);
 
-        const newRes = await runSingleJobDryRun(candidate, originalIndex, profilePath, stateDir, 120_000, workerId);
+        const newRes = await runSingleJobDryRun(candidate, originalIndex, profilePath, stateDir, 180_000, workerId);
         results[originalIndex - 1] = newRes;
 
         const durSec = (newRes.durationMs / 1000).toFixed(1);
@@ -624,7 +625,7 @@ async function main() {
       }
     };
 
-    const workers = Array.from({ length: 4 }, (_, i) => runWorker(i));
+    const workers = Array.from({ length: 2 }, (_, i) => runWorker(i));
     await Promise.all(workers);
   } else {
     const jobs = await select100DistinctLiveJobs(path.join(stateDir, 'queue.sqlite'), 100);

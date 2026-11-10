@@ -22,8 +22,28 @@ const SENIOR_TITLE_REGEX =
 const JUNIOR_OVERRIDE_REGEX =
   /\b(?:intern|internship|apprentice|apprenticeship|new\s+grad|graduate|fresher|trainee|entry[\s-]*level|junior|jr\.?|associate)\b/i;
 
-const NON_TECH_TITLE_REGEX =
-  /\b(?:account\s+executive|account\s+manager|business\s+development|\bbdr\b|\bsdr\b|sales\s+representative|sales\s+manager|customer\s+success|recruiter|talent\s+acquisition|human\s+resources|\bhr\b|people\s+operations|payroll|accountant|accounting|tax\s+|audit\s+|financial\s+advisor|legal\s+counsel|attorney|paralegal|lawyer|marketing\s+manager|content\s+writer|copywriter|social\s+media|public\s+relations|graphic\s+designer|receptionist|executive\s+assistant|office\s+manager|facilities|warehouse|forklift|driver|nurse|nursing|physician|pharmacist|therapist|medical\s+assistant|dentist|veterinarian|mechanical|mep\b|civil\s+engineer|plumbing|hvac|facility\s+engineer|shift\s+engineer|duty\s+engineer|desktop\s+and\s+site\s+support|desktop\s+support|representative|advisory|oncology|operations\s+analyst|structural\s+project|structural\s+engineer|civil\s+engineer|mechanical\s+engineer|warranty\s+engineer|construction|manufacturing\s+engineer|plant\s+engineer|chemical\s+engineer|industrial\s+engineer|research\s+compliance|compliance\s+specialist|supervisor|apartment\s+life|vein\s+center|clinical\s+nurse|event\s+coordinator)\b/i;
+export const NON_TECH_TITLE_REGEX = new RegExp(
+  '\\b(' +
+  'civil|structural|mechanical|electrical|hvac|piping|plumbing|sanitary|' +
+  'hardware|pcb|fpga|asic|firmware|embedded|vlsi|semiconductor|' +
+  'sales|business development|bdr|sdr|account executive|account manager|representative|' +
+  'marketing|growth|content|copywriter|seo|social media|community manager|' +
+  'recruiter|talent acquisition|talent|sourcer|hr|human resources|people operations|' +
+  'legal|compliance|counsel|paralegal|attorney|regulatory|' +
+  'clinical|nurse|physician|medical|pharmacy|pharmacist|therapist|healthcare|' +
+  'finance|accountant|payroll|tax|auditor|underwriter|teller|claims|' +
+  'supply chain|logistics|procurement|warehouse|operations manager|facilities|office manager|general manager|' +
+  'executive assistant|administrative assistant|receptionist|customer service|customer success|support rep|support specialist|' +
+  'construction|site supervisor|quality control|quality inspector|inspector|safety officer|' +
+  'cook|chef|cashier|driver|security guard|custodian|janitor|maintenance|electrician|plumber|welder|carpenter|mechanic|' +
+  'desktop support|helpdesk|field service|real estate|property manager|leasing|teacher|instructor|professor|tutor|' +
+  'waiter|waitress|bartender|barista|retail|store associate|merchandiser|buyer|planner|event coordinator' +
+  ')\\b',
+  'i'
+);
+
+export const WHITELIST_SOFTWARE_TITLE_REGEX =
+  /\b(?:software|backend|frontend|fullstack|full\s*stack|data\s+engineer|data\s+platform|machine\s+learning|ml\s+engineer|ai\s+engineer|distributed\s+systems|cloud\s+engineer|devops|platform\s+engineer|sre)\b/i;
 
 const TECH_ROLE_SIGNAL_REGEX =
   /\b(?:software|engineer|engineering|developer|programmer|\bsde\b|\bswe\b|backend|back-end|frontend|front-end|full[\s-]*stack|fullstack|data\s+scientist|data\s+engineer|data\s+analyst|machine\s+learning|\bml\b|\bai\b|artificial\s+intelligence|deep\s+learning|\bllm\b|\bnlp\b|genai|devops|\bsre\b|site\s+reliability|platform|infrastructure|cloud|kubernetes|security|cybersecurity|infosec|\bqa\b|quality\s+assurance|test|sdet|automation|mobile|android|ios|kotlin|flutter|react|node|python|java|golang|rust|c\+\+|database|clickhouse|spark|kafka|etl|analytics|quant|quantitative|systems|firmware|embedded|web\s+developer|application\s+developer|technical|technology\s+apprentice|member\s+of\s+technical\s+staff|\bmts\b)\b/i;
@@ -58,7 +78,7 @@ export function evaluateCandidateJobFit(input: CandidateFitInput): CandidateFitR
     }
 
     // 2. Reject obvious non-tech roles (unless they also explicitly say Software/Data/ML Engineer)
-    if (NON_TECH_TITLE_REGEX.test(title) && !/\b(?:software|data|machine\s+learning|\bml\b|\bai\b|security|devops|cloud|systems|qa|test)\s+engineer/i.test(title)) {
+    if (NON_TECH_TITLE_REGEX.test(title) && !WHITELIST_SOFTWARE_TITLE_REGEX.test(title)) {
       return {
         allowed: false,
         reason: `non_tech_role_filtered: ${title.slice(0, 80)}`,
