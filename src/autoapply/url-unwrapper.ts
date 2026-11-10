@@ -15,8 +15,8 @@ export function unwrapDirectAtsApplicationUrl(rawUrl: string): string {
     if (u.hostname === 'jobs.ashbyhq.com') {
       const cleanPath = u.pathname.replace(/\/+$/, '');
       const parts = cleanPath.split('/').filter(Boolean);
-      // Matches /{tenant}/{jobUuid} where jobUuid is a UUID (>= 20 chars with hyphens)
-      if (parts.length === 2 && /^[0-9a-f-]{20,}$/i.test(parts[1]!)) {
+      // Matches /{tenant}/{jobUuid} where jobUuid is not already /application
+      if (parts.length === 2 && parts[1] !== 'application' && parts[1] !== 'embed') {
         u.pathname = `/${parts[0]}/${parts[1]}/application`;
         return u.toString();
       }
@@ -26,8 +26,8 @@ export function unwrapDirectAtsApplicationUrl(rawUrl: string): string {
     if (u.hostname === 'jobs.lever.co') {
       const cleanPath = u.pathname.replace(/\/+$/, '');
       const parts = cleanPath.split('/').filter(Boolean);
-      // Matches /{tenant}/{jobUuid} where jobUuid is a UUID (>= 20 chars with hyphens) without /apply
-      if (parts.length === 2 && /^[0-9a-f-]{20,}$/i.test(parts[1]!)) {
+      // Matches /{tenant}/{jobUuid} without /apply
+      if (parts.length === 2 && parts[1] !== 'apply') {
         u.pathname = `/${parts[0]}/${parts[1]}/apply`;
         return u.toString();
       }

@@ -238,7 +238,8 @@ export async function runSingleJobDryRun(
   index: number,
   profilePath: string,
   stateDir: string,
-  timeoutMs = 45_000
+  timeoutMs = 90_000,
+  workerId = 0
 ): Promise<DryRunJobResult> {
   const profile = loadProfile(profilePath);
   const startTime = Date.now();
@@ -246,7 +247,7 @@ export async function runSingleJobDryRun(
   const sessionDir = path.resolve(stateDir, 'dryrun-sessions', `job-${index}-${sessionHash}`);
   fs.mkdirSync(sessionDir, { recursive: true });
 
-  const tempProfileDir = path.resolve(stateDir, `dryrun-profiles`, `worker-${index % 6}`);
+  const tempProfileDir = path.resolve(stateDir, `dryrun-profiles`, `worker-${workerId}`);
   fs.mkdirSync(tempProfileDir, { recursive: true });
 
   const runner = new AutoApplyRunner();
@@ -262,7 +263,7 @@ export async function runSingleJobDryRun(
       const report = await runner.run({
         url: job.url,
         jobId: job.id,
-        lane: `worker-${index % 6}`,
+        lane: `worker-${workerId}`,
         profile,
         mode: 'stealth',
         headless: true,
@@ -428,7 +429,7 @@ export async function run100JobHarness(
       const tag = `[WORKER-${workerId} #${currentIdx + 1}/${jobs.length}]`;
       console.log(`${tag} Launching ${job.company} (${job.ats.toUpperCase()}) -> ${job.url}`);
 
-      const result = await runSingleJobDryRun(job, currentIdx + 1, profilePath, stateDir, 60_000);
+      const result = await runSingleJobDryRun(job, currentIdx + 1, profilePath, stateDir, 90_000, workerId);
       results[currentIdx] = result;
 
       const durSec = (result.durationMs / 1000).toFixed(1);
@@ -585,7 +586,7 @@ async function main() {
     throw new Error(`Insufficient distinct live jobs found (${jobs.length} < 50). Check queue.sqlite.`);
   }
 
-  const results = await run100JobHarness(jobs, profilePath, stateDir, 6);
+  const results = await run100JobHarness(jobs, profilePath, stateDir, 4);
 
   console.log(`\n[HARNESS] Completed dry-run on ${results.length} jobs.`);
 

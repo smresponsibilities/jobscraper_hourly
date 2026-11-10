@@ -2401,7 +2401,7 @@ export class AutoApplyRunner {
     const scan = randomUUID();
     const processed = new Map<string, string>();
     const attempts = new Map<string, number>();
-    const attemptedFieldRefs = new Set<string>();
+    const attemptedFieldRefs = this.attemptedFieldRefs || new Set<string>();
     this.attemptedFieldRefs = attemptedFieldRefs;
     const uploadedFiles = new Map<string, string>();
     const formSelector = ATS_STRATEGIES[report.ats]?.form;
@@ -3817,6 +3817,7 @@ export class AutoApplyRunner {
       const timeout = options.timeoutMs ?? 10000;
       let reviewedSignature: string | undefined;
       for (let step = 1; step <= maxSteps; step++) {
+        this.attemptedFieldRefs = new Set<string>();
         if (this.isClosing || !this.page || this.page.isClosed()) {
           report.status = report.submissionAttempted ? 'submitted' : 'failed';
           report.reason = 'Job timed out or runner closed';
@@ -3901,6 +3902,12 @@ export class AutoApplyRunner {
 
         // Ticket GEN-69 & GEN-158: Greenhouse Collapsed Form Expander (capco, cognite, GitLab, Crewmeister, Ensono, Esri, Moniepoint, Schrödinger)
         if (report.ats === 'greenhouse' || this.page!.url().toLowerCase().includes('greenhouse.io')) {
+          const ghIframe = this.page!.locator('#grnhse_iframe, iframe[src*="greenhouse.io"]').first();
+          if (await ghIframe.isVisible().catch(() => false)) {
+            await ghIframe.scrollIntoViewIfNeeded().catch(() => {});
+            await this.page!.waitForTimeout(500);
+          }
+
           const ghVisibleInputCount = await this.page!
             .evaluate(() => {
               const inputs = Array.from(
@@ -3938,6 +3945,73 @@ export class AutoApplyRunner {
               .first()
               .waitFor({ state: 'visible', timeout: 6000 })
               .catch(() => {});
+          }
+        }
+
+        // Ashby form expander & cookie dismissal
+        if (report.ats === 'ashby' || this.page!.url().toLowerCase().includes('ashbyhq.com')) {
+          const cookieBtn = this.page!.locator('button:has-text("Accept"), button:has-text("Agree"), button:has-text("Allow All"), #onetrust-accept-btn-handler').first();
+          if (await cookieBtn.isVisible().catch(() => false)) {
+            await cookieBtn.click().catch(() => {});
+          }
+
+          const ashbyInputCount = await this.page!
+            .evaluate(() => {
+              const inputs = Array.from(document.querySelectorAll<HTMLElement>('input:not([type="hidden"]), textarea, [role="combobox"]'));
+              return inputs.filter((el) => {
+                const rect = el.getBoundingClientRect();
+                return rect.width > 0 && rect.height > 0;
+              }).length;
+            })
+            .catch(() => 0);
+
+          if (ashbyInputCount < 2) {
+            const ashbyApplyBtns = [
+              'a[href*="/application"]',
+              'button:has-text("Apply for this Job")',
+              'button:has-text("Apply")',
+              'a:has-text("Apply for this Job")',
+              'a:has-text("Apply")',
+            ];
+            for (const sel of ashbyApplyBtns) {
+              const btn = this.page!.locator(sel).first();
+              if (await btn.isVisible().catch(() => false)) {
+                await btn.scrollIntoViewIfNeeded().catch(() => {});
+                await btn.click({ timeout: 4000 }).catch(() => {});
+                break;
+              }
+            }
+            await this.page!
+              .locator('input:not([type="hidden"]), textarea')
+              .first()
+              .waitFor({ state: 'visible', timeout: 5000 })
+              .catch(() => {});
+          }
+        }
+
+        // Lever form expander
+        if (report.ats === 'lever' || this.page!.url().toLowerCase().includes('lever.co')) {
+          const leverInputCount = await this.page!
+            .evaluate(() => {
+              const inputs = Array.from(document.querySelectorAll<HTMLElement>('input:not([type="hidden"]), textarea'));
+              return inputs.filter((el) => {
+                const rect = el.getBoundingClientRect();
+                return rect.width > 0 && rect.height > 0;
+              }).length;
+            })
+            .catch(() => 0);
+
+          if (leverInputCount < 2) {
+            const leverApplyBtn = this.page!.locator('a[href*="/apply"], a.postings-btn, button:has-text("Apply for this job"), button:has-text("Apply")').first();
+            if (await leverApplyBtn.isVisible().catch(() => false)) {
+              await leverApplyBtn.scrollIntoViewIfNeeded().catch(() => {});
+              await leverApplyBtn.click({ timeout: 4000 }).catch(() => {});
+              await this.page!
+                .locator('input:not([type="hidden"]), textarea')
+                .first()
+                .waitFor({ state: 'visible', timeout: 5000 })
+                .catch(() => {});
+            }
           }
         }
         for (const frame of this.page!.frames()) {
@@ -4201,7 +4275,7 @@ export class AutoApplyRunner {
           if (report.mode === 'copilot' && !(options.advanceReviewedStep && step === 1)) { report.reason = 'Review before advancing'; break; }
           const before = await this.signature();
           const workdayStep = report.ats === 'workday' ? (await this.page!.locator('[data-automation-id="progressBarActiveStep"]').allTextContents()).join(' ').trim() : undefined;
-          if (options.mode === 'stealth') await this.page!.waitForTimeout(Math.max(0, 4000 + Math.random() * 4000 - (Date.now() - stepStarted)));
+          if (options.mode === 'stealth' && options.submit !== false) await this.page!.waitForTimeout(Math.max(0, 4000 + Math.random() * 4000 - (Date.now() - stepStarted)));
           let changed = false;
           for (let attempt = 0; attempt < 2; attempt++) {
             for (const frame of this.page!.frames()) {

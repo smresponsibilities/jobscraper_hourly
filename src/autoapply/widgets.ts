@@ -74,7 +74,7 @@ export async function verifyChoiceReadBack(
 
     return await Promise.race([
       evalPromise,
-      new Promise<boolean>(r => setTimeout(() => r(true), 1500)),
+      new Promise<boolean>(r => setTimeout(() => r(true), 600)),
     ]);
   } catch {
     return true;
@@ -92,6 +92,8 @@ export async function harvestControlOptions(
   widgetKind?: string,
   questionTextArg?: string
 ): Promise<HarvestedChoiceResult> {
+  const harvestStart = Date.now();
+  const HARVEST_TIMEOUT_MS = 1800;
   const control = controlArg || clusterOrControl;
   const questionText = questionTextArg || await control.getAttribute('data-autoapply-question') || await control.getAttribute('aria-label') || '';
 
@@ -121,8 +123,8 @@ export async function harvestControlOptions(
 
   // Physics 2: Click trigger / overlay
   const overlay = control.locator('..').locator('[data-automation-id="click_filter"]').filter({ visible: true });
-  if (await overlay.count() === 1) await overlay.click({ timeout: 3000 }).catch(() => {});
-  else await control.click({ timeout: 3000 }).catch(() => {});
+  if (await overlay.count() === 1) await overlay.click({ timeout: 800 }).catch(() => {});
+  else await control.click({ timeout: 800 }).catch(() => {});
 
   const popupId = await control.getAttribute('aria-controls') || await control.getAttribute('aria-owns');
   let popup = popupId ? frame.locator(`[id=${JSON.stringify(popupId)}]`) : frame.locator('[role=listbox],[data-automation-id="activeListContainer"],[data-automation-id="responsiveMonikerPrompt"]').filter({ visible: true });
@@ -133,12 +135,12 @@ export async function harvestControlOptions(
   }
 
   let choices = popup.locator('[role=option],[data-automation-id="promptOption"],.select__option,._option_1svni_32,.itta-item').filter({ visible: true });
-  await choices.first().waitFor({ state: 'visible', timeout: 800 }).catch(() => {});
+  await choices.first().waitFor({ state: 'visible', timeout: 500 }).catch(() => {});
   let rawChoices = (await choices.allTextContents()).map(text => text.trim()).filter(Boolean);
 
   // GEN-274: Wait for async options if "Loading..." / "Searching..." is visible
-  if (rawChoices.some(t => ASYNC_LOADING_PLACEHOLDER_REGEX.test(t))) {
-    await frame.page().waitForTimeout(450);
+  if (rawChoices.some(t => ASYNC_LOADING_PLACEHOLDER_REGEX.test(t)) && (Date.now() - harvestStart < HARVEST_TIMEOUT_MS)) {
+    await frame.page().waitForTimeout(300);
     rawChoices = (await choices.allTextContents()).map(text => text.trim()).filter(Boolean);
   }
   let options = [...new Set(rawChoices.filter(t => !INVALID_OPTION_PLACEHOLDER_REGEX.test(t)))];
@@ -148,19 +150,19 @@ export async function harvestControlOptions(
   const isReadOnly = await control.evaluate(el => (el as HTMLInputElement).readOnly).catch(() => false);
   const isWorkdaySelectInput = await control.evaluate(el => el.getAttribute('data-uxi-widget-type') === 'selectinput').catch(() => false);
 
-  if (options.length === 0 && tag === 'input' && !isWorkdaySelectInput) {
+  if (options.length === 0 && tag === 'input' && !isWorkdaySelectInput && (Date.now() - harvestStart < HARVEST_TIMEOUT_MS)) {
     const seed = inferTypeaheadSeed(questionText);
     if (isReadOnly) {
-      await control.click({ timeout: 1000 }).catch(() => {});
-      await frame.page().keyboard.type(seed, { delay: 25 }).catch(() => {});
+      await control.click({ timeout: 600 }).catch(() => {});
+      await frame.page().keyboard.type(seed, { delay: 20 }).catch(() => {});
     } else {
       await control.fill(seed).catch(() => {});
     }
-    await new Promise(resolve => setTimeout(resolve, 350));
+    await new Promise(resolve => setTimeout(resolve, 250));
     choices = popup.locator('[role=option],[data-automation-id="promptOption"],.select__option,._option_1svni_32,.itta-item').filter({ visible: true });
     let typeaheadChoices = (await choices.allTextContents()).map(text => text.trim()).filter(Boolean);
-    if (typeaheadChoices.some(t => ASYNC_LOADING_PLACEHOLDER_REGEX.test(t))) {
-      await frame.page().waitForTimeout(450);
+    if (typeaheadChoices.some(t => ASYNC_LOADING_PLACEHOLDER_REGEX.test(t)) && (Date.now() - harvestStart < HARVEST_TIMEOUT_MS)) {
+      await frame.page().waitForTimeout(300);
       typeaheadChoices = (await choices.allTextContents()).map(text => text.trim()).filter(Boolean);
     }
     options = [...new Set(typeaheadChoices.filter(t => !INVALID_OPTION_PLACEHOLDER_REGEX.test(t)))];

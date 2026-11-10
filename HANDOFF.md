@@ -1,5 +1,59 @@
 # Handoff
 
+## Pass-3 100-Job Real Browser Dry-Run, Anti-Lockup Fixes & 119+ Live Conversions (Tickets GEN-306 to GEN-310) — 2026-11-10
+
+### 1. Executive Summary & Production Status
+- **Target Achieved**: Confirmed `applied` count in `state/autoapply/portal-review/queue.sqlite` reached **119** (Target `>= 110` exceeded by +9, up from 98!).
+- **100-Job Real Browser Dry-Run Harness (Pass 3 Post-Fix Scoreboard)**:
+  - **42/100 READY_TO_SUBMIT (42.0% Pass Rate)**, lifting pass rate from 13/100 (+223% over Pass 2, +1300% over Pass 1 baseline).
+  - **Ashby**: **21/26 READY_TO_SUBMIT (80.8% Pass Rate)** 🟢
+  - **Lever**: **17/20 READY_TO_SUBMIT (85.0% Pass Rate)** 🟢
+  - **Greenhouse**: 4/28 READY_TO_SUBMIT (14.3%)
+  - **Top Unfilled Questions Pareto**: **0 required question failures** across the entire 100-job cohort (`FAILED_UNFILLED_FIELDS: 0`).
+  - Full 100-job evidence table published to `DRYRUN-100-EVIDENCE.md`.
+  - All 42 verified `READY_TO_SUBMIT` jobs boosted with `is_hourly_fresh = 100` in `queue.sqlite`.
+- **Active Production Daemons**:
+  - 4-lane `--submit` worker daemon running in background (`PID 30700`, `out/dist/scripts/drain-backfill-and-hourly.js --max-jobs 80 --submit`).
+  - Worker lock active at `state/autoapply/portal-review/worker.lock`.
+  - System left running continuously per specification.
+- **Verification Suites**:
+  - `npm test` (`src/selftest.ts`): All 58/58 test suites pass.
+  - `npx tsc -p tsconfig.build.json`: 0 errors, output compiled cleanly to `out/dist/`.
+  - `npx tsx scripts/sanitize-for-git-push.ts`: PASS (0 PII / phone / password leaks across all 1,931 git-tracked files).
+
+---
+
+### 2. Forensic Autopsy: Root Causes Diagnosed & Fixed
+
+#### Root Cause 1: Profile Directory Lock Collisions Across Concurrent Workers (`scripts/dry-run-100-jobs-harness.ts`)
+- **Symptom**: Workers crashed intermittently with `browserContext.newPage: Target crashed` or `ProcessSingleton` lock acquisition errors.
+- **Root Cause**: `tempProfileDir` was keyed by `worker-${index % 6}`. When jobs were processed asynchronously across 4 workers, two workers handling job indices sharing `index % 6` collided on the same browser profile directory.
+- **Fix**: Keyed `tempProfileDir` by `worker-${workerId}` directly from `runWorker(workerId)`, providing each concurrent worker thread with a strictly isolated profile folder.
+
+#### Root Cause 2: Combobox Option Harvesting Hanging Forms Past Timeout (`src/autoapply/widgets.ts`)
+- **Symptom**: Forms with 5+ comboboxes (Ashby, Lever) took 40–60s just harvesting options, pushing total form filling past the execution timeout.
+- **Root Cause**: `harvestControlOptions` ran multiple fallback mechanics with 3,000ms timeouts per trigger, and `verifyChoiceReadBack` waited up to 1,500ms on `Promise.race`.
+- **Fix**:
+  - Added a strict 1,800ms total wall-clock cap on `harvestControlOptions` so option harvesting returns immediately when time budget is reached.
+  - Reduced trigger click timeouts from 3,000ms to 800ms.
+  - Reduced `verifyChoiceReadBack` race timeout from 1,500ms to 600ms.
+
+#### Root Cause 3: Redundant Second-Pass Field Sweep (`src/autoapply/runner.ts`)
+- **Symptom**: Forms spent double the time filling fields, re-typing already verified inputs during the pass-2 conditional sweep.
+- **Root Cause**: `fillFrame` instantiated `this.attemptedFieldRefs = new Set<string>()` on every call, clearing the tracking set before pass 2 started and causing all fields to be re-evaluated.
+- **Fix**: Preserved `this.attemptedFieldRefs` across passes within each step, resetting only when advancing to a new step. Pass 2 now sweeps only newly revealed conditional fields whose `refKey` was not in pass 1.
+
+#### Root Cause 4: Pre-Submit Stealth Sleep in Dry-Run Mode (`src/autoapply/runner.ts`)
+- **Symptom**: Dry-run execution spent 4,000–8,000ms sleeping before intermediate next buttons even though `--submit` was disabled.
+- **Fix**: Guarded stealth pacing sleep with `options.submit !== false`, eliminating unnecessary artificial dwell times during dry-run validation.
+
+#### Root Cause 5: Missing /application and /apply Path Normalization With Query Parameters (`src/autoapply/url-unwrapper.ts`)
+- **Symptom**: Postings with tracking parameters (e.g. `?utm_source=...`) landed on job overview pages rather than direct application tabs.
+- **Fix**: In `unwrapDirectAtsApplicationUrl`, enforced `/application` (Ashby) and `/apply` (Lever) rewrite rules while preserving all URL search parameters.
+- Added Ashby cookie banner auto-dismissal and custom apply button expanders in `runner.ts`.
+
+---
+
 ## 100-Job Empirical Dry-Run Harness, Codebase Fix Loop & Hard Evidence (Ticket GEN-305) — 2026-11-10
 
 ### 1. Executive Summary & Production Status
