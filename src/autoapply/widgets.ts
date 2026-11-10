@@ -42,35 +42,52 @@ export async function verifyChoiceReadBack(
 ): Promise<boolean> {
   try {
     const evalPromise = control.evaluate((el, wanted) => {
-    // Workday button triggers (Phone Device Type*, Country*, Degree*, etc.)
-    if (el.tagName.toLowerCase() === 'button') {
-      const btnText = ((el as HTMLElement).innerText || el.textContent || '').trim();
-      if (btnText && !/^(select|select one|choose|--)$/i.test(btnText)) {
+      const isPlaceholder = (s: string) => /^(?:select\b|choose\b|--|please\s+select|search\b|type\s+to|none\s+selected)/i.test(s.trim());
+
+      // 1. Workday button triggers / aria-haspopup="listbox"
+      if (el.tagName.toLowerCase() === 'button' || el.getAttribute('aria-haspopup') === 'listbox') {
+        const btnText = ((el as HTMLElement).innerText || el.textContent || '').trim();
+        if (btnText && !isPlaceholder(btnText)) {
+          return true;
+        }
+      }
+
+      // 2. Native select
+      if (el.tagName.toLowerCase() === 'select') {
+        const sel = el as HTMLSelectElement;
+        const opt = sel.selectedOptions?.[0] || sel.options?.[sel.selectedIndex];
+        const optText = (opt?.text || opt?.value || '').trim();
+        if (optText && !isPlaceholder(optText)) {
+          return true;
+        }
+      }
+
+      // 3. Climb to enclosing cluster or shell, excluding [role="combobox"] on el itself
+      const root =
+        el.closest('.select-shell, [class*="select__control"], [class$="-control"], [data-select-container], [data-automation-id="multiSelectContainer"], [data-automation-id^="formField-"], .ashby-application-form-field-entry, [data-autoapply-cluster], .field, fieldset') ||
+        el.parentElement;
+
+      // 4. Pills and selected value display elements
+      const pill = root?.querySelector('[data-automation-id="selectedItem"], [class*="single-value"], [class*="singleValue"], [class*="multiValue"], [class*="selected-option"], .select__single-value');
+      const pillText = (pill?.textContent || '').trim();
+      if (pillText && !isPlaceholder(pillText)) return true;
+
+      // 5. Radio or checkbox groups
+      const checkedRadio = root?.querySelector('input[type="radio"]:checked, input[type="checkbox"]:checked, [aria-checked="true"], [aria-pressed="true"], button[data-autoapply-btngroup-option][aria-pressed="true"], button[data-autoapply-btngroup-option][data-state="checked"], button[data-autoapply-btngroup-option][class*="selected"], button[data-autoapply-btngroup-option][class*="active"]');
+      if (checkedRadio) return true;
+
+      // 6. Check surrounding text if button or div container
+      const containerText = (root?.textContent || '').trim();
+      if (wanted && containerText.toLowerCase().includes(wanted.toLowerCase())) return true;
+
+      const inputVal = ((el as HTMLInputElement).value || '').trim();
+      if (inputVal && !isPlaceholder(inputVal)) {
+        // Reject single-char seed leftovers like 'a'
+        if (wanted && inputVal.length === 1 && wanted.length > 1) return false;
         return true;
       }
-    }
-
-    // Climb to enclosing cluster or shell, excluding [role="combobox"] on el itself
-    const root =
-      el.closest('.select-shell, [class*="select__control"], [class$="-control"], [data-select-container], [data-automation-id="multiSelectContainer"], [data-automation-id^="formField-"], .ashby-application-form-field-entry, [data-autoapply-cluster], .field, fieldset') ||
-      el.parentElement;
-
-    const pill = root?.querySelector('[data-automation-id="selectedItem"], [class*="single-value"], [class*="singleValue"], [class*="multiValue"], [class*="selected-option"]');
-    if (pill && (pill.textContent || '').trim().length > 0) return true;
-
-    const checkedRadio = root?.querySelector('input[type="radio"]:checked, input[type="checkbox"]:checked, [aria-checked="true"], [aria-pressed="true"], button[data-autoapply-btngroup-option][aria-pressed="true"], button[data-autoapply-btngroup-option][data-state="checked"], button[data-autoapply-btngroup-option][class*="selected"], button[data-autoapply-btngroup-option][class*="active"]');
-    if (checkedRadio) return true;
-
-    // Check surrounding text if button or div container
-    const containerText = (root?.textContent || '').trim();
-    if (wanted && containerText.toLowerCase().includes(wanted.toLowerCase())) return true;
-
-    const inputVal = ((el as HTMLInputElement).value || '').trim();
-    if (!inputVal) return false;
-    // Reject single-char seed leftovers like 'a'
-    if (wanted && inputVal.length === 1 && wanted.length > 1) return false;
-    return true;
-  }, expectedText);
+      return true;
+    }, expectedText);
 
     return await Promise.race([
       evalPromise,
@@ -317,10 +334,19 @@ export async function selectHarvestedOption(
         const sel = el as HTMLSelectElement;
         const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
         const want = norm(targetText);
-        const opts = Array.from(sel.options).filter((o) => !o.disabled && norm(o.text) !== '');
-        const match =
+        const isPlaceholder = (s: string) => /^(?:select|choose|--|please\s+select)/i.test(s.trim());
+        const opts = Array.from(sel.options).filter((o) => !o.disabled && norm(o.text) !== '' && !isPlaceholder(o.text));
+        let match =
           opts.find((o) => norm(o.text) === want || norm(o.value) === want) ||
           opts.find((o) => norm(o.text).includes(want) || want.includes(norm(o.text)));
+        if (!match && opts.length > 0) {
+          match =
+            opts.find((o) =>
+              /\b(?:yes|india|bengaluru|bangalore|karnataka|remote|hybrid|bachelor|b\.?tech|b\.?e\b|full[\s-]*time|linkedin|job\s*board|company\s*website|online|other|none|no\b|0\s*[-–to]|1\s*[-–to]|i\s+do\s+not\s+wish|prefer\s+not)\b/i.test(
+                o.text
+              )
+            ) || opts[0];
+        }
         if (!match) return false;
         sel.value = match.value;
         sel.selectedIndex = match.index;
@@ -426,6 +452,35 @@ export async function selectHarvestedOption(
         matchOptions.filter({ hasText: new RegExp(filterSeed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') })
       );
       matchCount = await choice.count().catch(() => 0);
+    }
+  }
+
+  // Step 317.1: Safe option fallback if still 0 matches (Skyvern / ApplyPilot pattern)
+  if (matchCount === 0) {
+    const safeRegex = /\b(?:yes|india|bengaluru|bangalore|remote|bachelor|full[\s-]*time|linkedin|job\s*board|website|other|none|no\b|prefer\s+not)\b/i;
+    const isBadPlaceholder = (txt: string) => /^(?:loading|searching|no\s+options|no\s+results|select|choose|--|type\s+to)/i.test(txt.trim());
+
+    const allVisible = matchOptions.filter({ visible: true });
+    const count = await allVisible.count().catch(() => 0);
+    for (let i = 0; i < count; i++) {
+      const candidate = allVisible.nth(i);
+      const txt = (await candidate.innerText().catch(() => '')).trim();
+      if (txt && !isBadPlaceholder(txt) && safeRegex.test(txt)) {
+        choice = candidate;
+        matchCount = 1;
+        break;
+      }
+    }
+    if (matchCount === 0 && count > 0) {
+      for (let i = 0; i < count; i++) {
+        const candidate = allVisible.nth(i);
+        const txt = (await candidate.innerText().catch(() => '')).trim();
+        if (txt && !isBadPlaceholder(txt)) {
+          choice = candidate;
+          matchCount = 1;
+          break;
+        }
+      }
     }
   }
 

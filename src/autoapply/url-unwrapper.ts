@@ -12,23 +12,23 @@ export function unwrapDirectAtsApplicationUrl(rawUrl: string): string {
     }
 
     // 2. Ensure Ashby job URLs jump straight to the /application tab instead of hanging on the JD overview tab!
-    if (u.hostname === 'jobs.ashbyhq.com') {
+    if (u.hostname === 'jobs.ashbyhq.com' || u.hostname.endsWith('.ashbyhq.com')) {
       const cleanPath = u.pathname.replace(/\/+$/, '');
       const parts = cleanPath.split('/').filter(Boolean);
       // Matches /{tenant}/{jobUuid} where jobUuid is not already /application
-      if (parts.length === 2 && parts[1] !== 'application' && parts[1] !== 'embed') {
-        u.pathname = `/${parts[0]}/${parts[1]}/application`;
+      if (parts.length >= 2 && parts[parts.length - 1] !== 'application' && parts[parts.length - 1] !== 'embed') {
+        u.pathname = `/${parts.slice(0, 2).join('/')}/application`;
         return u.toString();
       }
     }
 
     // 3. Ticket GEN-104: Ensure Lever job URLs jump straight to the /apply tab instead of hanging on the JD overview!
-    if (u.hostname === 'jobs.lever.co') {
+    if (u.hostname === 'jobs.lever.co' || u.hostname.endsWith('.lever.co')) {
       const cleanPath = u.pathname.replace(/\/+$/, '');
       const parts = cleanPath.split('/').filter(Boolean);
       // Matches /{tenant}/{jobUuid} without /apply
-      if (parts.length === 2 && parts[1] !== 'apply') {
-        u.pathname = `/${parts[0]}/${parts[1]}/apply`;
+      if (parts.length >= 2 && parts[parts.length - 1] !== 'apply') {
+        u.pathname = `/${parts.slice(0, 2).join('/')}/apply`;
         return u.toString();
       }
     }

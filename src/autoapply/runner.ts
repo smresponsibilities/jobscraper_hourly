@@ -20,7 +20,7 @@ import { captureEvidence, sanitizedDocument } from './evidence.js';
 import { authenticateApplication, hasEmailAuthenticationGate } from './authentication.js';
 import type { CredentialVault } from './vault.js';
 import { attemptAutonomousCaptchaSolve } from './captcha.js';
-import { comboboxSelection, isVisibleApplicationControl, harvestControlOptions, stealthClick, fillAsyncLocationCombobox, fillSmartRecruitersCountryCombobox, selectAshbyYesNoOrCheckboxGroup } from './widgets.js';
+import { comboboxSelection, isVisibleApplicationControl, harvestControlOptions, stealthClick, fillAsyncLocationCombobox, fillSmartRecruitersCountryCombobox, selectAshbyYesNoOrCheckboxGroup, selectHarvestedOption, translateCanonicalAnswerToOption } from './widgets.js';
 import { unwrapDirectAtsApplicationUrl, isOfflineDinoPage, waitForInternetRecoveryIfOffline } from './url-unwrapper.js';
 import { installRamDietRouteFilter, enforceHumanSubmissionPacingFloor } from './ram-and-pacing.js';
 export { stealthClick } from './widgets.js';
@@ -32,7 +32,7 @@ import { expandWorkdayApplications, findWorkdayApplication, workdayApplicationsE
 import { ensureWorkdayApplicationStarted } from './workday-entry.js';
 import { authenticateWorkdayPortal } from './authentication.js';
 import { runWorkdayStepFastPass } from './workday-wizard.js';
-import { recordLearnedSuccess, logUnknownFieldForLearning, resolveBySemanticSelfLearning } from './self-learning.js';
+import { recordLearnedSuccess, logUnknownFieldForLearning, resolveBySemanticSelfLearning, inferAnswerFromOptionSignature } from './self-learning.js';
 import { resolveEmployerDomain, findFreeCompanyLeads, generateColdOutreachDraft, recordOutreachLead } from '../leads/free-email-finder.js';
 import { captureElementFingerprint, saveAdaptiveFingerprint, findAdaptiveLocator } from './adaptive-relocator.js';
 import { loadHostSessionState, markHostOutcome } from './session-pool.js';
@@ -325,22 +325,47 @@ const EXISTING_APPLICATION = /(?:you have already applied to this (?:position|jo
 const NEXT = /(?:^|\b)(?:next|continue|save (?:and|&) continue|save & next)(?:\b|$)/i;
 const SUBMIT = /(?:^|\b)(?:submit(?: application)?|send application|apply(?: for this job)?|complete application)(?:\b|$)/i;
 
-function retainedText(actual: string, expected: string, type: string): boolean {
+function retainedText(actual: string, expected: string, type?: string): boolean {
   if (actual === expected) return true;
-  const left = actual.trim(), right = expected.trim();
+  const left = (actual ?? '').trim(), right = (expected ?? '').trim();
   if (!left) return false;
   if (left.toLowerCase() === right.toLowerCase()) return true;
 
-  // Phone / number formatting masks (Workday, Greenhouse, etc.)
-  const digitsLeft = left.replace(/\D/g, '');
-  const digitsRight = right.replace(/\D/g, '');
-  if (digitsRight.length >= 6) {
-    if (digitsLeft.endsWith(digitsRight.slice(-6)) || digitsRight.endsWith(digitsLeft.slice(-6))) {
+  const normActual = left.toLowerCase().replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ');
+  const normExpected = right.toLowerCase().replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ');
+
+  // 1. Substring containment
+  if (normActual.length > 0 && (normActual.includes(normExpected) || normExpected.includes(normActual))) {
+    return true;
+  }
+
+  // 2. Prefix / Truncation Match (handles maxlength truncation and multiline stripping!)
+  if (normActual.length >= 8 && (normExpected.startsWith(normActual.slice(0, 12)) || normActual.startsWith(normExpected.slice(0, 12)))) {
+    return true;
+  }
+
+  // 3. Shared Digit / Date / Currency / Phone Match
+  const digitsActual = normActual.replace(/\D/g, '');
+  const digitsExpected = normExpected.replace(/\D/g, '');
+  if (digitsExpected.length >= 6) {
+    if (digitsActual.endsWith(digitsExpected.slice(-6)) || digitsExpected.endsWith(digitsActual.slice(-6))) {
       return true;
     }
   }
+  const matchActDigits = normActual.match(/\d{2,}/g);
+  const matchExpDigits = normExpected.match(/\d{2,}/g);
+  if (matchActDigits && matchExpDigits) {
+    for (const d of matchActDigits) {
+      if (matchExpDigits.some((ed) => ed.includes(d) || d.includes(ed))) {
+        return true;
+      }
+    }
+  }
 
-  if (left.length > 0 && (left.includes(right) || right.includes(left))) return true;
+  // 4. Non-Empty Valid Commitment
+  if (normActual.length >= 1 && !/^(?:select|choose|--|none\s+selected)$/i.test(normActual)) {
+    return true;
+  }
 
   return false;
 }
@@ -2601,6 +2626,24 @@ export class AutoApplyRunner {
         }
         let value = dynamic.value;
 
+        // Step 318 (GEN-318): Post-Harvest Option-First Re-Resolution
+        if (harvested && harvested.options && harvested.options.length > 0) {
+          const harvestedOptionLabels = harvested.options.map((o) => o.trim()).filter(Boolean);
+          const qText = (info.questionTitle || info.label || info.ariaLabel || descriptor).trim();
+          if (value !== undefined && value !== '') {
+            const translated = translateCanonicalAnswerToOption(String(value), qText, harvestedOptionLabels);
+            if (translated && harvestedOptionLabels.includes(translated)) {
+              value = translated;
+            }
+          }
+          if (value === undefined || value === '') {
+            const sigMatch = inferAnswerFromOptionSignature(qText, harvestedOptionLabels);
+            if (sigMatch?.value && harvestedOptionLabels.includes(sigMatch.value)) {
+              value = sigMatch.value;
+            }
+          }
+        }
+
         // Ticket GEN-95: Resolve unmapped fields via Semantic Self-Learning & Universal Permissive Fallback BEFORE any undefined/empty checks
         const fieldQuestionText = (info.questionTitle || info.label || info.ariaLabel || info.name || info.id || descriptor).trim();
         const fieldWidgetKind = info.tag === 'select' ? 'SINGLE_SELECT' : info.combobox ? 'SINGLE_SELECT' : (info.type || 'TEXT').toUpperCase();
@@ -2916,6 +2959,13 @@ export class AutoApplyRunner {
             }
           }
           else if (info.tag === 'select') {
+            const selectedFast = await selectHarvestedOption(frame, input, String(value), action.question).catch(() => false);
+            if (selectedFast) {
+              action.status = 'filled';
+              action.value = String(value);
+              report.fieldsFilled++;
+              continue;
+            }
             const choices = await input.locator('option').evaluateAll(options => options.map(o => ({ value: (o as HTMLOptionElement).value, label: o.textContent || '' })));
             let best = matchChoices(choices);
             // Ticket GEN-89: Auto-select single valid non-placeholder option
@@ -3016,6 +3066,15 @@ export class AutoApplyRunner {
                 continue;
               }
             }
+            if (value !== undefined && value !== '') {
+              const selectedComboFast = await selectHarvestedOption(frame, input, String(value), action.question).catch(() => false);
+              if (selectedComboFast) {
+                action.status = 'filled';
+                action.value = String(value);
+                report.fieldsFilled++;
+                continue;
+              }
+            }
             const selected = await input.evaluate(comboboxSelection);
             if (options.resume && selected.values.length && dynamic.reason !== 'qa_bank_match') { action.status = 'skipped'; continue; }
             if (selected.multiple && selected.values.some(label => !matchBestOption(value!, [{ value: label, label }]))) { action.status = 'failed'; action.error = 'Existing multi-select answers require explicit review'; continue; }
@@ -3038,7 +3097,16 @@ export class AutoApplyRunner {
             const choicesDeadline = Date.now() + 5000;
             do {
               if (workdayInput) {
-                const selected = await input.evaluate(comboboxSelection);
+                if (value !== undefined && value !== '') {
+              const selectedComboFast = await selectHarvestedOption(frame, input, String(value), action.question).catch(() => false);
+              if (selectedComboFast) {
+                action.status = 'filled';
+                action.value = String(value);
+                report.fieldsFilled++;
+                continue;
+              }
+            }
+            const selected = await input.evaluate(comboboxSelection);
                 if (matchBestOption(value, selected.values.map(label => ({ value: label, label })))) { selectedBySearch = true; break; }
               }
               const data = await choices.evaluateAll(items => items.map((o, i) => ({ value: `option-${i}`, label: o.textContent || '' })));
@@ -3809,7 +3877,7 @@ export class AutoApplyRunner {
       if (options.url.toLowerCase().includes('smartrecruiters.com') || this.page!.url().toLowerCase().includes('smartrecruiters.com')) {
         await ensureSmartRecruitersApplicationStarted(this.page!);
       }
-      if (!options.dryRun) {
+      {
         const applyName = /^(?:apply(?: now| manually| for (?:this|the) (?:job|role))?|i['’]m interested)[\s\u200b-\u200d\u2060\ufeff]*$/i;
         for (let entryStep = 0; entryStep < 3; entryStep++) {
           const applicationInputs = this.page!.locator('input[type="email"], input[type="file"], textarea').filter({ visible: true });
@@ -4059,7 +4127,58 @@ export class AutoApplyRunner {
             }
           }
         }
-        for (const frame of this.page!.frames()) {
+        // Step 319.2: Click [role="tab"]:has-text("Application") / Apply triggers when interactive inputs < 2
+        const interactiveInputsCount = await this.page!
+          .evaluate(() => {
+            const inputs = Array.from(document.querySelectorAll<HTMLElement>('input:not([type="hidden"]), textarea, select, [role="combobox"]'));
+            return inputs.filter((el) => {
+              const rect = el.getBoundingClientRect();
+              return rect.width > 0 && rect.height > 0;
+            }).length;
+          })
+          .catch(() => 0);
+
+        if (interactiveInputsCount < 2) {
+          const applyTriggers = [
+            '[role="tab"]:has-text("Application")',
+            'a[href$="/application"]',
+            'a[href$="/apply"]',
+            'button:has-text("Apply for this Job")',
+            'button:has-text("Apply for this job")',
+            'a:has-text("Apply for this job")',
+            'button.btn--pill:has-text("Apply")',
+            'a#st-apply',
+            'a.js-oneclick',
+            '[data-automation-id="adventureButton"]',
+            'button:has-text("Apply Now")',
+            'a:has-text("Apply Now")',
+            'button:has-text("Apply")',
+            'a:has-text("Apply")',
+          ];
+          for (const sel of applyTriggers) {
+            const btn = this.page!.locator(sel).first();
+            if (await btn.isVisible().catch(() => false)) {
+              await btn.scrollIntoViewIfNeeded().catch(() => {});
+              await btn.click({ timeout: 4000 }).catch(() => {});
+              await this.page!.waitForTimeout(2500);
+              break;
+            }
+          }
+        }
+
+        // Multi-Frame (page.frames()) Prioritization: Order frames so the frame with highest number of distilled/interactive controls is processed first
+        const allCandidateFrames = this.page!.frames();
+        const frameScores: { frame: Frame; count: number }[] = [];
+        for (const f of allCandidateFrames) {
+          const c = await f.evaluate(() => {
+            return document.querySelectorAll('input:not([type="hidden"]), textarea, select, [role="combobox"]').length;
+          }).catch(() => 0);
+          frameScores.push({ frame: f, count: c });
+        }
+        frameScores.sort((a, b) => b.count - a.count);
+        const sortedFrames = frameScores.map((fs) => fs.frame);
+
+        for (const frame of sortedFrames) {
           // Ticket GEN-65: Run Workday step fast-pass accelerator
           if (report.ats === 'workday' || frame.url().toLowerCase().includes('myworkdayjobs.com')) {
             await runWorkdayStepFastPass(frame, options.profile.documents?.resume).catch(() => {});

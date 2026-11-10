@@ -148,6 +148,11 @@ export function inferAnswerFromOptionSignature(
   questionText: string,
   options: string[]
 ): { category: string; value: string } | null {
+  if (Array.isArray(questionText) && typeof options === 'string') {
+    const tmp = questionText;
+    questionText = options;
+    options = tmp;
+  }
   if (!options || options.length === 0) return null;
   const joined = options.join(' | ').toLowerCase();
 
