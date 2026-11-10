@@ -23,6 +23,8 @@ export const DEFAULT_COVER_LETTER_DOCX = path.resolve('state/autoapply/resumes/S
 export function buildCoverLetterHtml(params: CoverLetterParams = {}): string {
   const company = (params.company || 'the Engineering Team').trim();
   const roleTitle = (params.roleTitle || 'Software Engineer').trim();
+  const rawPhone = process.env.AUTOAPPLY_PHONE || '';
+  const phone = rawPhone ? (rawPhone.startsWith('+') ? rawPhone : `+91 ${rawPhone}`) : '+91 9000000000';
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -89,7 +91,7 @@ export function buildCoverLetterHtml(params: CoverLetterParams = {}): string {
   <div class="header">
     <div class="name">Shivam Mahajan</div>
     <div class="contact-bar">
-      Bengaluru, India &bull; +91 7018626032 &bull; mahajanshivam012004@gmail.com &bull;
+      Bengaluru, India &bull; ${phone} &bull; mahajanshivam012004@gmail.com &bull;
       <a href="https://www.linkedin.com/in/mahajanshivam">linkedin.com/in/mahajanshivam</a> &bull;
       <a href="https://github.com/smresponsibilities">github.com/smresponsibilities</a> &bull;
       <a href="https://shivammahajan.com/projects/">shivammahajan.com/projects</a>
@@ -123,6 +125,8 @@ export function buildCoverLetterHtml(params: CoverLetterParams = {}): string {
 export async function buildCoverLetterDocx(params: CoverLetterParams = {}): Promise<Buffer> {
   const company = (params.company || 'the Engineering Team').trim();
   const roleTitle = (params.roleTitle || 'Software Engineer').trim();
+  const rawPhone = process.env.AUTOAPPLY_PHONE || '';
+  const phone = rawPhone ? (rawPhone.startsWith('+') ? rawPhone : `+91 ${rawPhone}`) : '+91 9000000000';
 
   const doc = new Document({
     sections: [
@@ -141,7 +145,7 @@ export async function buildCoverLetterDocx(params: CoverLetterParams = {}): Prom
           }),
           new Paragraph({
             children: [
-              new TextRun({ text: 'Bengaluru, India | +91 7018626032 | mahajanshivam012004@gmail.com | linkedin.com/in/mahajanshivam | shivammahajan.com/projects', size: 18, color: '475569' }),
+              new TextRun({ text: `Bengaluru, India | ${phone} | mahajanshivam012004@gmail.com | linkedin.com/in/mahajanshivam | shivammahajan.com/projects`, size: 18, color: '475569' }),
             ],
             spacing: { after: 240 },
           }),
