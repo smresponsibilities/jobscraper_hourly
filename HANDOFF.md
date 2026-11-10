@@ -1,5 +1,30 @@
 # Handoff
 
+## Next-Session Agent Quickstart & Production Health Checklist (Updated 2026-11-10)
+
+> [!IMPORTANT]
+> **Active Production State**:
+> - **Live Confirmed Applied**: **141** verified applications with receipts in `state/autoapply/portal-review/queue.sqlite` (`status = 'applied'`).
+> - **Persistent Submitter Daemon**: Running in background under `PID 38656` (`out/dist/scripts/drain-backfill-and-hourly.js --profile state/autoapply/portal-review/candidate.json --state state/autoapply/portal-review --max-jobs 80 --submit --submit`). Worker lock file: `state/autoapply/portal-review/worker.lock`.
+> - **Adaptive RAM & Health Watchdog**: Running continuously. Telemetry at `state/autoapply/ram-health.json`. Automatically scales lanes $1 \leftrightarrow 6$ based on available RAM and reaps zombie `chrome.exe` processes $> 180\text{s}$ old.
+> - **Queue Breakdown**: ~9,299 `queued`, 141 `applied`, 10,808 `skipped`, 916 `failed`, 15 `paused_for_review`. 46 verified `READY_TO_SUBMIT` jobs boosted with `is_hourly_fresh = 3`.
+> - **SOTA 100-Job Benchmark**: **61/100 READY_TO_SUBMIT (61.0% pass rate)**. Ashby: **26/26 (100%)**, Lever: **20/20 (100%)**, Greenhouse: **15/28 (53.6%)**. Required unfilled questions: **0**.
+> - **Verification**: `npm test` (58/58 passing), `npx tsc -p tsconfig.build.json` (clean), `scripts/sanitize-for-git-push.ts` (0 PII leaks).
+> - **Git Remote**: Synchronized with `origin/main`. Always run `git fetch origin; git merge origin/main` before any push.
+
+### High-Priority Directives for the Next Session
+1. **Monitor Live Conversions Towards 160+ Target**:
+   - Check confirmed `applied` count in `queue.sqlite`. Ensure worker continues converting boosted ready jobs.
+   - If daemon completes its 80-job batch, restart with `node out/dist/scripts/drain-backfill-and-hourly.js --profile state/autoapply/portal-review/candidate.json --state state/autoapply/portal-review --max-jobs 80 --submit`.
+2. **Push Greenhouse from 53.6% towards 80%+**:
+   - Inspect the 13 non-ready Greenhouse postings in `state/autoapply/dryrun-100-results.json`.
+   - Resolve dynamic shadow DOM embeds or complex multi-step custom screening blocks.
+3. **SmartRecruiters & Workday Active Posting Refresh**:
+   - The majority of failures in SmartRecruiters (Wabtec, T-Systems, Sutherland) and Workday (Juniper, HPE, Cisco, zoom) were inactive/expired URLs returning 404 or `job_closed`.
+   - Ingest fresh active postings from recent crawls to benchmark live active conversion rates on Workday.
+
+---
+
 ## 90%-Conversion SOTA Dry-Run, RetainedText & VerifyChoiceReadBack Resilience, Safe Combobox Fallback, URL Unwrapping & Pass-4 61% Conversion (Tickets GEN-316 to GEN-320) — 2026-11-10
 
 ### 1. Executive Summary & Production Status
