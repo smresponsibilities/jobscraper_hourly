@@ -19,7 +19,7 @@ const latest = db.prepare(`
   SELECT id, status, payload
   FROM applications 
   WHERE status = 'applied' 
-  ORDER BY rowid DESC 
+  ORDER BY json_extract(payload, '$.appliedAt') DESC 
   LIMIT 25
 `).all();
 

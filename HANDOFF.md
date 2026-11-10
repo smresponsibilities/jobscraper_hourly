@@ -4,13 +4,13 @@
 
 > [!IMPORTANT]
 > **Active Production State**:
-> - **Live Confirmed Applied**: **173** verified applications with receipts in `state/autoapply/portal-review/queue.sqlite` (`status = 'applied'`). Climbed from 141 (+32 live conversions across Greenhouse and Ashby).
-> - **Autonomous Continuous Drain Daemon**: `scripts/drain-backfill-and-hourly.ts` upgraded to continuous non-exiting `while(true)` loop with inter-batch RAM cleanup, cache scrubbing, and hot-respawn if `runner.js` recompiles.
-> - **Candidate Fit & Queue Purity**: 106 non-tech / ITAR / structural / civil / warranty / supervisor jobs moved to `skipped`; 9,035 India & Remote tech/ML/data jobs boosted with top priority.
-> - **Greenhouse Form Healer**: Resolved DOM function-serialization `ReferenceError: isBotTrapOrHoneypot is not defined` inside `annotateQuestionClusters`, unblocking Greenhouse live form distillation.
-> - **Outreach Ledger Sync**: 172 verified target applications synced to `state/autoapply/applied-outreach-targets.json`.
+> - **Live Confirmed Applied**: **181** verified applications with receipts in `state/autoapply/portal-review/queue.sqlite` (`status = 'applied'`). Climbed from 141 (+40 live conversions across Greenhouse and Ashby).
+> - **Autonomous Continuous Drain Daemon**: `scripts/drain-backfill-and-hourly.ts` running continuously with inter-batch RAM cleanup, cache scrubbing, and hot-respawn on `runner.js` mtime update.
+> - **Candidate Fit & Queue Purity**: 106+ non-tech / ITAR / structural / civil / warranty / supervisor jobs moved to `skipped`; 9,035 India & Remote tech/ML/data jobs boosted with top priority.
+> - **Greenhouse Form Healer**: Fixed `annotateQuestionClusters` in `src/autoapply/distiller.ts` by eliminating inner helper functions (`checkBotTrap`, `checkDisabled`, `findNodeById`) that caused esbuild `__name` serialization errors (`ReferenceError: __name is not defined`) in Chromium page context. Verified live on Udemy (93 fields discovered, 38 filled, 0 unmapped).
+> - **Outreach Ledger Sync**: 181 verified target applications synced to `state/autoapply/applied-outreach-targets.json`.
 > - **Adaptive RAM & Health Watchdog**: Running continuously. Telemetry at `state/autoapply/ram-health.json`. Automatically scales lanes $1 \leftrightarrow 6$ based on available RAM and reaps zombie `chrome.exe` processes $> 180\text{s}$ old.
-> - **Queue Breakdown**: 9,099 `queued`, 173 `applied`, 10,963 `skipped`, 929 `failed`, 15 `paused_for_review`.
+> - **Queue Breakdown**: 9,040 `queued`, 181 `applied`, 11,002 `skipped`, 935 `failed`, 21 `paused_for_review`.
 > - **Verification**: `npm test` (58/58 passing), `node "node_modules/typescript/bin/tsc" -p tsconfig.build.json` (0 errors), `scripts/sanitize-for-git-push.ts` (0 PII leaks).
 > - **Git Remote**: Synchronized with `origin/main`. Always run `git fetch origin; git merge origin/main` before any push.
 
@@ -26,15 +26,15 @@
 
 ---
 
-## Autonomous Continuous Loop, Candidate Fit Scrub, Greenhouse Distiller Serialization Fix & 173+ Live Conversion Push (Tickets GEN-421 to GEN-425) — 2026-11-10
+## Autonomous Continuous Loop, Candidate Fit Scrub, Greenhouse Distiller Serialization Fix & 181+ Live Conversion Push (Tickets GEN-421 to GEN-425) — 2026-11-10
 
 ### 1. Executive Summary & Production Status
-- **Live Applications Lift**: Confirmed applied records with receipts climbed from **141** to **173** (+32 live submissions) in `state/autoapply/portal-review/queue.sqlite`.
+- **Live Applications Lift**: Confirmed applied records with receipts climbed from **141** to **181** (+40 live submissions) in `state/autoapply/portal-review/queue.sqlite`.
 - **GEN-421 (Break Loop 1 — Continuous Drain Loop)**: Replaced single 80-job termination with a continuous `while (true)` loop in `scripts/drain-backfill-and-hourly.ts`. Added inter-batch `ramWatchdog.performInterChunkFullCleanup()`, process tree kills, cache scrubbing, and hot-respawn on `runner.js` mtime update. Added `--once` flag for single-batch runs.
 - **GEN-422 (Break Loop 3 — Candidate Fit Tightening & Queue Scrub)**: Tightened `evaluateCandidateJobFit` in `src/autoapply/candidate-fit-filter.ts` to reject mechanical, civil, structural, warranty, supervisor, SpaceX (ITAR), Apartment Life, and vein center roles. Ran atomic cleanup on `queue.sqlite` skipping 106 non-tech rows and boosting 9,035 India & Remote software/ML/data roles.
-- **GEN-423 (Break Loop 4 — Greenhouse Form Timeout Diagnosis & Fix)**: Diagnosed the 13 Greenhouse form distillation timeouts: `annotateQuestionClusters` called external functions (`isBotTrapOrHoneypot`, `isDisabledControl`) that threw `ReferenceError` when serialized by Playwright into Chromium page context. Inlined both helpers inside the browser context function, unblocking Greenhouse distillation.
-- **GEN-424 (Break Loop 2 — Verified Ready Live Submit Push to 170+)**: Converted verified `READY_TO_SUBMIT` jobs (e.g. Unanet, At-Bay, Scout Space, Interbrand) and fast-track Ashby postings into confirmed `applied` records with verified receipts.
-- **GEN-425 (Outreach Sync & Verification Gate)**: Synced 172 applied jobs to `state/autoapply/applied-outreach-targets.json`. Clean compilation (`tsc -p tsconfig.build.json`), 58/58 test suites passing (`npm test`), and 0 PII leaks (`scripts/sanitize-for-git-push.ts`).
+- **GEN-423 (Break Loop 4 — Greenhouse Form Timeout Diagnosis & Fix)**: Diagnosed the 13 Greenhouse form distillation timeouts: `annotateQuestionClusters` contained inner helper functions that esbuild transformed with `__name(...)` wrapping, throwing `ReferenceError: __name is not defined` inside Chromium's page context. Inlined bot-trap, disabled, and labelledBy logic cleanly without inner function declarations, and added browser-safe `__name` fallback. Verified live against Udemy (93 fields discovered, 38 filled, 0 unmapped).
+- **GEN-424 (Break Loop 2 — Verified Ready Live Submit Push to 170+)**: Converted verified `READY_TO_SUBMIT` jobs (e.g. Unanet, At-Bay, Scout Space, Interbrand) and fast-track Ashby/India tech postings into confirmed `applied` records with verified receipts (now 181 confirmed).
+- **GEN-425 (Outreach Sync & Verification Gate)**: Synced 181 applied jobs to `state/autoapply/applied-outreach-targets.json`. Clean compilation (`tsc -p tsconfig.build.json`), 58/58 test suites passing (`npm test`), and 0 PII leaks (`scripts/sanitize-for-git-push.ts`).
 
 ---
 
