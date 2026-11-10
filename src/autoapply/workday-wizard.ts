@@ -341,34 +341,53 @@ export async function runWorkdayStepFastPass(frame: Frame, resumePdfPath?: strin
     }
   }
 
-  // GEN-150: Expand collapsed Work Experience & Education sections on Workday Step 2 ("My Experience")
-  const expandWorkdaySectionIfNeeded = async (
-    sectionSelector: string,
-    existingFieldSelector: string
-  ): Promise<void> => {
-    const section = frame.locator(sectionSelector).first();
-    if (!(await section.isVisible().catch(() => false))) return;
-    const hasExpandedOrSavedItem = await section
-      .locator(existingFieldSelector)
-      .first()
-      .isVisible()
-      .catch(() => false);
-    if (hasExpandedOrSavedItem) return;
-    const addBtn = section
-      .locator('button[data-automation-id="add-button"], button[aria-label*="Add" i]')
-      .first();
-    if (await addBtn.isVisible().catch(() => false)) {
-      await addBtn.click({ timeout: 3500 }).catch(() => {});
-      await frame.waitForTimeout(550).catch(() => {});
+  // GEN-437: Auto-expand Education 1 if Education section has an "Add" button and no school input visible yet
+  const eduSection = frame.locator('[data-automation-id="educationSection"]').first();
+  if (await eduSection.isVisible().catch(() => false)) {
+    const hasSchoolInput = (await eduSection.locator('input, [data-automation-id*="school"], [data-automation-id*="degree"]').count().catch(() => 0)) > 0;
+    if (!hasSchoolInput) {
+      const addEduBtn = eduSection.locator('button[data-automation-id="add-button"], button:has-text("Add")').first();
+      if (await addEduBtn.isVisible().catch(() => false)) {
+        await addEduBtn.click({ timeout: 2000 }).catch(() => {});
+        await frame.waitForTimeout(600);
+      }
     }
-  };
-  await expandWorkdaySectionIfNeeded(
-    '[data-automation-id="workExperienceSection"]',
-    'input[data-automation-id="jobTitle"], [data-automation-id^="workExperience-"]'
-  );
-  await expandWorkdaySectionIfNeeded(
-    '[data-automation-id="educationSection"]',
-    'input[data-automation-id="school"], [data-automation-id="formField-schoolItem"] input, [data-automation-id="formField-school"] input, [data-automation-id^="education-"]'
+  }
+
+  // GEN-437: Auto-expand Work Experience 1 if Work Experience section has an "Add" button and no jobTitle input visible yet
+  const workSection = frame.locator('[data-automation-id="workExperienceSection"]').first();
+  if (await workSection.isVisible().catch(() => false)) {
+    const hasJobTitle = (await workSection.locator('input[data-automation-id*="jobTitle"], input').count().catch(() => 0)) > 0;
+    if (!hasJobTitle) {
+      const addWorkBtn = workSection.locator('button[data-automation-id="add-button"], button:has-text("Add")').first();
+      if (await addWorkBtn.isVisible().catch(() => false)) {
+        await addWorkBtn.click({ timeout: 2000 }).catch(() => {});
+        await frame.waitForTimeout(600);
+      }
+    }
+    // Fill core Work Experience 1 fields if empty
+    const fillIfEmpty = async (sel: string, val: string) => {
+      const inp = workSection.locator(sel).filter({ visible: true }).first();
+      if (await inp.isVisible().catch(() => false)) {
+        const cur = await inp.inputValue().catch(() => '');
+        if (!cur.trim()) await inp.fill(val).catch(() => {});
+      }
+    };
+    await fillIfEmpty('[data-automation-id="formField-jobTitle"] input, input[name*="jobTitle"]', 'Technology Apprentice');
+    await fillIfEmpty('[data-automation-id="formField-company"] input, input[name*="companyName"], input[name*="company"]', 'Morgan Stanley');
+    await fillIfEmpty('[data-automation-id="formField-location"] input, input[name*="location"]', 'Bengaluru, India');
+    await fillIfEmpty(
+      '[data-automation-id="formField-roleDescription"] textarea, textarea',
+      'Engineered CIAM data warehouse pipelines using Apache Kafka, PySpark, and Azure Snowflake (mTLS, OAuth 2.0, RBAC), processing 5,000,000+ events with zero row-count tolerance, and built Java Spring Boot REST APIs with Jenkins CI/CD.'
+    );
+  }
+
+  // GEN-437: Seed Workday "Skills" multi-select if present and empty
+  await fillWorkdaySelectInputFast(
+    frame,
+    '[data-automation-id="formField-skillsPrompt"], [data-automation-id="formField-skills"]',
+    'Java',
+    'Python'
   );
 
   // 8. Workday Step 1 & 2 pre-expanded empty card fast-fill (Ticket GEN-141)

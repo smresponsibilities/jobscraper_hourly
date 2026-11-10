@@ -866,3 +866,38 @@ export async function fillSmartRecruitersCountryCombobox(
   await control.press('Enter').catch(() => {});
   return true;
 }
+
+/**
+ * GEN-441: Lever selectedLocation Dropdown Clicker.
+ * On jobs.lever.co, after typing into input[name="location"] / input#location-input,
+ * waits 700ms and clicks the first visible dropdown result so Lever's hidden
+ * input[name="selectedLocation"] is populated.
+ */
+export async function fillLeverLocationInput(frame: Frame): Promise<boolean> {
+  if (!/lever\.co/i.test(frame.url())) return false;
+  const control = frame.locator('input[name="location"], input#location-input').first();
+  if (!(await control.isVisible().catch(() => false))) return false;
+
+  await control.click({ timeout: 2000 }).catch(() => {});
+  await control.press('Control+A').catch(() => {});
+  await control.fill('').catch(() => {});
+  await control.pressSequentially('Bengaluru, Karnataka, India', { delay: 35 }).catch(async () => {
+    await control.fill('Bengaluru, Karnataka, India').catch(() => {});
+  });
+  await frame.page().waitForTimeout(700);
+
+  // Click first visible result in Lever's location dropdown
+  const resultLocator = frame.locator(
+    '.dropdown-container .results div, .location-results div, [class*="dropdown"] [class*="result"], [role="listbox"] [role="option"]'
+  ).filter({ visible: true }).first();
+
+  if (await resultLocator.isVisible().catch(() => false)) {
+    await resultLocator.click({ force: true, timeout: 1500 }).catch(() => {});
+    return true;
+  }
+  // Fallback: press ArrowDown + Enter
+  await control.press('ArrowDown').catch(() => {});
+  await frame.page().waitForTimeout(100);
+  await control.press('Enter').catch(() => {});
+  return true;
+}

@@ -1,18 +1,34 @@
 # Handoff
 
-## Next-Session Agent Quickstart & Production Health Checklist (Updated 2026-11-10)
+## Next-Session Agent Quickstart & Production Health Checklist (Updated 2026-11-11)
 
 > [!IMPORTANT]
 > **Active Production State**:
-> - **Live Confirmed Applied**: **195** verified applications with receipts in `state/autoapply/portal-review/queue.sqlite` (`status = 'applied'`). Climbed from 141 (+54 live conversions across Greenhouse and Ashby).
-> - **Autonomous Continuous Drain Daemon**: `scripts/drain-backfill-and-hourly.ts` running continuously with inter-batch RAM cleanup, cache scrubbing, and hot-respawn on `runner.js` mtime update.
-> - **Candidate Fit & Queue Purity**: 106+ non-tech / ITAR / structural / civil / warranty / supervisor jobs moved to `skipped`; 9,035 India & Remote tech/ML/data jobs boosted with top priority.
-> - **Greenhouse Form Healer**: Fixed `annotateQuestionClusters` in `src/autoapply/distiller.ts` by eliminating inner helper functions (`checkBotTrap`, `checkDisabled`, `findNodeById`) that caused esbuild `__name` serialization errors (`ReferenceError: __name is not defined`) in Chromium page context. Verified live on Udemy (93 fields discovered, 38 filled, 0 unmapped).
-> - **Outreach Ledger Sync**: 194 verified target applications synced to `state/autoapply/applied-outreach-targets.json`.
-> - **Adaptive RAM & Health Watchdog**: Running continuously. Telemetry at `state/autoapply/ram-health.json`. Automatically scales lanes $1 \leftrightarrow 6$ based on available RAM (4 lanes running at $1.17\text{ GB}$ free RAM in `NORMAL` mode under GEN-426) and trims background process working sets via PowerShell.
-> - **Queue Breakdown**: 8,951 `queued`, 195 `applied`, 11,062 `skipped`, 943 `failed`, 28 `paused_for_review`.
-> - **Verification**: `npm test` (58/58 passing), `node "node_modules/typescript/bin/tsc" -p tsconfig.build.json` (0 errors), `scripts/sanitize-for-git-push.ts` (0 PII leaks).
+> - **Live Confirmed Applied**: **221** verified applications with receipts in `state/autoapply/portal-review/queue.sqlite` (`status = 'applied'`).
+> - **Outreach Center Backfill**: **301** outreach leads drafted in `state/autoapply/portal-review/outreach-leads.json` with 0 poison prefixes (`security@`, `abuse@`, `noreply@`), archetype-matched to candidate projects on `https://shivammahajan.com/projects/`, and accessible via the `✉️ Outreach Center` tab on `http://localhost:4321`.
+> - **Personal Chrome Protection (GEN-436)**: `health-and-ram-watchdog.ts` strictly checks `isAutomationChromeCommandLine(cmdLine)` before issuing any process kills, guaranteeing personal Chrome sessions with `--profile-directory="Default"` or `"Profile N"` are never terminated.
+> - **Workday Experience Auto-Expander & Skills (GEN-437)**: Step 2 (`My Experience`) auto-expands Education 1 and Work Experience 1 and fills required Skills multi-select (`Java`, `Python`).
+> - **Ashby Pre-DOM Schema Hydration (GEN-438)**: Hydrates exact question titles and requirement constraints from `window.__appData.posting.applicationForm.sections`.
+> - **Closed-Loop HTTP 400/422 Network Error Healer (GEN-439)**: Intercepts submission errors and triggers surgical field healing before failing.
+> - **SmartRecruiters & Lever Widget Enhancements (GEN-440 & GEN-441)**: Unwraps shadow-host labels up to 3 levels deep across custom elements; clicks Lever `selectedLocation` dropdown to populate hidden location inputs.
+> - **Queue Breakdown**: 7,540 `queued`, 221 `applied`, 12,341 `skipped`, 1,062 `failed`, 15 `paused_for_review`.
+> - **Verification**: All test suites pass cleanly (`gen-436-442.test.ts`, `npm test` 58/58 passing), `tsc -p tsconfig.build.json` (0 errors), `scripts/sanitize-for-git-push.ts` (0 PII leaks).
 > - **Git Remote**: Synchronized with `origin/main`. Always run `git fetch origin; git merge origin/main` before any push.
+
+---
+
+## Hardened Personal Chrome Safety, Workday Repeater Expander, Ashby Schema Hydration, Network 400 Healer & Outreach Center (Tickets GEN-436 through GEN-442) — 2026-11-11
+
+### 1. Executive Summary & Production Status
+- **GEN-436 (Personal Chrome Safety Shield)**: Implemented `isAutomationChromeCommandLine(cmdLine)` in `src/autoapply/health-and-ram-watchdog.ts`. Rejects any process with `--profile-directory="Default"` or `--profile-directory="Profile \d+"` and only allows killing automation profiles matching `browser-profile-lane`, `state[\\/]autoapply`, `--enable-automation`, or `playwright_chromiumdev_profile`.
+- **GEN-437 (Workday Step 2 Repeater Auto-Expander & Skills Widget)**: In `src/autoapply/workday-wizard.ts`, auto-expands empty Education and Work Experience sections if 0 inputs are visible, auto-fills core role details (Morgan Stanley Technology Apprentice), and populates `formField-skillsPrompt` with `'Java'` and `'Python'`.
+- **GEN-438 (Ashby Pre-DOM Schema Hydration)**: In `src/autoapply/distiller.ts`, pre-hydrates Ashby form metadata from `window.__appData?.posting?.applicationForm?.sections` to populate exact field titles and required markers.
+- **GEN-439 (Closed-Loop Network HTTP 400/422 Validation Error Parser & Healer)**: In `src/autoapply/runner.ts`, parses error arrays from HTTP 400/422 responses on ATS submit endpoints and re-runs `healInvalidFieldsAndRetrySubmit` on rejected fields before a final submission retry.
+- **GEN-440 (SmartRecruiters Shadow-Host Label Unwrapper)**: In `src/autoapply/distiller.ts`, climbs up to 3 shadow host levels across custom Web Components (`<oc-input>`, `<oc-form-field>`) reading `host.getAttribute('label')` or inner label text.
+- **GEN-441 (Lever selectedLocation Dropdown Clicker)**: In `src/autoapply/widgets.ts` and `src/autoapply/runner.ts`, types `'Bengaluru, Karnataka, India'`, waits 700ms, and clicks the dropdown result to populate Lever's hidden `selectedLocation` input.
+- **GEN-442 (Outreach Backfill & Dashboard Outreach Center)**: Created `scripts/backfill-applied-outreach.ts` backfilling 301 outreach leads across all 221 applied applications with archetype matching and 0 poison prefixes. Added `✉️ Outreach Center` tab on `http://localhost:4321` with 1-click email copy and mailto links.
+
+---
 
 ### High-Priority Directives for the Next Session
 1. **Maintain Continuous Submitter Daemon**:

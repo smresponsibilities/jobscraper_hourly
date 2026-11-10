@@ -813,6 +813,7 @@ function renderDashboardHtml(initialTelemetry?: any, initialErrors?: any, initia
     <button class="nav-tab" data-tab="tab-hourly">⚡ Hourly Fresh Jobs (Priority #1)</button>
     <button class="nav-tab" data-tab="tab-overview">📊 All Jobs & Backfill Overview</button>
     <button class="nav-tab" data-tab="tab-diagnostics">🛠️ Live Diagnostics & Unmapped Questions</button>
+    <button class="nav-tab" data-tab="tab-outreach" id="outreach-tab-btn">✉️ Outreach Center (<span id="outreach-tab-count">0</span> Ready)</button>
   </div>
 
   <!-- TAB 1: VERIFIED APPLIED JOBS (DEFAULT ACTIVE) -->
@@ -1068,8 +1069,7 @@ function renderDashboardHtml(initialTelemetry?: any, initialErrors?: any, initia
   </div>
 
   <!-- TAB 4: LIVE DIAGNOSTICS & UNMAPPED QUESTIONS -->
-  <div id="tab-diagnostics" class="tab-pane">
-    <div class="card" style="margin-bottom: 20px;">
+  <div id="tab-diagnostics" class="tab-pane">    <div class="card" style="margin-bottom: 20px;">
       <div class="card-title">
         <span>Overnight Errors & To-Improve Diagnostics (GEN-47)</span>
         <span id="overnight-errors-sync" class="mono" style="font-size: 11px;">Syncing...</span>
@@ -1137,6 +1137,37 @@ function renderDashboardHtml(initialTelemetry?: any, initialErrors?: any, initia
       </div>
     </div>
   </div>
+
+  <!-- TAB 5: OUTREACH CENTER (GEN-442) -->
+  <div id="tab-outreach" class="tab-pane">
+    <div class="card" style="margin-bottom:20px;">
+      <div class="card-title">
+        <span>✉️ Outreach Center — Applied Job Cold Follow-Up Emails</span>
+        <span id="outreach-sync-label" class="mono" style="font-size:11px;">Loading...</span>
+      </div>
+      <div style="margin-bottom:12px;font-size:12px;color:var(--text-muted);">
+        Showing all applied jobs with discovered recipient emails, MX provider, subject line, and 1-click copy action.
+      </div>
+      <div id="outreach-table-container">
+        <table style="width:100%;border-collapse:collapse;font-size:12px;">
+          <thead>
+            <tr style="color:var(--text-muted);text-align:left;border-bottom:1px solid var(--border);">
+              <th style="padding:6px 8px;">Company</th>
+              <th style="padding:6px 8px;">Role</th>
+              <th style="padding:6px 8px;">Recipient(s)</th>
+              <th style="padding:6px 8px;">MX Provider</th>
+              <th style="padding:6px 8px;">Subject</th>
+              <th style="padding:6px 8px;">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="outreach-tbody">
+            <tr><td colspan="6" style="padding:16px;text-align:center;color:var(--text-muted);">Loading outreach leads...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <script>
@@ -1788,10 +1819,62 @@ if (window.__INITIAL_OVERNIGHT_ERRORS__) {
   try { updateOvernightErrorsUi(window.__INITIAL_OVERNIGHT_ERRORS__); } catch (e) { console.error('Initial overnight errors render err:', e); }
 }
 
+let currentOutreachLeads = [];
+function updateOutreachLeadsUi(leads) {
+  if (!Array.isArray(leads)) return;
+  currentOutreachLeads = leads;
+  const countEl = document.getElementById('outreach-tab-count');
+  if (countEl) countEl.textContent = leads.length;
+  const syncLabel = document.getElementById('outreach-sync-label');
+  if (syncLabel) syncLabel.textContent = 'Updated: ' + new Date().toLocaleTimeString() + ' (' + leads.length + ' leads ready)';
+
+  const tbody = document.getElementById('outreach-tbody');
+  if (!tbody) return;
+  if (leads.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" style="padding:16px;text-align:center;color:var(--text-muted);">No outreach leads available. Run scripts/backfill-applied-outreach.ts to backfill.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = leads.map(function(lead, idx) {
+    const escapedSubject = (lead.subject || '').replace(/"/g, '&quot;');
+    const escapedBody = encodeURIComponent(lead.body || '');
+    const mailto = 'mailto:' + encodeURIComponent(lead.targetEmail || '') + '?subject=' + encodeURIComponent(lead.subject || '') + '&body=' + escapedBody;
+    const mxBadge = lead.mxVerified
+      ? '<span class="badge badge-success">' + (lead.mxProvider || 'MX OK') + '</span>'
+      : '<span class="badge badge-warning">' + (lead.mxProvider || 'Unverified') + '</span>';
+    return '<tr style="border-bottom:1px solid var(--border);">' +
+      '<td style="padding:8px;"><strong>' + lead.company + '</strong><br><span style="font-size:10px;color:var(--text-muted);">' + (lead.archetype || '') + '</span></td>' +
+      '<td style="padding:8px;">' + lead.roleTitle + '</td>' +
+      '<td style="padding:8px;" class="mono">' + lead.targetEmail + '</td>' +
+      '<td style="padding:8px;">' + mxBadge + '</td>' +
+      '<td style="padding:8px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + escapedSubject + '">' + lead.subject + '</td>' +
+      '<td style="padding:8px;white-space:nowrap;">' +
+        '<button class="btn btn-sm btn-outline" onclick="navigator.clipboard.writeText(decodeURIComponent(\'' + escapedBody + '\')).then(function(){alert(\'Copied email body!\')})" style="padding:3px 8px;font-size:11px;margin-right:4px;">Copy Body</button>' +
+        '<a href="' + mailto + '" target="_blank" class="btn btn-sm" style="display:inline-block;padding:3px 8px;font-size:11px;background:var(--accent);color:#fff;text-decoration:none;border-radius:4px;">Open Mailto</a>' +
+      '</td>' +
+    '</tr>';
+  }).join('');
+}
+
+async function pollOutreachLeads() {
+  try {
+    const res = await fetch('/api/outreach-leads');
+    if (res.ok) {
+      const data = await res.json();
+      updateOutreachLeadsUi(data);
+    }
+  } catch (err) {
+    console.error('Outreach leads fetch error:', err);
+  } finally {
+    setTimeout(pollOutreachLeads, 10000);
+  }
+}
+
 pollTelemetry();
 pollAppliedJobs();
 pollHourlyJobs();
 pollOvernightErrors();
+pollOutreachLeads();
 
 </script>
 </body>
@@ -1943,8 +2026,27 @@ export function startDashboardServer(port = PORT): http.Server {
       return;
     }
 
-    if (url.pathname === '/api/ram-health') {
+    // GEN-442: Outreach Center — serve outreach-leads.json
+    if (url.pathname === '/api/outreach-leads') {
       try {
+        let leads: any[] = [];
+        if (fs.existsSync(OUTREACH_PATH)) {
+          try { leads = JSON.parse(fs.readFileSync(OUTREACH_PATH, 'utf8')); } catch {}
+        }
+        res.writeHead(200, {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Cache-Control': 'no-store, no-cache, must-revalidate',
+          'Access-Control-Allow-Origin': '*',
+        });
+        res.end(JSON.stringify(Array.isArray(leads) ? leads : []));
+      } catch (err: any) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err?.message || 'Error reading outreach leads' }));
+      }
+      return;
+    }
+
+    if (url.pathname === '/api/ram-health') {      try {
         const ramHealthPath = path.resolve('state/autoapply/ram-health.json');
         let data: any = {};
         if (fs.existsSync(ramHealthPath)) {

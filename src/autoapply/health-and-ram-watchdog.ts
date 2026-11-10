@@ -19,6 +19,18 @@ export interface SystemRamAndHealthSnapshot {
 
 export const ActiveBrowserRegistry = new Set<number>();
 
+/**
+ * GEN-436: Returns true ONLY for chrome.exe processes that belong to our automation profiles.
+ * Personal Chrome (--profile-directory="Default" or "Profile N") must NEVER be killed.
+ */
+export function isAutomationChromeCommandLine(cmdLine: string): boolean {
+  if (!cmdLine) return false;
+  return (
+    /browser-profile-lane|state[\\/]autoapply|--enable-automation|playwright_chromiumdev_profile/i.test(cmdLine) &&
+    !/--profile-directory="Default"|--profile-directory="Profile \d+"/i.test(cmdLine)
+  );
+}
+
 export function registerActiveBrowserPid(pid: number): void {
   if (typeof pid === 'number' && pid > 0) {
     ActiveBrowserRegistry.add(pid);
@@ -64,7 +76,8 @@ export function reapZombieChromeProcesses(maxAgeSeconds = 180, forceKillAll = fa
   try {
     const activePidsList = Array.from(ActiveBrowserRegistry).filter((p) => typeof p === 'number' && p > 0);
     const activePidsArg = activePidsList.length > 0 ? activePidsList.join(',') : '-1';
-    const psCmd = `powershell -NoProfile -Command "$now = Get-Date; $active = @(${activePidsArg}); $procs = @(Get-CimInstance Win32_Process -Filter \\"Name = 'chrome.exe'\\" -ErrorAction SilentlyContinue); $reaped = 0; $rem = 0; $ws = 0; foreach ($p in $procs) { try { $pidNum = [int]$p.ProcessId; if ($active -contains $pidNum) { $rem++; $ws += [double]$p.WorkingSetSize; continue }; $age = ($now - $p.CreationDate).TotalSeconds; if ($age -gt ${maxAgeSeconds}) { taskkill /F /T /PID $pidNum 2>$null; $reaped++ } else { $rem++; $ws += [double]$p.WorkingSetSize } } catch {} }; Write-Output ($rem.ToString() + '|' + [math]::Round($ws / 1048576) + '|' + $reaped.ToString())"`;
+    // GEN-436: also filter by CommandLine — only kill automation chrome, never personal Chrome
+    const psCmd = `powershell -NoProfile -Command "$now = Get-Date; $active = @(${activePidsArg}); $procs = @(Get-CimInstance Win32_Process -Filter \\"Name = 'chrome.exe'\\" -ErrorAction SilentlyContinue); $reaped = 0; $rem = 0; $ws = 0; foreach ($p in $procs) { try { $pidNum = [int]$p.ProcessId; if ($active -contains $pidNum) { $rem++; $ws += [double]$p.WorkingSetSize; continue }; $cl = [string]$p.CommandLine; $isAuto = ($cl -match 'browser-profile-lane|state[\\\\/]autoapply|--enable-automation|playwright_chromiumdev_profile') -and ($cl -notmatch '--profile-directory=\\\"Default\\\"|--profile-directory=\\\"Profile \\\\d+\\\"'); if (-not $isAuto) { $rem++; $ws += [double]$p.WorkingSetSize; continue }; $age = ($now - $p.CreationDate).TotalSeconds; if ($age -gt ${maxAgeSeconds}) { taskkill /F /T /PID $pidNum 2>$null; $reaped++ } else { $rem++; $ws += [double]$p.WorkingSetSize } } catch {} }; Write-Output ($rem.ToString() + '|' + [math]::Round($ws / 1048576) + '|' + $reaped.ToString())"`;
     const out = execSync(psCmd, { encoding: 'utf8', timeout: 8000 }).trim();
     const [remStr, wsStr, reapedStr] = out.split('|');
     const reaped = Number(reapedStr) || 0;

@@ -20,7 +20,7 @@ import { captureEvidence, sanitizedDocument } from './evidence.js';
 import { authenticateApplication, hasEmailAuthenticationGate } from './authentication.js';
 import type { CredentialVault } from './vault.js';
 import { attemptAutonomousCaptchaSolve } from './captcha.js';
-import { comboboxSelection, isVisibleApplicationControl, harvestControlOptions, stealthClick, fillAsyncLocationCombobox, fillSmartRecruitersCountryCombobox, selectAshbyYesNoOrCheckboxGroup, selectHarvestedOption, translateCanonicalAnswerToOption } from './widgets.js';
+import { comboboxSelection, isVisibleApplicationControl, harvestControlOptions, stealthClick, fillAsyncLocationCombobox, fillSmartRecruitersCountryCombobox, selectAshbyYesNoOrCheckboxGroup, selectHarvestedOption, translateCanonicalAnswerToOption, fillLeverLocationInput } from './widgets.js';
 import { unwrapDirectAtsApplicationUrl, isOfflineDinoPage, waitForInternetRecoveryIfOffline } from './url-unwrapper.js';
 import { installRamDietRouteFilter, enforceHumanSubmissionPacingFloor } from './ram-and-pacing.js';
 export { stealthClick } from './widgets.js';
@@ -762,6 +762,8 @@ export class AutoApplyRunner {
   private learnedFields: Array<{ questionText: string; category: string; value: string }> = [];
   private activeWatchdog?: JobActivityWatchdog;
   private lastNetworkSubmissionReceipt: { url: string; status: number; timestamp: number } | null = null;
+  // GEN-439: Store parsed field errors from HTTP 400/422 submit responses for closed-loop healing
+  private lastNetworkValidationErrors: Array<{ field?: string; message: string }> = [];
   private profile?: CandidateExtendedProfile;
   private attemptedFieldRefs?: Set<string>;
 
@@ -827,6 +829,11 @@ export class AutoApplyRunner {
           }
         }).catch(() => {});
       }
+    } catch {}
+
+    // GEN-441: Broader Lever selectedLocation dropdown clicker
+    try {
+      await fillLeverLocationInput(page.mainFrame());
     } catch {}
   }
 
@@ -1305,6 +1312,34 @@ export class AutoApplyRunner {
         const req = response.request();
         if (req.method() !== 'POST' && req.method() !== 'PUT') return;
         const status = response.status();
+
+        // GEN-439: Capture validation errors from HTTP 400/422 submit responses for closed-loop healing
+        if (status === 400 || status === 422) {
+          const respUrl400 = response.url();
+          const isAtsEndpoint400 =
+            /ApiSubmit(?:Single)?ApplicationForm(?:Action)?|ApiSubmitJobApplication|submitApplication|\/embed\/job_app|\/oneclick-ui\/[^?]+\/(?:candidates|applications)|\/jobs\/\d+(?:\/applications)?|\/jobs\/\d+|\/apply\/submit|\/job_app|\/api\/non-user-graphql/i.test(respUrl400);
+          if (isAtsEndpoint400) {
+            try {
+              const bodyText400 = await response.text().catch(() => '');
+              const parsed400 = JSON.parse(bodyText400);
+              const rawErrors: any[] =
+                parsed400?.validationErrors ||
+                parsed400?.errors ||
+                parsed400?.errorMessages ||
+                parsed400?.fieldErrors ||
+                [];
+              if (rawErrors.length > 0) {
+                this.lastNetworkValidationErrors = rawErrors.map((e: any) => ({
+                  field: e.fieldId || e.field || e.fieldName || undefined,
+                  message: String(e.message || e.error || e.detail || JSON.stringify(e)).slice(0, 200),
+                }));
+                this.log(`[GEN-439] Submit HTTP ${status} with ${this.lastNetworkValidationErrors.length} validation errors: ${this.lastNetworkValidationErrors.map((e: any) => e.message).join('; ').slice(0, 300)}`);
+              }
+            } catch {}
+          }
+          return;
+        }
+
         if (status < 200 || status >= 400) return;
         const respUrl = response.url();
         const isAtsSubmitEndpoint =
@@ -5012,8 +5047,41 @@ export class AutoApplyRunner {
               }
             }
           }
-          if (validationBounce && !selfHealAttempted) {
-            selfHealAttempted = true;
+          // GEN-439: Closed-loop HTTP 400/422 network field healer — parse rejected fields and auto-retry submit once
+          if (!report.receipt && this.lastNetworkValidationErrors.length > 0 && !this.page!.isClosed()) {
+            const networkErrors = this.lastNetworkValidationErrors;
+            this.lastNetworkValidationErrors = [];
+            this.log(`[GEN-439] Healing ${networkErrors.length} network-rejected fields before retry submit`);
+            for (const frame of this.page!.frames()) {
+              // Mark each rejected field as aria-invalid so healInvalidFieldsAndRetrySubmit picks it up
+              await frame.evaluate((errors: Array<{ field?: string; message: string }>) => {
+                for (const err of errors) {
+                  if (!err.field) continue;
+                  const selectors = [
+                    `[name="${CSS.escape(err.field)}"]`,
+                    `[id="${CSS.escape(err.field)}"]`,
+                    `[data-field-id="${CSS.escape(err.field)}"]`,
+                    `[data-automation-id="${CSS.escape(err.field)}"]`,
+                  ];
+                  for (const sel of selectors) {
+                    try {
+                      const el = document.querySelector<HTMLElement>(sel);
+                      if (el) { el.setAttribute('aria-invalid', 'true'); break; }
+                    } catch {}
+                  }
+                }
+              }, networkErrors).catch(() => {});
+              await healInvalidFieldsAndRetrySubmit(frame, options.profile.personal.email, options.profile.personal.phone, this.attemptedFieldRefs).catch(() => 0);
+            }
+            const retrySubmitBtn = await this.button(SUBMIT, ATS_STRATEGIES[report.ats]?.submit, 'flow_submit_button');
+            if (retrySubmitBtn && await retrySubmitBtn.isVisible().catch(() => false)) {
+              if (options.mode === 'stealth') await this.pacedClick(retrySubmitBtn);
+              else await retrySubmitBtn.click().catch(() => {});
+              await this.page!.waitForTimeout(3500);
+              report.receipt ||= await this.receipt();
+            }
+          }
+          if (validationBounce && !selfHealAttempted) {            selfHealAttempted = true;
             const healed = await this.selfHealValidationErrors(options, report);
             if (healed) {
               const retrySubmit = await this.button(SUBMIT, ATS_STRATEGIES[report.ats]?.submit, 'flow_submit_button');

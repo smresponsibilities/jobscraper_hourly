@@ -92,6 +92,27 @@ export function extractCleanQuestionText(box: Element, els: Element[] = []): str
     }
   }
 
+  // GEN-440: SmartRecruiters Shadow-Root Host Label Unwrapper
+  if (!isCleanQuestionCandidate(finalQ) || finalQ === 'Field') {
+    const elTarget = first || box;
+    const elRoot = typeof elTarget?.getRootNode === 'function' ? elTarget.getRootNode() : null;
+    if (elRoot && typeof ShadowRoot !== 'undefined' && elRoot instanceof ShadowRoot) {
+      let host: Element | null = elRoot.host;
+      for (let level = 0; level < 3 && host; level++) {
+        const hostLabel =
+          host.getAttribute('label') ||
+          host.getAttribute('aria-label') ||
+          host.querySelector('oc-field-label, label, .label')?.textContent?.trim();
+        if (hostLabel && isCleanQuestionCandidate(hostLabel)) {
+          finalQ = appendSectionContextIfAmbiguous(hostLabel.trim(), host);
+          break;
+        }
+        const parentRoot: any = typeof host.getRootNode === 'function' ? host.getRootNode() : null;
+        host = parentRoot && typeof ShadowRoot !== 'undefined' && parentRoot instanceof ShadowRoot ? parentRoot.host : null;
+      }
+    }
+  }
+
   return finalQ;
 }
 
@@ -249,7 +270,7 @@ function _extractRawCleanQuestionText(box: Element, els: Element[] = []): string
 
   // 2. Wrapper label (skip if radio/checkbox)
   if (!isRadioOrCheckbox) {
-    const wrapperLabel = first?.closest('.select-shell, .input-wrapper, .field, [class*="field"], .application-question')?.querySelector('label');
+    const wrapperLabel = first?.closest?.('.select-shell, .input-wrapper, .field, [class*="field"], .application-question')?.querySelector('label');
     if (isCleanQuestionCandidate(wrapperLabel?.textContent) && !wrapperLabel!.querySelector('input[type="radio"], input[type="checkbox"]')) {
       return wrapperLabel!.textContent!.replace(/\s+/g, ' ').trim().slice(0, 1500);
     }
@@ -273,14 +294,14 @@ function _extractRawCleanQuestionText(box: Element, els: Element[] = []): string
   if (isCleanQuestionCandidate(linked)) return linked.replace(/\s+/g, ' ').trim().slice(0, 1500);
 
   // 3b. Table cell / Definition list label lookup (browser-use - GEN-326 & GEN-327)
-  const td = (first || box)?.closest('td');
+  const td = (first || box)?.closest?.('td');
   if (td) {
     const prevTdText = td.previousElementSibling?.textContent?.replace(/\s+/g, ' ').trim();
     if (prevTdText && isCleanQuestionCandidate(prevTdText)) {
       return prevTdText.slice(0, 1500);
     }
   }
-  const dd = (first || box)?.closest('dd');
+  const dd = (first || box)?.closest?.('dd');
   if (dd) {
     const prevDtText = dd.previousElementSibling?.textContent?.replace(/\s+/g, ' ').trim();
     if (prevDtText && isCleanQuestionCandidate(prevDtText)) {
@@ -289,13 +310,15 @@ function _extractRawCleanQuestionText(box: Element, els: Element[] = []): string
   }
 
   // 4. Explicit legends / Ashby titles / single question labels
-  const explicitTitle = box.querySelector(
+  const explicitTitle = box?.querySelector?.(
     'legend, .ashby-application-form-question-title, [data-automation-id$="-legend"], label[data-automation-id*="formLabel"], .field-label, .application-label'
   )?.textContent?.trim();
   if (isCleanQuestionCandidate(explicitTitle)) return explicitTitle!.replace(/\s+/g, ' ').trim().slice(0, 1500);
 
   // 5. Single label in box that doesn't wrap radio/checkbox
-  const singleLabels = Array.from(box.querySelectorAll('label')).filter(l => !l.querySelector('input[type="radio"], input[type="checkbox"]'));
+  const singleLabels = box?.querySelectorAll
+    ? Array.from(box.querySelectorAll('label')).filter(l => !l.querySelector('input[type="radio"], input[type="checkbox"]'))
+    : [];
   if (singleLabels.length === 1 && isCleanQuestionCandidate(singleLabels[0]?.textContent)) {
     return singleLabels[0]!.textContent!.replace(/\s+/g, ' ').trim().slice(0, 1500);
   }
@@ -305,45 +328,51 @@ function _extractRawCleanQuestionText(box: Element, els: Element[] = []): string
 
   // 6. Ancestor Climbing (up to 5 levels) with Shadow Root boundary crossing
   let currentParent: HTMLElement | null = getParentOrShadowHost(first || box);
-  for (let depth = 0; depth < 5 && currentParent && !currentParent.matches('body, form'); depth++) {
+  for (let depth = 0; depth < 5 && currentParent && (!currentParent.matches || !currentParent.matches('body, form')); depth++) {
     // GEN-272: Single-Control LCA Ceiling — avoid merging labels across 2-column sibling grid cells
-    const distinctInputsInAncestor = currentParent.querySelectorAll(
-      'input:not([type="hidden"]):not([type="radio"]):not([type="checkbox"]), select, textarea'
-    ).length;
+    const distinctInputsInAncestor = currentParent.querySelectorAll
+      ? currentParent.querySelectorAll(
+          'input:not([type="hidden"]):not([type="radio"]):not([type="checkbox"]), select, textarea'
+        ).length
+      : 0;
     if (distinctInputsInAncestor > 1) {
       break;
     }
 
     // Check custom Web Component host attributes (<spl-input label="First name *">, <oc-form-field label="City">)
-    const hostLabel = currentParent.getAttribute('label') || currentParent.getAttribute('data-label') || currentParent.getAttribute('aria-label');
+    const hostLabel = currentParent.getAttribute?.('label') || currentParent.getAttribute?.('data-label') || currentParent.getAttribute?.('aria-label');
     if (isCleanQuestionCandidate(hostLabel)) {
       return hostLabel!.replace(/\s+/g, ' ').trim().slice(0, 1500);
     }
 
-    const legend = currentParent.querySelector('legend, .ashby-application-form-question-title, [data-automation-id$="-legend"], label[data-automation-id*="formLabel"], .field-label, .application-label');
+    const legend = currentParent.querySelector?.('legend, .ashby-application-form-question-title, [data-automation-id$="-legend"], label[data-automation-id*="formLabel"], .field-label, .application-label');
     if (isCleanQuestionCandidate(legend?.textContent)) {
       return legend!.textContent!.replace(/\s+/g, ' ').trim().slice(0, 1500);
     }
-    const pClone = currentParent.cloneNode(true) as Element;
-    pClone.querySelectorAll('select, option, textarea, input, button, [role="listbox"], [role="option"], .error, [role="alert"], [class*="placeholder"], script, style').forEach(n => n.remove());
-    pClone.querySelectorAll('label').forEach(l => {
-      if (!isCleanQuestionCandidate(l.textContent)) l.remove();
-    });
-    const pText = pClone.textContent?.replace(/\s+/g, ' ').trim() || '';
-    if (isCleanQuestionCandidate(pText)) {
-      return pText.slice(0, 1500);
+    if (typeof currentParent.cloneNode === 'function') {
+      const pClone = currentParent.cloneNode(true) as Element;
+      pClone.querySelectorAll?.('select, option, textarea, input, button, [role="listbox"], [role="option"], .error, [role="alert"], [class*="placeholder"], script, style')?.forEach(n => n.remove());
+      pClone.querySelectorAll?.('label')?.forEach(l => {
+        if (!isCleanQuestionCandidate(l.textContent)) l.remove();
+      });
+      const pText = pClone.textContent?.replace(/\s+/g, ' ').trim() || '';
+      if (isCleanQuestionCandidate(pText)) {
+        return pText.slice(0, 1500);
+      }
     }
     currentParent = getParentOrShadowHost(currentParent);
   }
 
   // 7. Box clone text
-  const clone = box.cloneNode(true) as Element;
-  clone.querySelectorAll('select, option, textarea, input, button, [role="listbox"], [role="option"], .error, [role="alert"], [class*="placeholder"], script, style').forEach(node => node.remove());
-  if (els.length > 1 && els.some(e => (e as HTMLInputElement).type === 'radio' || e.getAttribute('role') === 'radio')) {
-    clone.querySelectorAll('label').forEach(label => label.remove());
+  if (box && typeof box.cloneNode === 'function') {
+    const clone = box.cloneNode(true) as Element;
+    clone.querySelectorAll?.('select, option, textarea, input, button, [role="listbox"], [role="option"], .error, [role="alert"], [class*="placeholder"], script, style')?.forEach((node: any) => node.remove());
+    if (els.length > 1 && els.some(e => (e as HTMLInputElement).type === 'radio' || e.getAttribute('role') === 'radio')) {
+      clone.querySelectorAll?.('label')?.forEach((label: any) => label.remove());
+    }
+    const text = clone.textContent?.replace(/\s+/g, ' ').trim() || '';
+    if (isCleanQuestionCandidate(text) && !/^(?:select|choose)\b|\.{3}/i.test(text)) return text.slice(0, 1500);
   }
-  const text = clone.textContent?.replace(/\s+/g, ' ').trim() || '';
-  if (isCleanQuestionCandidate(text) && !/^(?:select|choose)\b|\.{3}/i.test(text)) return text.slice(0, 1500);
 
   if (first) {
     const fallback = labels || first.getAttribute('aria-label') || first.getAttribute('placeholder') || first.getAttribute('name') || first.id || 'Field';
@@ -531,6 +560,33 @@ export function annotateQuestionClusters(elements: Element[]): void {
       }
     }
 
+    // GEN-438: Use Ashby schema title when DOM label is empty or ambiguous
+    const ashbySchemaTitle = el.getAttribute('data-ashby-schema-title') ||
+      el.closest('[data-field-path], .ashby-application-form-field-entry')?.getAttribute('data-ashby-schema-title');
+    if (ashbySchemaTitle && (!question || question === 'Field' || question.length < 3)) {
+      question = ashbySchemaTitle;
+    }
+
+    // GEN-440: SmartRecruiters shadow-host label unwrapper — climb up to 3 shadow host levels
+    if (!question || question === 'Field' || question.length < 3) {
+      const elRoot = el.getRootNode();
+      if (elRoot instanceof ShadowRoot) {
+        let host: Element | null = elRoot.host;
+        for (let level = 0; level < 3 && host; level++) {
+          const hostLabel =
+            host.getAttribute('label') ||
+            host.getAttribute('aria-label') ||
+            host.querySelector('oc-field-label, label, .label')?.textContent?.trim();
+          if (hostLabel && hostLabel.length > 2) {
+            question = hostLabel;
+            break;
+          }
+          const parentRoot = host.getRootNode();
+          host = parentRoot instanceof ShadowRoot ? parentRoot.host : null;
+        }
+      }
+    }
+
     // Ticket GEN-323, GEN-324, GEN-325: Cluster Sub-Control Disambiguation
     const siblingsInBox = controls.filter(other => box.contains(other));
     if (siblingsInBox.length > 1) {
@@ -617,6 +673,53 @@ export function annotateQuestionClusters(elements: Element[]): void {
 }
 
 export async function distillFormStep(frame: Frame): Promise<DistilledField[]> {
+  // GEN-438: Pre-hydrate Ashby field titles from window.__appData.posting.applicationForm.sections
+  await frame.evaluate(() => {
+    try {
+      const appData = (window as any).__appData;
+      const sections: any[] =
+        appData?.posting?.applicationForm?.sections ||
+        appData?.applicationForm?.sections ||
+        [];
+      if (!sections.length) return;
+      const ashbySchemaMap = new Map<string, { title: string; isRequired: boolean }>();
+      for (const sec of sections) {
+        for (const entry of sec.fieldEntries || []) {
+          const pathKey = entry.field?.path || entry.field?.id || entry.id;
+          const title = entry.field?.title || entry.title;
+          if (pathKey && title) {
+            ashbySchemaMap.set(String(pathKey), { title: String(title).trim(), isRequired: Boolean(entry.isRequired) });
+          }
+        }
+      }
+      if (!ashbySchemaMap.size) return;
+      // Stamp matched controls with data-ashby-schema-title so annotateQuestionClusters can use it
+      const controls = document.querySelectorAll<HTMLElement>(
+        'input, select, textarea, [role="combobox"], button[data-autoapply-btngroup-option]'
+      );
+      for (const el of Array.from(controls)) {
+        const keys = [
+          el.getAttribute('data-field-path'),
+          el.id,
+          (el as HTMLInputElement).name,
+        ].filter(Boolean) as string[];
+        for (const key of keys) {
+          const info = ashbySchemaMap.get(key);
+          if (info) {
+            el.setAttribute('data-ashby-schema-title', info.title);
+            if (info.isRequired) el.setAttribute('aria-required', 'true');
+            // Also stamp ancestor .ashby-application-form-field-entry
+            const entry = el.closest('[data-field-path], .ashby-application-form-field-entry');
+            if (entry) {
+              entry.setAttribute('data-ashby-schema-title', info.title);
+              if (info.isRequired) entry.setAttribute('aria-required', 'true');
+            }
+            break;
+          }
+        }
+      }
+    } catch {}
+  }).catch(() => {});
   await frame.evaluate(() => {
     // GEN-124: Discover Ashby / modern React <button type="button">Yes</button><button type="button">No</button> toggle groups
     const allTypeButtons = Array.from(
