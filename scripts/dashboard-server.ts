@@ -3,10 +3,12 @@ import * as http from 'node:http';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { exec, execSync, spawn } from 'node:child_process';
 import { readJobRunHistory, type JobRunHistoryEntry } from '../src/autoapply/run-history.js';
 import { syncGitHubActionsPillars } from './sync-github-actions-pillars.js';
 import { executeFullDatabaseRecovery } from './recover-gen100-103-jobs.js';
 import { runOutreachBatch } from './send-outreach-batch.js';
+import { getDoctorStatus } from '../src/autoapply/health-and-ram-watchdog.js';
 
 const PORT = Number(process.env.AUTOAPPLY_DASHBOARD_PORT || 4321);
 const LOG_PATH = path.resolve('out/hourly-daemon.log');
@@ -524,6 +526,8 @@ export function getDashboardTelemetry() {
     recentRuns: history.slice(0, 150),
     scoreboard,
     logLines,
+    doctorStatus: getDoctorStatus(),
+    sentinelStopped: fs.existsSync(path.resolve('state/autoapply/portal-review/STOP_AUTOAPPLY.flag')),
   };
   cachedTelemetry = telemetry;
   lastTelemetryMs = now;
@@ -728,6 +732,8 @@ function renderDashboardHtml(initialTelemetry?: any, initialErrors?: any, initia
       <button id="btn-header-sync" class="action-btn" title="Sync Hourly Discoveries">⚡ Sync Hourly</button>
       <button id="btn-header-requeue" class="action-btn" title="Recover Failed/Paused Jobs">♻️ Requeue Recoverable</button>
       <button id="btn-header-reset-diag" class="action-btn" title="Reset Diagnostics Log">🧹 Reset Diagnostics</button>
+      <button id="btn-header-stop-daemon" class="action-btn" style="border-color: #ef4444; color: #ef4444;" title="Explicit Stop Sticky Daemon (Sets STOP_AUTOAPPLY.flag)">🛑 Explicit Stop Daemon</button>
+      <button id="btn-header-resume-daemon" class="action-btn" style="border-color: #10b981; color: #10b981;" title="Resume Sticky Supervisor & Runner">▶️ Resume Sticky Daemon</button>
     </div>
     <div class="header-meta">
       <span>Auto-refresh: <strong class="mono">3s</strong></span>
@@ -1326,7 +1332,12 @@ function updateTelemetryUi(data) {
 
   const workerBadge = document.getElementById('worker-badge');
   if (workerBadge) {
-    if (data.workerPid) {
+    if (data.sentinelStopped) {
+      workerBadge.className = 'badge badge-danger';
+      workerBadge.textContent = '🛑 STOPPED (Flag Set)';
+      const pidEl = document.getElementById('kpi-worker-pid');
+      if (pidEl) pidEl.textContent = 'STOPPED';
+    } else if (data.workerPid) {
       workerBadge.className = 'badge badge-success';
       workerBadge.textContent = 'Active (PID ' + data.workerPid + ')';
       const pidEl = document.getElementById('kpi-worker-pid');
@@ -1692,6 +1703,53 @@ if (btnHeaderResetDiag) {
   });
 }
 
+const btnHeaderStopDaemon = document.getElementById('btn-header-stop-daemon');
+if (btnHeaderStopDaemon) {
+  btnHeaderStopDaemon.addEventListener('click', async () => {
+    if (!confirm('Explicitly stop the auto-apply daemon? This sets STOP_AUTOAPPLY.flag and terminates workers.')) return;
+    btnHeaderStopDaemon.textContent = 'Stopping...';
+    try {
+      const res = await fetch('/api/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'explicit-stop' })
+      });
+      if (res.ok) {
+        btnHeaderStopDaemon.textContent = '🛑 Stopped (Flag Set)';
+        setTimeout(() => { btnHeaderStopDaemon.textContent = '🛑 Explicit Stop Daemon'; }, 3000);
+        pollTelemetry();
+      } else {
+        btnHeaderStopDaemon.textContent = 'Error';
+      }
+    } catch {
+      btnHeaderStopDaemon.textContent = 'Network Error';
+    }
+  });
+}
+
+const btnHeaderResumeDaemon = document.getElementById('btn-header-resume-daemon');
+if (btnHeaderResumeDaemon) {
+  btnHeaderResumeDaemon.addEventListener('click', async () => {
+    btnHeaderResumeDaemon.textContent = 'Resuming...';
+    try {
+      const res = await fetch('/api/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'resume-sticky' })
+      });
+      if (res.ok) {
+        btnHeaderResumeDaemon.textContent = '▶️ Resumed!';
+        setTimeout(() => { btnHeaderResumeDaemon.textContent = '▶️ Resume Sticky Daemon'; }, 3000);
+        pollTelemetry();
+      } else {
+        btnHeaderResumeDaemon.textContent = 'Error';
+      }
+    } catch {
+      btnHeaderResumeDaemon.textContent = 'Network Error';
+    }
+  });
+}
+
 const syncBtn = document.getElementById('btn-trigger-sync');
 if (syncBtn) {
   syncBtn.addEventListener('click', async () => {
@@ -1968,6 +2026,40 @@ export function startDashboardServer(port = PORT): http.Server {
             const resData = await runOutreachBatch({ dryRun: !isLive, limit });
             res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*' });
             res.end(JSON.stringify({ ok: true, action, ...resData }));
+          } else if (action === 'explicit-stop') {
+            const flagPath = path.resolve('state/autoapply/portal-review/STOP_AUTOAPPLY.flag');
+            const dir = path.dirname(flagPath);
+            if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+            fs.writeFileSync(flagPath, `STOP_REQUESTED_${new Date().toISOString()}`, 'utf8');
+
+            // Terminate running workers
+            try {
+              execSync('powershell.exe -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match \'run-overnight-marathon|drain-backfill-and-hourly\' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"', { stdio: 'ignore' });
+            } catch {}
+
+            cachedTelemetry = null;
+            res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*' });
+            res.end(JSON.stringify({ ok: true, action, message: 'Explicit stop flag set; daemon stopped' }));
+          } else if (action === 'resume-sticky') {
+            const flagPath = path.resolve('state/autoapply/portal-review/STOP_AUTOAPPLY.flag');
+            if (fs.existsSync(flagPath)) {
+              try { fs.unlinkSync(flagPath); } catch {}
+            }
+
+            // Remove stale locks
+            const lockFile = path.resolve('state/autoapply/worker.lock');
+            if (fs.existsSync(lockFile)) {
+              try { fs.unlinkSync(lockFile); } catch {}
+            }
+
+            // Spawn immortal supervisor / starter script in detached background
+            try {
+              spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'scripts/start-autoapply.ps1'], { detached: true, stdio: 'ignore' }).unref();
+            } catch {}
+
+            cachedTelemetry = null;
+            res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*' });
+            res.end(JSON.stringify({ ok: true, action, message: 'Sentinel cleared; sticky supervisor resumed' }));
           } else {
             res.writeHead(400, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: `Unknown action: ${action}` }));

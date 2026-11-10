@@ -32,7 +32,7 @@ import { startDashboardServer } from './dashboard-server.js';
 import { filterUnattemptedJobs, recordAttemptedJob } from '../src/autoapply/attempted-registry.js';
 import { scrubBrowserProfileCaches } from '../src/autoapply/ram-and-pacing.js';
 import { syncGitHubActionsPillars } from './sync-github-actions-pillars.js';
-import { ContinuousRamAndHealthWatchdog } from '../src/autoapply/health-and-ram-watchdog.js';
+import { ContinuousRamAndHealthWatchdog, check30MinZeroFillDroughtAndAutoHeal } from '../src/autoapply/health-and-ram-watchdog.js';
 
 export function partitionJobsIntoProviderLanes<T extends { url?: string; jobUrl?: string; provider?: string; externalJobId?: string }>(jobs: T[]): Record<string, T[]> {
   const lanes: Record<string, T[]> = {
@@ -568,8 +568,32 @@ async function main(): Promise<void> {
     const isContinuousSubmit = shouldSubmit && !flags.has('--once');
     let batchNumber = 0;
 
+    process.on('SIGHUP', () => {
+      const stopFlag = path.join(stateDir, 'portal-review/STOP_AUTOAPPLY.flag');
+      if (fs.existsSync(stopFlag)) {
+        console.log('[DRAIN] SIGHUP received and STOP_AUTOAPPLY.flag set. Exiting cleanly.');
+        process.exit(0);
+      } else {
+        console.log('[DRAIN] SIGHUP received without STOP_AUTOAPPLY.flag. Ignoring signal (sticky mode).');
+      }
+    });
+
     while (true) {
       batchNumber++;
+
+      const stopFlag = path.join(stateDir, 'portal-review/STOP_AUTOAPPLY.flag');
+      if (fs.existsSync(stopFlag)) {
+        console.log(`[DRAIN] STOP_AUTOAPPLY.flag detected at ${stopFlag}. Explicit operator stop requested. Exiting loop.`);
+        break;
+      }
+
+      try {
+        const docReport = check30MinZeroFillDroughtAndAutoHeal({ stateDir });
+        if (docReport.healed) {
+          console.log(`[DRAIN] Doctor self-healing applied: actions=[${docReport.actionsTaken.join(', ')}]`);
+        }
+      } catch {}
+
       const allJobs = queue.list();
       const eligible: AutoaplyJobItem[] = [];
       for (const job of allJobs) {
@@ -605,7 +629,10 @@ async function main(): Promise<void> {
       }, now);
       return { job, score };
     });
-    scoredCandidates.sort((a, b) => b.score - a.score);
+    scoredCandidates.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return (Number((b.job as any).rowId) || 0) - (Number((a.job as any).rowId) || 0);
+    });
     const sortedEligible = scoredCandidates.map((s) => s.job);
 
     const hostHealthPath = path.join(stateDir, 'host-health.json');

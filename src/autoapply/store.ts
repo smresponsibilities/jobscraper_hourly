@@ -168,16 +168,17 @@ export class ApplicationStore {
   list(status?: AutoaplyJobItem['status']): AutoaplyJobItem[] {
     this.recover();
     const query = status
-      ? 'SELECT id,payload,status,canonical_key,normalized_url FROM applications WHERE candidate_id=? AND status=? ORDER BY rowid'
-      : 'SELECT id,payload,status,canonical_key,normalized_url FROM applications WHERE candidate_id=? ORDER BY rowid';
+      ? 'SELECT rowid as rowId, id,payload,status,canonical_key,normalized_url FROM applications WHERE candidate_id=? AND status=? ORDER BY rowid DESC'
+      : 'SELECT rowid as rowId, id,payload,status,canonical_key,normalized_url FROM applications WHERE candidate_id=? ORDER BY rowid DESC';
     const params = status ? [this.candidateId, status] : [this.candidateId];
-    return (this.db.prepare(query).all(...params) as Array<{ id: string; payload: string; status: AutoaplyJobItem['status']; canonical_key: string | null; normalized_url: string }>).map(row => {
+    return (this.db.prepare(query).all(...params) as Array<{ rowId: number; id: string; payload: string; status: AutoaplyJobItem['status']; canonical_key: string | null; normalized_url: string }>).map(row => {
       let p: any = {};
       try { p = JSON.parse(row.payload); } catch {}
       const targetUrl = p.jobUrl || p.url || row.normalized_url;
       return {
         ...p,
         id: row.id,
+        rowId: row.rowId,
         status: row.status,
         jobUrl: targetUrl,
         canonicalKey: row.canonical_key || undefined,

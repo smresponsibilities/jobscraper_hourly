@@ -67,7 +67,9 @@ export function reapZombieChromeProcesses(maxAgeSeconds = 180, forceKillAll = fa
 
   if (forceKillAll) {
     try {
-      execSync('taskkill /F /IM chrome.exe /T', { stdio: 'ignore', timeout: 4000 });
+      // GEN-436: Even under forceKillAll, NEVER kill personal Chrome! Filter strictly by automation profile CommandLine
+      const psForce = `powershell -NoProfile -Command "$procs = @(Get-CimInstance Win32_Process -Filter \\"Name = 'chrome.exe'\\" -ErrorAction SilentlyContinue); foreach ($p in $procs) { try { $cl = [string]$p.CommandLine; $isAuto = ($cl -match 'browser-profile-lane|state[\\\\/]autoapply|--enable-automation|playwright_chromiumdev_profile') -and ($cl -notmatch '--profile-directory=\\\"Default\\\"|--profile-directory=\\\"Profile \\\\d+\\\"'); if ($isAuto) { taskkill /F /T /PID [int]$p.ProcessId 2>$null } } catch {} }"`;
+      execSync(psForce, { stdio: 'ignore', timeout: 6000 });
       totalZombiesReaped += 1;
     } catch {}
     return { remainingChromeCount: 0, chromeWorkingSetMb: 0, reapedCount: 1 };
@@ -281,6 +283,175 @@ export class ContinuousRamAndHealthWatchdog {
     this.latestSnapshot = evaluateSystemHealthAndAdaptiveLanes(false);
     return this.latestSnapshot;
   }
+}
+
+export interface DoctorSelfHealReport {
+  timestamp: string;
+  appliedLast30m: number;
+  processedLast30m: number;
+  processedLast15m: number;
+  topFailureReasons: Array<{ reason: string; count: number }>;
+  actionsTaken: string[];
+  permissiveModeEnabled: boolean;
+  cooldownsReset: boolean;
+  healed: boolean;
+}
+
+let latestDoctorReport: DoctorSelfHealReport | null = null;
+
+export function getDoctorStatus(): DoctorSelfHealReport | null {
+  return latestDoctorReport;
+}
+
+/**
+ * GEN-446: 30-Minute Zero-Fill Self-Healing Doctor.
+ * Audits run-history for the last 30 minutes. If appliedCount is 0:
+ * 1. Diagnoses failure mode and logs top reasons.
+ * 2. If 0 runs processed in last 15m, reaps hung automation chrome and clears profile locks.
+ * 3. Resets host cooldowns in host-health.json.
+ * 4. Enables FORCE_PERMISSIVE_SUBMIT_ALL = "1".
+ * 5. Scrubs profile caches and appends audit log to doctor-heals.jsonl.
+ */
+export function check30MinZeroFillDroughtAndAutoHeal(params?: {
+  stateDir?: string;
+  runHistoryPath?: string;
+  queueDbPath?: string;
+  nowMs?: number;
+}): DoctorSelfHealReport {
+  const now = params?.nowMs || Date.now();
+  const stateDir = params?.stateDir || path.resolve('state/autoapply');
+  const historyPath = params?.runHistoryPath || path.join(stateDir, 'portal-review/run-history.jsonl');
+  const healsLogPath = path.join(stateDir, 'portal-review/doctor-heals.jsonl');
+
+  const thirtyMinsAgo = now - 30 * 60 * 1000;
+  const fifteenMinsAgo = now - 15 * 60 * 1000;
+
+  let appliedLast30m = 0;
+  let processedLast30m = 0;
+  let processedLast15m = 0;
+  const failureReasonCounts: Record<string, number> = {};
+
+  if (fs.existsSync(historyPath)) {
+    try {
+      const content = fs.readFileSync(historyPath, 'utf8');
+      const lines = content.split('\n').filter(Boolean);
+      for (const line of lines) {
+        try {
+          const run = JSON.parse(line);
+          const runTime = Date.parse(run.timestamp || run.appliedAt || run.createdAt || '0');
+          if (runTime >= thirtyMinsAgo) {
+            processedLast30m++;
+            if (runTime >= fifteenMinsAgo) {
+              processedLast15m++;
+            }
+            if (run.status === 'applied') {
+              appliedLast30m++;
+            } else {
+              const reason = String(run.error || run.reason || run.failureCategory || 'unspecified_failure').slice(0, 100);
+              failureReasonCounts[reason] = (failureReasonCounts[reason] || 0) + 1;
+            }
+          }
+        } catch {}
+      }
+    } catch {}
+  }
+
+  const topFailureReasons = Object.entries(failureReasonCounts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([reason, count]) => ({ reason, count }));
+
+  const actionsTaken: string[] = [];
+  let permissiveModeEnabled = false;
+  let cooldownsReset = false;
+
+  // Zero-fill drought trigger: 0 applied in last 30 minutes
+  if (appliedLast30m === 0) {
+    console.warn(`[DOCTOR] 🚨 Zero-fill drought detected: 0 applied in last 30m (processed ${processedLast30m} runs, ${processedLast15m} in last 15m). Initiating self-healing...`);
+
+    // 1. If 0 processed in last 15m, worker is hung/stalled
+    if (processedLast15m === 0) {
+      console.warn('[DOCTOR] Stalled worker detected (0 processed in 15m). Reaping zombie automation chrome and cleaning profile locks...');
+      try {
+        reapZombieChromeProcesses(0, true);
+        scrubBrowserCachesAndTempDirs();
+        actionsTaken.push('reaped_hung_automation_chrome_and_cleaned_locks');
+      } catch (err: any) {
+        actionsTaken.push(`reap_error: ${err?.message}`);
+      }
+    }
+
+    // 2. Reset host cooldowns in host-health.json
+    try {
+      const hostHealthPath = path.join(stateDir, 'host-health.json');
+      if (fs.existsSync(hostHealthPath)) {
+        const raw = fs.readFileSync(hostHealthPath, 'utf8');
+        const parsed = JSON.parse(raw);
+        if (typeof parsed === 'object' && parsed !== null) {
+          for (const key of Object.keys(parsed)) {
+            if (parsed[key] && typeof parsed[key] === 'object') {
+              parsed[key].consecutiveFailures = 0;
+              parsed[key].cooldownUntil = 0;
+              parsed[key].inCooldown = false;
+            }
+          }
+          fs.writeFileSync(hostHealthPath, JSON.stringify(parsed, null, 2), 'utf8');
+          cooldownsReset = true;
+          actionsTaken.push('reset_host_health_cooldowns');
+        }
+      }
+    } catch (err: any) {
+      actionsTaken.push(`host_health_reset_error: ${err?.message}`);
+    }
+
+    // 3. Enable permissive submit mode
+    process.env.FORCE_PERMISSIVE_SUBMIT_ALL = '1';
+    permissiveModeEnabled = true;
+    actionsTaken.push('enabled_force_permissive_submit_all');
+
+    // 4. Scrub browser profile caches
+    try {
+      scrubBrowserCachesAndTempDirs();
+      actionsTaken.push('scrubbed_browser_caches');
+    } catch {}
+
+    // 5. Append audit entry to doctor-heals.jsonl
+    const report: DoctorSelfHealReport = {
+      timestamp: new Date(now).toISOString(),
+      appliedLast30m,
+      processedLast30m,
+      processedLast15m,
+      topFailureReasons,
+      actionsTaken,
+      permissiveModeEnabled,
+      cooldownsReset,
+      healed: true,
+    };
+
+    latestDoctorReport = report;
+
+    try {
+      const dir = path.dirname(healsLogPath);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      fs.appendFileSync(healsLogPath, JSON.stringify(report) + '\n', 'utf8');
+    } catch {}
+
+    return report;
+  }
+
+  const normalReport: DoctorSelfHealReport = {
+    timestamp: new Date(now).toISOString(),
+    appliedLast30m,
+    processedLast30m,
+    processedLast15m,
+    topFailureReasons,
+    actionsTaken,
+    permissiveModeEnabled,
+    cooldownsReset,
+    healed: false,
+  };
+  latestDoctorReport = normalReport;
+  return normalReport;
 }
 
 if (process.argv[1] && (process.argv[1].endsWith('health-and-ram-watchdog.ts') || process.argv[1].endsWith('health-and-ram-watchdog.js'))) {

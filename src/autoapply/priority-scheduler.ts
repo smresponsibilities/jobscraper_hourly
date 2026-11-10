@@ -87,22 +87,58 @@ export function isFillableAtsUrl(url?: string): boolean {
   return isSupportedDirectAtsJobUrl(url);
 }
 
+export function extractJobTimestampMs(candidate: QueuedJobCandidate): { timestampMs: number; source: string } {
+  const p = candidate.payload || {};
+  // 1. Check explicit ISO/epoch timestamp fields in priority order
+  const rawStamps: Array<[string, unknown]> = [
+    ['discoveredAt', candidate.discoveredAt || p.discoveredAt],
+    ['scrapedAt', p.scrapedAt],
+    ['postedAt', p.postedAt || p.publishedAt],
+    ['createdAt', candidate.createdAtMs || p.createdAt || p.firstSeenAt],
+    ['updatedAt', p.updatedAt],
+  ];
+  for (const [src, val] of rawStamps) {
+    if (typeof val === 'number' && val > 1_600_000_000_000) {
+      return { timestampMs: val, source: src };
+    }
+    if (typeof val === 'string' && val.trim()) {
+      const parsed = Date.parse(val);
+      if (!Number.isNaN(parsed) && parsed > 1_600_000_000_000) {
+        return { timestampMs: parsed, source: src };
+      }
+    }
+  }
+  // 2. Fallback: Extract epoch ms embedded in job ID (e.g. "autoaply_1793777090251_abc" or "job_1793840472834")
+  const idMatch = String(candidate.id || '').match(/(?:^|_)(\d{13})(?:_|$)/);
+  if (idMatch?.[1]) {
+    return { timestampMs: Number(idMatch[1]), source: 'job_id_epoch' };
+  }
+  return { timestampMs: 0, source: 'rowid_only' };
+}
+
 export function computeJobPriorityScore(job: QueuedJobCandidate, nowMs = Date.now()): number {
   let score = 0;
 
+  // Extract accurate timestamp across all possible payload fields
+  const { timestampMs } = extractJobTimestampMs(job);
+  const ageHours = timestampMs > 0 ? Math.max(0, (nowMs - timestampMs) / 3_600_000) : 999;
+  const isHourlyExpired = timestampMs > 0 && ageHours > 24;
+
   // 0. Hourly Fresh Job Super Priority (+50,000 pts for Tier-2 fresh, +10,000 pts for Tier-1 fresh)
-  // ONLY grant the hourly priority boost when candidate.url is a fillable ATS URL!
+  // ONLY grant the hourly priority boost when candidate.url is a fillable ATS URL AND not expired (>24h)!
   const rawFresh = job.is_hourly_fresh ?? job.isHourlyFresh ?? job.payload?.is_hourly_fresh ?? job.payload?.isHourlyFresh;
   let freshLevel = 0;
-  if (typeof rawFresh === 'number') {
-    freshLevel = rawFresh;
-  } else if (rawFresh === true) {
-    freshLevel = 1;
-  } else if (
-    (job.discoveredAt && (nowMs - new Date(job.discoveredAt).getTime()) <= 86400_000) ||
-    (job.payload?.discoveredAt && (nowMs - new Date(job.payload.discoveredAt).getTime()) <= 86400_000)
-  ) {
-    freshLevel = 1;
+  if (!isHourlyExpired) {
+    if (typeof rawFresh === 'number') {
+      freshLevel = rawFresh;
+    } else if (rawFresh === true) {
+      freshLevel = 1;
+    } else if (
+      (job.discoveredAt && (nowMs - new Date(job.discoveredAt).getTime()) <= 86400_000) ||
+      (job.payload?.discoveredAt && (nowMs - new Date(job.payload.discoveredAt).getTime()) <= 86400_000)
+    ) {
+      freshLevel = 1;
+    }
   }
 
   if (freshLevel >= 2 && isFillableAtsUrl(job.url)) {
@@ -123,16 +159,17 @@ export function computeJobPriorityScore(job: QueuedJobCandidate, nowMs = Date.no
     score += fit.priorityBonus;
   }
 
-  // 1. Recency / Freshness Score (Newest jobs get massive priority: up to +2000 pts)
-  const createdAt = job.createdAtMs || 0;
-  const ageHours = createdAt > 0 ? Math.max(0, (nowMs - createdAt) / 3_600_000) : 999;
-  if (ageHours <= 2) score += 2000;       // Posted in last 2 hours!
-  else if (ageHours <= 24) score += 1200; // Posted today!
-  else if (ageHours <= 72) score += 600;  // Posted in last 3 days
-  else score += Math.max(0, 300 - Math.floor(ageHours / 24) * 5);
+  // 1. Recency / Freshness Score (Strictly monotonic curve: +15,000 for <= 1h, +12,000 for <= 3h, +9,000 for <= 6h)
+  if (ageHours <= 1) score += 15000;
+  else if (ageHours <= 3) score += 12000;
+  else if (ageHours <= 6) score += 9000;
+  else if (ageHours <= 24) score += Math.round(6000 - ((ageHours - 6) / 18) * 3000);
+  else if (ageHours <= 72) score += Math.round(2500 - ((ageHours - 24) / 48) * 1500);
+  else score += 0;
 
   // Also tie-break by SQLite rowId / timestamp so newer DB inserts always beat older ones
-  score += Math.min(500, Math.floor((job.rowId || 0) / 50));
+  const rId = job.rowId ?? job.payload?.rowId ?? 0;
+  score += Math.min(900, Math.floor(rId / 25));
 
   // 2. Role Match Score (+400 for exact target SWE/Data/Backend/NewGrad roles)
   if (HIGH_VALUE_ROLE_TITLE_REGEX.test(job.title || '')) score += 400;

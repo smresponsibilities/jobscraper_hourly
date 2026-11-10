@@ -6,6 +6,7 @@ import {
   verifyDomainDeliverability,
   discoverGithubOrgCommitContacts,
   discoverPublicWebsiteContacts,
+  runMode2WonderPillInvertedLeadFinder,
 } from '../src/outreach/free-contact-discovery.js';
 import { isSafeOutreachEmailSyntax } from './sync-applied-to-outreach.js';
 import { resolveCompanyOfficialDomain } from './enrich-applied-outreach.js';
@@ -210,6 +211,18 @@ export async function backfillAppliedOutreachLeads(
       if (validGitContact) {
         targetEmail = validGitContact.email;
         source = 'github_commit_osint';
+      }
+    }
+
+    // 2.5 Check Mode 2 Wonder-Pill Inverted Assumption Discovery (NPM maintainer / Git patch)
+    if (!targetEmail) {
+      const mode2Contacts = await runMode2WonderPillInvertedLeadFinder({ company, domain }).catch(() => []);
+      const validMode2 = mode2Contacts.find(
+        (c) => isSafeOutreachEmailSyntax(c.email) && !isPoisonPrefixEmail(c.email)
+      );
+      if (validMode2) {
+        targetEmail = validMode2.email;
+        source = validMode2.source;
       }
     }
 

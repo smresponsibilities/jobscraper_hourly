@@ -309,3 +309,14 @@ export async function discoverPublicWebsiteContacts(
 
   return leads;
 }
+
+export {
+  runMode1StandardOsintLeadFinder,
+  runMode2WonderPillInvertedLeadFinder,
+  discoverCompanyContactsDualMode,
+  recordWonderPillDeadEnd,
+  loadWonderPillDeadEnds,
+  type WonderPillDeadEnd,
+  type DiscoveredOutreachContact,
+} from './dual-mode-lead-finder.js';
+

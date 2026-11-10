@@ -54,7 +54,7 @@ import {
   scrubBrowserProfileCaches,
   getRecommendedLaneConcurrency,
 } from '../src/autoapply/ram-and-pacing.js';
-import { ContinuousRamAndHealthWatchdog } from '../src/autoapply/health-and-ram-watchdog.js';
+import { ContinuousRamAndHealthWatchdog, check30MinZeroFillDroughtAndAutoHeal } from '../src/autoapply/health-and-ram-watchdog.js';
 import { startDashboardServer } from './dashboard-server.js';
 import { filterUnattemptedJobs, recordAttemptedJob, removeAttemptedJob } from '../src/autoapply/attempted-registry.js';
 import { syncGitHubActionsPillars } from './sync-github-actions-pillars.js';
@@ -239,6 +239,10 @@ export function selectDiversifiedMultiLaneChunk(
     const fitA = evaluateCandidateJobFit({ company: a.company, title: a.title, location: (a as any).location, url: a.jobUrl });
     const fitB = evaluateCandidateJobFit({ company: b.company, title: b.title, location: (b as any).location, url: b.jobUrl });
     if (fitB.priorityBonus !== fitA.priorityBonus) return fitB.priorityBonus - fitA.priorityBonus;
+
+    const rowIdA = Number((a as any).rowId) || 0;
+    const rowIdB = Number((b as any).rowId) || 0;
+    if (rowIdB !== rowIdA) return rowIdB - rowIdA;
 
     return String(b.id || '').localeCompare(String(a.id || ''));
   };
@@ -522,9 +526,33 @@ export async function runOvernightMarathon(config: {
   const vault = new CredentialVault(path.join(stateDir, 'vault'));
   const hostHealthPath = path.join(stateDir, 'host-health.json');
 
+  process.on('SIGHUP', () => {
+    const stopFlag = path.join(stateDir, 'portal-review/STOP_AUTOAPPLY.flag');
+    if (fs.existsSync(stopFlag)) {
+      console.log('[MARATHON] SIGHUP received and STOP_AUTOAPPLY.flag set. Exiting cleanly.');
+      process.exit(0);
+    } else {
+      console.log('[MARATHON] SIGHUP received without STOP_AUTOAPPLY.flag. Ignoring signal (sticky mode).');
+    }
+  });
+
   try {
     while (Date.now() - marathonStartMs < maxDurationMs && totalProcessedOverall < maxJobs) {
       cycleIndex++;
+
+      const stopFlag = path.join(stateDir, 'portal-review/STOP_AUTOAPPLY.flag');
+      if (fs.existsSync(stopFlag)) {
+        console.log(`[MARATHON] STOP_AUTOAPPLY.flag detected at ${stopFlag}. Explicit operator stop requested. Exiting.`);
+        break;
+      }
+
+      try {
+        const docReport = check30MinZeroFillDroughtAndAutoHeal({ stateDir });
+        if (docReport.healed) {
+          console.log(`[MARATHON] Doctor self-healing applied: actions=[${docReport.actionsTaken.join(', ')}]`);
+        }
+      } catch {}
+
       const cycleStartMs = Date.now();
       console.log(`\n[MARATHON] [CYCLE #${cycleIndex}] Initializing chunk (Processed so far: ${totalProcessedOverall}/${maxJobs})...`);
       // Ticket GEN-90: Periodic 30-minute discovery sync
@@ -637,7 +665,10 @@ export async function runOvernightMarathon(config: {
           payload: (job as any).payload,
         }, nowMs);
         return { job, score };
-      }).sort((a: { job: AutoaplyJobItem; score: number }, b: { job: AutoaplyJobItem; score: number }) => b.score - a.score);
+      }).sort((a: { job: AutoaplyJobItem; score: number }, b: { job: AutoaplyJobItem; score: number }) => {
+        if (b.score !== a.score) return b.score - a.score;
+        return (Number((b.job as any).rowId) || 0) - (Number((a.job as any).rowId) || 0);
+      });
 
       // Ticket GEN-90: Drain Priority #1 (Hourly Fresh Jobs) FIRST, Backfill Queue SECOND
       const hourlyCandidates: AutoaplyJobItem[] = [];
