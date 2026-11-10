@@ -62,7 +62,7 @@ export function appendSectionContextIfAmbiguous(text: string, el: Element | null
 
 export function extractCleanQuestionText(box: Element, els: Element[] = []): string {
   const rawText = _extractRawCleanQuestionText(box, els);
-  const first = els[0] || (box.matches('input,select,textarea,[role="combobox"]') ? box : box.querySelector('input,select,textarea,[role="combobox"]'));
+  const first = els[0] || (box.matches?.('input,select,textarea,[role="combobox"]') ? box : box.querySelector?.('input,select,textarea,[role="combobox"]'));
   let finalQ = appendSectionContextIfAmbiguous(rawText, first || box);
 
   // GEN-263: aria-describedby format hint appender
@@ -104,6 +104,13 @@ export function stripOptionLabels(text: string): string {
     .trim();
 }
 
+export function sanitizePrompt(raw: string): string {
+  return raw
+    .replace(/\s*\*+\s*$/, '') // remove trailing asterisks
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function _extractRawCleanQuestionText(box: Element, els: Element[] = []): string {
   const root = (typeof box.getRootNode === 'function' ? box.getRootNode() : null) as Document | ShadowRoot | null;
   const findById = (id: string): Element | null => {
@@ -111,24 +118,83 @@ function _extractRawCleanQuestionText(box: Element, els: Element[] = []): string
     if (typeof (root as Document).getElementById === 'function') return (root as Document).getElementById(id);
     try { return root.querySelector(`[id="${id.replace(/"/g, '\\\"')}"]`); } catch { return null; }
   };
-  const first = els[0] || (box.matches('input,select,textarea,[role="combobox"]') ? box : box.querySelector('input,select,textarea,[role="combobox"]'));
-  const isRadioOrCheckbox = Boolean(
-    first &&
-      (((first as any).type === 'radio' || (first as any).type === 'checkbox') ||
-        (typeof HTMLInputElement !== 'undefined' && first instanceof HTMLInputElement && (first.type === 'radio' || first.type === 'checkbox')))
-  );
+  const first = els[0] || (box.matches?.('input,select,textarea,[role="combobox"]') ? box : box.querySelector?.('input,select,textarea,[role="combobox"]'));
+  
+  const isChoiceInput = (target: any): boolean => {
+    if (!target) return false;
+    const tagName = (target.tagName || '').toLowerCase();
+    const inputType = (target.getAttribute?.('type') || target.type || '').toLowerCase();
+    return (tagName === 'input' || target.type !== undefined) && (inputType === 'radio' || inputType === 'checkbox');
+  };
 
-  // GEN-129 & GEN-428: W3C ARIA Accessible Name tree walk for radio/checkbox groups
+  const isRadioOrCheckbox = Boolean(isChoiceInput(first) || isChoiceInput(box));
+  const choiceEl = isChoiceInput(first) ? first : isChoiceInput(box) ? box : null;
+
+  // GEN-129 & GEN-428: W3C AccName tree walk for radio/checkbox groups
+  if (choiceEl) {
+    // 1. Check for W3C aria-labelledby on the input or its role="radiogroup" container
+    const groupContainer = choiceEl.closest?.('[role="radiogroup"], fieldset, .application-question, .field');
+    if (groupContainer) {
+      // Check for legend or main-label first
+      const legend = groupContainer.querySelector?.('legend, .legend, .application-label, label.main-label, [id$="-label"]');
+      if (legend && legend.textContent?.trim()) {
+        return sanitizePrompt(legend.textContent);
+      }
+
+      // Check for aria-labelledby on container
+      const labelledBy = groupContainer.getAttribute?.('aria-labelledby') || choiceEl.getAttribute?.('aria-labelledby');
+      if (labelledBy) {
+        const parts = labelledBy.split(/\s+/).map((id: string) => findById(id)?.textContent?.trim()).filter(Boolean);
+        if (parts.length > 0) {
+          return sanitizePrompt(parts.join(' '));
+        }
+      }
+    }
+
+    // 2. Climb up to 4 levels looking for prompt wrappers while avoiding option text
+    let curr: Element | null = choiceEl.parentElement;
+    let depth = 0;
+    while (curr && depth < 4) {
+      const cls = curr.className || '';
+      const tag = (curr.tagName || '').toLowerCase();
+      if (
+        (typeof cls === 'string' && (cls.includes('field') || cls.includes('application-question'))) ||
+        tag === 'fieldset'
+      ) {
+        let promptEl: Element | null = null;
+        try {
+          const rawId = (choiceEl as any).id || '';
+          const escapedId = rawId ? rawId.replace(/["\\]/g, '\\$&') : '';
+          const selector = escapedId
+            ? `.text, label:not([for="${escapedId}"]), .prompt, h3, h4`
+            : '.text, label, .prompt, h3, h4';
+          promptEl = curr.querySelector?.(selector);
+        } catch {
+          promptEl = null;
+        }
+        if (promptEl && promptEl.textContent?.trim()) {
+          const text = promptEl.textContent.trim();
+          // Ignore if the text is just an option label
+          if (!/^(yes|no|male|female|decline|i agree|true|false)$/i.test(text)) {
+            return sanitizePrompt(text);
+          }
+        }
+      }
+      curr = curr.parentElement;
+      depth++;
+    }
+  }
+
   if (isRadioOrCheckbox && first) {
     // 1. Legend of closest fieldset
-    const legend = first.closest('fieldset')?.querySelector?.('legend')?.textContent?.trim();
+    const legend = first.closest?.('fieldset')?.querySelector?.('legend')?.textContent?.trim();
     if (legend) {
       const cleanLegend = stripOptionLabels(legend);
       if (isCleanQuestionCandidate(cleanLegend)) return cleanLegend.slice(0, 1500);
     }
 
     // 2. Container check: .field, .application-question, fieldset, or parent container
-    const container = first.closest('.field, .application-question, [class*="question"], fieldset, [data-automation-id^="formField-"], [class*="_fieldEntry_"]');
+    const container = first.closest?.('.field, .application-question, [class*="question"], fieldset, [data-automation-id^="formField-"], [class*="_fieldEntry_"]');
     if (container) {
       // Check explicit label.main-label or .question-label or legend first
       const mainLabel = container.querySelector?.('label.main-label, .main-label, legend, label.question-label, [class*="question-title"], [class*="prompt"]')?.textContent?.trim();

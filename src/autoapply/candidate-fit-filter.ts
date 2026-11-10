@@ -4,10 +4,16 @@ export interface CandidateFitInput {
   company?: string | null;
   url?: string | null;
   description?: string | null;
+  id?: string;
+  ats?: string;
+  isHourlyFresh?: boolean;
 }
 
 export interface CandidateFitResult {
   allowed: boolean;
+  eligible: boolean;
+  score: number;
+  reasons: string[];
   reason?: string;
   priorityBonus: number;
   isBengaluru: boolean;
@@ -24,20 +30,20 @@ const JUNIOR_OVERRIDE_REGEX =
 
 export const NON_TECH_TITLE_REGEX = new RegExp(
   '\\b(' +
+  // Physical / Infrastructure / Construction
   'civil|structural|mechanical|electrical|hvac|piping|plumbing|sanitary|' +
-  'hardware|pcb|fpga|asic|firmware|embedded|vlsi|semiconductor|' +
-  'sales|business development|bdr|sdr|account executive|account manager|representative|' +
-  'marketing|growth|content|copywriter|seo|social media|community manager|' +
-  'recruiter|talent acquisition|talent|sourcer|hr|human resources|people operations|' +
+  'hardware|pcb|fpga|asic|firmware|embedded|vlsi|semiconductor|chip design|' +
+  'construction|site supervisor|quality control|quality inspector|inspector|safety officer|estimator|drafter|autocad|' +
+  // Sales / Marketing / Growth
+  'sales|business development|bdr|sdr|account executive|account manager|' +
+  'marketing|growth|content|copywriter|seo|sem|social media|community manager|' +
+  // People / HR / Recruiting / Operations
+  'recruiter|talent acquisition|sourcer|hr|human resources|people operations|operations manager|' +
   'legal|compliance|counsel|paralegal|attorney|regulatory|' +
-  'clinical|nurse|physician|medical|pharmacy|pharmacist|therapist|healthcare|' +
-  'finance|accountant|payroll|tax|auditor|underwriter|teller|claims|' +
-  'supply chain|logistics|procurement|warehouse|operations manager|facilities|office manager|general manager|' +
-  'executive assistant|administrative assistant|receptionist|customer service|customer success|support rep|support specialist|' +
-  'construction|site supervisor|quality control|quality inspector|inspector|safety officer|' +
-  'cook|chef|cashier|driver|security guard|custodian|janitor|maintenance|electrician|plumber|welder|carpenter|mechanic|' +
-  'desktop support|helpdesk|field service|real estate|property manager|leasing|teacher|instructor|professor|tutor|' +
-  'waiter|waitress|bartender|barista|retail|store associate|merchandiser|buyer|planner|event coordinator' +
+  'clinical|nurse|physician|medical|pharmacy|therapist|healthcare|doctor|' +
+  'finance|accountant|payroll|tax|auditor|underwriter|teller|branch manager|' +
+  'supply chain|logistics|procurement|warehouse|inventory|facilities|' +
+  'executive assistant|office manager|receptionist|customer service|customer support|support rep|support specialist|call center' +
   ')\\b',
   'i'
 );
@@ -59,29 +65,46 @@ const FOREIGN_ONLY_LOCATION_REGEX =
 export function evaluateCandidateJobFit(input: CandidateFitInput): CandidateFitResult {
   const company = String(input.company || '').trim().toLowerCase();
   if (ISOLATED_TENANTS.has(company) || /\b(?:spacex|apartment\s+life|vein\s+center)\b/i.test(company)) {
-    return { allowed: false, reason: 'isolated_tenant', priorityBonus: 0, isBengaluru: false, isIndia: false };
+    return {
+      allowed: false,
+      eligible: false,
+      score: -10000,
+      reasons: ['isolated_tenant'],
+      reason: 'isolated_tenant',
+      priorityBonus: 0,
+      isBengaluru: false,
+      isIndia: false,
+    };
   }
 
   const title = String(input.title || '').trim();
   const location = String(input.location || '').trim();
 
   if (title) {
-    // 1. Reject Senior / Staff / Principal / Lead / Manager / Director / VP / III / IV unless overridden by Intern/Apprentice/Associate
-    if (SENIOR_TITLE_REGEX.test(title) && !JUNIOR_OVERRIDE_REGEX.test(title)) {
+    // 1. Gating non-tech roles: runs before positive scoring or senior check
+    if (NON_TECH_TITLE_REGEX.test(title)) {
+      const msg = `Disqualified non-tech role: matched NON_TECH_TITLE_REGEX for "${title}"`;
       return {
         allowed: false,
-        reason: `senior_title_filtered: ${title.slice(0, 80)}`,
+        eligible: false,
+        score: -9999,
+        reasons: [msg],
+        reason: msg,
         priorityBonus: 0,
         isBengaluru: false,
         isIndia: false,
       };
     }
 
-    // 2. Reject obvious non-tech roles (unless they also explicitly say Software/Data/ML Engineer)
-    if (NON_TECH_TITLE_REGEX.test(title) && !WHITELIST_SOFTWARE_TITLE_REGEX.test(title)) {
+    // 2. Reject Senior / Staff / Principal / Lead / Manager / Director / VP / III / IV unless overridden by Intern/Apprentice/Associate
+    if (SENIOR_TITLE_REGEX.test(title) && !JUNIOR_OVERRIDE_REGEX.test(title)) {
+      const msg = `senior_title_filtered: ${title.slice(0, 80)}`;
       return {
         allowed: false,
-        reason: `non_tech_role_filtered: ${title.slice(0, 80)}`,
+        eligible: false,
+        score: -5000,
+        reasons: [msg],
+        reason: msg,
         priorityBonus: 0,
         isBengaluru: false,
         isIndia: false,
@@ -96,9 +119,13 @@ export function evaluateCandidateJobFit(input: CandidateFitInput): CandidateFitR
   const isGlobalRemote = /\b(?:remote\s*-\s*global|global\s*remote|worldwide|anywhere)\b/i.test(location);
 
   if (location && isForeignListed && !isIndia && !isGlobalRemote) {
+    const msg = `foreign_location_filtered: ${location.slice(0, 80)}`;
     return {
       allowed: false,
-      reason: `foreign_location_filtered: ${location.slice(0, 80)}`,
+      eligible: false,
+      score: -5000,
+      reasons: [msg],
+      reason: msg,
       priorityBonus: 0,
       isBengaluru: false,
       isIndia: false,
@@ -118,6 +145,9 @@ export function evaluateCandidateJobFit(input: CandidateFitInput): CandidateFitR
 
   return {
     allowed: true,
+    eligible: true,
+    score: priorityBonus,
+    reasons: [],
     priorityBonus,
     isBengaluru,
     isIndia,

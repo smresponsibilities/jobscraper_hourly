@@ -196,160 +196,79 @@ export interface ResumeProject {
 
 export function getArchetypeProjects(archetype: ResumeArchetype | RoleArchetype): ResumeProject[] {
   const norm = String(archetype).toUpperCase();
-  if (norm.includes('AI_ML') || (norm.includes('AI') && norm.includes('ML'))) {
-    return [
-      {
-        title: 'Fertilizer Recommendation ML Microservice',
-        stack: 'Python, XGBoost, Flask, Scikit-Learn',
-        bullets: [
-          'Built and deployed a production machine learning REST microservice predicting optimal formulations from soil chemistry (NPK), moisture, and climate metrics.',
-        ],
-      },
-      {
-        title: 'Chaincode — AI Code Validation & REST Platform',
-        stack: 'Python, MERN, Solidity, Gemini AI',
-        bullets: [
-          'Built a coding validation platform with 15+ REST APIs verifying code originality at 95%+ accuracy using Gemini AI; placed 3rd out of 200+ engineering teams at HackIndia.',
-        ],
-      },
-      {
-        title: 'ClickHouse Data Ingestion Tool',
-        stack: 'TypeScript, ClickHouse OLAP, SQL',
-        bullets: [
-          'Built a bidirectional data pipeline connecting ClickHouse OLAP databases and flat CSV files with real-time schema mapping and batch export.',
-        ],
-      },
-    ];
-  }
 
-  if (norm.includes('SYSTEMS_LOWLEVEL') || norm.includes('LOWLEVEL')) {
-    return [
-      {
-        title: "SM'S DEX — Zero-Dependency Platform & Automated CI/CD Roster",
-        stack: 'C99, WebAssembly, Rust pointer utilities, Astro',
-        bullets: [
-          'Developed a 2.4 KB zero-dependency C99 WebAssembly engine using polynomial hashing and a low-level Rust OS keyboard pointer navigation tool.',
-        ],
-      },
-      {
-        title: 'Terminal Wordle & Clickless Systems Utilities',
-        stack: 'C99, WebAssembly, Rust',
-        bullets: [
-          'Developed a 2.4 KB zero-dependency C99 WebAssembly engine using polynomial hashing and a low-level Rust OS keyboard pointer navigation tool.',
-        ],
-      },
-      {
-        title: 'QuizDeck — Real-Time High-Concurrency Engine',
-        stack: 'React, WebSockets, Node.js, TypeScript',
-        bullets: [
-          'Engineered a real-time multiplayer quiz platform over WebSockets and React, stress-tested to support up to 500 concurrent players with a 31 ms average response latency.',
-        ],
-      },
-    ];
-  }
+  const PROJECT_CLICKHOUSE: ResumeProject = {
+    title: 'ClickHouse OLAP Data Ingestion Tool',
+    stack: 'TypeScript, ClickHouse OLAP, SQL, Batch ETL',
+    bullets: [
+      'Engineered a bidirectional data engineering pipeline between ClickHouse OLAP databases and CSV flat files featuring real-time schema mapping, type validation, and batch export.',
+    ],
+  };
+
+  const PROJECT_MORGAN_STANLEY: ResumeProject = {
+    title: 'Morgan Stanley CIAM Platform & Pipelines',
+    stack: 'Java, Spring Boot, Apache Kafka, PySpark, Snowflake',
+    bullets: [
+      'Engineered Customer Identity and Access Management (CIAM) data pipelines and REST APIs processing 5M+ events with mTLS, OAuth 2.0, and granular RBAC.',
+    ],
+  };
+
+  const PROJECT_SHOPIFY: ResumeProject = {
+    title: 'Shopify Insights — Cohort & LTV Analytics',
+    stack: 'Next.js 15, React 19, Supabase PostgreSQL, Recharts',
+    bullets: [
+      'Built an e-commerce analytics and customer segmentation platform backed by PostgreSQL tracking customer lifetime value (LTV) and cohort retention.',
+    ],
+  };
+
+  const PROJECT_FERTILIZER: ResumeProject = {
+    title: 'Fertilizer Recommendation ML Microservice',
+    stack: 'Python, XGBoost, Flask, Scikit-Learn',
+    bullets: [
+      'Built and deployed a production machine learning REST microservice predicting optimal formulations from soil chemistry (NPK), moisture, and climate metrics.',
+    ],
+  };
+
+  const PROJECT_CHAINCODE: ResumeProject = {
+    title: 'Chaincode — AI Code Validation & REST Platform',
+    stack: 'Python, MERN, Solidity, Gemini AI',
+    bullets: [
+      'Built a coding validation platform with 15+ REST APIs verifying code originality at 95%+ accuracy using Gemini AI; placed 3rd out of 200+ engineering teams at HackIndia.',
+    ],
+  };
+
+  const PROJECT_QUIZDECK: ResumeProject = {
+    title: 'QuizDeck — Real-Time High-Concurrency Engine',
+    stack: 'React, WebSockets, Node.js, TypeScript',
+    bullets: [
+      'Engineered a real-time multiplayer quiz platform over WebSockets and React, stress-tested to support up to 500 concurrent players with a 31 ms average response latency.',
+    ],
+  };
+
+  const PROJECT_SMS_DEX: ResumeProject = {
+    title: "SM'S DEX & Terminal Wordle Systems Utilities",
+    stack: 'C99, WebAssembly, Rust pointer utilities, Astro',
+    bullets: [
+      'Developed a 2.4 KB zero-dependency C99 WebAssembly engine using polynomial hashing and a low-level Rust OS keyboard pointer navigation tool.',
+    ],
+  };
 
   if (norm.includes('DATA')) {
-    return [
-      {
-        title: 'ClickHouse OLAP Data Ingestion Tool',
-        stack: 'TypeScript, ClickHouse, SQL, Batch ETL',
-        bullets: [
-          'Engineered a bidirectional data engineering pipeline between ClickHouse OLAP databases and CSV flat files featuring real-time schema mapping, type validation, and batch export.',
-        ],
-      },
-      {
-        title: 'Fertilizer Recommendation ML Microservice',
-        stack: 'Python, XGBoost, Flask, Scikit-Learn',
-        bullets: [
-          'Built and deployed a production machine learning REST microservice predicting optimal formulations from soil chemistry (NPK), moisture, and climate metrics.',
-        ],
-      },
-      {
-        title: 'Shopify Insights — Cohort & LTV Analytics',
-        stack: 'Next.js 15, Supabase PostgreSQL, TypeScript',
-        bullets: [
-          'Built an e-commerce analytics and customer segmentation platform backed by PostgreSQL tracking customer lifetime value (LTV) and cohort retention.',
-        ],
-      },
-    ];
+    return [PROJECT_CLICKHOUSE, PROJECT_MORGAN_STANLEY, PROJECT_SHOPIFY];
   }
-
-  if (norm.includes('DEVOPS')) {
-    return [
-      {
-        title: "SM'S DEX — Zero-Dependency Platform & Automated CI/CD Roster",
-        stack: 'Astro, Python, GitHub Actions',
-        bullets: [
-          'Engineered a static-first platform (1,300+ pages, 0KB external audio via Web Audio synthesis) with an automated GitHub Actions CI/CD and Python PR validation pipeline.',
-        ],
-      },
-      {
-        title: 'ClickHouse Data Ingestion & Schema Pipeline',
-        stack: 'TypeScript, ClickHouse OLAP, SQL',
-        bullets: [
-          'Built an automated bidirectional ingestion utility connecting ClickHouse OLAP clusters and flat files with strict schema validation.',
-        ],
-      },
-      {
-        title: 'Terminal Wordle & Clickless Systems Utilities',
-        stack: 'C99, WebAssembly, Rust',
-        bullets: [
-          'Developed a 2.4 KB zero-dependency C99 WebAssembly engine using polynomial hashing and a low-level Rust OS keyboard pointer navigation tool.',
-        ],
-      },
-    ];
+  if (norm.includes('AI_ML') || (norm.includes('AI') && norm.includes('ML'))) {
+    return [PROJECT_FERTILIZER, PROJECT_CHAINCODE, PROJECT_CLICKHOUSE];
   }
-
-  if (norm.includes('FULLSTACK')) {
-    return [
-      {
-        title: 'Shopify Insights — E-Commerce Analytics Platform',
-        stack: 'Next.js 15, React 19, Supabase PostgreSQL, Recharts',
-        bullets: [
-          'Engineered a full-stack analytics and customer segmentation dashboard tracking customer lifetime value (LTV) and cohort retention.',
-        ],
-      },
-      {
-        title: 'QuizDeck — Multiplayer WebSocket Platform',
-        stack: 'React, WebSockets, Node.js, TypeScript',
-        bullets: [
-          'Built a real-time multiplayer web application supporting 500 concurrent users at 31 ms average response latency.',
-        ],
-      },
-      {
-        title: "Productivity Caller & SM'S DEX",
-        stack: 'Kotlin, Jetpack Compose, Astro, TypeScript',
-        bullets: [
-          'Developed a native Android voice-call reminder app with a natural language task parser in Kotlin/Jetpack Compose and an interactive 1,300-page web portfolio.',
-        ],
-      },
-    ];
+  if (norm.includes('FULLSTACK') || norm.includes('REACT')) {
+    return [PROJECT_QUIZDECK, PROJECT_SHOPIFY, PROJECT_CHAINCODE];
   }
-
-  // BACKEND_DISTRIBUTED & GENERAL_SWE default
-  return [
-    {
-      title: 'QuizDeck — Real-Time High-Concurrency Engine',
-      stack: 'React, WebSockets, Node.js, TypeScript',
-      bullets: [
-        'Engineered a real-time multiplayer quiz platform over WebSockets and React, stress-tested to support up to 500 concurrent players with a 31 ms average response latency.',
-      ],
-    },
-    {
-      title: 'Chaincode — AI Code Validation & REST Platform',
-      stack: 'Python, MERN, Solidity, Gemini AI',
-      bullets: [
-        'Built a coding validation platform with 15+ REST APIs verifying code originality at 95%+ accuracy using Gemini AI; placed 3rd out of 200+ engineering teams at HackIndia.',
-      ],
-    },
-    {
-      title: 'ClickHouse Data Ingestion Tool',
-      stack: 'TypeScript, ClickHouse OLAP, SQL',
-      bullets: [
-        'Built a bidirectional data pipeline connecting ClickHouse OLAP databases and flat CSV files with real-time schema mapping and batch export.',
-      ],
-    },
-  ];
+  if (norm.includes('SYSTEMS_LOWLEVEL') || norm.includes('LOWLEVEL')) {
+    return [PROJECT_SMS_DEX, PROJECT_CLICKHOUSE, PROJECT_QUIZDECK];
+  }
+  if (norm.includes('BACKEND')) {
+    return [PROJECT_MORGAN_STANLEY, PROJECT_CLICKHOUSE, PROJECT_QUIZDECK];
+  }
+  return [PROJECT_MORGAN_STANLEY, PROJECT_QUIZDECK, PROJECT_CLICKHOUSE];
 }
 
 export function prioritizeVerifiedSkillsForRole(
@@ -524,12 +443,12 @@ export function generateResumeHtml(
   const projectsHtml = projects
     .map(
       proj => `
-    <div class="entry project-item">
-      <div class="entry-header">
+    <div class="entry project-item project-entry">
+      <div class="entry-header item-title-row">
         <span>${proj.title}</span>
         <span>${proj.stack}</span>
       </div>
-      <ul class="bullets">
+      <ul class="bullets bullet-list">
         ${proj.bullets.map(b => `<li class="bullet">${b}</li>`).join('\n')}
       </ul>
     </div>`
@@ -543,11 +462,13 @@ export function generateResumeHtml(
 <style>
   :root {
     --base-font-size: 10pt;
-    --base-line-height: 1.28;
+    --base-line-height: 1.25;
+    --section-margin-bottom: 7px;
+    --item-margin-bottom: 4px;
   }
   @page {
-    size: A4;
-    margin: 0.5in;
+    size: A4 portrait;
+    margin: 0.45in 0.5in 0.45in 0.5in;
   }
   * {
     box-sizing: border-box;
@@ -555,97 +476,93 @@ export function generateResumeHtml(
     padding: 0;
   }
   body {
-    font-family: "Times New Roman", Times, "Segoe UI", Arial, Helvetica, sans-serif;
-    color: #1a1a1a;
-    font-size: var(--base-font-size, 10pt);
-    line-height: var(--base-line-height, 1.28);
+    font-family: 'Times New Roman', Times, serif;
+    font-size: var(--base-font-size);
+    line-height: var(--base-line-height);
+    color: #111;
+    margin: 0;
+    padding: 0;
     background: #ffffff;
   }
-  .header {
-    text-align: center;
-    border-bottom: 1.5px solid #2563eb;
-    padding-bottom: 4px;
-    margin-bottom: 6px;
-  }
-  .name {
+  /* Heading & layout styling */
+  h1.name {
     font-size: 18pt;
-    font-weight: 700;
-    color: #0f172a;
-    letter-spacing: -0.3px;
+    text-align: center;
+    margin: 0 0 2px 0;
+    font-weight: bold;
+    color: #111;
   }
   .contact-bar {
-    font-size: calc(var(--base-font-size, 10pt) * 0.90);
-    color: #475569;
-    margin-top: 3px;
-    display: flex;
-    justify-content: center;
-    gap: 10px;
-    flex-wrap: wrap;
+    text-align: center;
+    font-size: 9pt;
+    margin-bottom: 8px;
+    color: #333;
   }
   .contact-bar a {
-    color: #2563eb;
+    color: #111;
     text-decoration: none;
   }
   .section {
-    margin-top: 6px;
+    margin-top: 5px;
   }
-  .section-title {
-    font-size: 10pt;
-    font-weight: 700;
+  .section-header, .section-title {
+    font-size: 11pt;
+    font-weight: bold;
+    border-bottom: 1px solid #222;
+    margin-top: 6px;
+    margin-bottom: var(--section-margin-bottom);
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    color: #1e3a8a;
-    border-bottom: 1px solid #cbd5e1;
-    padding-bottom: 1px;
-    margin-bottom: 4px;
+    color: #111;
   }
   .entry {
-    margin-bottom: 4px;
+    margin-bottom: var(--item-margin-bottom);
   }
-  .entry-header {
+  .item-title-row, .entry-header {
     display: flex;
     justify-content: space-between;
-    font-weight: 600;
-    font-size: calc(var(--base-font-size, 10pt) * 0.95);
-    color: #0f172a;
+    font-weight: bold;
+    margin-bottom: 1px;
+    font-size: calc(var(--base-font-size) * 0.98);
+    color: #111;
   }
-  .entry-sub {
+  .item-sub-row, .entry-sub {
     display: flex;
     justify-content: space-between;
     font-style: italic;
-    font-size: calc(var(--base-font-size, 10pt) * 0.90);
-    color: #334155;
+    font-size: 9.5pt;
     margin-bottom: 2px;
+    color: #222;
   }
-  ul.bullets {
-    padding-left: 15px;
+  ul.bullet-list, ul.bullets {
+    margin: 2px 0 var(--item-margin-bottom) 16px;
+    padding: 0;
     list-style-type: disc;
   }
-  li.bullet {
-    margin-bottom: 1.5px;
-    text-align: justify;
-    font-size: calc(var(--base-font-size, 10pt) * 0.92);
-    line-height: var(--base-line-height, 1.25);
+  ul.bullet-list li, ul.bullets li {
+    margin-bottom: 2px;
+    font-size: calc(var(--base-font-size) * 0.95);
+    line-height: var(--base-line-height);
   }
   .skill-row {
-    font-size: calc(var(--base-font-size, 10pt) * 0.92);
+    font-size: 9.5pt;
     margin-bottom: 1.5px;
-    line-height: var(--base-line-height, 1.25);
+    line-height: var(--base-line-height);
   }
   .skill-cat {
-    font-weight: 700;
-    color: #0f172a;
+    font-weight: bold;
+    color: #111;
   }
   .achievement-text {
-    font-size: calc(var(--base-font-size, 10pt) * 0.92);
-    line-height: var(--base-line-height, 1.25);
-    color: #1a1a1a;
+    font-size: 9.5pt;
+    line-height: var(--base-line-height);
+    color: #111;
   }
 </style>
 </head>
 <body>
   <div class="header">
-    <div class="name">${fullName}</div>
+    <h1 class="name">${fullName}</h1>
     <div class="contact-bar">
       <span>${location}</span> |
       <span>${phone}</span> |
@@ -659,13 +576,13 @@ export function generateResumeHtml(
   </div>
 
   <div class="section">
-    <div class="section-title">EDUCATION</div>
+    <div class="section-title section-header">EDUCATION</div>
     <div class="entry">
-      <div class="entry-header">
+      <div class="entry-header item-title-row">
         <span>Chitkara University</span>
         <span>Punjab, India</span>
       </div>
-      <div class="entry-sub">
+      <div class="entry-sub item-sub-row">
         <span>B.E. in Computer Science and Engineering (CGPA: 9.35 / 10.0)</span>
         <span>2022 – 2026</span>
       </div>
@@ -673,36 +590,36 @@ export function generateResumeHtml(
   </div>
 
   <div class="section">
-    <div class="section-title">EXPERIENCE</div>
+    <div class="section-title section-header">EXPERIENCE</div>
     <div class="entry">
-      <div class="entry-header">
+      <div class="entry-header item-title-row">
         <span>Morgan Stanley</span>
         <span>Bengaluru, India</span>
       </div>
-      <div class="entry-sub">
+      <div class="entry-sub item-sub-row">
         <span>Technology Apprentice</span>
         <span>Aug 2025 – Aug 2026</span>
       </div>
-      <ul class="bullets">
+      <ul class="bullets bullet-list">
         ${experienceBulletsHtml}
       </ul>
     </div>
   </div>
 
   <div class="section">
-    <div class="section-title">PROJECTS</div>
+    <div class="section-title section-header">PROJECTS</div>
     ${projectsHtml}
   </div>
 
   <div class="section">
-    <div class="section-title">TECHNICAL SKILLS</div>
+    <div class="section-title section-header">TECHNICAL SKILLS</div>
     <div class="skills-block">
       ${skillLinesHtml}
     </div>
   </div>
 
   <div class="section">
-    <div class="section-title">ACHIEVEMENTS & MILESTONES</div>
+    <div class="section-title section-header">ACHIEVEMENTS & MILESTONES</div>
     <div class="achievement-text">
       1,255+ Consecutive Days of Code (2,002 Days Quest) &bull; 2,600+ Solved Algorithmic Problems (LeetCode/Codeforces) &bull; 425+ Automated Test Suites &bull; 3rd Place / 200+ Teams at HackIndia
     </div>
@@ -1266,4 +1183,136 @@ export function inspectPdfPageCount(pdfBuffer: Buffer): number {
   const countMatch = str.match(/\/Count\s+(\d+)/);
   if (countMatch && countMatch[1]) return parseInt(countMatch[1], 10);
   return 1;
+}
+
+export function detectRoleArchetype(jobTitle: string, jd = ''): RoleArchetype {
+  const combined = `${jobTitle} ${jd}`.toLowerCase();
+  if (/\b(data|spark|kafka|pyspark|pipeline|etl|snowflake|clickhouse|warehouse)\b/i.test(combined)) {
+    return 'DATA_ENGINEERING';
+  }
+  if (/\b(machine learning|ml|ai|nlp|llm|deep learning|xgboost|model)\b/i.test(combined)) {
+    return 'AI_ML_SYSTEMS';
+  }
+  if (/\b(react|frontend|front-end|ui|ux|fullstack|full-stack|next\.js|typescript)\b/i.test(combined)) {
+    return 'FULLSTACK_REACT';
+  }
+  if (/\b(c\+\+|rust|wasm|webassembly|systems|kernel|low[- ]level|embedded)\b/i.test(combined)) {
+    return 'SYSTEMS_LOWLEVEL';
+  }
+  if (/\b(backend|back-end|distributed|java|spring|microservices|golang|apis)\b/i.test(combined)) {
+    return 'BACKEND_DISTRIBUTED';
+  }
+  return 'GENERAL_SWE';
+}
+
+export async function buildResumePdf(html: string, outputPath: string): Promise<Buffer> {
+  const browser = await chromium.launch({
+    channel: 'chrome',
+    headless: true,
+    args: ['--no-sandbox', '--disable-gpu'],
+  });
+  try {
+    const page = await browser.newPage();
+    try {
+      await page.setContent(html, { waitUntil: 'domcontentloaded' });
+
+      // Layout Budgeting Loop: Guarantee exactly 1 page (A4 max printable height = ~1045px at 96 DPI)
+      await page.evaluate(() => {
+        var __name = (globalThis as any).__name || function(fn: any) { return fn; };
+        const MAX_PAGE_HEIGHT_PX = 1045;
+        const root = document.documentElement;
+
+        // Pass 1: If overflowing, decrement line height and base font size
+        if (root.scrollHeight > MAX_PAGE_HEIGHT_PX) {
+          root.style.setProperty('--base-font-size', '9.5pt');
+          root.style.setProperty('--base-line-height', '1.2');
+          root.style.setProperty('--section-margin-bottom', '5px');
+          root.style.setProperty('--item-margin-bottom', '3px');
+        }
+
+        // Pass 2: If still overflowing, apply compact font settings
+        if (root.scrollHeight > MAX_PAGE_HEIGHT_PX) {
+          root.style.setProperty('--base-font-size', '9pt');
+          root.style.setProperty('--base-line-height', '1.15');
+        }
+
+        // Pass 3: If still overflowing, drop the 4th project (keep top 3 strictly)
+        if (root.scrollHeight > MAX_PAGE_HEIGHT_PX) {
+          const projects = document.querySelectorAll('.project-entry, .project-item');
+          if (projects.length > 3) {
+            projects[projects.length - 1]?.remove();
+          }
+        }
+
+        // Pass 4: If still overflowing, truncate 3rd bullet point from each project
+        if (root.scrollHeight > MAX_PAGE_HEIGHT_PX) {
+          const bulletLists = document.querySelectorAll('.project-entry ul.bullet-list, .project-item ul.bullets');
+          bulletLists.forEach((ul) => {
+            if (ul.children.length > 2) {
+              ul.children[ul.children.length - 1]?.remove();
+            }
+          });
+        }
+
+        // Fallback: If still overflowing, truncate long bullets to max 140 chars
+        if (root.scrollHeight > MAX_PAGE_HEIGHT_PX) {
+          const lis = document.querySelectorAll('li');
+          lis.forEach((li) => {
+            if (li.textContent && li.textContent.length > 140) {
+              li.textContent = li.textContent.slice(0, 140) + '...';
+            }
+          });
+        }
+      });
+
+      const pdfBuffer = await page.pdf({
+        format: 'A4',
+        printBackground: true,
+        margin: { top: '0.45in', bottom: '0.45in', left: '0.5in', right: '0.5in' },
+      });
+
+      // Binary Page Count Assertion
+      const binaryStr = pdfBuffer.toString('binary');
+      const pageCount = (binaryStr.match(/\/Type\s*\/Page\b/g) || []).length;
+      if (pageCount !== 1) {
+        throw new Error(`[RESUME_BUILDER_FATAL] PDF exceeded single-page budget! Generated ${pageCount} pages.`);
+      }
+
+      await fs.promises.mkdir(path.dirname(outputPath), { recursive: true });
+      await fs.promises.writeFile(outputPath, pdfBuffer);
+      return pdfBuffer;
+    } finally {
+      await page.close().catch(() => {});
+    }
+  } finally {
+    await browser.close().catch(() => {});
+  }
+}
+
+export async function buildResumePdfForArchetype(
+  archetype: RoleArchetype,
+  outputPath: string
+): Promise<void> {
+  const candidateJsonPath = path.resolve('state/autoapply/portal-review/candidate.json');
+  let loadedProfile: CandidateExtendedProfile | undefined;
+  if (fs.existsSync(candidateJsonPath)) {
+    try {
+      loadedProfile = JSON.parse(fs.readFileSync(candidateJsonPath, 'utf8'));
+    } catch {}
+  }
+  const candidateProfile: CandidateExtendedProfile =
+    loadedProfile ||
+    ({
+      personal: {
+        firstName: 'Shivam',
+        lastName: 'Mahajan',
+        email: process.env.AUTOAPPLY_EMAIL || 'shivam@example.com',
+        phone: process.env.AUTOAPPLY_PHONE || '+91 9999999999',
+        city: 'Bengaluru',
+        country: 'India',
+      },
+    } as any);
+
+  const html = generateResumeHtml(candidateProfile, archetype);
+  await buildResumePdf(html, outputPath);
 }

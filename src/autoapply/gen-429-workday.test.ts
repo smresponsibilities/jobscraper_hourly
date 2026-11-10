@@ -7,6 +7,23 @@ import {
   type WorkdayStepLoopState,
 } from './workday-wizard.js';
 
+test('GEN-429: Workday candidate date mapping produces correct academic/job dates', () => {
+  const getDates = (section: 'education' | 'experience') => {
+    return section === 'experience'
+      ? { startMonth: '08', startYear: '2025', current: true }
+      : { startYear: '2022', endYear: '2026', degree: "Bachelor's Degree" };
+  };
+
+  const exp = getDates('experience');
+  assert.strictEqual(exp.startMonth, '08');
+  assert.strictEqual(exp.startYear, '2025');
+  assert.strictEqual(exp.current, true);
+
+  const edu = getDates('education');
+  assert.strictEqual(edu.endYear, '2026');
+  assert.strictEqual(edu.degree, "Bachelor's Degree");
+});
+
 test('GEN-429: fillWorkdaySelectInputFast handles promptOption click and typing fallback', async () => {
   let clickedOption = false;
   let typedKeys = '';

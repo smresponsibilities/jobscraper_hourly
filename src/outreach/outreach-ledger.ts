@@ -84,6 +84,33 @@ export function canSendOutreachToDomain(
   return { allowed: true };
 }
 
+export function isDomainOnCooldown(domain: string, ledgerPath: string, cooldownDays = 30): boolean {
+  if (!fs.existsSync(ledgerPath)) return false;
+  try {
+    const raw = fs.readFileSync(ledgerPath, 'utf-8');
+    const entries = JSON.parse(raw);
+    const cleanDomain = domain.trim().toLowerCase().replace(/^@/, '');
+    const cutoff = Date.now() - (cooldownDays * 24 * 60 * 60 * 1000);
+
+    const list = Array.isArray(entries)
+      ? entries
+      : Array.isArray((entries as any)?.records)
+      ? (entries as any).records
+      : [];
+
+    return list.some((entry: any) => {
+      const entryDomain = (entry.domain || (entry.email ? entry.email.split('@')[1] : '') || '').toLowerCase().trim();
+      if (entryDomain === cleanDomain) {
+        const sentTime = new Date(entry.sentAt).getTime();
+        return sentTime > cutoff;
+      }
+      return false;
+    });
+  } catch {
+    return false;
+  }
+}
+
 export function recordOutreachSent(
   record: OutreachSentRecord,
   ledgerPath = DEFAULT_LEDGER_PATH

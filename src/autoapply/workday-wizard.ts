@@ -90,65 +90,104 @@ export async function fillWorkdaySpinbuttonDates(frame: Frame): Promise<number> 
   return filled;
 }
 
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 export async function fillWorkdaySelectInputFast(
-  frame: Frame,
-  containerSelector: string,
+  frame: any,
+  containerSelector: any,
   searchTerm: string,
   fallbackTerm?: string | string[]
 ): Promise<boolean> {
-  const container = frame.locator(containerSelector).first();
-  if (!(await container.isVisible().catch(() => false))) return false;
+  try {
+    const page = typeof frame.page === 'function' ? frame.page() : frame;
+    const container = typeof containerSelector === 'string'
+      ? frame.locator(containerSelector).first()
+      : (containerSelector.first ? containerSelector.first() : containerSelector);
 
-  // Skip if already has a selected pill!
-  if ((await container.locator('[data-automation-id="selectedItem"]').count().catch(() => 0)) > 0) {
-    return true;
-  }
+    if (!(await container.isVisible().catch(() => false))) return false;
 
-  const control = container.locator('input[data-uxi-widget-type="selectinput"], input, button[role="combobox"]').first();
-  if (!(await control.isVisible().catch(() => false))) return false;
-
-  const page = frame.page();
-  const trySelect = async (targetText: string): Promise<boolean> => {
-    // Ensure portal is triggered and open
-    await control.click().catch(() => {});
-    await page.waitForTimeout(150);
-
-    const portalOption = page
-      .locator('[data-automation-id="promptOption"], [role="option"]')
-      .filter({ hasText: targetText })
-      .first();
-
-    if ((await portalOption.count().catch(() => 0)) > 0) {
-      await portalOption.scrollIntoViewIfNeeded().catch(() => {});
-      await portalOption.click({ force: true }).catch(() => {});
-    } else {
-      await page.keyboard.type(targetText.slice(0, 4)).catch(() => {});
-      await page.waitForTimeout(300);
-      await page.keyboard.press('Enter').catch(() => {});
+    // Skip if already has a selected pill!
+    if ((await container.locator('[data-automation-id="selectedItem"]').count().catch(() => 0)) > 0) {
+      return true;
     }
 
-    await page.waitForTimeout(200);
-    // If 2-level hierarchical menu (e.g. Source -> Website -> Corporate Website), click child leaf
-    if ((await container.locator('[data-automation-id="selectedItem"]').count().catch(() => 0)) === 0) {
-      const childOpt = page
-        .locator('[data-automation-id="promptOption"], [role="option"]')
-        .filter({ visible: true })
-        .first();
-      if (await childOpt.isVisible().catch(() => false)) {
-        await childOpt.click({ force: true }).catch(() => {});
-        await page.waitForTimeout(200);
+    const control = container.locator('button[aria-haspopup="listbox"], input[role="combobox"], [data-automation-id="searchBox"], input[data-uxi-widget-type="selectinput"], button[role="combobox"], input').first();
+    if (typeof control.count === 'function') {
+      if ((await control.count().catch(() => 0)) === 0) return false;
+    } else if (!(await control.isVisible().catch(() => false))) {
+      return false;
+    }
+
+    const trySelect = async (targetText: string): Promise<boolean> => {
+      await control.scrollIntoViewIfNeeded?.().catch(() => {});
+      await control.click({ force: true }).catch(() => {});
+      await page.waitForTimeout(200);
+
+      const popup = page.locator('[data-automation-id="popupWrapper"], [role="listbox"]').first();
+      if (typeof popup.waitFor === 'function') {
+        await popup.waitFor({ state: 'visible', timeout: 3500 }).catch(() => null);
       }
-    }
-    await page.keyboard.press('Escape').catch(() => {});
-    return (await container.locator('[data-automation-id="selectedItem"]').count().catch(() => 0)) > 0;
-  };
 
-  if (await trySelect(searchTerm)) return true;
-  const fallbacks = Array.isArray(fallbackTerm) ? fallbackTerm : (fallbackTerm ? [fallbackTerm] : []);
-  for (const fb of fallbacks) {
-    if (await trySelect(fb)) return true;
+      // Direct item match
+      const directOption = page
+        .locator('[data-automation-id="promptOption"], [role="option"]')
+        .filter({ hasText: targetText })
+        .first();
+
+      if ((await directOption.count().catch(() => 0)) > 0) {
+        await directOption.scrollIntoViewIfNeeded?.().catch(() => {});
+        await directOption.click({ force: true }).catch(() => {});
+      } else {
+        // Typeahead Fallback: type first 4-5 chars to filter virtualized items
+        const searchInput = page.locator('[data-automation-id="popupWrapper"] input[type="text"], [data-automation-id="popupWrapper"] input[role="searchbox"]').first();
+        if ((await searchInput.count().catch(() => 0)) > 0 && (await searchInput.isVisible().catch(() => false))) {
+          await searchInput.fill(targetText.slice(0, 4)).catch(() => {});
+        } else {
+          await page.keyboard.type(targetText.slice(0, 4), { delay: 40 }).catch(() => {});
+        }
+        await page.waitForTimeout(300);
+
+        const filteredOption = page
+          .locator('[data-automation-id="promptOption"], [role="option"]')
+          .filter({ hasText: new RegExp(escapeRegex(targetText.slice(0, 4)), 'i') })
+          .first();
+
+        if ((await filteredOption.count().catch(() => 0)) > 0 && (await filteredOption.isVisible().catch(() => false))) {
+          await filteredOption.click({ force: true }).catch(() => {});
+        } else {
+          await page.keyboard.press('ArrowDown').catch(() => {});
+          await page.waitForTimeout(100);
+          await page.keyboard.press('Enter').catch(() => {});
+        }
+      }
+
+      await page.waitForTimeout(200);
+      if ((await container.locator('[data-automation-id="selectedItem"]').count().catch(() => 0)) === 0) {
+        const childOpt = page
+          .locator('[data-automation-id="promptOption"], [role="option"]')
+          .filter({ visible: true })
+          .first();
+        if (await childOpt.isVisible().catch(() => false)) {
+          await childOpt.click({ force: true }).catch(() => {});
+          await page.waitForTimeout(200);
+        }
+      }
+      await page.keyboard.press('Escape').catch(() => {});
+      return (await container.locator('[data-automation-id="selectedItem"]').count().catch(() => 0)) > 0;
+    };
+
+    if (await trySelect(searchTerm)) return true;
+    const fallbacks = Array.isArray(fallbackTerm) ? fallbackTerm : (fallbackTerm ? [fallbackTerm] : []);
+    for (const fb of fallbacks) {
+      if (await trySelect(fb)) return true;
+    }
+    return false;
+  } catch (err) {
+    console.warn('[WORKDAY_SELECT_FAST] Dropdown selection warning:', err);
+    return false;
   }
-  return false;
 }
 
 export interface WorkdayStepLoopState {

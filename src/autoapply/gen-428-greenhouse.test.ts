@@ -12,6 +12,41 @@ test('GEN-428: stripOptionLabels cleanly removes binary and demographic option w
   assert.equal(stripOptionLabels('Terms of Service: I agree'), 'Terms of Service:');
 });
 
+test('GEN-428: extractCleanQuestionText retrieves legend over radio option value', () => {
+  const mainLabel = {
+    textContent: 'Will you now or in the future require sponsorship for employment visa status? *',
+  };
+  const mockGroup = {
+    className: 'field application-question',
+    id: 'question_12345',
+    querySelector: (sel: string) => {
+      if (sel.includes('.main-label') || sel.includes('label.main-label')) return mainLabel;
+      return null;
+    },
+    getAttribute: () => null,
+    getRootNode: () => ({ getElementById: () => null }),
+    matches: () => false,
+  };
+  const mockRadioYes = {
+    tagName: 'input',
+    type: 'radio',
+    id: 'radio_yes',
+    value: '1',
+    closest: (sel: string) => (sel.includes('.application-question') || sel.includes('field') ? mockGroup : null),
+    getAttribute: () => null,
+    getRootNode: () => ({ getElementById: () => null }),
+    matches: (sel: string) => sel.includes('input'),
+  };
+
+  const extracted = extractCleanQuestionText(mockRadioYes as any);
+
+  assert.strictEqual(
+    extracted,
+    'Will you now or in the future require sponsorship for employment visa status?'
+  );
+  assert.notStrictEqual(extracted, 'Yes');
+});
+
 test('GEN-428: W3C AccName tree walk extracts question prompt for detached Greenhouse radio groups', () => {
   // Mock radio input with detached main-label container (Greenhouse sponsorship question pattern)
   const mockContainer = {

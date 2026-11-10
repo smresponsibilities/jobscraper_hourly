@@ -35,14 +35,25 @@ export function isPoisonPrefixEmail(email: string): boolean {
 }
 
 export async function verifyDomainMxRecords(domain: string): Promise<boolean> {
-  const cleanDomain = (domain.toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0] || '').trim();
-  if (!cleanDomain || cleanDomain.includes('invalid') || cleanDomain.endsWith('.local') || cleanDomain.includes('xyz-123')) {
+  // 1. Sanitize domain
+  const cleanDomain = (domain.trim().toLowerCase().replace(/^@/, '').replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0] || '').trim();
+  if (!cleanDomain || cleanDomain.includes('localhost') || cleanDomain.endsWith('.invalid') || cleanDomain.endsWith('.local')) {
     return false;
   }
+
+  // 2. Perform DNS MX Query
   try {
     const records = await resolveMx(cleanDomain);
-    return Array.isArray(records) && records.length > 0;
-  } catch {
+    if (!records || records.length === 0) {
+      return false;
+    }
+    // Ensure at least one MX record is not empty or pointing to 0.0.0.0
+    const hasValidHost = records.some(
+      (r) => r.exchange && !['0.0.0.0', '127.0.0.1', 'localhost'].includes(r.exchange.toLowerCase())
+    );
+    return hasValidHost;
+  } catch (err: any) {
+    // ENOTFOUND or ENODATA means domain has no mail servers configured
     return false;
   }
 }
