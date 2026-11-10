@@ -14,6 +14,10 @@ $workerLock = Join-Path $stateDir "worker.lock"
 if (Test-Path $workerLock) {
     Remove-Item -Force $workerLock -ErrorAction SilentlyContinue
 }
+$portalReviewLock = Join-Path $stateDir "portal-review/worker.lock"
+if (Test-Path $portalReviewLock) {
+    Remove-Item -Force $portalReviewLock -ErrorAction SilentlyContinue
+}
 Get-ChildItem -Path "$stateDir/browser-profile-*" -Filter "SingletonLock" -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
     Remove-Item -Force $_.FullName -ErrorAction SilentlyContinue
 }
