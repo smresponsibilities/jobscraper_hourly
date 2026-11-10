@@ -2,7 +2,9 @@
 # Immortal Sticky Supervisor for Jobscraper-Next Auto-Apply Worker
 # Runs worker indefinitely, restarts on exit/crash within 5s, stops ONLY on STOP_AUTOAPPLY.flag
 
-$stateDir = "state/autoapply"
+$repoRoot = Split-Path -Parent $PSScriptRoot
+Set-Location $repoRoot
+$stateDir = Join-Path $repoRoot "state/autoapply"
 $flagPath = Join-Path $stateDir "portal-review/STOP_AUTOAPPLY.flag"
 
 Write-Host "[SUPERVISOR] Immortal Sticky Supervisor started. Monitoring worker processes..." -ForegroundColor Cyan
@@ -32,12 +34,12 @@ while ($true) {
         }
 
         # Clean browser profile singleton locks
-        Get-ChildItem -Path "$stateDir/browser-profile-*" -Filter "SingletonLock" -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
+        Get-ChildItem -Path "$stateDir/browser-profile-*" -Filter "SingletonLock" -Depth 1 -ErrorAction SilentlyContinue | ForEach-Object {
             Remove-Item -Force $_.FullName -ErrorAction SilentlyContinue
         }
 
         Write-Host "[SUPERVISOR] Launching worker: drain-backfill-and-hourly.ts..." -ForegroundColor Green
-        $proc = Start-Process -FilePath "node" -ArgumentList "--import tsx scripts/drain-backfill-and-hourly.ts --profile state/autoapply/portal-review/candidate.json" -PassThru -NoNewWindow
+        $proc = Start-Process -FilePath "node" -ArgumentList "--import tsx scripts/drain-backfill-and-hourly.ts --profile state/autoapply/portal-review/candidate.json" -WorkingDirectory $repoRoot -PassThru -NoNewWindow
         
         Write-Host "[SUPERVISOR] Worker spawned with PID: $($proc.Id). Monitoring execution..." -ForegroundColor Green
         # Wait up to 5s before checking again, or wait for process exit
