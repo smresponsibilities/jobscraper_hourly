@@ -101,7 +101,7 @@ export function composeTailored4SentenceColdEmail(
     ``,
     `Best regards,`,
     `Shivam Mahajan`,
-    `+91 7018626032 | Bengaluru, India`,
+    `Bengaluru, India`,
     `Portfolio: https://shivammahajan.com`,
     `LinkedIn: https://www.linkedin.com/in/mahajanshivam`,
     `GitHub: https://github.com/smresponsibilities`,

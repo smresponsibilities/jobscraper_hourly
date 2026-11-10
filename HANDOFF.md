@@ -17,6 +17,21 @@
 
 ---
 
+## Live Conversion Audit, ERP Concept Rule & Controlled Cold Outreach Dispatcher (Tickets GEN-443 & GEN-444) — 2026-11-11
+
+### 1. Executive Summary & Production Status
+- **GEN-443 (Live Conversion Audit & Top Blocker Patch)**:
+  - Audited latest 40 runs in `run-history.jsonl` and `queue.sqlite`. Live applied total: **221** verified submissions.
+  - Breakdown: Ashby (2 applied, 1 failed, 1 paused), Greenhouse (7 failed), SmartRecruiters (4 failed), Workday (3 failed), generic/closed (22 failed).
+  - Patched accounting/ERP questionnaire blocker (`Which accounting/ERP systems have you used...`) in `src/autoapply/self-learning.ts` with deterministic resolution (`None / Other`).
+- **GEN-444 (Controlled Cold Outreach Batch Sender with Archetype PDF Attachment)**:
+  - Implemented `scripts/send-outreach-batch.ts` supporting `--dry-run` and `--send --limit <N>` (capped at max 15 per run, 45–90s jitter).
+  - Enforces 30-day company/domain cooldown against `state/autoapply/portal-review/sent-ledger.json` and 24-prefix poison shield.
+  - Dynamically attaches archetype PDF resume (`Shivam_Mahajan_Resume_AI_ML_SYSTEMS.pdf`, `Shivam_Mahajan_Resume_BACKEND.pdf`, `Shivam_Mahajan_Resume_DATA.pdf`, etc.) based on `determineJobArchetype(roleTitle)`.
+  - Exposed `"📤 Dry-Run / Send Next 5 Outreach Emails"` action on `✉️ Outreach Center` tab of `http://localhost:4321`. Verified 5/5 valid leads pass MX check, cooldown check, and resume attachment resolution.
+
+---
+
 ## Hardened Personal Chrome Safety, Workday Repeater Expander, Ashby Schema Hydration, Network 400 Healer & Outreach Center (Tickets GEN-436 through GEN-442) — 2026-11-11
 
 ### 1. Executive Summary & Production Status

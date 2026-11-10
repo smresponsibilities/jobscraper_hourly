@@ -6,6 +6,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { readJobRunHistory, type JobRunHistoryEntry } from '../src/autoapply/run-history.js';
 import { syncGitHubActionsPillars } from './sync-github-actions-pillars.js';
 import { executeFullDatabaseRecovery } from './recover-gen100-103-jobs.js';
+import { runOutreachBatch } from './send-outreach-batch.js';
 
 const PORT = Number(process.env.AUTOAPPLY_DASHBOARD_PORT || 4321);
 const LOG_PATH = path.resolve('out/hourly-daemon.log');
@@ -1148,6 +1149,15 @@ function renderDashboardHtml(initialTelemetry?: any, initialErrors?: any, initia
       <div style="margin-bottom:12px;font-size:12px;color:var(--text-muted);">
         Showing all applied jobs with discovered recipient emails, MX provider, subject line, and 1-click copy action.
       </div>
+      <div style="margin-bottom:14px; display:flex; gap:10px; align-items:center;">
+        <button id="btn-outreach-dryrun" class="btn btn-sm btn-outline" onclick="triggerOutreachBatch(true)" style="padding:6px 14px; font-weight:600; cursor:pointer;">
+          📤 Dry-Run Next 5 Outreach Emails
+        </button>
+        <button id="btn-outreach-send" class="btn btn-sm" onclick="triggerOutreachBatch(false)" style="padding:6px 14px; font-weight:600; background:var(--accent); color:#fff; cursor:pointer;">
+          🚀 Send Next 5 Outreach Emails (Live SMTP)
+        </button>
+        <span id="outreach-action-status" style="font-size:12px; color:var(--text-muted);"></span>
+      </div>
       <div id="outreach-table-container">
         <table style="width:100%;border-collapse:collapse;font-size:12px;">
           <thead>
@@ -1870,6 +1880,27 @@ async function pollOutreachLeads() {
   }
 }
 
+async function triggerOutreachBatch(isDryRun) {
+  const statusEl = document.getElementById('outreach-action-status');
+  if (statusEl) statusEl.textContent = isDryRun ? 'Running dry-run...' : 'Sending live emails...';
+  try {
+    const res = await fetch('/api/action', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: isDryRun ? 'outreach-dry-run' : 'outreach-send', limit: 5 })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      if (statusEl) statusEl.textContent = (isDryRun ? 'Dry-run passed: ' : 'Live sent: ') + (data.sentCount || data.eligibleCount || 0) + ' emails.';
+      alert((isDryRun ? 'Dry-Run Complete: ' : 'Live Outreach Complete: ') + JSON.stringify(data.items ? data.items.map(function(i){ return i.company + ' -> ' + i.targetEmail; }) : [], null, 2));
+    } else {
+      if (statusEl) statusEl.textContent = 'Error: ' + (data.error || 'Failed');
+    }
+  } catch (err) {
+    if (statusEl) statusEl.textContent = 'Error triggering outreach: ' + err.message;
+  }
+}
+
 pollTelemetry();
 pollAppliedJobs();
 pollHourlyJobs();
@@ -1931,6 +1962,12 @@ export function startDashboardServer(port = PORT): http.Server {
             cachedErrorsData = null;
             res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*' });
             res.end(JSON.stringify({ ok: true, action, message: 'Diagnostics log reset' }));
+          } else if (action === 'outreach-dry-run' || action === 'outreach-send') {
+            const isLive = action === 'outreach-send';
+            const limit = Number(payload.limit) || 5;
+            const resData = await runOutreachBatch({ dryRun: !isLive, limit });
+            res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*' });
+            res.end(JSON.stringify({ ok: true, action, ...resData }));
           } else {
             res.writeHead(400, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: `Unknown action: ${action}` }));

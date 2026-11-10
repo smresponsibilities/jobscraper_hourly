@@ -515,6 +515,17 @@ export function resolveBySemanticSelfLearning(
       resolve: () => (widgetKind.toUpperCase() === 'CHECKBOX' ? 'Yes' : ((profile as any).education?.[0]?.school || 'Chitkara University')),
     },
     {
+      category: 'accounting_erp_systems',
+      pattern: /\b(?:accounting|erp\s+systems?|financial\s+data|workday\s+financials|netsuite|sap|oracle\s+erp)\b/i,
+      resolve: () => {
+        if (options && options.length > 0) {
+          const hit = options.find(o => /none|n\/a|other/i.test(o)) || options[0]!;
+          return hit;
+        }
+        return 'None / Other';
+      },
+    },
+    {
       category: 'commute_distance_custom',
       pattern: /\b(live within reasonable commuting distance|commuting distance|commute to)\b/i,
       resolve: () => {
