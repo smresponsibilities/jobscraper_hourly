@@ -980,7 +980,7 @@ async function main(): Promise<void> {
         const { spawn } = await import('node:child_process');
         const child = spawn(process.execPath, process.argv.slice(1), {
           detached: true,
-          stdio: 'inherit',
+          stdio: 'ignore',
         });
         (child as any)?.unref?.();
         process.exit(0);

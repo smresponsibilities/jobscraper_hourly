@@ -4,13 +4,13 @@
 
 > [!IMPORTANT]
 > **Active Production State**:
-> - **Live Confirmed Applied**: **181** verified applications with receipts in `state/autoapply/portal-review/queue.sqlite` (`status = 'applied'`). Climbed from 141 (+40 live conversions across Greenhouse and Ashby).
+> - **Live Confirmed Applied**: **195** verified applications with receipts in `state/autoapply/portal-review/queue.sqlite` (`status = 'applied'`). Climbed from 141 (+54 live conversions across Greenhouse and Ashby).
 > - **Autonomous Continuous Drain Daemon**: `scripts/drain-backfill-and-hourly.ts` running continuously with inter-batch RAM cleanup, cache scrubbing, and hot-respawn on `runner.js` mtime update.
 > - **Candidate Fit & Queue Purity**: 106+ non-tech / ITAR / structural / civil / warranty / supervisor jobs moved to `skipped`; 9,035 India & Remote tech/ML/data jobs boosted with top priority.
 > - **Greenhouse Form Healer**: Fixed `annotateQuestionClusters` in `src/autoapply/distiller.ts` by eliminating inner helper functions (`checkBotTrap`, `checkDisabled`, `findNodeById`) that caused esbuild `__name` serialization errors (`ReferenceError: __name is not defined`) in Chromium page context. Verified live on Udemy (93 fields discovered, 38 filled, 0 unmapped).
-> - **Outreach Ledger Sync**: 181 verified target applications synced to `state/autoapply/applied-outreach-targets.json`.
+> - **Outreach Ledger Sync**: 194 verified target applications synced to `state/autoapply/applied-outreach-targets.json`.
 > - **Adaptive RAM & Health Watchdog**: Running continuously. Telemetry at `state/autoapply/ram-health.json`. Automatically scales lanes $1 \leftrightarrow 6$ based on available RAM and reaps zombie `chrome.exe` processes $> 180\text{s}$ old.
-> - **Queue Breakdown**: 9,040 `queued`, 181 `applied`, 11,002 `skipped`, 935 `failed`, 21 `paused_for_review`.
+> - **Queue Breakdown**: 8,951 `queued`, 195 `applied`, 11,062 `skipped`, 943 `failed`, 28 `paused_for_review`.
 > - **Verification**: `npm test` (58/58 passing), `node "node_modules/typescript/bin/tsc" -p tsconfig.build.json` (0 errors), `scripts/sanitize-for-git-push.ts` (0 PII leaks).
 > - **Git Remote**: Synchronized with `origin/main`. Always run `git fetch origin; git merge origin/main` before any push.
 
