@@ -375,7 +375,7 @@ export function resolveCandidateAnswer(category: ExtendedFieldCategory, profile:
       'role_interest_motivation'
     );
   }
-  if (/\b(?:require any help.*file visa|require.*visa.*future|help.*visa)\b/.test(q)) {
+  if (/\b(?:require any help.*to file visa|help.*to file visa)\b/.test(q)) {
     const noOpt = context.options?.length ? (context.options.find(o => /^no\b/i.test(o.trim())) || 'No') : 'No';
     return result(noOpt, 'explicit_profile', ['personal.country'], 'visa_help_future');
   }
@@ -399,9 +399,9 @@ export function resolveCandidateAnswer(category: ExtendedFieldCategory, profile:
     const yesOpt = context.options?.length ? (context.options.find(o => /^yes\b/i.test(o.trim())) || 'Yes') : 'Yes';
     return result(yesOpt, 'explicit_profile', ['education.0.degree'], 'bachelors_degree');
   }
-  if (/\b(?:itar|u\.?s\.?\s*citizen for itar)\b/.test(q)) {
+  if (/\b(?:itar|u\.?s\.?\s*citizen for itar|u\.?s\.?\s*person)\b|\b(?:legally requires|criteria).*u\.?s\.?\s*person\b/i.test(q)) {
     const noOpt = context.options?.length ? (context.options.find(o => /^no\b/i.test(o.trim())) || 'No') : 'No';
-    return result(noOpt, 'explicit_profile', ['personal.country'], 'itar_status');
+    return result(noOpt, 'explicit_profile', ['personal.country'], 'itar_us_person_status');
   }
   // Ticket GEN-120: SmartRecruiters Confirm Email Address / verify email
   if (/confirm\s*e-?mail|re-?enter\s*e-?mail|verify\s*e-?mail/i.test(q) || labels.some(l => /confirm\s*e-?mail|re-?enter\s*e-?mail/i.test(l))) {
@@ -436,12 +436,13 @@ export function resolveCandidateAnswer(category: ExtendedFieldCategory, profile:
   }
   const explicitCountry = /\b(?:united states|usa|u s a|u s)\b/.test(q) ? 'United States' : /\b(?:united kingdom|uk|u k)\b/.test(q) ? 'United Kingdom' : /\bindia\b/.test(q) ? 'India' : undefined;
   const country = explicitCountry || context.country;
+  const mentionsIndia = /\bindia\b/.test(q) || (country && normalizeQuestion(country) === 'india');
   const home = country && normalizeQuestion(country) === normalizeQuestion(profile.personal.country);
   const scoped = country ? Object.entries(profile.workAuthorizationByCountry || {}).find(([key]) => normalizeQuestion(key) === normalizeQuestion(country))?.[1] : undefined;
-  const outsideIndia = /\b(?:outside|other than) india\b/.test(q) || !!explicitCountry && explicitCountry !== 'India' && !/\bindia\b/.test(q);
+  const outsideIndia = /\b(?:outside|other than) india\b/.test(q) || (!!explicitCountry && explicitCountry !== 'India') || (!!country && country !== 'India') || (!mentionsIndia && Boolean(profile.indiaOnlyWorkAuthorization));
   const indiaOnly = profile.indiaOnlyWorkAuthorization && outsideIndia ? { authorizedInCountry: false, requiresSponsorshipNowOrFuture: true } : undefined;
   const useScoped = !!scoped && !/\b(?:outside|other than) india\b/.test(q);
-  const authorization = useScoped ? scoped : indiaOnly || (home && !outsideIndia ? profile.workAuthorization : undefined);
+  const authorization = useScoped ? scoped : (mentionsIndia && home ? profile.workAuthorization : (indiaOnly || (home && !outsideIndia ? profile.workAuthorization : undefined)));
   const authSource = useScoped ? `workAuthorizationByCountry.${country}` : indiaOnly ? 'indiaOnlyWorkAuthorization' : 'workAuthorization';
   const authFact = (key: string) => !useScoped && indiaOnly ? authSource : `${authSource}.${key}`;
   if (/\b(?:authorized|eligible|right) to work\b|\bwork authorization\b|\bsponsor(?:ship)?\b/.test(q) || ['work_authorization', 'sponsorship'].includes(category)) {

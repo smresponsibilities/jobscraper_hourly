@@ -170,12 +170,16 @@ export async function pollImapForVerificationCodeOrLink(params: {
                 /https?:\/\/[^\s"'<>]+(?:myworkdayjobs\.com|myworkday\.com|smartrecruiters\.com|greenhouse\.io)[^\s"'<>]*(?:verify|confirm|activate|token|code)[^\s"'<>]*/i
               );
 
-              // 2. Check for 6-to-8 character OTP / Security Code
+              // 2. Check for 6-to-8 character OTP / Security Code (Greenhouse, Workday, SmartRecruiters)
+              const hTagMatch = decoded.match(/<h[1-6][^>]*>\s*([A-Za-z0-9]{6,8})\s*<\/h[1-6]>/i);
               const bodyWithoutHtml = decoded.replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
               const codeMatch =
+                hTagMatch ||
                 bodyWithoutHtml.match(
-                  /(?:verification code|security code|confirmation code|passcode|code is|enter the code)[:\s]*([A-Za-z0-9]{6,8})\b/i
-                ) || bodyWithoutHtml.match(/\b([0-9]{6})\b/);
+                  /(?:verification code|security code|confirmation code|passcode|code is|enter the code|security code field[^\n:]*:)[:\s]*([A-Za-z0-9]{6,8})\b/i
+                ) ||
+                bodyWithoutHtml.match(/\b([0-9]{8})\b/) ||
+                bodyWithoutHtml.match(/\b([0-9]{6})\b/);
 
               const candidateToken = codeMatch?.[1] || linkMatch?.[0] || '';
               if (candidateToken && CONSUMED_VERIFICATION_TOKENS.has(candidateToken)) {
@@ -221,16 +225,18 @@ export async function pollImapForVerificationCodeOrLink(params: {
 export async function completeInPageEmailVerificationIfPrompted(page: Page, frame: Frame, onActivity?: () => void): Promise<boolean> {
   const pageText = await frame.evaluate(() => (document.body?.innerText || '').slice(0, 3000)).catch(() => '');
   const hasSecurityInput = await frame
-    .locator('input[id^="security-input-"], input[id^="security-code"], #security-code, .security-code-input input, input[name*="security_code" i], input[aria-label*="security code" i], input[aria-label*="verification code" i]')
+    .locator('input[id*="security_code" i], input[id*="security-code" i], input[name*="security_code" i], input[name*="security-code" i], input[id*="verification_code" i], input[name*="verification_code" i], input[aria-label*="security code" i], input[aria-label*="verification code" i], input[placeholder*="security code" i], input[placeholder*="verification code" i], input[id^="security-input-"], input[id^="security-code-"], #security-code, #security_code, [data-automation-id*="securityCode" i], [data-automation-id*="verificationCode" i], .security-code-input input, input[name="otp" i], input[id="otp" i], input[aria-label="otp" i]')
     .filter({ visible: true })
     .count()
     .catch(() => 0);
 
+  const hasExplicitOtpPrompt = /\b(?:security code|verification code|enter the 8-character|enter the 6-digit|enter security code|resubmit your application with the code|one-time passcode|one-time password)\b/i.test(
+    pageText
+  );
+
   const needsVerification =
     hasSecurityInput > 0 ||
-    /\b(check your email|verify your email|verification code|security code sent to|enter the 8-character|confirm your email address to continue)\b/i.test(
-      pageText
-    );
+    (hasExplicitOtpPrompt && /\b(?:email|code|sent|inbox|verification)\b/i.test(pageText));
 
   if (!needsVerification) return false;
 
@@ -306,12 +312,17 @@ export async function completeInPageEmailVerificationIfPrompted(page: Page, fram
     } else {
       const codeInput = frame
         .locator(
-          'input[id^="security-input-"], input[id^="security-code"], #security-code, input[data-automation-id*="verification" i], input[name*="code" i], input[id*="code" i], input[aria-label*="code" i], input[type="text"], input[type="number"]'
+          'input[id*="security_code" i], input[id*="security-code" i], input[name*="security_code" i], input[name*="security-code" i], input[id*="verification_code" i], input[name*="verification_code" i], input[aria-label*="security code" i], input[aria-label*="verification code" i], input[placeholder*="security code" i], input[placeholder*="verification code" i], #security-code, #security_code, input[data-automation-id*="verificationCode" i], input[data-automation-id*="securityCode" i], input[name="otp" i], input[id="otp" i], input[id*="security" i], input[name*="security" i]'
         )
         .filter({ visible: true })
         .first();
       if (await codeInput.isVisible().catch(() => false)) {
+        await codeInput.click({ timeout: 2000 }).catch(() => {});
+        await codeInput.press('ControlOrMeta+A').catch(() => {});
+        await codeInput.press('Backspace').catch(() => {});
         await codeInput.fill(code).catch(() => {});
+        await codeInput.dispatchEvent('input').catch(() => {});
+        await codeInput.dispatchEvent('change').catch(() => {});
       }
     }
 

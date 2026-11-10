@@ -528,12 +528,17 @@ export async function stealthClick(locator: Locator, timeout = 4000): Promise<vo
 }
 
 export async function fillAsyncLocationCombobox(frame: Frame, control: Locator, city = 'Bengaluru'): Promise<boolean> {
-  const seeds = city.includes('Bengaluru') || city.includes('Bangalore')
-    ? ['Bengaluru, Karnataka, India', 'Bengaluru', 'Bangalore', 'India']
+  const isCountrySearch = /^india$/i.test(city.trim());
+  const seeds = isCountrySearch
+    ? ['India']
+    : city.includes('Bengaluru') || city.includes('Bangalore')
+    ? ['Bangalore', 'Bengaluru, Karnataka, India', 'Bangalore, Karnataka, India', 'Bengaluru']
     : [city, city.split(',')[0]!.trim()];
 
   for (const seed of seeds) {
     await control.click({ timeout: 2500 }).catch(() => {});
+    await control.press('Control+A').catch(() => {});
+    await control.press('Backspace').catch(() => {});
     await control.fill('').catch(() => {});
     await control.pressSequentially(seed, { delay: 35 }).catch(async () => {
       await control.fill(seed).catch(() => {});
@@ -549,10 +554,28 @@ export async function fillAsyncLocationCombobox(frame: Frame, control: Locator, 
     await optionLocator.first().waitFor({ state: 'visible', timeout: 900 }).catch(() => {});
     const count = await optionLocator.count().catch(() => 0);
     if (count > 0) {
+      if (isCountrySearch) {
+        // Ticket GEN-302: For India country prefix, ALWAYS select "India +91" / "India" and NEVER "British Indian Ocean Territory"
+        for (let i = 0; i < count; i++) {
+          const item = optionLocator.nth(i);
+          const txt = (await item.innerText().catch(() => '')).toLowerCase().trim();
+          if ((/^india\b|\bindia\s*\+91|\+91\b/.test(txt)) && !/british indian ocean/i.test(txt)) {
+            await item.dispatchEvent('mousedown').catch(() => {});
+            await item.click({ force: true, timeout: 1500 }).catch(() => {});
+            await item.dispatchEvent('mouseup').catch(() => {});
+            if ((await optionLocator.count().catch(() => 0)) > 0) {
+              await frame.page().keyboard.press('Enter').catch(() => {});
+            }
+            await frame.page().keyboard.press('Escape').catch(() => {});
+            return true;
+          }
+        }
+      }
+
       for (let i = 0; i < count; i++) {
         const item = optionLocator.nth(i);
         const txt = (await item.innerText().catch(() => '')).toLowerCase();
-        if (/bengaluru|bangalore|india|karnataka/.test(txt)) {
+        if (!/british indian ocean/i.test(txt) && /bengaluru|bangalore|india|karnataka/.test(txt)) {
           await item.dispatchEvent('mousedown').catch(() => {});
           await item.click({ force: true, timeout: 1500 }).catch(() => {});
           await item.dispatchEvent('mouseup').catch(() => {});
@@ -593,14 +616,29 @@ export async function selectAshbyYesNoOrCheckboxGroup(
       : String(wantedAnswer).trim().toLowerCase();
 
   // 1. Ashby Yes/No <button> pair (.ashby-application-form-input-yesno-option, [data-autoapply-btngroup-option])
-  const ashbyBtns = cluster.locator('button.ashby-application-form-input-yesno-option, button[class*="yesno-option"], button[data-autoapply-btngroup-option], button[type="button"], [role="button"]');
-  const btnCount = await ashbyBtns.count().catch(() => 0);
+  let ashbyBtns = cluster.locator('button.ashby-application-form-input-yesno-option, button[class*="yesno-option"], button[data-autoapply-btngroup-option], button[type="button"], [role="button"]');
+  let btnCount = await ashbyBtns.count().catch(() => 0);
+  if (btnCount <= 1) {
+    const parentBtns = cluster.locator('..').locator('button.ashby-application-form-input-yesno-option, button[class*="yesno-option"], button[data-autoapply-btngroup-option], button[type="button"], [role="button"]');
+    const parentCount = await parentBtns.count().catch(() => 0);
+    if (parentCount > btnCount) {
+      ashbyBtns = parentBtns;
+      btnCount = parentCount;
+    }
+  }
   if (btnCount > 0) {
-    const targetText = /^(true|yes|1|i agree)$/i.test(normalizedWanted) ? /^yes$/i : /^no$/i;
+    const isYes = /^(true|yes|1|i agree)$/i.test(normalizedWanted);
+    const isNo = /^(false|no|0|decline|disagree)$/i.test(normalizedWanted);
     for (let i = 0; i < btnCount; i++) {
       const btn = ashbyBtns.nth(i);
-      const txt = (await btn.innerText().catch(() => '')).trim();
-      if (targetText.test(txt)) {
+      const txt = (await btn.innerText().catch(() => '')).trim().toLowerCase();
+      const match =
+        (isYes && /^yes\b/i.test(txt)) ||
+        (isNo && /^no\b/i.test(txt)) ||
+        txt === normalizedWanted ||
+        (normalizedWanted && txt.includes(normalizedWanted)) ||
+        (normalizedWanted && normalizedWanted.includes(txt) && txt.length > 2);
+      if (match) {
         await btn.scrollIntoViewIfNeeded().catch(() => {});
         await btn.click({ timeout: 2500 });
         return true;

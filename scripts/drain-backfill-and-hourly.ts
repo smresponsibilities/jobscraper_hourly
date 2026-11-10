@@ -562,58 +562,39 @@ async function main(): Promise<void> {
     const eligible: AutoaplyJobItem[] = [];
     for (const job of allJobs) {
       if (job.status !== 'queued') continue;
-      // Ticket GEN-91: Fast-fail non-direct ATS jobs
-      if (!isSupportedDirectAtsJobUrl(job.jobUrl)) {
-        queue.skip(job.id, 'unsupported_non_direct_ats_url');
-        continue;
-      }
-      if (isStrictlyIsolatedTenant(job.company, job.jobUrl)) {
-        queue.skip(job.id, 'strictly_isolated_tenant');
-        continue;
-      }
+      // Ticket GEN-91: Fast-fail non-direct ATS jobs (filter in-memory without blocking disk writes)
+      if (!isSupportedDirectAtsJobUrl(job.jobUrl)) continue;
+      if (isStrictlyIsolatedTenant(job.company, job.jobUrl)) continue;
       const titleCheck = isEligibleEngineeringRoleTitle(job.title);
-      if (!titleCheck.eligible) {
-        queue.skip(job.id, titleCheck.reason || 'ineligible_role_title');
-        continue;
-      }
+      if (!titleCheck.eligible) continue;
       eligible.push(job);
     }
 
+    // Schwartzian transform: compute priority scores once in O(N) rather than O(N log N) inside .sort()
     const now = Date.now();
-    eligible.sort((a, b) => {
-      const aDateStr = (a as any).createdAt || a.postedAt;
-      const bDateStr = (b as any).createdAt || b.postedAt;
+    const scoredCandidates = eligible.map((job) => {
+      const aDateStr = (job as any).createdAt || job.postedAt;
       const aTime = Date.parse(aDateStr || '0') || 0;
-      const bTime = Date.parse(bDateStr || '0') || 0;
-      const scoreA = computeJobPriorityScore({
-        id: a.id,
-        company: a.company,
-        title: a.title,
-        url: a.jobUrl || (a as any).url,
+      const score = computeJobPriorityScore({
+        id: job.id,
+        company: job.company,
+        title: job.title,
+        url: job.jobUrl || (job as any).url,
         createdAtMs: aTime,
-        rowId: (a as any).rowId || 0,
-        isHourlyFresh: Boolean((a as any).isHourlyFresh || (a as any).payload?.isHourlyFresh || (a as any).hourlySource),
-        discoveredAt: (a as any).discoveredAt || (a as any).payload?.discoveredAt,
-        payload: (a as any).payload || (a as any),
+        rowId: (job as any).rowId || 0,
+        isHourlyFresh: Boolean((job as any).isHourlyFresh || (job as any).payload?.isHourlyFresh || (job as any).hourlySource),
+        discoveredAt: (job as any).discoveredAt || (job as any).payload?.discoveredAt,
+        payload: (job as any).payload || (job as any),
       }, now);
-      const scoreB = computeJobPriorityScore({
-        id: b.id,
-        company: b.company,
-        title: b.title,
-        url: b.jobUrl || (b as any).url,
-        createdAtMs: bTime,
-        rowId: (b as any).rowId || 0,
-        isHourlyFresh: Boolean((b as any).isHourlyFresh || (b as any).payload?.isHourlyFresh || (b as any).hourlySource),
-        discoveredAt: (b as any).discoveredAt || (b as any).payload?.discoveredAt,
-        payload: (b as any).payload || (b as any),
-      }, now);
-      return scoreB - scoreA;
+      return { job, score };
     });
+    scoredCandidates.sort((a, b) => b.score - a.score);
+    const sortedEligible = scoredCandidates.map((s) => s.job);
 
     const hostHealthPath = path.join(stateDir, 'host-health.json');
-    const interleavedJobs = interleaveJobsByProvider(eligible);
+    const interleavedJobs = interleaveJobsByProvider(sortedEligible);
 
-    const lanes = partitionJobsIntoProviderLanes(eligible);
+    const lanes = partitionJobsIntoProviderLanes(sortedEligible);
     const activeLanes = (Object.keys(lanes) as Array<keyof typeof lanes>).filter(k => (lanes[k]?.length ?? 0) > 0);
     console.log(
       `[DRAIN] Eligible queued backfill jobs: ${eligible.length} partitioned into provider lanes: ${activeLanes.map(k => `${k}(${lanes[k]?.length ?? 0})`).join(', ')}. Running drain (budget: ${timeBudgetMinutes}m, max: ${maxJobs})...`
@@ -742,7 +723,7 @@ async function main(): Promise<void> {
 
       const jobStartedAt = new Date().toISOString();
       const jobStartMs = Date.now();
-      let report: BotRunReport;
+      let report: BotRunReport | undefined;
       // Ticket GEN-102: Wait until network online BEFORE starting hard timeout clock
       await waitUntilNetworkOnline();
 
@@ -774,6 +755,12 @@ async function main(): Promise<void> {
         }
       } finally {
         await childRunner.close().catch(() => {});
+        if (/timed out/i.test(report?.reason || '') || /runner closed/i.test(report?.reason || '')) {
+          await laneRunner.close().catch(() => {});
+          for (const lockFile of ['SingletonLock', 'SingletonCookie', 'SingletonSocket']) {
+            try { fs.unlinkSync(path.join(laneProfileDir, lockFile)); } catch {}
+          }
+        }
       }
 
       const jobFinishedAt = report.endTime || new Date().toISOString();

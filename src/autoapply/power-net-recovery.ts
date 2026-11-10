@@ -55,65 +55,77 @@ export function recoverPowerOffAndNetOffJobs(sqlitePath = 'state/autoapply/porta
     return { recoveredInFlight: 0, recoveredNetOffDino: 0 };
   }
 
-  const db = new DatabaseSync(resolvedDbPath);
-  db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA busy_timeout = 15000;');
-
-  // Recover any job that was marked in_progress or interrupted by power-off
-  let recoveredInFlight = 0;
+  let db: DatabaseSync | null = null;
   try {
-    if (fs.existsSync(IN_FLIGHT_JOURNAL)) {
-      const raw = fs.readFileSync(IN_FLIGHT_JOURNAL, 'utf8');
-      const journal = JSON.parse(raw) as Record<string, InFlightJobCheckpoint>;
-      const CONFIRMATION_REGEX = /(?:\/confirmation|\/thank(?:s|[-_]?you)|\/application[-_]?submitted|\/submitted)(?:\/|$|\?|#)|[?&](?:submitted|applied|confirmation)=(?:true|1)\b/i;
-      for (const jobId of Object.keys(journal)) {
-        const cpFile = path.resolve('state/autoapply/portal-review/applications', jobId, 'checkpoint.json');
-        let isConfirmed = false;
-        let confirmedUrl = '';
-        if (fs.existsSync(cpFile)) {
-          try {
-            const cp = JSON.parse(fs.readFileSync(cpFile, 'utf8'));
-            if (CONFIRMATION_REGEX.test(cp.currentUrl || '') || Boolean(cp.report?.receipt)) {
-              isConfirmed = true;
-              confirmedUrl = cp.currentUrl || cp.report?.receipt?.url || '';
-            }
-          } catch {}
-        }
-        if (isConfirmed) {
-          const row = db.prepare(`SELECT payload FROM applications WHERE id = ?`).get(jobId) as { payload?: string } | undefined;
-          let p: any = {};
-          try { p = JSON.parse(row?.payload || '{}'); } catch {}
-          p.status = 'applied';
-          p.appliedAt = p.appliedAt || new Date().toISOString();
-          p.receipt = { url: confirmedUrl, text: 'Application Submitted', verifiedAt: new Date().toISOString() };
-          db.prepare(`UPDATE applications SET status = 'applied', payload = ? WHERE id = ?`).run(JSON.stringify(p), jobId);
-        } else {
-          const res = db
-            .prepare(`UPDATE applications SET status = 'queued' WHERE id = ? AND status NOT IN ('applied', 'skipped')`)
-            .run(jobId);
-          recoveredInFlight += Number(res.changes || 0);
-        }
-      }
-      fs.writeFileSync(IN_FLIGHT_JOURNAL, '{}', 'utf8');
-    }
-  } catch {}
+    db = new DatabaseSync(resolvedDbPath);
+    try { db.exec('PRAGMA busy_timeout = 15000;'); } catch {}
+    try { db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;'); } catch {}
+  } catch (err) {
+    return { recoveredInFlight: 0, recoveredNetOffDino: 0 };
+  }
 
-  // Recover any job that failed due to Wi-Fi drop ("This site can't be reached" / "Press space to play" / ERR_INTERNET_DISCONNECTED)
-  const netOffRes = db
-    .prepare(
-      `UPDATE applications SET status = 'queued' WHERE status = 'failed' AND (
-        payload LIKE '%This site can%t be reached%'
-        OR payload LIKE '%Press space to play%'
-        OR payload LIKE '%ERR_INTERNET_DISCONNECTED%'
-        OR payload LIKE '%ERR_NAME_NOT_RESOLVED%'
-        OR payload LIKE '%ERR_NETWORK_CHANGED%'
-        OR payload LIKE '%ERR_CONNECTION_RESET%'
-        OR payload LIKE '%wifi_drop_requeued%'
-      )`
-    )
-    .run();
-  const recoveredNetOffDino = Number(netOffRes.changes || 0);
-  db.close();
-  return { recoveredInFlight, recoveredNetOffDino };
+  try {
+    // Recover any job that was marked in_progress or interrupted by power-off
+    let recoveredInFlight = 0;
+    try {
+      if (fs.existsSync(IN_FLIGHT_JOURNAL)) {
+        const raw = fs.readFileSync(IN_FLIGHT_JOURNAL, 'utf8');
+        const journal = JSON.parse(raw) as Record<string, InFlightJobCheckpoint>;
+        const CONFIRMATION_REGEX = /(?:\/confirmation|\/thank(?:s|[-_]?you)|\/application[-_]?submitted|\/submitted)(?:\/|$|\?|#)|[?&](?:submitted|applied|confirmation)=(?:true|1)\b/i;
+        for (const jobId of Object.keys(journal)) {
+          const cpFile = path.resolve('state/autoapply/portal-review/applications', jobId, 'checkpoint.json');
+          let isConfirmed = false;
+          let confirmedUrl = '';
+          if (fs.existsSync(cpFile)) {
+            try {
+              const cp = JSON.parse(fs.readFileSync(cpFile, 'utf8'));
+              if (CONFIRMATION_REGEX.test(cp.currentUrl || '') || Boolean(cp.report?.receipt)) {
+                isConfirmed = true;
+                confirmedUrl = cp.currentUrl || cp.report?.receipt?.url || '';
+              }
+            } catch {}
+          }
+          if (isConfirmed) {
+            const row = db.prepare(`SELECT payload FROM applications WHERE id = ?`).get(jobId) as { payload?: string } | undefined;
+            let p: any = {};
+            try { p = JSON.parse(row?.payload || '{}'); } catch {}
+            p.status = 'applied';
+            p.appliedAt = p.appliedAt || new Date().toISOString();
+            p.receipt = { url: confirmedUrl, text: 'Application Submitted', verifiedAt: new Date().toISOString() };
+            db.prepare(`UPDATE applications SET status = 'applied', payload = ? WHERE id = ?`).run(JSON.stringify(p), jobId);
+          } else {
+            const res = db
+              .prepare(`UPDATE applications SET status = 'queued' WHERE id = ? AND status NOT IN ('applied', 'skipped')`)
+              .run(jobId);
+            recoveredInFlight += Number(res.changes || 0);
+          }
+        }
+        fs.writeFileSync(IN_FLIGHT_JOURNAL, '{}', 'utf8');
+      }
+    } catch {}
+
+    // Recover any job that failed due to Wi-Fi drop ("This site can't be reached" / "Press space to play" / ERR_INTERNET_DISCONNECTED)
+    let recoveredNetOffDino = 0;
+    try {
+      const netOffRes = db
+        .prepare(
+          `UPDATE applications SET status = 'queued' WHERE status = 'failed' AND (
+            payload LIKE '%This site can%t be reached%'
+            OR payload LIKE '%Press space to play%'
+            OR payload LIKE '%ERR_INTERNET_DISCONNECTED%'
+            OR payload LIKE '%ERR_NAME_NOT_RESOLVED%'
+            OR payload LIKE '%ERR_NETWORK_CHANGED%'
+            OR payload LIKE '%ERR_CONNECTION_RESET%'
+            OR payload LIKE '%wifi_drop_requeued%'
+          )`
+        )
+        .run();
+      recoveredNetOffDino = Number(netOffRes.changes || 0);
+    } catch {}
+    return { recoveredInFlight, recoveredNetOffDino };
+  } finally {
+    try { db?.close(); } catch {}
+  }
 }
 
 export function markJobInFlightCheckpoint(cp: InFlightJobCheckpoint): void {

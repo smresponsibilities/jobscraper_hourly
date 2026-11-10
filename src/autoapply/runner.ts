@@ -1,7 +1,8 @@
 import { chromium, type Browser, type BrowserContext, type Page, type Locator, type Frame, type Request } from 'patchright';
-import { copyFileSync, mkdirSync, readFileSync, writeFileSync, renameSync, existsSync, unlinkSync } from 'node:fs';
+import { copyFileSync, mkdirSync, readFileSync, writeFileSync, renameSync, existsSync, unlinkSync, utimesSync } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { execSync } from 'node:child_process';
 import type { BotRunReport, CandidateExtendedProfile, RunnerMode } from './types.js';
 import { classifyAtsField } from './classifier.js';
 import { matchBestOption } from './aihawk.js';
@@ -856,36 +857,57 @@ export class AutoApplyRunner {
           .catch(() => 0);
       }
 
-      // Ticket GEN-224 & GEN-228: If visible inputs remain < 2 or redirected away, immediately redirect to embed URL
+      // Ticket GEN-224 & GEN-228 & GEN-305: If visible inputs remain < 2 or redirected away, immediately redirect to embed URL (legacy boards only)
       if (ghVisibleInputCount < 2 && ghMatch && ghMatch[1] && ghMatch[2]) {
         const ghSlug = ghMatch[1];
         const ghJobId = ghMatch[2];
-        const embedUrl = `https://boards.greenhouse.io/embed/job_app?for=${encodeURIComponent(ghSlug)}&token=${encodeURIComponent(ghJobId)}`;
-        try {
-          await page.goto(embedUrl, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
-          const embedInputs = await page
-            .locator('#first_name, #email, input:not([type="hidden"])')
-            .first()
-            .waitFor({ state: 'visible', timeout: 3500 })
-            .then(() => true)
-            .catch(() => false);
-
-          if (!embedInputs) {
-            // Embed disabled on this board! Fall back to hosted board
-            const hostedUrl = `https://job-boards.greenhouse.io/${encodeURIComponent(ghSlug)}/jobs/${encodeURIComponent(ghJobId)}`;
-            await page.goto(hostedUrl, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
-            const applyBtn = page.locator('button.btn--pill:has-text("Apply"), button:has-text("Apply"), a.btn--pill:has-text("Apply")').first();
-            if (await applyBtn.isVisible().catch(() => false)) {
-              await applyBtn.click({ timeout: 3000 }).catch(() => {});
-            }
-            await page
-              .evaluate(() => {
-                const formEl = document.querySelector('#application-form, #application_form, #app');
-                if (formEl) formEl.scrollIntoView({ block: 'start' });
-              })
-              .catch(() => {});
+        const isJobBoardsRemix = page.url().includes('job-boards.greenhouse.io');
+        if (isJobBoardsRemix) {
+          // On modern Greenhouse Remix (job-boards.greenhouse.io), embed/job_app is unsupported and redirects back.
+          // Instead, ensure apply button is clicked and form is scrolled into view without 30s bounce loops.
+          const applyBtn = page.locator('button.btn--pill:has-text("Apply"), button:has-text("Apply"), a.btn--pill:has-text("Apply"), [data-mapped="true"] button').first();
+          if (await applyBtn.isVisible().catch(() => false)) {
+            await applyBtn.click({ timeout: 3000 }).catch(() => {});
           }
-        } catch {}
+          await page
+            .evaluate(() => {
+              const formEl = document.querySelector('#application-form, #application_form, #app, form');
+              if (formEl) formEl.scrollIntoView({ block: 'start' });
+            })
+            .catch(() => {});
+          await page
+            .locator('#first_name, #email, input[name="first_name"], input[name="email"], input:not([type="hidden"])')
+            .first()
+            .waitFor({ state: 'visible', timeout: 3000 })
+            .catch(() => {});
+        } else {
+          const embedUrl = `https://boards.greenhouse.io/embed/job_app?for=${encodeURIComponent(ghSlug)}&token=${encodeURIComponent(ghJobId)}`;
+          try {
+            await page.goto(embedUrl, { waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => {});
+            const embedInputs = await page
+              .locator('#first_name, #email, input:not([type="hidden"])')
+              .first()
+              .waitFor({ state: 'visible', timeout: 3500 })
+              .then(() => true)
+              .catch(() => false);
+
+            if (!embedInputs) {
+              // Embed disabled on this board! Fall back to hosted board
+              const hostedUrl = `https://job-boards.greenhouse.io/${encodeURIComponent(ghSlug)}/jobs/${encodeURIComponent(ghJobId)}`;
+              await page.goto(hostedUrl, { waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => {});
+              const applyBtn = page.locator('button.btn--pill:has-text("Apply"), button:has-text("Apply"), a.btn--pill:has-text("Apply")').first();
+              if (await applyBtn.isVisible().catch(() => false)) {
+                await applyBtn.click({ timeout: 3000 }).catch(() => {});
+              }
+              await page
+                .evaluate(() => {
+                  const formEl = document.querySelector('#application-form, #application_form, #app');
+                  if (formEl) formEl.scrollIntoView({ block: 'start' });
+                })
+                .catch(() => {});
+            }
+          } catch {}
+        }
       }
     }
   }
@@ -1267,6 +1289,54 @@ export class AutoApplyRunner {
     this.frameEpochs.clear();
   }
 
+  public aborted = false;
+
+  public async forceKillBrowser(): Promise<void> {
+    this.aborted = true;
+    this.isClosing = true;
+    const browserPid = (this.browser as any)?.process?.()?.pid;
+    const closeWithTimeout = async (action: () => Promise<any>, timeoutMs = 2500) => {
+      let timer: NodeJS.Timeout;
+      const timeoutPromise = new Promise((resolve) => {
+        timer = setTimeout(resolve, timeoutMs);
+      });
+      try {
+        await Promise.race([action().catch(() => {}), timeoutPromise]);
+      } finally {
+        clearTimeout(timer!);
+      }
+    };
+
+    try {
+      if (this.ownsContext) {
+        await closeWithTimeout(() => this.context?.close() ?? Promise.resolve(), 2500);
+        await closeWithTimeout(() => this.browser?.close() ?? Promise.resolve(), 2500);
+      } else if (this.ownsIsolatedContext) {
+        await closeWithTimeout(() => this.context?.close() ?? Promise.resolve(), 2500);
+      } else {
+        for (const page of this.applicationPages) {
+          await closeWithTimeout(() => page.close(), 2500);
+        }
+        if (this.page && !this.applicationPages.has(this.page)) {
+          await closeWithTimeout(() => this.page!.close(), 2500);
+        }
+      }
+    } catch {}
+
+    if (browserPid && process.platform === 'win32') {
+      try {
+        execSync(`taskkill /F /T /PID ${browserPid}`, { stdio: 'ignore', timeout: 3000 });
+      } catch {}
+    }
+
+    this.browser = null;
+    this.context = null;
+    this.page = null;
+    this.applicationPages.clear();
+    this.dependentRequests.clear();
+    this.frameEpochs.clear();
+  }
+
   public isConnected(): boolean {
     if (this.browser) return this.browser.isConnected();
     if (this.context) {
@@ -1417,22 +1487,29 @@ export class AutoApplyRunner {
       for (const lockFile of ['SingletonLock', 'SingletonCookie', 'SingletonSocket']) {
         try { unlinkSync(path.join(browserProfileDir, lockFile)); } catch {}
       }
-      try {
-        this.context = await chromium.launchPersistentContext(browserProfileDir, {
-          channel: 'chrome',
-          headless: effectiveHeadless,
-          args,
-          timeout: 10000,
-          viewport: null,
-          locale: 'en-IN',
-          timezoneId: 'Asia/Calcutta',
-        });
-        (this.context as any).__resilientTier = 1;
-      } catch (err: any) {
-        console.warn(`[RUNNER] Persistent launch failed on ${browserProfileDir}: ${err?.message || err}. Falling back to clean isolated browser.`);
-        for (const lockFile of ['SingletonLock', 'SingletonCookie', 'SingletonSocket']) {
-          try { unlinkSync(path.join(browserProfileDir, lockFile)); } catch {}
+      if (process.platform !== 'win32') {
+        try {
+          this.context = await chromium.launchPersistentContext(browserProfileDir, {
+            channel: 'chrome',
+            headless: effectiveHeadless,
+            args,
+            timeout: 10000,
+            viewport: null,
+            locale: 'en-IN',
+            timezoneId: 'Asia/Calcutta',
+          });
+          (this.context as any).__resilientTier = 1;
+        } catch (err: any) {
+          console.warn(`[RUNNER] Persistent launch failed on ${browserProfileDir}: ${err?.message || err}. Falling back to clean isolated browser.`);
+          for (const lockFile of ['SingletonLock', 'SingletonCookie', 'SingletonSocket']) {
+            try { unlinkSync(path.join(browserProfileDir, lockFile)); } catch {}
+          }
+          this.browser = await chromium.launch({ channel: 'chrome', headless: effectiveHeadless, args });
+          const storageStatePath = sessionDir ? path.join(sessionDir, 'storage-state.json') : undefined;
+          this.context = await createResilientBrowserContext(this.browser, storageStatePath);
+          this.ownsContext = true;
         }
+      } else {
         this.browser = await chromium.launch({ channel: 'chrome', headless: effectiveHeadless, args });
         const storageStatePath = sessionDir ? path.join(sessionDir, 'storage-state.json') : undefined;
         this.context = await createResilientBrowserContext(this.browser, storageStatePath);
@@ -2059,10 +2136,18 @@ export class AutoApplyRunner {
       const activePage = this.page && !this.page.isClosed() ? this.page : Array.from(this.applicationPages).find(p => !p.isClosed());
       if (activePage) {
         const hasVisibleErrors = await activePage.evaluate(() => {
-          const errors = document.querySelectorAll('[aria-invalid="true"], input:invalid, select:invalid, textarea:invalid, .error-message:not(:empty)');
-          for (const el of Array.from(errors)) {
+          const invalidInputs = Array.from(document.querySelectorAll<HTMLElement>('[aria-invalid="true"], input:invalid, select:invalid, textarea:invalid'));
+          for (const el of invalidInputs) {
             const rect = el.getBoundingClientRect();
-            if (rect.width > 0 && rect.height > 0) return true;
+            if (rect.width > 0 && rect.height > 0 && window.getComputedStyle(el).visibility !== 'hidden') return true;
+          }
+          const msgEls = Array.from(document.querySelectorAll<HTMLElement>('.error-message, [role="alert"], .field-error'));
+          for (const el of msgEls) {
+            const txt = (el.textContent || '').trim();
+            if (txt.length > 0) {
+              const rect = el.getBoundingClientRect();
+              if (rect.width > 0 && rect.height > 0 && window.getComputedStyle(el).visibility !== 'hidden') return true;
+            }
           }
           return false;
         }).catch(() => false);
@@ -3179,13 +3264,34 @@ export class AutoApplyRunner {
                   await input.setChecked(targetBool, { force: true }).catch(() => {});
                 });
             }
-          } else if (info.tag === 'button' && (info.type === 'button' || !info.type) && await input.evaluate(el => el.classList.contains('ashby-application-form-input-yesno-option') || el.hasAttribute('data-autoapply-btngroup-option') || !!el.closest('.ashby-application-form-input-yesno, [role="radiogroup"]'))) {
+          } else if (info.tag === 'button' || (info.tag !== 'input' && info.type === 'button')) {
             const cluster = input.locator('..');
-            const handled = await selectAshbyYesNoOrCheckboxGroup(cluster, value ?? 'Yes').catch(() => false);
+            let handled = await selectAshbyYesNoOrCheckboxGroup(cluster, value ?? 'Yes').catch(() => false);
+            if (!handled) {
+              const normVal = typeof value === 'boolean' ? (value ? 'yes' : 'no') : String(value ?? '').trim().toLowerCase();
+              const isYes = /^(true|yes|1|i agree)$/i.test(normVal);
+              const isNo = /^(false|no|0|decline|disagree)$/i.test(normVal);
+              const btnTxt = (await input.innerText().catch(() => '')).trim().toLowerCase();
+              const match =
+                (isYes && /^yes\b/i.test(btnTxt)) ||
+                (isNo && /^no\b/i.test(btnTxt)) ||
+                btnTxt === normVal ||
+                (normVal && btnTxt.includes(normVal)) ||
+                (normVal && normVal.includes(btnTxt) && btnTxt.length > 2);
+              if (match) {
+                await input.scrollIntoViewIfNeeded().catch(() => {});
+                await input.click({ force: true, timeout: 2500 }).catch(() => {});
+                handled = true;
+              }
+            }
             if (handled) {
               action.status = 'filled';
               action.value = String(value ?? 'Yes');
               report.fieldsFilled++;
+              this.activeWatchdog?.heartbeat(`filled_${key}`);
+              continue;
+            } else {
+              action.status = 'skipped';
               continue;
             }
           } else {
@@ -3268,6 +3374,7 @@ export class AutoApplyRunner {
           if (info.type === 'file' && document) uploadedFiles.set(key, document);
           report.fieldsFilled++;
           this.activeWatchdog?.heartbeat(`filled_${key}`);
+          if (report.fieldsFilled === 1 || report.fieldsFilled % 4 === 0) void this.checkpoint(options, report);
           const isLargeForm = fields.length >= 10 || ['greenhouse', 'ashby', 'lever'].includes(report.ats);
           if (options.mode === 'stealth') {
             await this.page!.waitForTimeout(isLargeForm ? getHumanKeyDelay(20, 50) : getHumanKeyDelay(50, 350));
@@ -3310,6 +3417,20 @@ export class AutoApplyRunner {
                 await input.blur().catch(() => {});
               }
             }
+
+            // Ticket GEN-302: If phone is valid 10 digits and has no visible error message text, clear stale aria-invalid
+            await input.evaluate((el) => {
+              const inp = el as HTMLInputElement;
+              const val = (inp.value || '').replace(/\D/g, '');
+              if (val.length === 10 || (val.length === 12 && val.startsWith('91'))) {
+                const wrapper = inp.closest('[class*="field" i], [class*="input" i], .field, [data-automation-id^="formField-"]');
+                const errText = (wrapper?.querySelector('[id$="-error"], .error-message, .field-error')?.textContent || '').trim();
+                if (!errText) {
+                  inp.setAttribute('aria-invalid', 'false');
+                  (inp as any).setCustomValidity?.('');
+                }
+              }
+            }).catch(() => {});
           }
           await frame.evaluate(`() => new Promise(resolve => {
             let quiet;
@@ -3410,7 +3531,19 @@ export class AutoApplyRunner {
       validateProfile(options.profile);
       this.profile = options.profile;
       const timeoutConfig = getProviderTimeoutConfig(options.url);
-      const watchdog = new JobActivityWatchdog(timeoutConfig.maxTotalMs, timeoutConfig.maxIdleMs);
+      const effectiveMaxTotalMs = Math.max(timeoutConfig.maxTotalMs, options.timeoutMs ?? 0);
+      const watchdog = new JobActivityWatchdog(effectiveMaxTotalMs, timeoutConfig.maxIdleMs);
+      watchdog.onHeartbeat = () => {
+        if (options.sessionDir) {
+          try {
+            const cpPath = path.join(options.sessionDir, 'checkpoint.json');
+            if (existsSync(cpPath)) {
+              const now = new Date();
+              utimesSync(cpPath, now, now);
+            }
+          } catch {}
+        }
+      };
       this.activeWatchdog = watchdog;
       const maxSteps = options.maxSteps ?? (options.url.toLowerCase().includes('myworkdayjobs.com') ? 14 : options.url.toLowerCase().includes('smartrecruiters.com') ? 6 : 12);
       if (!Number.isInteger(maxSteps) || maxSteps < 1) throw new Error('maxSteps must be a positive integer');
@@ -3684,6 +3817,11 @@ export class AutoApplyRunner {
       const timeout = options.timeoutMs ?? 10000;
       let reviewedSignature: string | undefined;
       for (let step = 1; step <= maxSteps; step++) {
+        if (this.isClosing || !this.page || this.page.isClosed()) {
+          report.status = report.submissionAttempted ? 'submitted' : 'failed';
+          report.reason = 'Job timed out or runner closed';
+          return report;
+        }
         options.onPhase?.('step', step);
         const stepStarted = Date.now();
         report.stepsTraversed = step;
@@ -3916,7 +4054,25 @@ export class AutoApplyRunner {
               }
             }
           }
-          if (invalid || hasUnresolvedFailure) {
+          let visibleInvalidCount = 0;
+          if (this.page && !this.page.isClosed()) {
+            for (const frame of this.page.frames()) {
+              visibleInvalidCount += await frame.locator('input:invalid,select:invalid,textarea:invalid,[aria-invalid="true"]').filter({ visible: true }).count().catch(() => 0);
+            }
+          }
+          if (visibleInvalidCount > 0 && this.page && !this.page.isClosed()) {
+            for (const frame of this.page.frames()) {
+              await healInvalidFieldsAndRetrySubmit(frame, options.profile.personal.email, options.profile.personal.phone, this.attemptedFieldRefs).catch(() => 0);
+            }
+            visibleInvalidCount = 0;
+            for (const frame of this.page.frames()) {
+              visibleInvalidCount += await frame.locator('input:invalid,select:invalid,textarea:invalid,[aria-invalid="true"]').filter({ visible: true }).count().catch(() => 0);
+            }
+          }
+          if (visibleInvalidCount === 0) {
+            invalid = false;
+          }
+          if (invalid) {
             if (report.fieldsFilled >= 3 && !process.env.AUTOAPPLY_DISABLE_HITL_POPUP) {
               const missingQuestions = report.actions
                 .filter(a => a.status === 'failed' && a.error === 'Required answer is missing')
@@ -3941,7 +4097,7 @@ export class AutoApplyRunner {
                 }
               }
             }
-            if (invalid || hasUnresolvedFailure) {
+            if (invalid) {
               report.reviewKind = 'answers';
               report.reason = 'Validation or field errors require review';
               await this.recordUnknownFieldsFromErrors(options, report);
@@ -4266,6 +4422,7 @@ export class AutoApplyRunner {
         const deadline = Date.now() + Math.min(timeout, 25_000);
         let lastMailPoll = 0;
         let captchaCheckedAfterSubmit = false;
+        let inpageOtpAttempted = false;
         const submitClickedTime = Date.now();
         do {
           watchdog.heartbeat('post_submit_poll');
@@ -4298,6 +4455,21 @@ export class AutoApplyRunner {
             }
           }
 
+          // Ticket GEN-302 / GEN-304: Check for HTTP 428 Precondition Required or in-page security code prompt on OTP-supported ATS
+          const has428 = (report.submission?.requests || []).some(r => r.status === 428);
+          if (!report.receipt && !this.page!.isClosed() && ['greenhouse', 'workday', 'smartrecruiters', 'unknown'].includes(report.ats) && (has428 || (!inpageOtpAttempted && Date.now() - submitClickedTime >= 3500))) {
+            inpageOtpAttempted = true;
+            for (const f of this.page!.frames()) {
+              const verified = await completeInPageEmailVerificationIfPrompted(this.page!, f, () => this.activeWatchdog?.heartbeat('inpage_otp')).catch(() => false);
+              if (verified) {
+                await this.page!.waitForTimeout(3000);
+                report.receipt ||= await this.receipt();
+                if (report.receipt) { report.status = 'submitted'; report.reason = 'Submission confirmation observed'; break; }
+              }
+            }
+            if (report.receipt) break;
+          }
+
           await new Promise(resolve => setTimeout(resolve, 100));
         } while (Date.now() < deadline);
         if (!report.receipt) {
@@ -4328,6 +4500,19 @@ export class AutoApplyRunner {
                   await this.page!.waitForTimeout(3500);
                   report.receipt ||= await this.receipt();
                   if (report.receipt) break;
+
+                  // Ticket GEN-302: Check for in-page email OTP / verification prompt after healed retry submit
+                  if (!report.receipt && !this.page!.isClosed()) {
+                    for (const f of this.page!.frames()) {
+                      const verified = await completeInPageEmailVerificationIfPrompted(this.page!, f, () => this.activeWatchdog?.heartbeat('inpage_otp')).catch(() => false);
+                      if (verified) {
+                        await this.page!.waitForTimeout(3000);
+                        report.receipt ||= await this.receipt();
+                        if (report.receipt) break;
+                      }
+                    }
+                  }
+                  if (report.receipt) break;
                 }
               }
             }
@@ -4343,6 +4528,18 @@ export class AutoApplyRunner {
                 else await retrySubmit.click();
                 await this.page!.waitForTimeout(3000);
                 report.receipt ||= await this.receipt();
+
+                // Ticket GEN-302: Check for in-page email OTP / verification prompt after self-healed retry submit
+                if (!report.receipt && !this.page!.isClosed()) {
+                  for (const f of this.page!.frames()) {
+                    const verified = await completeInPageEmailVerificationIfPrompted(this.page!, f, () => this.activeWatchdog?.heartbeat('inpage_otp')).catch(() => false);
+                    if (verified) {
+                      await this.page!.waitForTimeout(3000);
+                      report.receipt ||= await this.receipt();
+                      if (report.receipt) break;
+                    }
+                  }
+                }
               }
             }
           }

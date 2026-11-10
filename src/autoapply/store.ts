@@ -150,9 +150,28 @@ export class ApplicationStore {
     });
   }
 
-  list(): AutoaplyJobItem[] {
+  get(id: string): AutoaplyJobItem | undefined {
+    const row = this.db.prepare('SELECT id,payload,status,canonical_key,normalized_url FROM applications WHERE candidate_id=? AND id=? LIMIT 1').get(this.candidateId, id) as { id: string; payload: string; status: AutoaplyJobItem['status']; canonical_key: string | null; normalized_url: string } | undefined;
+    if (!row) return undefined;
+    let p: any = {};
+    try { p = JSON.parse(row.payload); } catch {}
+    const targetUrl = p.jobUrl || p.url || row.normalized_url;
+    return {
+      ...p,
+      id: row.id,
+      status: row.status,
+      jobUrl: targetUrl,
+      canonicalKey: row.canonical_key || undefined,
+    };
+  }
+
+  list(status?: AutoaplyJobItem['status']): AutoaplyJobItem[] {
     this.recover();
-    return (this.db.prepare('SELECT id,payload,status,canonical_key,normalized_url FROM applications WHERE candidate_id=? ORDER BY rowid').all(this.candidateId) as Array<{ id: string; payload: string; status: AutoaplyJobItem['status']; canonical_key: string | null; normalized_url: string }>).map(row => {
+    const query = status
+      ? 'SELECT id,payload,status,canonical_key,normalized_url FROM applications WHERE candidate_id=? AND status=? ORDER BY rowid'
+      : 'SELECT id,payload,status,canonical_key,normalized_url FROM applications WHERE candidate_id=? ORDER BY rowid';
+    const params = status ? [this.candidateId, status] : [this.candidateId];
+    return (this.db.prepare(query).all(...params) as Array<{ id: string; payload: string; status: AutoaplyJobItem['status']; canonical_key: string | null; normalized_url: string }>).map(row => {
       let p: any = {};
       try { p = JSON.parse(row.payload); } catch {}
       const targetUrl = p.jobUrl || p.url || row.normalized_url;

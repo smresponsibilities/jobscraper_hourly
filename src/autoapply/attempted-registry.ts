@@ -190,27 +190,12 @@ export function filterUnattemptedJobs(
 ): AutoaplyJobItem[] {
   const registry = loadAttemptedRegistry();
   const unattempted: AutoaplyJobItem[] = [];
-  const prunedIds: string[] = [];
 
   for (const job of jobs) {
     const alreadyRun = isJobAlreadyAttempted(job.id, job.jobUrl, registry);
-    if (alreadyRun) {
-      prunedIds.push(job.id);
-    } else {
+    if (!alreadyRun) {
       unattempted.push(job);
     }
-  }
-
-  if (prunedIds.length > 0 && dbPath && fs.existsSync(dbPath)) {
-    try {
-      const db = new DatabaseSync(dbPath);
-      db.exec('PRAGMA busy_timeout = 15000;');
-      const stmt = db.prepare(`UPDATE applications SET status = 'failed' WHERE id = ? AND status = 'queued'`);
-      for (const id of prunedIds) {
-        stmt.run(id);
-      }
-      db.close();
-    } catch {}
   }
 
   return unattempted;

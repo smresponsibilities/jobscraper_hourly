@@ -21,7 +21,8 @@ export function generateParkIssuesScoreboard(
     return { generatedAt: new Date().toISOString(), statusTotals: {}, paretoIssues: [] };
   }
 
-  const db = new DatabaseSync(sqlitePath);
+  const db = new DatabaseSync(sqlitePath, { readOnly: true });
+  db.exec('PRAGMA busy_timeout = 5000;');
   try {
     const totalsRows = db.prepare('SELECT status, COUNT(*) as cnt FROM applications GROUP BY status').all() as Array<{
       status: string;

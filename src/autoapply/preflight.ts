@@ -203,7 +203,7 @@ export async function preflightJob(job: IntakeJob, profile: CandidateExtendedPro
   // Bare "Remote" does not establish that the employer hires from India.
   if (!INDIA.test(location) && !/\b(?:worldwide|global|anywhere)\b/i.test(location)) return result('skipped', 'unconfirmed_india_remote', description);
   if (isServiceCompany(job.company)) return result('skipped', 'ineligible_service_company', description);
-  if (!/\b(?:software|sde|swe|developer|data|machine learning|ml|backend|back[- ]end|full[- ]stack|graduate engineer(?:ing)?)\b/i.test(title)) return result('skipped', 'ineligible_role', description);
+  if (!/\b(?:software|sde|swe|developer|data|machine learning|ml|backend|back[- ]end|full[- ]stack|frontend|front[- ]end|web|mobile|android|ios|systems|infrastructure|qa|quality assurance|sdet|test|platform|devops|cloud|security|ai|engineer(?:ing)?|graduate engineer(?:ing)?)\b/i.test(title)) return result('skipped', 'ineligible_role', description);
   if (!/\b(?:senior|sr\.?|staff|principal|lead)\b/i.test(title) && /\bto be successful as (?:an? )?(?:senior|staff|principal|lead)\s+(?:software|data|backend|full[- ]stack)\s+engineer\b/i.test(description)) return result('retry', 'source_role_level_conflict', description);
   const numberWords: Record<string, number> = { zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
   const experienceText = description.replace(/\b(zero|one|two|three|four|five|six|seven|eight|nine|ten)\b(?=\s*(?:(?:\+|[-–—]|to)\s*(?:\d{1,2}|zero|one|two|three|four|five|six|seven|eight|nine|ten)|or\s+more)?\s*(?:years?|yrs?)\b)/gi, word => String(numberWords[word.toLowerCase()])).replace(/\b(\d{1,2})\s+or\s+more\s+(years?|yrs?)\b/gi, '$1+ $2');

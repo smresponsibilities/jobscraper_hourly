@@ -76,6 +76,20 @@ export function reapStrayChrome(): number {
   }
 }
 
+export function reapStrayChromeForProfile(profileDir: string): number {
+  if (process.platform !== 'win32') return 0;
+  try {
+    const normDir = path.basename(profileDir);
+    const output = execSync(
+      `powershell -NoProfile -Command "$c = 0; Get-CimInstance Win32_Process -Filter \\"Name = 'chrome.exe'\\" | Where-Object { \$_.CommandLine -like '*${normDir}*' } | ForEach-Object { Stop-Process -Id \$_.ProcessId -Force -ErrorAction SilentlyContinue; \$c++ }; \$c"`,
+      { encoding: 'utf8', timeout: 5000 }
+    ).trim();
+    return parseInt(output, 10) || 0;
+  } catch {
+    return 0;
+  }
+}
+
 export function countAutomationChrome(): number {
   if (process.platform !== 'win32') return 0;
   try {
@@ -160,8 +174,8 @@ export function selectDiversifiedMultiLaneChunk(
     const key = getKey(job.jobUrl);
     const company = getCompany(job.company);
 
-    // Ticket GEN-242 & GEN-283: Breadth-first pacing: max 2 jobs per company/tenant per 40-job chunk (0 roles permanently cut)
-    const maxAllowed = 2;
+    // Ticket GEN-242, GEN-283 & GEN-304: Breadth-first pacing: max 1 job per company/tenant per chunk to eliminate intra-chunk host cooldown collisions
+    const maxAllowed = 1;
 
     const currentKeyCount = tenantCounts.get(key) || 0;
     const currentCompCount = company ? (companyCounts.get(company) || 0) : 0;
@@ -359,7 +373,7 @@ export async function runWithDynamicActivityTimeout<T>(
   label = 'Job',
   sessionDirOrJobId?: string
 ): Promise<T> {
-  const maxTimeoutMs = Math.round(baseTimeoutMs * 1.4);
+  const maxTimeoutMs = Math.round(baseTimeoutMs * 1.5);
   const startTime = Date.now();
   let currentDeadline = startTime + baseTimeoutMs;
   let lastCheckedCheckpointMtime = 0;
@@ -558,7 +572,7 @@ export async function runOvernightMarathon(config: {
         infiniteMode: true,
       });
 
-      const allQueued = queue.list().filter(j => j.status === 'queued');
+      const allQueued = queue.list('queued');
       if (allQueued.length === 0) {
         console.log(`[MARATHON] No more queued jobs remaining in queue.sqlite. Marathon complete!`);
         queue.close();
@@ -574,16 +588,13 @@ export async function runOvernightMarathon(config: {
         }
         // Ticket GEN-91: Fast-fail non-direct ATS jobs
         if (!targetUrl || !isSupportedDirectAtsJobUrl(targetUrl)) {
-          queue.skip(j.id, 'unsupported_non_direct_ats_url');
           continue;
         }
         if (isStrictlyIsolatedTenant(j.company, targetUrl)) {
-          queue.skip(j.id, 'strictly_isolated_tenant');
           continue;
         }
         const titleCheck = isEligibleEngineeringRoleTitle(j.title);
         if (!titleCheck.eligible) {
-          queue.skip(j.id, titleCheck.reason || 'ineligible_role_title');
           continue;
         }
         eligibleQueued.push(j);
@@ -683,8 +694,6 @@ export async function runOvernightMarathon(config: {
           return;
         }
 
-        markHostOutcome(job.jobUrl, 'request', hostHealthPath);
-
         // Preflight validation
         const preflight = await preflightJob(
           {
@@ -724,6 +733,8 @@ export async function runOvernightMarathon(config: {
           }
         }
 
+        markHostOutcome(job.jobUrl, 'request', hostHealthPath);
+
         const sessionDir = path.join(
           stateDir,
           'applications',
@@ -745,7 +756,7 @@ export async function runOvernightMarathon(config: {
         }
 
         const timeoutConfig = getProviderTimeoutConfig(job.jobUrl);
-        timeoutConfig.maxTotalMs = /greenhouse\.io|ashbyhq\.com|lever\.co/i.test(job.jobUrl) ? 150_000 : 180_000;
+        timeoutConfig.maxTotalMs = /greenhouse\.io|ashbyhq\.com|lever\.co/i.test(job.jobUrl) ? 180_000 : 210_000;
 
         // Tailored resume for archetype
         let jobProfile = profile;
@@ -792,7 +803,7 @@ export async function runOvernightMarathon(config: {
 
         const jobStartedAt = new Date().toISOString();
         const jobStartMs = Date.now();
-        let report: BotRunReport;
+        let report: BotRunReport | undefined;
 
         markJobInFlightCheckpoint({
           jobId: job.id,
@@ -886,6 +897,14 @@ export async function runOvernightMarathon(config: {
         } finally {
           clearJobInFlightCheckpoint(job.id);
           await childRunner.close().catch(() => {});
+          if (/timed out/i.test(report?.reason || '') || /runner closed/i.test(report?.reason || '')) {
+            console.log(`[MARATHON] Job timed out in ${laneKey}; tearing down lane browser to prevent zombie lockup.`);
+            await laneRunner.close().catch(() => {});
+            reapStrayChromeForProfile(laneProfileDir);
+            for (const lockFile of ['SingletonLock', 'SingletonCookie', 'SingletonSocket']) {
+              try { fs.unlinkSync(path.join(laneProfileDir, lockFile)); } catch {}
+            }
+          }
         }
 
         if (isOfflineDinoOrNetworkError(report.reason || '')) {
@@ -1030,12 +1049,13 @@ export async function runOvernightMarathon(config: {
 
         const laneProfileDir = path.resolve('state/autoapply', `browser-profile-lane-${idx}`);
         fs.mkdirSync(laneProfileDir, { recursive: true });
+        reapStrayChromeForProfile(laneProfileDir);
 
         for (const lockFile of ['SingletonLock', 'SingletonCookie', 'SingletonSocket']) {
           try { fs.unlinkSync(path.join(laneProfileDir, lockFile)); } catch {}
         }
 
-        const laneRunner = new AutoApplyRunner();
+        let laneRunner = new AutoApplyRunner();
         try {
           await laneRunner.initBrowser(headless, undefined, laneProfileDir).catch(() => {});
           while (sharedCursor < chunkJobs.length) {
@@ -1047,6 +1067,11 @@ export async function runOvernightMarathon(config: {
 
             try {
               if (!laneRunner.isConnected()) {
+                reapStrayChromeForProfile(laneProfileDir);
+                for (const lockFile of ['SingletonLock', 'SingletonCookie', 'SingletonSocket']) {
+                  try { fs.unlinkSync(path.join(laneProfileDir, lockFile)); } catch {}
+                }
+                laneRunner = new AutoApplyRunner();
                 await laneRunner.initBrowser(headless, undefined, laneProfileDir).catch(() => {});
               }
               await processJobInLane(job, laneRunner, laneProfileDir, laneKey);
