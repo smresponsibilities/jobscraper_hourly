@@ -112,4 +112,18 @@ test('GEN-426: Recalibrated lane thresholds run 4 lanes at 1.17 GB free RAM and 
   const optimalBlockedByUsedRam = computeRecommendedLanes(2.5, 80.1);
   assert.equal(optimalBlockedByUsedRam.recommendedLaneCount, 4);
   assert.equal(optimalBlockedByUsedRam.healthStatus, 'NORMAL');
+
+  // Rogue Chrome process overload: remainingChromeCount > 38 throttles to 2 lanes even with ample RAM
+  const throttledByChromeCount = computeRecommendedLanes(2.5, 70.0, 39);
+  assert.equal(throttledByChromeCount.recommendedLaneCount, 2);
+  assert.equal(throttledByChromeCount.healthStatus, 'THROTTLE_DOWN_LOW_RAM');
+
+  // Scale-up suppression: remainingChromeCount >= 24 stays at 4 lanes (NORMAL)
+  const scaleUpBlockedByChromeCount = computeRecommendedLanes(2.5, 70.0, 24);
+  assert.equal(scaleUpBlockedByChromeCount.recommendedLaneCount, 4);
+  assert.equal(scaleUpBlockedByChromeCount.healthStatus, 'NORMAL');
+
+  // Windows Working-Set trimmer & cache scrubber executes safely without throwing
+  const scrubbed = scrubBrowserCachesAndTempDirs();
+  assert.ok(typeof scrubbed === 'number' && scrubbed >= 0, 'scrubBrowserCachesAndTempDirs must return non-negative number');
 });

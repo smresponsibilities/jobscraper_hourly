@@ -110,9 +110,9 @@ export function scrubBrowserCachesAndTempDirs(): number {
   }
 
   try {
-    // @ts-ignore
-    global.gc?.();
-    (global as any).gc?.();
+    if (typeof (global as any).gc === 'function') {
+      (global as any).gc();
+    }
   } catch {}
 
   return cleaned;
