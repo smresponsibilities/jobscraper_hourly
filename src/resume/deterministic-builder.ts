@@ -300,6 +300,24 @@ export function prioritizeVerifiedSkillsForRole(
   return [...matching, ...remaining];
 }
 
+export function reorderVerifiedSkillCsvForJd(verifiedCsv: string, jdText: string): string {
+  if (!jdText || !jdText.trim()) return verifiedCsv;
+  const jdLower = jdText.toLowerCase();
+  const skills = verifiedCsv.split(',').map(s => s.trim()).filter(Boolean);
+
+  const matched: string[] = [];
+  const rest: string[] = [];
+  for (const skill of skills) {
+    const token = skill.toLowerCase().replace(/\s+rest apis|\s+ci\/cd/g, '').trim();
+    if (token.length >= 2 && jdLower.includes(token)) {
+      matched.push(skill);
+    } else {
+      rest.push(skill);
+    }
+  }
+  return [...matched, ...rest].join(', ');
+}
+
 export function getArchetypeCategorizedSkills(
   archetype: ResumeArchetype | RoleArchetype,
   roleTitle = '',

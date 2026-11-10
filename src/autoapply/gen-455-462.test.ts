@@ -16,6 +16,12 @@ import { loadWonderPillDeadEnds } from '../outreach/dual-mode-lead-finder.js';
 import { isSupportedDirectAtsJobUrl } from './preflight.js';
 import { unwrapDirectAtsApplicationUrl } from './url-unwrapper.js';
 import { fetchGreenhouseQuestionSchema, type GreenhouseQuestionSchemaItem } from './distiller.js';
+import { reorderVerifiedSkillCsvForJd } from '../resume/deterministic-builder.js';
+import {
+  buildCoverLetterHtml,
+  buildCoverLetterDocx,
+  resolveCoverLetterPdfPath,
+} from '../resume/cover-letter-builder.js';
 
 test('GEN-455.1: classifyEmailLifecycleStage correctly identifies all 5 stages', () => {
   // 1. HARD_BOUNCE_550
@@ -333,5 +339,49 @@ test('GEN-459.1: Workday Step 3-5 EEO listbox preference regexes and signature t
   assert.ok(disabilityRegex.test('No, I do not have a disability'));
   assert.ok(disabilityRegex.test('I do not have a disability, or have a history/record of having a disability'));
   assert.ok(disabilityRegex.test('I decline to self-identify'));
+});
+
+test('GEN-460.1: reorderVerifiedSkillCsvForJd left-shifts matching skills without keyword stuffing', () => {
+  const verifiedCsv = 'Java, Python, SQL, TypeScript, JavaScript, C++, Scala';
+  const jdText = 'Looking for a Senior Software Engineer with deep experience in Python, TypeScript, and SQL.';
+
+  const reordered = reorderVerifiedSkillCsvForJd(verifiedCsv, jdText);
+  // Python, SQL, TypeScript should move to the front
+  assert.equal(reordered, 'Python, SQL, TypeScript, Java, JavaScript, C++, Scala');
+
+  // When JD is empty or null, returns original CSV unchanged
+  assert.equal(reorderVerifiedSkillCsvForJd(verifiedCsv, ''), verifiedCsv);
+  assert.equal(reorderVerifiedSkillCsvForJd(verifiedCsv, '   '), verifiedCsv);
+
+  // Exact set of skills preserved (zero fabrication, zero keyword stuffing)
+  const originalSet = new Set(verifiedCsv.split(',').map(s => s.trim()));
+  const reorderedSet = new Set(reordered.split(',').map(s => s.trim()));
+  assert.deepEqual(originalSet, reorderedSet);
+});
+
+test('GEN-461.1: Cover letter generator creates grounded single-page HTML, DOCX, and PDF', async () => {
+  // 1. HTML generation
+  const html = buildCoverLetterHtml({ company: 'Stripe', roleTitle: 'Backend Engineer' });
+  assert.ok(html.includes('Shivam Mahajan'));
+  assert.ok(html.includes('Morgan Stanley'));
+  assert.ok(html.includes('5,000,000+'));
+  assert.ok(html.includes('Apache Kafka'));
+  assert.ok(html.includes('PySpark'));
+  assert.ok(html.includes('Azure Snowflake'));
+  assert.ok(html.includes('Chitkara University'));
+  assert.ok(html.includes('9.35 CGPA'));
+  assert.ok(html.includes('Stripe'));
+  assert.ok(html.includes('Backend Engineer'));
+
+  // 2. DOCX generation
+  const docxBuf = await buildCoverLetterDocx({ company: 'Uber', roleTitle: 'Platform Engineer' });
+  assert.ok(docxBuf instanceof Buffer);
+  assert.ok(docxBuf.length > 1000);
+
+  // 3. Cover letter PDF resolver
+  const pdfPath = resolveCoverLetterPdfPath('Datadog', 'Systems Engineer');
+  assert.ok(typeof pdfPath === 'string');
+  assert.ok(pdfPath.endsWith('.pdf'));
+  assert.ok(fs.existsSync(pdfPath));
 });
 

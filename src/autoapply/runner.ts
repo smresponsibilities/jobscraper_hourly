@@ -42,6 +42,7 @@ import { JobActivityWatchdog, getProviderTimeoutConfig } from './watchdog-timer.
 import { applyClubbedValueTransform } from './clubbing.js';
 import { runOnDemandHumanPopup } from './hitl-popup.js';
 import { detectJobArchetype } from '../resume/deterministic-builder.js';
+import { resolveCoverLetterPdfPath } from '../resume/cover-letter-builder.js';
 import { appendJobRunHistory } from './run-history.js';
 import { capturePageDiagnostics, recordOvernightError, normalizeReasonCode } from './overnight-error-logger.js';
 import { resolveUniversalPermissiveFallback } from './permissive-fallback.js';
@@ -483,6 +484,8 @@ export interface AutoApplyOptions {
   vault?: CredentialVault;
   claimMail?: (messageId: string) => boolean;
   applicationBrief?: ApplicationBrief;
+  roleTitle?: string;
+  jobTitle?: string;
 }
 
 const INPUTS = 'input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([data-automation-id="beecatcher"]):not([data-autoapply-skip-file="true"]), select, textarea, [role="combobox"], [role="radio"], button[aria-haspopup="listbox"], button.ashby-application-form-input-yesno-option, button[data-autoapply-btngroup-option]';
@@ -1190,6 +1193,16 @@ export class AutoApplyRunner {
           }
           await primaryFileInput.setInputFiles(uploadPath, { timeout: 4000 }).catch(() => {});
           await page.waitForTimeout(800).catch(() => {});
+        }
+
+        // Ticket GEN-461: Auto-upload Cover Letter if separate input[type="file"] exists
+        const coverFileInput = page.locator('input[type="file"][id*="cover" i], input[type="file"][name*="cover" i]').first();
+        if ((await coverFileInput.count().catch(() => 0)) > 0) {
+          const coverPath = resolveCoverLetterPdfPath();
+          if (existsSync(coverPath)) {
+            await coverFileInput.setInputFiles(coverPath, { timeout: 4000 }).catch(() => {});
+            await page.waitForTimeout(600).catch(() => {});
+          }
         }
       }
     } catch {}
@@ -3206,18 +3219,33 @@ export class AutoApplyRunner {
           if (options.mode === 'stealth') await this.page!.waitForTimeout(isSinglePageAts ? 100 + Math.random() * 150 : 300 + Math.random() * 300);
           if (info.type === 'file' && document) {
             let docToUpload = document;
+            // Ticket GEN-461: Single-Page PDF Cover Letter Generator for Required Cover Letter * File Uploads
+            const fileLabel = (
+              info.questionTitle ||
+              info.label ||
+              info.name ||
+              info.id ||
+              ''
+            ).toLowerCase();
+            const isCoverLetter = /cover[-_ ]?letter/i.test(fileLabel);
+            if (isCoverLetter) {
+              const coverLetterPath = resolveCoverLetterPdfPath(options.company, options.roleTitle || options.jobTitle);
+              if (existsSync(coverLetterPath)) {
+                docToUpload = coverLetterPath;
+              }
+            }
             // Ticket GEN-238: Check accept attribute for .docx-only file inputs
             const acceptAttr = (await input.getAttribute('accept').catch(() => '')) || '';
             if (/\.docx?|msword|wordprocessingml/i.test(acceptAttr) && !/\.pdf|application\/pdf|\*/i.test(acceptAttr)) {
-              const docxCandidate = document.replace(/\.pdf$/i, '.docx');
+              const docxCandidate = docToUpload.replace(/\.pdf$/i, '.docx');
               if (existsSync(docxCandidate)) {
                 docToUpload = docxCandidate;
               }
             }
             const bytes = readFileSync(docToUpload);
-            let uploadName = 'Shivam_Mahajan_Resume.pdf';
+            let uploadName = isCoverLetter ? 'Shivam_Mahajan_Cover_Letter.pdf' : 'Shivam_Mahajan_Resume.pdf';
             if (/\.docx$/i.test(docToUpload)) {
-              uploadName = 'Shivam_Mahajan_Resume.docx';
+              uploadName = isCoverLetter ? 'Shivam_Mahajan_Cover_Letter.docx' : 'Shivam_Mahajan_Resume.docx';
             }
             await input.setInputFiles({
               name: uploadName,

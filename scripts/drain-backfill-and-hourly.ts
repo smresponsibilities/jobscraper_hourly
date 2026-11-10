@@ -312,7 +312,12 @@ async function main(): Promise<void> {
     }
   }
 
-  const profilePath = path.resolve(values.get('--profile') || 'state/autoapply/portal-review/candidate.json');
+  const rawProfileArg = values.get('--profile');
+  const profilePath = path.resolve(
+    !rawProfileArg || rawProfileArg === 'autoapply'
+      ? 'state/autoapply/portal-review/candidate.json'
+      : rawProfileArg
+  );
   const stateDir = path.resolve(values.get('--state') || 'state/autoapply/portal-review');
   const shouldSubmit = flags.has('--submit');
   const headless = !flags.has('--headless') || flags.has('--headless'); // Default to headless
