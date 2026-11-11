@@ -42,6 +42,7 @@ import { syncGitHubActionsPillars } from './sync-github-actions-pillars.js';
 import { ContinuousRamAndHealthWatchdog, check30MinZeroFillDroughtAndAutoHeal, ActiveJobRegistry } from '../src/autoapply/health-and-ram-watchdog.js';
 import { syncInboxLifecycleEvents } from '../src/autoapply/inbox-lifecycle-tracker.js';
 import { selectDiversifiedMultiLaneChunk } from './run-overnight-marathon.js';
+import { harvestFastAtsJobs } from './harvest-fast-ats-jobs.js';
 
 export function partitionJobsIntoProviderLanes<T extends { url?: string; jobUrl?: string; provider?: string; externalJobId?: string }>(jobs: T[]): Record<string, T[]> {
   const lanes: Record<string, T[]> = {
@@ -293,6 +294,13 @@ async function main(): Promise<void> {
   try {
     let discoveryHasRun = false;
     const syncDiscovery = async () => {
+      // Ingest fast-ATS jobs from companies.json
+      try {
+        await harvestFastAtsJobs(dbPath, 30);
+      } catch (err: any) {
+        console.warn(`[DRAIN] Fast-ATS harvest warning: ${err?.message || err}`);
+      }
+
     // Phase A: Hourly Fresh Sync (fetch fresh postings from catalogue + YC/HN/LinkedIn)
     let shouldRunPhaseA = !skipSync;
     if (shouldRunPhaseA && !(forceSync && !discoveryHasRun) && fs.existsSync(discoveryCachePath)) {
@@ -300,10 +308,9 @@ async function main(): Promise<void> {
         const cache = JSON.parse(fs.readFileSync(discoveryCachePath, 'utf8'));
         if (cache?.lastSyncAt) {
           const ageMs = Date.now() - new Date(cache.lastSyncAt).getTime();
-          const FIFTY_FIVE_MINUTES_MS = 55 * 60 * 1000;
-          if (ageMs < FIFTY_FIVE_MINUTES_MS) {
+          const FIFTEEN_MINUTES_MS = 15 * 60 * 1000;
+          if (ageMs < FIFTEEN_MINUTES_MS) {
             shouldRunPhaseA = false;
-
           }
         }
       } catch {}
@@ -491,7 +498,8 @@ async function main(): Promise<void> {
     };
 
     // Phase B: Continuous Autonomous Drain Loop (Step 421 / GEN-421)
-    const isContinuousSubmit = shouldSubmit && !flags.has('--once');
+    // Ticket GEN-506: Continuous runner runs indefinitely unless STOP_AUTOAPPLY.flag is present
+    const isContinuousSubmit = shouldSubmit;
     let batchNumber = 0;
 
     while (true) {
@@ -622,8 +630,6 @@ async function main(): Promise<void> {
         return;
       }
 
-      startedJobs++;
-
       // Fast JSON API Preflight Check (GEN-29: Greenhouse / Lever fast check before browser launch)
       const fastApi = await fastApiPreflightCheck(job.jobUrl).catch(() => ({ status: 'eligible' as const }));
       if (fastApi.status === 'skipped') {
@@ -651,6 +657,8 @@ async function main(): Promise<void> {
         queue.skip(job.id, preflight.reason || 'preflight_ineligible');
         return;
       }
+
+      startedJobs++;
 
       const sessionDir = path.join(
         stateDir,

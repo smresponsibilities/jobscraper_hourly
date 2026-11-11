@@ -98,6 +98,11 @@ export function loadProfile(file: string): CandidateExtendedProfile {
   const value: unknown = JSON.parse(readFileSync(file, 'utf8'));
   const p = value as any;
   if (p && p.personal) {
+    p.personal.website = p.personal.website || 'https://shivammahajan.com';
+    p.personal.portfolioUrl = p.personal.portfolioUrl || 'https://shivammahajan.com/projects/';
+    if (process.env.AUTOAPPLY_EMAIL || process.env.IMAP_USER) {
+      p.personal.email = (process.env.AUTOAPPLY_EMAIL || process.env.IMAP_USER)!.trim();
+    }
     if (process.env.AUTOAPPLY_PHONE || process.env.PHONE) {
       p.personal.phone = process.env.AUTOAPPLY_PHONE || process.env.PHONE;
     }

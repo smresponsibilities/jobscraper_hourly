@@ -374,6 +374,8 @@ export const CLASSIFICATION_RULES: FieldRuleDef[] = [
       /\bcurrent[_\-\s]?employer\b/i,
       /\bpresent[_\-\s]?company\b/i,
       /\bmost[_\-\s]?recent[_\-\s]?employer\b/i,
+      /\bmost[_\-\s]?recently[_\-\s]?worked\b/i,
+      /\bwhere\s+have\s+you\s+(?:most\s+recently\s+)?worked\b/i,
     ],
     mediumPatterns: [
       /employer/i,
@@ -481,6 +483,7 @@ export const CLASSIFICATION_RULES: FieldRuleDef[] = [
       /\bauthorized[_\-\s]?to[_\-\s]?work\b/i,
       /\bright[_\-\s]?to[_\-\s]?work\b/i,
       /\bwork[_\-\s]?auth(?:orization)?\b/i,
+      /\bu\.?s\.?\s*person\b/i,
     ],
     mediumPatterns: [
       /eligible[_\-\s]?to[_\-\s]?work[_\-\s]?in/i,
@@ -505,7 +508,8 @@ export const CLASSIFICATION_RULES: FieldRuleDef[] = [
     strongPatterns: [
       /\bpreviously[_\-\s]?(?:been[_\-\s]?)?(?:employed|worked)\b/i,
       /\bformer[_\-\s]?employee\b/i,
-      /\bhave[_\-\s]?you[_\-\s]?(?:ever)?[_\-\s]?worked[_\-\s]?for\b/i,
+      /\bhave[_\-\s]?you[_\-\s]?(?:ever)?[_\-\s]?worked[_\-\s]?(?:for|at)\b/i,
+      /\bworked\s+(?:for|at)\s+.*\bin the past\b/i,
     ],
     mediumPatterns: [
       /past[_\-\s]?employee/i,
@@ -773,7 +777,7 @@ export function resolveExtendedProfileValue(
 
     case 'linkedin': return p.linkedinUrl;
     case 'github': return p.githubUrl;
-    case 'website': return p.portfolioUrl;
+    case 'website': return p.portfolioUrl || p.githubUrl || p.linkedinUrl;
     case 'twitter': return p.twitterUrl;
     case 'leetcode': return p.leetcodeUrl;
 

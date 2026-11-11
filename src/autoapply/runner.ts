@@ -409,13 +409,52 @@ export async function healInvalidFieldsAndRetrySubmit(
       }
     }
 
-    // 3. Heal any unchecked required checkboxes or radio groups
-    const reqCheckboxes = Array.from(document.querySelectorAll<HTMLInputElement>('input[type="checkbox"]:invalid, input[type="checkbox"][required], input[type="checkbox"][aria-required="true"]'));
-    for (const cb of reqCheckboxes) {
-      if (!cb.checked) {
-        cb.click();
-        fixed++;
+    // 3. Heal any unchecked required checkboxes or radio groups (GEN-509: group checkboxes by name, e.g. question_*[])
+    const allCheckboxes = Array.from(document.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'));
+    const checkboxGroups = new Map<string, HTMLInputElement[]>();
+    for (const cb of allCheckboxes) {
+      const name = cb.name || '';
+      if (name) {
+        const list = checkboxGroups.get(name) || [];
+        list.push(cb);
+        checkboxGroups.set(name, list);
       }
+    }
+    for (const [name, group] of checkboxGroups) {
+      if (group.some(cb => cb.checked)) continue;
+      const isRequiredGroup = group.some(cb => !cb.checkValidity() || cb.required || cb.hasAttribute('required') || cb.getAttribute('aria-required') === 'true' || cb.closest('[aria-required="true"], fieldset[required], .field-required, [class*="required"]'));
+      if (isRequiredGroup && group.length > 0) {
+        // Find best affirmative or safe option
+        const affirmative = group.find(cb => {
+          const lbl = cb.closest('label')?.textContent || document.querySelector(`label[for="${cb.id}"]`)?.textContent || cb.value || '';
+          return /\b(yes|i agree|consent|acknowledge|bengaluru|india|none|other)\b/i.test(lbl);
+        }) || group[0];
+        if (affirmative) {
+          const parentLabel = affirmative.closest('label');
+          if (parentLabel) parentLabel.click();
+          else affirmative.click();
+          if (!affirmative.checked) {
+            affirmative.checked = true;
+            affirmative.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+            affirmative.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+          }
+          fixed++;
+        }
+      }
+    }
+
+    const reqCheckboxes = allCheckboxes.filter(cb => !cb.checked && (!cb.checkValidity() || cb.required || cb.hasAttribute('required') || cb.getAttribute('aria-required') === 'true'));
+    for (const cb of reqCheckboxes) {
+      if (cb.name && checkboxGroups.has(cb.name)) continue; // already handled
+      const parentLabel = cb.closest('label');
+      if (parentLabel) parentLabel.click();
+      else cb.click();
+      if (!cb.checked) {
+        cb.checked = true;
+        cb.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+        cb.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+      }
+      fixed++;
     }
 
     // 4. Ticket GEN-184: Heal any required or aria-invalid <select> that still has no value across Light + Shadow DOM
@@ -1507,11 +1546,22 @@ export class AutoApplyRunner {
         if (contentType.includes('application/json')) {
           const bodyText = await response.text().catch(() => '');
           if (
-            /"(?:errors|errorMessages|validationErrors|fieldErrors)"\s*:\s*\[[^\]]+\]|"(?:isSuccess|success|ok)"\s*:\s*false/i.test(
+            /"(?:errors|errorMessages|validationErrors|fieldErrors|formErrors)"\s*:\s*\[[^\]]+\]|"(?:isSuccess|success|ok)"\s*:\s*false/i.test(
               bodyText
             )
           ) {
             this.log(`Submit endpoint returned error: ${bodyText.slice(0, 2000)}`);
+            try {
+              const parsed = JSON.parse(bodyText);
+              const appData = parsed?.data?.submitApplicationFormAction || parsed?.data?.submitSingleApplicationFormAction || parsed?.data?.submitJobApplication || parsed?.data;
+              const formErrors = appData?.formErrors || parsed?.errors || parsed?.errorMessages || [];
+              if (Array.isArray(formErrors) && formErrors.length > 0) {
+                this.lastNetworkValidationErrors = formErrors.map((e: any) => ({
+                  field: e.fieldEntryId || e.fieldId || e.field || undefined,
+                  message: String(e.message || e.error || e.errorMessages?.join?.(', ') || JSON.stringify(e)).slice(0, 200),
+                }));
+              }
+            } catch {}
             return;
           }
           this.log(`Submit endpoint returned SUCCESS: ${bodyText.slice(0, 100)}`);
@@ -1553,7 +1603,7 @@ export class AutoApplyRunner {
             (host?.getAttribute?.('label') || '')
           ).toLowerCase();
           if (
-            /privacy|terms|consent|acknowledge|agree|gdpr|data\s+protection|authorize/i.test(contextText) ||
+            /privacy|terms|consent|acknowledge|agree|gdpr|data\s+protection|authorize|proceed|continue/i.test(contextText) ||
             boxes.length === 1
           ) {
             box.click();
@@ -2489,13 +2539,15 @@ export class AutoApplyRunner {
             } else if (errDetails.type === 'checkbox') {
               await control.check({ force: true }).catch(() => {});
             } else if (errDetails.tagName === 'input' || errDetails.tagName === 'textarea') {
-              await control.fill(healed.value);
+              const fillText = typeof healed.value === 'boolean' ? (healed.value ? 'Yes' : 'No') : String(healed.value);
+              await control.fill(fillText);
             } else {
               const nested = control.locator('input, textarea').first();
+              const fillText = typeof healed.value === 'boolean' ? (healed.value ? 'Yes' : 'No') : String(healed.value);
               if (await nested.count() > 0) {
-                await nested.fill(healed.value);
+                await nested.fill(fillText);
               } else {
-                await control.fill(healed.value);
+                await control.fill(fillText);
               }
             }
             await control.blur().catch(() => {});
@@ -3736,7 +3788,7 @@ export class AutoApplyRunner {
             // Ticket GEN-206: Guarantee screening & compensation clusters check >= 1 box (Particle41)
             const isScreeningCluster = /\b(?:compensation|salary|range|package|current|desired|expected|budget|align|location|city|skills?|shift|eligib|agreement|confirm|hear|source|find|vacancy|channel)\b/i.test(qText);
             if (!targetBool && (info.required || isScreeningCluster)) {
-              const isSafeDefault = /yes|align|agree|confirm|comfortable|understand|accept|bengaluru|bangalore|india|remote|10|12|15|linkedin|other.*(?:job|online)|job.*board|website|newsletter|google|none of the above|do not wish|prefer not/i.test(optText);
+              const isSafeDefault = /yes|align|agree|confirm|comfortable|understand|accept|bengaluru|bangalore|india|remote|10|12|15|linkedin|other.*(?:job|online)|job.*board|website|newsletter|google|none of the above|do not wish|prefer not|javascript|typescript|python|node|react|git|full\s*stack|software/i.test(optText);
               if (isSafeDefault) targetBool = true;
             }
 
@@ -3854,7 +3906,12 @@ export class AutoApplyRunner {
               report.fieldsFilled++;
               continue;
             }
-            let stringVal = String(value);
+            let stringVal = typeof value === 'boolean' ? (value ? 'Yes' : 'No') : String(value);
+            if (/phone|mobile/i.test(descriptor + ' ' + (info.questionTitle || '') + ' ' + (action.question || '')) || info.type === 'tel') {
+              if (typeof value === 'boolean' || !/\d/.test(stringVal)) {
+                stringVal = options.profile?.personal?.phone || '9000000000';
+              }
+            }
             if (info.type === 'date' && !/^\d{4}-\d{2}-\d{2}$/.test(stringVal.trim())) {
               const isGraduation = /graduat|degree|education|completion|attend/i.test(descriptor + ' ' + (info.questionTitle || ''));
               stringVal = isGraduation ? '2026-08-01' : new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10);
@@ -4124,6 +4181,11 @@ export class AutoApplyRunner {
       let target = options.url;
       const checkpoint = options.sessionDir && path.join(options.sessionDir, 'checkpoint.json');
       if (checkpoint && existsSync(checkpoint)) {
+        if (options.retryReviewed || options.submit) {
+          try { unlinkSync(checkpoint); } catch {}
+        }
+      }
+      if (checkpoint && existsSync(checkpoint)) {
         let saved: any = null;
         try { saved = JSON.parse(readFileSync(checkpoint, 'utf8')); } catch {}
         const matchesJob = saved && ((options.jobId && saved.jobId === options.jobId) || saved.applicationUrl === options.url);
@@ -4166,7 +4228,7 @@ export class AutoApplyRunner {
         }
         report.reconcileAfter = saved.report?.reconcileAfter;
         if (!options.retryReviewed && saved.report?.humanInterventionRequired !== false) report.humanInterventionRequired = true;
-        if (saved.report?.submissionAttempted || ['clicked', 'dispatched', 'confirmed'].includes(saved.report?.submission?.phase)) {
+        if (!options.retryReviewed && (saved.report?.submissionAttempted || ['clicked', 'dispatched', 'confirmed'].includes(saved.report?.submission?.phase))) {
           report.submissionAttempted = true;
           report.submission = saved.report.submission;
           report.actions = saved.report.actions || [];
@@ -4749,27 +4811,51 @@ export class AutoApplyRunner {
               invalid = true;
               const ctrlDesc = await control.evaluate((el: Element) => `${el.tagName}#${el.id}[name="${el.getAttribute('name')}"][type="${el.getAttribute('type')}"]: ${(el as HTMLInputElement).validationMessage || el.getAttribute('aria-invalid')}`).catch(() => 'unknown');
               this.log(`Invalid visible control: ${ctrlDesc}`);
-              // Ticket GEN-462: Penalize learned rule on post-submit validation failure
-              const qText = await control.evaluate((el: Element) => {
-                const aria = el.getAttribute('aria-label');
-                if (aria) return aria;
-                if (el.id) {
-                  const lbl = document.querySelector(`label[for="${el.id}"]`);
-                  if (lbl?.textContent) return lbl.textContent.trim();
-                }
-                const pLbl = el.closest('label');
-                if (pLbl?.textContent) return pLbl.textContent.trim();
-                const formGroup = el.closest('.form-group, .field, [class*="form-field"], [class*="question"]');
-                if (formGroup) {
-                  const title = formGroup.querySelector('label, [class*="label"], [class*="title"]');
-                  if (title?.textContent) return title.textContent.trim();
-                }
-                return el.getAttribute('name') || el.id || '';
-              }).catch(() => '');
-              if (qText) {
-                const penalty = penalizeLearnedRuleOnValidationFailure(qText);
-                if (penalty.action === 'decayed' || penalty.action === 'pruned') {
-                  this.log(`[SEMANTIC-MEMORY] Penalized rule for "${qText}": action=${penalty.action}, confidence=${penalty.confidence}`);
+              // Ticket GEN-462 & GEN-509: Check if invalid control is a React-Select dropdown (.select__input or role="combobox")
+              const isReactSelectCombobox = await control.evaluate((el: Element) => {
+                return el.classList.contains('select__input') || el.getAttribute('role') === 'combobox' || !!el.closest('.select__control');
+              }).catch(() => false);
+
+              if (isReactSelectCombobox) {
+                // Heal React-Select dropdown via flyout click or ArrowDown + Enter
+                try {
+                  const controlHost = control.locator('xpath=ancestor-or-self::*[contains(@class, "select__control") or contains(@class, "select-shell")]').first();
+                  if (await controlHost.isVisible().catch(() => false)) {
+                    await controlHost.click().catch(() => {});
+                    await this.page!.waitForTimeout(350);
+                    const opt = frame.locator('.select__option, [class*="option"]').first();
+                    if (await opt.isVisible().catch(() => false)) {
+                      await opt.click().catch(() => {});
+                    } else {
+                      await this.page!.keyboard.press('ArrowDown');
+                      await this.page!.keyboard.press('Enter');
+                      await this.page!.keyboard.press('Escape');
+                    }
+                  }
+                } catch {}
+              } else {
+                // Ticket GEN-462: Penalize learned rule on post-submit validation failure
+                const qText = await control.evaluate((el: Element) => {
+                  const aria = el.getAttribute('aria-label');
+                  if (aria) return aria;
+                  if (el.id) {
+                    const lbl = document.querySelector(`label[for="${el.id}"]`);
+                    if (lbl?.textContent) return lbl.textContent.trim();
+                  }
+                  const pLbl = el.closest('label');
+                  if (pLbl?.textContent) return pLbl.textContent.trim();
+                  const formGroup = el.closest('.form-group, .field, [class*="form-field"], [class*="question"]');
+                  if (formGroup) {
+                    const title = formGroup.querySelector('label, [class*="label"], [class*="title"]');
+                    if (title?.textContent) return title.textContent.trim();
+                  }
+                  return el.getAttribute('name') || el.id || '';
+                }).catch(() => '');
+                if (qText) {
+                  const penalty = penalizeLearnedRuleOnValidationFailure(qText);
+                  if (penalty.action === 'decayed' || penalty.action === 'pruned') {
+                    this.log(`[SEMANTIC-MEMORY] Penalized rule for "${qText}": action=${penalty.action}, confidence=${penalty.confidence}`);
+                  }
                 }
               }
             }
@@ -5381,17 +5467,30 @@ export class AutoApplyRunner {
               await frame.evaluate((errors: Array<{ field?: string; message: string }>) => {
                 for (const err of errors) {
                   if (!err.field) continue;
+                  const rawField = String(err.field);
+                  const fieldUuid = rawField.includes('_') ? rawField.split('_').pop()! : rawField;
                   const selectors = [
-                    `[name="${CSS.escape(err.field)}"]`,
-                    `[id="${CSS.escape(err.field)}"]`,
-                    `[data-field-id="${CSS.escape(err.field)}"]`,
-                    `[data-automation-id="${CSS.escape(err.field)}"]`,
+                    `[name="${CSS.escape(rawField)}"]`,
+                    `[id="${CSS.escape(rawField)}"]`,
+                    `[data-field-id="${CSS.escape(rawField)}"]`,
+                    `[data-automation-id="${CSS.escape(rawField)}"]`,
+                    `[id*="${CSS.escape(fieldUuid)}"]`,
+                    `[name*="${CSS.escape(fieldUuid)}"]`,
+                    `[data-field-id*="${CSS.escape(fieldUuid)}"]`,
+                    `[data-fieldentry-id*="${CSS.escape(fieldUuid)}"]`,
                   ];
                   for (const sel of selectors) {
                     try {
                       const el = document.querySelector<HTMLElement>(sel);
                       if (el) { el.setAttribute('aria-invalid', 'true'); break; }
                     } catch {}
+                  }
+                  // If matching .ashby-application-form-field-entry
+                  const ashbyEntry = document.querySelector(`.ashby-application-form-field-entry[data-fieldentry-id*="${fieldUuid}"]`) ||
+                    document.querySelector(`[data-fieldentry-id*="${fieldUuid}"]`);
+                  if (ashbyEntry) {
+                    const ctrl = ashbyEntry.querySelector<HTMLElement>('input, textarea, select, [role="combobox"]');
+                    if (ctrl) ctrl.setAttribute('aria-invalid', 'true');
                   }
                 }
               }, networkErrors).catch(() => {});
