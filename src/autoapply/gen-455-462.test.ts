@@ -5,6 +5,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import {
   classifyEmailLifecycleStage,
+  crossMatchLifecycleEventsWithQueue,
   type InboxLifecycleEvent,
 } from './inbox-lifecycle-tracker.js';
 import {
@@ -39,13 +40,21 @@ test('GEN-455.1: classifyEmailLifecycleStage correctly identifies all 5 stages',
   assert.equal(bounceResult?.stage, 'HARD_BOUNCE_550');
   assert.equal(bounceResult?.bouncedRecipient, 'candidate.test@domain.com');
 
-  // 2. RECRUITER_DIRECT_REPLY
+  // 2. RECRUITER_DIRECT_REPLY (Subject match or In-Reply-To header)
   const replyResult = classifyEmailLifecycleStage({
     fromAddress: 'sarah.connor@cyberdyne.com',
     subject: 'Re: Applied for Senior Software Engineer — Shivam Mahajan',
     bodyText: 'Hi Shivam, thanks for reaching out. We would love to chat further about your background.',
   });
   assert.equal(replyResult?.stage, 'RECRUITER_DIRECT_REPLY');
+
+  const inReplyToResult = classifyEmailLifecycleStage({
+    fromAddress: 'lead.recruiter@hypergrowth.ai',
+    subject: 'Your application status',
+    bodyText: 'Hi Shivam, loved your portfolio. Are you available this Thursday for a call?',
+    inReplyTo: '<orig-msg-123@smtp.gmail.com>',
+  });
+  assert.equal(inReplyToResult?.stage, 'RECRUITER_DIRECT_REPLY');
 
   // 3. INTERVIEW_OR_OA_INVITE (HackerRank & Calendly)
   const oaResult = classifyEmailLifecycleStage({
@@ -62,13 +71,20 @@ test('GEN-455.1: classifyEmailLifecycleStage correctly identifies all 5 stages',
   });
   assert.equal(calendlyResult?.stage, 'INTERVIEW_OR_OA_INVITE');
 
-  // 4. APPLICATION_REJECTED
+  // 4. APPLICATION_REJECTED (explicit "other candidates" and "unfortunately")
   const rejectResult = classifyEmailLifecycleStage({
     fromAddress: 'no-reply@datadog.com',
     subject: 'Update on your application to Datadog',
     bodyText: 'Thank you for your interest. Unfortunately, after careful consideration, we have decided not to proceed with your application at this time as we are pursuing other candidates.',
   });
   assert.equal(rejectResult?.stage, 'APPLICATION_REJECTED');
+
+  const rejectOtherCandidates = classifyEmailLifecycleStage({
+    fromAddress: 'careers@startup.io',
+    subject: 'Application status update',
+    bodyText: 'We received many strong applications and have decided to proceed with other candidates whose experience more closely matches our current needs.',
+  });
+  assert.equal(rejectOtherCandidates?.stage, 'APPLICATION_REJECTED');
 
   // 5. APPLICATION_CONFIRMATION
   const confirmResult = classifyEmailLifecycleStage({
@@ -85,6 +101,38 @@ test('GEN-455.1: classifyEmailLifecycleStage correctly identifies all 5 stages',
     bodyText: 'Check out the top engineering blog posts published this week.',
   });
   assert.equal(nullResult, null);
+});
+
+test('GEN-455.2: crossMatchLifecycleEventsWithQueue enriches events with applied companies from queue.sqlite', () => {
+  const events: InboxLifecycleEvent[] = [
+    {
+      messageId: 'msg-gh-1',
+      date: new Date().toISOString(),
+      fromAddress: 'no-reply@us.greenhouse-mail.io',
+      fromDomain: 'us.greenhouse-mail.io',
+      subject: 'Thank you for applying to Ethernovia, Inc.',
+      stage: 'APPLICATION_CONFIRMATION',
+      snippet: 'We have received your application',
+    },
+    {
+      messageId: 'msg-ashby-1',
+      date: new Date().toISOString(),
+      fromAddress: 'no-reply@ashbyhq.com',
+      fromDomain: 'ashbyhq.com',
+      subject: 'Thank you for applying to Vultr!',
+      stage: 'APPLICATION_CONFIRMATION',
+      snippet: 'Your application has been received',
+    },
+  ];
+
+  const enriched = crossMatchLifecycleEventsWithQueue(events);
+  assert.equal(enriched.length, 2);
+
+  const ethEvent = enriched.find((e) => /ethernovia/i.test(e.subject));
+  assert.ok(ethEvent?.company, 'Ethernovia event should be enriched with company from queue.sqlite');
+
+  const vultrEvent = enriched.find((e) => /vultr/i.test(e.subject));
+  assert.ok(vultrEvent?.company, 'Vultr event should be enriched with company from queue.sqlite');
 });
 
 test('GEN-456.1: isDomainSuppressedByInboxLifecycle suppresses rejected or interviewing domains', () => {
@@ -135,6 +183,22 @@ test('GEN-456.1: isDomainSuppressedByInboxLifecycle suppresses rejected or inter
   // Unknown domain is NOT suppressed
   const res4 = isDomainSuppressedByInboxLifecycle('Fresh Co', 'freshco.com', events);
   assert.equal(res4.suppressed, false);
+
+  // Company mentioned in subject of ATS vendor email is suppressed
+  const eventsWithSubjectComp: InboxLifecycleEvent[] = [
+    {
+      messageId: 'msg-gh-rej-1',
+      date: new Date().toISOString(),
+      fromAddress: 'no-reply@us.greenhouse-mail.io',
+      fromDomain: 'us.greenhouse-mail.io',
+      subject: 'Update regarding your application to Alpha Systems',
+      stage: 'APPLICATION_REJECTED',
+      snippet: 'Unfortunately we decided not to proceed',
+    },
+  ];
+  const resSubject = isDomainSuppressedByInboxLifecycle('Alpha Systems', 'alphasystems.com', eventsWithSubjectComp);
+  assert.equal(resSubject.suppressed, true);
+  assert.equal(resSubject.stage, 'APPLICATION_REJECTED');
 });
 
 test('GEN-456.2: resolveBounceFallbackEmail falls back to talent@domain or explicit fallback', () => {
@@ -389,6 +453,7 @@ test('GEN-461.1: Cover letter generator creates grounded single-page HTML, DOCX,
   assert.ok(typeof pdfPath === 'string');
   assert.ok(pdfPath.endsWith('.pdf'));
   assert.ok(fs.existsSync(pdfPath));
+  assert.ok(fs.statSync(pdfPath).size > 1000, 'Cover letter PDF must be a real rendered document > 1KB');
 });
 
 test('GEN-462.1: penalizeLearnedRuleOnValidationFailure decays confidence and prunes bad rules', () => {

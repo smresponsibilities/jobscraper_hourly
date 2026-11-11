@@ -1,6 +1,7 @@
 // src/autoapply/inbox-lifecycle-tracker.ts
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { ImapFlow } from 'imapflow';
 import { loadDotEnvIntoProcess } from './env-credentials.js';
 
@@ -24,11 +25,13 @@ export interface InboxLifecycleEvent {
 }
 
 export const DEFAULT_LIFECYCLE_PATH = path.resolve('state/autoapply/portal-review/inbox-lifecycle-events.json');
+export const DEFAULT_QUEUE_DB_PATH = path.resolve('state/autoapply/portal-review/queue.sqlite');
 
 export function classifyEmailLifecycleStage(params: {
   fromAddress: string;
   subject: string;
   bodyText: string;
+  inReplyTo?: string;
 }): { stage: LifecycleStage; bouncedRecipient?: string } | null {
   const from = (params.fromAddress || '').toLowerCase();
   const sub = (params.subject || '').toLowerCase();
@@ -45,8 +48,11 @@ export function classifyEmailLifecycleStage(params: {
     }
   }
 
-  // 2. Direct Reply to Cold Outreach ("Re: Applied for...")
-  if (/^re:\s*applied for/i.test(params.subject.trim()) && !/no-?reply|mailer-daemon|notifications?/i.test(from)) {
+  // 2. Direct Reply to Cold Outreach ("Re: Applied for..." or In-Reply-To header)
+  if (
+    (Boolean(params.inReplyTo) || /^re:\s*applied for/i.test(params.subject.trim())) &&
+    !/no-?reply|mailer-daemon|notifications?/i.test(from)
+  ) {
     return { stage: 'RECRUITER_DIRECT_REPLY' };
   }
 
@@ -55,14 +61,14 @@ export function classifyEmailLifecycleStage(params: {
     /\b(hackerrank|codesignal|codility|testgorilla|hirevue|karat|online assessment|coding assessment|coding challenge|technical assessment|invitation to interview|schedule an interview|interview availability|calendly\.com|goodtime\.io|next steps in our hiring process)\b/i.test(
       combined
     ) &&
-    !/\b(unfortunately|not moving forward|will not be proceeding|pursue other candidates)\b/i.test(combined)
+    !/\b(unfortunately|not moving forward|will not be proceeding|other candidates|pursue other candidates)\b/i.test(combined)
   ) {
     return { stage: 'INTERVIEW_OR_OA_INVITE' };
   }
 
   // 4. Rejection Email
   if (
-    /\b(unfortunately|not moving forward|decided not to proceed|will not be proceeding|pursue other candidates|not selected for|unable to offer you|position has been filled)\b/i.test(
+    /\b(unfortunately|not moving forward|decided not to proceed|will not be proceeding|other candidates|pursue other candidates|not selected for|unable to offer you|position has been filled)\b/i.test(
       combined
     )
   ) {
@@ -77,12 +83,106 @@ export function classifyEmailLifecycleStage(params: {
   return null;
 }
 
-export function loadInboxLifecycleEvents(filePath = DEFAULT_LIFECYCLE_PATH): InboxLifecycleEvent[] {
+export function crossMatchLifecycleEventsWithQueue(
+  events: InboxLifecycleEvent[],
+  dbPath = DEFAULT_QUEUE_DB_PATH
+): InboxLifecycleEvent[] {
+  if (!fs.existsSync(dbPath)) return events;
+
+  interface AppliedEmployer {
+    company: string;
+    domain: string;
+    slug: string;
+  }
+  const employers: AppliedEmployer[] = [];
+
+  try {
+    const db = new DatabaseSync(dbPath, { readOnly: true });
+    try {
+      db.exec('PRAGMA busy_timeout = 5000;');
+      const rows = db.prepare("SELECT normalized_url, payload FROM applications WHERE status = 'applied'").all() as Array<{
+        normalized_url: string;
+        payload: string;
+      }>;
+      const seenComp = new Set<string>();
+      for (const r of rows) {
+        let comp = '';
+        try {
+          const p = JSON.parse(r.payload || '{}');
+          comp = (p.company || '').trim();
+        } catch {}
+        let domain = '';
+        let slug = '';
+        try {
+          const u = new URL(r.normalized_url);
+          const host = u.hostname.toLowerCase();
+          if (!/(?:greenhouse\.io|ashbyhq\.com|lever\.co|myworkdayjobs\.com|smartrecruiters\.com|workable\.com)$/i.test(host)) {
+            domain = host.replace(/^www\./, '');
+          }
+          const parts = u.pathname.split('/').filter(Boolean);
+          slug = (parts[0] || '').toLowerCase();
+        } catch {}
+
+        if (comp && !seenComp.has(comp.toLowerCase())) {
+          seenComp.add(comp.toLowerCase());
+          employers.push({
+            company: comp,
+            domain,
+            slug,
+          });
+        }
+      }
+    } finally {
+      try { db.close(); } catch {}
+    }
+  } catch {}
+
+  if (employers.length === 0) return events;
+
+  return events.map((ev) => {
+    if (ev.company && ev.company.trim()) return ev;
+
+    const fromDom = (ev.fromDomain || '').toLowerCase();
+    const fromAddr = (ev.fromAddress || '').toLowerCase();
+    const sub = (ev.subject || '').toLowerCase();
+    const snip = (ev.snippet || '').toLowerCase();
+
+    for (const emp of employers) {
+      const cLower = emp.company.toLowerCase();
+      // Match 1: direct employer domain match
+      if (emp.domain && fromDom && (fromDom === emp.domain || fromDom.endsWith('.' + emp.domain))) {
+        return { ...ev, company: emp.company };
+      }
+      // Match 2: company slug in fromDomain or fromAddress
+      if (emp.slug && emp.slug.length >= 3 && (fromDom.includes(emp.slug) || fromAddr.includes(emp.slug))) {
+        return { ...ev, company: emp.company };
+      }
+      // Match 3: Company name in subject or snippet
+      if (cLower.length >= 3) {
+        const wordBoundary = new RegExp(`\\b${cLower.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+        if (wordBoundary.test(sub) || wordBoundary.test(snip)) {
+          return { ...ev, company: emp.company };
+        }
+      }
+    }
+
+    return ev;
+  });
+}
+
+export function loadInboxLifecycleEvents(filePath = DEFAULT_LIFECYCLE_PATH, autoEnrich = true): InboxLifecycleEvent[] {
   try {
     if (fs.existsSync(filePath)) {
       const content = fs.readFileSync(filePath, 'utf8');
-      const parsed = JSON.parse(content);
-      return Array.isArray(parsed) ? parsed : [];
+      const parsed: InboxLifecycleEvent[] = JSON.parse(content);
+      if (Array.isArray(parsed)) {
+        if (autoEnrich && parsed.some((e) => !e.company)) {
+          const enriched = crossMatchLifecycleEventsWithQueue(parsed);
+          saveInboxLifecycleEvents(enriched, filePath);
+          return enriched;
+        }
+        return parsed;
+      }
     }
   } catch {}
   return [];
@@ -95,15 +195,16 @@ export function saveInboxLifecycleEvents(events: InboxLifecycleEvent[], filePath
   } catch {}
 }
 
-export async function syncInboxLifecycleEvents(maxMessages = 40, filePath = DEFAULT_LIFECYCLE_PATH): Promise<InboxLifecycleEvent[]> {
+export async function syncInboxLifecycleEvents(maxMessages = 50, filePath = DEFAULT_LIFECYCLE_PATH): Promise<InboxLifecycleEvent[]> {
   loadDotEnvIntoProcess();
   const host = process.env.IMAP_HOST || 'imap.gmail.com';
   const user = process.env.IMAP_USER || process.env.AUTOAPPLY_EMAIL || '';
   const pass = process.env.IMAP_PASSWORD || process.env.GMAIL_APP_PASSWORD || '';
   if (!user || !pass) return loadInboxLifecycleEvents(filePath);
 
-  const existing = loadInboxLifecycleEvents(filePath);
+  const existing = loadInboxLifecycleEvents(filePath, false);
   const seenIds = new Set(existing.map((e) => e.messageId));
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
   const client = new ImapFlow({
     host,
@@ -123,6 +224,8 @@ export async function syncInboxLifecycleEvents(maxMessages = 40, filePath = DEFA
         const startSeq = Math.max(1, total - maxMessages);
         for await (const msg of client.fetch(`${startSeq}:*`, { envelope: true, source: true })) {
           const dateObj = msg.envelope?.date ? new Date(msg.envelope.date) : new Date();
+          if (dateObj < sevenDaysAgo) continue;
+
           const dateIso = dateObj.toISOString();
           const msgId = msg.envelope?.messageId || `seq_${msg.seq}_${dateIso}`;
           if (seenIds.has(msgId)) continue;
@@ -130,7 +233,11 @@ export async function syncInboxLifecycleEvents(maxMessages = 40, filePath = DEFA
           const fromAddr = (msg.envelope?.from?.[0]?.address || '').toLowerCase();
           const fromDomain = fromAddr.includes('@') ? fromAddr.split('@')[1] || '' : '';
           const subject = msg.envelope?.subject || '';
-          const rawText = (msg.source ? msg.source.toString('utf8') : '')
+          const inReplyTo = (msg.envelope as any)?.inReplyTo || undefined;
+          const rawMime = msg.source ? msg.source.toString('utf8') : '';
+          const headerSplit = rawMime.indexOf('\r\n\r\n') > -1 ? rawMime.indexOf('\r\n\r\n') + 4 : rawMime.indexOf('\n\n') > -1 ? rawMime.indexOf('\n\n') + 2 : 0;
+          const bodyOnly = rawMime.slice(headerSplit) || rawMime;
+          const rawText = bodyOnly
             .replace(/=\r?\n/g, '')
             .replace(/<style[\s\S]*?<\/style>/gi, ' ')
             .replace(/<[^>]+>/g, ' ')
@@ -140,6 +247,7 @@ export async function syncInboxLifecycleEvents(maxMessages = 40, filePath = DEFA
             fromAddress: fromAddr,
             subject,
             bodyText: rawText,
+            inReplyTo,
           });
 
           if (classified) {
@@ -167,7 +275,7 @@ export async function syncInboxLifecycleEvents(maxMessages = 40, filePath = DEFA
     } catch {}
   }
 
-  const trimmed = existing.slice(0, 500);
-  saveInboxLifecycleEvents(trimmed, filePath);
-  return trimmed;
+  const enriched = crossMatchLifecycleEventsWithQueue(existing.slice(0, 500));
+  saveInboxLifecycleEvents(enriched, filePath);
+  return enriched;
 }

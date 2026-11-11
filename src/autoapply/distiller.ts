@@ -975,9 +975,11 @@ export async function distillFormStep(frame: Frame): Promise<DistilledField[]> {
         for (const f of fields) {
           for (const [key, item] of ghSchema.entries()) {
             const keyClean = key.toLowerCase();
+            const qIdMatch = keyClean.match(/question_\d+/i)?.[0];
             const matchesKey =
               f.refKey.toLowerCase().includes(keyClean) ||
-              (f.controlSelector && f.controlSelector.toLowerCase().includes(keyClean));
+              (Boolean(qIdMatch) && f.refKey.toLowerCase().includes(qIdMatch!)) ||
+              (f.controlSelector && (f.controlSelector.toLowerCase().includes(keyClean) || (Boolean(qIdMatch) && f.controlSelector.toLowerCase().includes(qIdMatch!))));
             if (matchesKey) {
               const hasGenericLabel =
                 !f.questionText || /^(?:field|question_\d+|input_\d+|select_\d+|custom_fields_\d+)$/i.test(f.questionText.trim());

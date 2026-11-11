@@ -117,9 +117,11 @@ export function isDomainSuppressedByInboxLifecycle(
     ) {
       const evDom = (ev.fromDomain || '').toLowerCase().trim();
       const evComp = (ev.company || '').toLowerCase().trim();
+      const evSub = (ev.subject || '').toLowerCase().trim();
       if (
         (cleanDom && evDom && (evDom === cleanDom || evDom.endsWith('.' + cleanDom) || cleanDom.endsWith('.' + evDom))) ||
-        (cleanComp && evComp && (evComp === cleanComp || evComp.includes(cleanComp) || cleanComp.includes(evComp)))
+        (cleanComp && evComp && (evComp === cleanComp || evComp.includes(cleanComp) || cleanComp.includes(evComp))) ||
+        (cleanComp && cleanComp.length >= 3 && evSub.includes(cleanComp))
       ) {
         return {
           suppressed: true,
@@ -266,10 +268,10 @@ export async function runOutreachBatch(options: {
       break;
     }
 
-    let email = (lead.targetEmail || '').trim().toLowerCase();
+    let email = (lead.targetEmail || (lead as any).primaryEmail || (lead as any).email || '').trim().toLowerCase();
     const company = (lead.company || '').trim();
     const roleTitle = (lead.roleTitle || '').trim();
-    let domain = email.includes('@') ? email.split('@')[1]!.trim().toLowerCase() : '';
+    let domain = ((lead as any).domain || (email.includes('@') ? email.split('@')[1] : '') || '').trim().toLowerCase();
 
     // GEN-456: Suppress domain if lifecycle event indicates rejection, interview/OA, or recruiter direct reply
     const suppressCheck = isDomainSuppressedByInboxLifecycle(company, domain, lifecycleEvents);
