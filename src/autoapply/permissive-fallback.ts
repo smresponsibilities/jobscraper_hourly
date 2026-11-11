@@ -47,6 +47,17 @@ export function resolveUniversalPermissiveFallback(params: {
   const q = `${params.questionText} ${params.placeholder || ''}`.replace(/[✱*]/g, '').toLowerCase().trim();
   const opts = (params.options || []).filter(o => o && !/^(select|choose|please select|--)/i.test(o.trim()));
 
+  // Ticket GEN-485.1: Safe Checkbox Fallback Guard
+  if (params.widgetKind === 'CHECKBOX') {
+    if (
+      /\b(currently work here|current job|do not contact|disability|veteran|hispanic)\b/i.test(params.questionText) ||
+      /\b(currently work here|current job|do not contact|disability|veteran|hispanic)\b/i.test(q)
+    ) {
+      return 'false';
+    }
+    return 'true';
+  }
+
   // Ticket GEN-212: 1,050+ Question Portal Ontology Engine
   const bankHit = lookupQuestionIn1000Bank(params.questionText, params.widgetKind);
   if (bankHit !== undefined) {
@@ -138,8 +149,14 @@ export function resolveUniversalPermissiveFallback(params: {
     return '1';
   }
 
-  // 3. Checkboxes
+  // 3. Checkboxes (Ticket GEN-485.1: Safe Checkbox Fallback Guard)
   if (params.widgetKind === 'CHECKBOX') {
+    if (
+      /\b(currently work here|current job|do not contact|disability|veteran|hispanic)\b/i.test(params.questionText) ||
+      /\b(currently work here|current job|do not contact|disability|veteran|hispanic)\b/i.test(q)
+    ) {
+      return 'false';
+    }
     return 'true';
   }
 

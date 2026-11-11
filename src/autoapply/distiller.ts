@@ -26,7 +26,7 @@ export interface GreenhouseQuestionSchemaItem {
 
 const greenhouseSchemaCache = new Map<string, { data: Map<string, GreenhouseQuestionSchemaItem>; expiresAt: number }>();
 
-export async function fetchGreenhouseQuestionSchema(jobUrl: string): Promise<Map<string, GreenhouseQuestionSchemaItem>> {
+export async function fetchGreenhouseQuestionSchema(jobUrl: string, frame?: Frame): Promise<Map<string, GreenhouseQuestionSchemaItem>> {
   const map = new Map<string, GreenhouseQuestionSchemaItem>();
   try {
     const u = new URL(jobUrl);
@@ -36,11 +36,45 @@ export async function fetchGreenhouseQuestionSchema(jobUrl: string): Promise<Map
     }
 
     const parts = u.pathname.split('/').filter(Boolean);
-    const board = u.searchParams.get('for') || (parts[0] !== 'embed' ? parts[0] : null);
-    const jobId =
+    let board = u.searchParams.get('for') || (parts[0] !== 'embed' ? parts[0] : null);
+    let jobId =
       u.pathname.match(/\/jobs\/(\d+)/)?.[1] ||
       u.searchParams.get('token') ||
       u.searchParams.get('gh_jid');
+
+    // Ticket GEN-483.2: Extract board slug from frame's <form id="application_form" action="..."> or <meta property="og:url">
+    if (!board && frame) {
+      try {
+        const info = await frame.evaluate(() => {
+          if (typeof document === 'undefined') return { action: '', metaOg: '' };
+          const form = document.querySelector('form#application_form') as HTMLFormElement | null;
+          const action = form?.getAttribute('action') || form?.action || '';
+          const metaOg = document.querySelector('meta[property="og:url"]')?.getAttribute('content') || '';
+          return { action, metaOg };
+        });
+        for (const candidate of [info?.action, info?.metaOg]) {
+          if (!candidate) continue;
+          try {
+            const parsed = new URL(candidate, u.origin);
+            const parsedBoard = parsed.searchParams.get('for') || (parsed.pathname.split('/').filter(Boolean)[0] !== 'embed' ? parsed.pathname.split('/').filter(Boolean)[0] : null);
+            if (parsedBoard) {
+              board = parsedBoard;
+              if (!jobId) {
+                jobId = parsed.pathname.match(/\/jobs\/(\d+)/)?.[1] || parsed.searchParams.get('token') || parsed.searchParams.get('gh_jid');
+              }
+              break;
+            }
+          } catch {
+            const m = candidate.match(/(?:boards(?:-api)?\.greenhouse\.io\/|\/)([a-zA-Z0-9_\-]+)\/jobs\/(\d+)/);
+            if (m && m[1] && m[1] !== 'embed') {
+              board = m[1];
+              if (!jobId && m[2]) jobId = m[2];
+              break;
+            }
+          }
+        }
+      } catch {}
+    }
 
     if (!board || !jobId) return map;
     const apiUrl = `https://boards-api.greenhouse.io/v1/boards/${encodeURIComponent(board)}/jobs/${encodeURIComponent(jobId)}?questions=true`;
@@ -991,7 +1025,7 @@ export async function distillFormStep(frame: Frame): Promise<DistilledField[]> {
   // Ticket GEN-457: Hydrate Greenhouse question labels and options from ?questions=true schema API
   if (frame.url().includes('greenhouse.io')) {
     try {
-      const ghSchema = await fetchGreenhouseQuestionSchema(frame.url());
+      const ghSchema = await fetchGreenhouseQuestionSchema(frame.url(), frame);
       if (ghSchema.size > 0) {
         for (const f of fields) {
           for (const [key, item] of ghSchema.entries()) {

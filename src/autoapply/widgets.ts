@@ -1,4 +1,4 @@
-import type { Frame, Locator } from 'patchright';
+import type { Frame, Locator, Page } from 'patchright';
 
 export interface HarvestedChoiceResult { options: string[]; popupContainer: Locator | null }
 
@@ -900,4 +900,71 @@ export async function fillLeverLocationInput(frame: Frame): Promise<boolean> {
   await frame.page().waitForTimeout(100);
   await control.press('Enter').catch(() => {});
   return true;
+}
+
+/**
+ * Ticket GEN-484: Smart dual-format phone filler
+ * (+91 E.164 vs maxlength="10" truncation guard)
+ */
+export async function fillPhoneInputSmart(
+  control: Locator,
+  rawPhone: string,
+  hasSeparateCountryCodeField = false
+): Promise<string> {
+  const digitsOnly = String(rawPhone || '').replace(/\D/g, '');
+  const tenDigitNational = digitsOnly.slice(-10);
+  const e164 = `+91${tenDigitNational}`;
+
+  if (tenDigitNational.length < 10) {
+    await control.fill(rawPhone).catch(() => {});
+    return rawPhone;
+  }
+
+  const isShortMaxLength = await control.evaluate((el: HTMLElement) => {
+    const input = el as HTMLInputElement;
+    const ml = input.maxLength;
+    const attr = input.getAttribute('maxlength');
+    return ml === 10 || ml === 11 || attr === '10' || attr === '11';
+  }).catch(() => false);
+
+  if (hasSeparateCountryCodeField || isShortMaxLength) {
+    await control.fill(tenDigitNational).catch(() => {});
+    return tenDigitNational;
+  }
+
+  await control.fill(e164).catch(() => {});
+  const readBack = typeof control.inputValue === 'function'
+    ? await control.inputValue().catch(() => '')
+    : await control.evaluate((el: any) => el.value || '').catch(() => '');
+  const readBackDigits = String(readBack || '').replace(/\D/g, '');
+  const lastFour = tenDigitNational.slice(-4);
+  if (!readBackDigits.endsWith(lastFour)) {
+    await control.fill(tenDigitNational).catch(() => {});
+    return tenDigitNational;
+  }
+  return e164;
+}
+
+/**
+ * Ticket GEN-487.1: Active form frame resolver across multi-frame & embedded ATS forms
+ */
+export function getActiveFormFrame(page: Page): Frame {
+  const frames = page.frames();
+  if (frames.length === 1) return frames[0]!;
+  for (const f of frames) {
+    const url = f.url().toLowerCase();
+    if (
+      url.includes('greenhouse.io') ||
+      url.includes('lever.co') ||
+      url.includes('myworkdayjobs.com') ||
+      url.includes('smartrecruiters') ||
+      url.includes('ashbyhq') ||
+      url.includes('workable') ||
+      url.includes('recruitee') ||
+      url.includes('breezy.hr')
+    ) {
+      return f;
+    }
+  }
+  return page.mainFrame();
 }

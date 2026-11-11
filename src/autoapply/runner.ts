@@ -20,10 +20,10 @@ import { captureEvidence, sanitizedDocument } from './evidence.js';
 import { authenticateApplication, hasEmailAuthenticationGate } from './authentication.js';
 import type { CredentialVault } from './vault.js';
 import { attemptAutonomousCaptchaSolve } from './captcha.js';
-import { comboboxSelection, isVisibleApplicationControl, harvestControlOptions, stealthClick, fillAsyncLocationCombobox, fillSmartRecruitersCountryCombobox, selectAshbyYesNoOrCheckboxGroup, selectHarvestedOption, translateCanonicalAnswerToOption, fillLeverLocationInput } from './widgets.js';
+import { comboboxSelection, isVisibleApplicationControl, harvestControlOptions, stealthClick, fillAsyncLocationCombobox, fillSmartRecruitersCountryCombobox, selectAshbyYesNoOrCheckboxGroup, selectHarvestedOption, translateCanonicalAnswerToOption, fillLeverLocationInput, fillPhoneInputSmart, getActiveFormFrame } from './widgets.js';
 import { unwrapDirectAtsApplicationUrl, isOfflineDinoPage, waitForInternetRecoveryIfOffline } from './url-unwrapper.js';
 import { installRamDietRouteFilter, enforceHumanSubmissionPacingFloor } from './ram-and-pacing.js';
-export { stealthClick } from './widgets.js';
+export { stealthClick, getActiveFormFrame } from './widgets.js';
 import { annotateQuestionClusters, isInteractiveChoiceReadOnly } from './distiller.js';
 import { reserveStateAction } from './state-guard.js';
 import { exceedsExperienceGate, isSupportedDirectAtsJobUrl } from './preflight.js';
@@ -2503,6 +2503,22 @@ export class AutoApplyRunner {
     return anyHealed;
   }
 
+  private getActiveFormFrame(): Frame {
+    if (!this.page || this.page.isClosed()) throw new Error('Page is closed');
+    return getActiveFormFrame(this.page);
+  }
+
+  private getPrioritizedFormFrames(): Frame[] {
+    if (!this.page || this.page.isClosed()) return [];
+    try {
+      const active = this.getActiveFormFrame();
+      const rest = this.page.frames().filter(f => f !== active);
+      return [active, ...rest];
+    } catch {
+      return this.page.frames();
+    }
+  }
+
   private async receipt(): Promise<BotRunReport['receipt']> {
     for (const page of this.getActiveApplicationPages()) {
       if (page.isClosed()) continue;
@@ -2534,7 +2550,18 @@ export class AutoApplyRunner {
           return { url: page.url(), text: titleText.slice(0, 1000), verifiedAt: new Date().toISOString(), selector: 'title', applicationId, ...(EXISTING_APPLICATION.test(titleText) ? { existing: true } : {}) };
         }
         for (const frame of page.frames()) {
-          const candidates = frame.locator('h1, h2, h3, h4, p, [role="status"], [role="alert"], #application_confirmation, .application-confirmation, .post-apply-message, [data-automation-id="applicationSubmitted"], [data-automation-id="congratulationsMessage"]');
+          // Ticket GEN-487.1: Active-Frame 8-ATS direct terminal confirmation check
+          const terminalSuccess = frame.locator('[data-automation-id="thankYouMessage"], [data-ui="application-success"], .ashby-application-form-success, #application_confirmation, .application-confirmation');
+          for (const item of await terminalSuccess.all()) {
+            if (!await item.isVisible().catch(() => false)) continue;
+            const text = (await item.innerText().catch(() => '')).trim();
+            if (text.length > 0) {
+              this.page = page;
+              const applicationId = new URL(page.url()).searchParams.get('applicationId') || new URL(page.url()).searchParams.get('application_id') || undefined;
+              return { url: page.url(), text: text.slice(0, 1000), verifiedAt: new Date().toISOString(), selector: 'terminal_confirmation', applicationId };
+            }
+          }
+          const candidates = frame.locator('h1, h2, h3, h4, p, [role="status"], [role="alert"], #application_confirmation, .application-confirmation, .post-apply-message, [data-automation-id="applicationSubmitted"], [data-automation-id="congratulationsMessage"], [data-automation-id="thankYouMessage"], [data-ui="application-success"], .ashby-application-form-success');
           for (const item of await candidates.all()) {
             if (!await item.isVisible()) continue;
             if (await item.evaluate(el => !!el.closest('footer,nav,[role="contentinfo"],aside'))) continue;
@@ -2548,11 +2575,11 @@ export class AutoApplyRunner {
           }
         }
 
-        // Step 291 (GEN-292): Unmounted-Form + Container Confirmation Detection
+        // Step 291 (GEN-292 & GEN-487): Unmounted-Form + Container Confirmation Detection
         const unmountedFormConfirmed = await page
           .evaluate(() => {
             const confirmEl = document.querySelector(
-              '#application_confirmation, .application-confirmation, oc-confirmation, [data-test*="confirmation" i], [data-automation-id="thankYouMessage"]'
+              '#application_confirmation, .application-confirmation, oc-confirmation, [data-test*="confirmation" i], [data-automation-id="thankYouMessage"], [data-ui="application-success"], .ashby-application-form-success'
             ) as HTMLElement | null;
             if (confirmEl && confirmEl.offsetParent !== null && (confirmEl.innerText || '').trim().length > 5) {
               return (confirmEl.innerText || '').trim().slice(0, 140);
@@ -3931,7 +3958,27 @@ export class AutoApplyRunner {
               continue;
             }
 
-            if (options.mode === 'stealth') await this.humanType(input, stringVal);
+            // Ticket GEN-484: Smart dual-format phone filler
+            const isPhone = info.type === 'tel' || (/\b(?:phone|mobile)\b/i.test(descriptor + ' ' + (action.question || '')) && !/\b(?:country|code|extension|prefix|device|type)\b/i.test(descriptor + ' ' + (action.question || '')));
+            if (isPhone) {
+              const hasSeparateCountryCodeField = await frame.evaluate(() => {
+                const doc = (globalThis as any).document;
+                if (!doc) return false;
+                const els: any[] = Array.from(doc.querySelectorAll('input, select, [role="combobox"]'));
+                return els.some((el: any) => {
+                  const meta = [
+                    el.id,
+                    el.getAttribute('name'),
+                    el.getAttribute('aria-label'),
+                    el.getAttribute('placeholder'),
+                    el.closest('label, .field, [data-automation-id^="formField-"]')?.textContent || ''
+                  ].filter(Boolean).join(' ');
+                  return /\b(?:country\s*code|dial(?:ing)?\s*code|phone\s*code|phone\s*prefix)\b/i.test(meta);
+                });
+              }).catch(() => false);
+              stringVal = await fillPhoneInputSmart(input, stringVal, hasSeparateCountryCodeField);
+              value = stringVal;
+            } else if (options.mode === 'stealth') await this.humanType(input, stringVal);
             else {
               await input.fill(stringVal, { timeout: 2500 }).catch(() => {});
               const typedVal = await Promise.race([
@@ -4825,8 +4872,12 @@ export class AutoApplyRunner {
             }
           }
           if (visibleInvalidCount > 0 && this.page && !this.page.isClosed()) {
+            const activeFormFrame = this.getActiveFormFrame();
+            await healInvalidFieldsAndRetrySubmit(activeFormFrame, options.profile.personal.email, options.profile.personal.phone, this.attemptedFieldRefs).catch(() => 0);
             for (const frame of this.page.frames()) {
-              await healInvalidFieldsAndRetrySubmit(frame, options.profile.personal.email, options.profile.personal.phone, this.attemptedFieldRefs).catch(() => 0);
+              if (frame !== activeFormFrame) {
+                await healInvalidFieldsAndRetrySubmit(frame, options.profile.personal.email, options.profile.personal.phone, this.attemptedFieldRefs).catch(() => 0);
+              }
             }
             visibleInvalidCount = 0;
             for (const frame of this.page.frames()) {
@@ -4994,13 +5045,22 @@ export class AutoApplyRunner {
           if (!changed) {
             // Ticket GEN-199: Heal & retry before failing on "Next did not change the form"
             if (this.page && !this.page.isClosed()) {
+              const activeFormFrame = this.getActiveFormFrame();
+              await healInvalidFieldsAndRetrySubmit(
+                activeFormFrame,
+                options.profile.personal.email,
+                options.profile.personal.phone,
+                this.attemptedFieldRefs
+              ).catch(() => 0);
               for (const frame of this.page.frames()) {
-                await healInvalidFieldsAndRetrySubmit(
-                  frame,
-                  options.profile.personal.email,
-                  options.profile.personal.phone,
-                  this.attemptedFieldRefs
-                ).catch(() => 0);
+                if (frame !== activeFormFrame) {
+                  await healInvalidFieldsAndRetrySubmit(
+                    frame,
+                    options.profile.personal.email,
+                    options.profile.personal.phone,
+                    this.attemptedFieldRefs
+                  ).catch(() => 0);
+                }
               }
               // SmartRecruiters autocomplete shadow-root option selector
               await this.page.evaluate(() => {
@@ -5205,7 +5265,7 @@ export class AutoApplyRunner {
           (options.url && (options.url.includes('greenhouse.io') || options.url.includes('gh_jid=')))
         ) {
           await this.page!.waitForTimeout(3000);
-          for (const f of this.page!.frames()) {
+          for (const f of this.getPrioritizedFormFrames()) {
             const verified = await completeInPageEmailVerificationIfPrompted(
               this.page!,
               f,
@@ -5213,6 +5273,7 @@ export class AutoApplyRunner {
               {
                 sinceMs: submitClickedTime - 10_000,
                 companyHint: options.company || (options.requisition as any)?.company,
+                email: options.profile.personal.email,
               }
             ).catch(() => false);
             if (verified) {
@@ -5265,7 +5326,7 @@ export class AutoApplyRunner {
           const has428 = (report.submission?.requests || []).some(r => r.status === 428);
           if (!report.receipt && !this.page!.isClosed() && ['greenhouse', 'workday', 'smartrecruiters', 'unknown'].includes(report.ats) && (has428 || (!inpageOtpAttempted && Date.now() - submitClickedTime >= 3500))) {
             inpageOtpAttempted = true;
-            for (const f of this.page!.frames()) {
+            for (const f of this.getPrioritizedFormFrames()) {
               const verified = await completeInPageEmailVerificationIfPrompted(
                 this.page!,
                 f,
@@ -5273,6 +5334,7 @@ export class AutoApplyRunner {
                 {
                   sinceMs: submitClickedTime - 10_000,
                   companyHint: options.company || (options.requisition as any)?.company,
+                  email: options.profile.personal.email,
                 }
               ).catch(() => false);
               if (verified) {
@@ -5292,7 +5354,7 @@ export class AutoApplyRunner {
             if (await frame.locator('input:invalid,select:invalid,textarea:invalid,[aria-invalid="true"],[role="alert"]').filter({ visible: true }).count()) validationBounce = true;
           }
           if (!report.receipt && !this.page!.isClosed()) {
-            for (const frame of this.page!.frames()) {
+            for (const frame of this.getPrioritizedFormFrames()) {
               const verified = await completeInPageEmailVerificationIfPrompted(
                 this.page!,
                 frame,
@@ -5300,6 +5362,7 @@ export class AutoApplyRunner {
                 {
                   sinceMs: submitClickedTime - 10_000,
                   companyHint: options.company || (options.requisition as any)?.company,
+                  email: options.profile.personal.email,
                 }
               ).catch(() => false);
               if (verified) {
@@ -5311,7 +5374,7 @@ export class AutoApplyRunner {
           }
           // Ticket GEN-59, GEN-60 & GEN-61: Post-Submit :invalid Surgical Healer
           if (!report.receipt && !this.page!.isClosed()) {
-            for (const frame of this.page!.frames()) {
+            for (const frame of this.getPrioritizedFormFrames()) {
               const healedCount = await healInvalidFieldsAndRetrySubmit(frame, options.profile.personal.email, options.profile.personal.phone, this.attemptedFieldRefs);
               if (healedCount > 0) {
                 this.log(`Post-submit surgical healer fixed ${healedCount} invalid/unanswered fields on frame.`);
@@ -5325,7 +5388,7 @@ export class AutoApplyRunner {
 
                   // Ticket GEN-302 & GEN-480: Check for in-page email OTP / verification prompt after healed retry submit
                   if (!report.receipt && !this.page!.isClosed()) {
-                    for (const f of this.page!.frames()) {
+                    for (const f of this.getPrioritizedFormFrames()) {
                       const verified = await completeInPageEmailVerificationIfPrompted(
                         this.page!,
                         f,
@@ -5333,6 +5396,7 @@ export class AutoApplyRunner {
                         {
                           sinceMs: submitClickedTime - 10_000,
                           companyHint: options.company || (options.requisition as any)?.company,
+                          email: options.profile.personal.email,
                         }
                       ).catch(() => false);
                       if (verified) {
@@ -5352,7 +5416,7 @@ export class AutoApplyRunner {
             const networkErrors = this.lastNetworkValidationErrors;
             this.lastNetworkValidationErrors = [];
             this.log(`[GEN-439] Healing ${networkErrors.length} network-rejected fields before retry submit`);
-            for (const frame of this.page!.frames()) {
+            for (const frame of this.getPrioritizedFormFrames()) {
               // Mark each rejected field as aria-invalid so healInvalidFieldsAndRetrySubmit picks it up
               await frame.evaluate((errors: Array<{ field?: string; message: string }>) => {
                 for (const err of errors) {
@@ -5394,7 +5458,7 @@ export class AutoApplyRunner {
 
                 // Ticket GEN-302 & GEN-480: Check for in-page email OTP / verification prompt after self-healed retry submit
                 if (!report.receipt && !this.page!.isClosed()) {
-                  for (const f of this.page!.frames()) {
+                  for (const f of this.getPrioritizedFormFrames()) {
                     const verified = await completeInPageEmailVerificationIfPrompted(
                       this.page!,
                       f,
@@ -5402,6 +5466,7 @@ export class AutoApplyRunner {
                       {
                         sinceMs: submitClickedTime - 10_000,
                         companyHint: options.company || (options.requisition as any)?.company,
+                        email: options.profile.personal.email,
                       }
                     ).catch(() => false);
                     if (verified) {

@@ -2,7 +2,7 @@ import { ImapFlow } from 'imapflow';
 import type { Frame, Page } from 'patchright';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { loadDotEnvIntoProcess } from './env-credentials.js';
+import { loadDotEnvIntoProcess, ensureWorkdayCompliantPassword } from './env-credentials.js';
 
 export interface ImapVerificationResult {
   found: boolean;
@@ -306,7 +306,13 @@ export async function completeInPageEmailVerificationIfPrompted(
   page: Page,
   frame: Frame,
   onActivity?: () => void,
-  options?: { sinceMs?: number; companyHint?: string }
+  options?: {
+    sinceMs?: number;
+    companyHint?: string;
+    email?: string;
+    password?: string;
+    imapPoller?: (opts: any) => Promise<ImapVerificationResult>;
+  }
 ): Promise<boolean> {
   const pageText = await frame.evaluate(() => (document.body?.innerText || '').slice(0, 3000)).catch(() => '');
   const hasSecurityInput = await frame
@@ -325,7 +331,8 @@ export async function completeInPageEmailVerificationIfPrompted(
 
   if (!needsVerification) return false;
 
-  const res = await pollImapForVerificationCodeOrLink({
+  const poller = options?.imapPoller || pollImapForVerificationCodeOrLink;
+  const res = await poller({
     sinceMs: options?.sinceMs ?? (Date.now() - 60_000),
     companyHint: options?.companyHint,
     maxWaitMs: 35_000,
@@ -348,7 +355,48 @@ export async function completeInPageEmailVerificationIfPrompted(
       await verifyPage.close().catch(() => {});
     }
     await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {});
-    await page.waitForTimeout(2500);
+    await page.waitForTimeout(2000);
+
+    // Ticket GEN-486.1: Workday Post-Link Auto-Sign-In
+    const isSignInScreen = await page
+      .locator('[data-automation-id="signInContent"], input[type="password"]')
+      .filter({ visible: true })
+      .count()
+      .catch(() => 0) > 0;
+
+    if (isSignInScreen) {
+      const emailToUse = options?.email || process.env.AUTOAPPLY_EMAIL || 'shivam2314.be22@chitkara.edu.in';
+      const passwordToUse = ensureWorkdayCompliantPassword(options?.password || process.env.AUTOAPPLY_PASSWORD || '');
+
+      const emailInput = page
+        .locator('#input-4, [data-automation-id="formField-email"] input, input[type="email"]')
+        .filter({ visible: true })
+        .first();
+      if (await emailInput.isVisible().catch(() => false)) {
+        await emailInput.click({ timeout: 2000 }).catch(() => {});
+        await emailInput.fill(emailToUse).catch(() => {});
+      }
+
+      const pwInput = page
+        .locator('input[type="password"], [data-automation-id="password"]')
+        .filter({ visible: true })
+        .first();
+      if (await pwInput.isVisible().catch(() => false)) {
+        await pwInput.click({ timeout: 2000 }).catch(() => {});
+        await pwInput.fill(passwordToUse).catch(() => {});
+      }
+
+      const submitBtn = page
+        .locator('[data-automation-id="signInSubmitButton"], [data-automation-id="click_filter"]')
+        .filter({ visible: true })
+        .first();
+      if (await submitBtn.isVisible().catch(() => false)) {
+        await submitBtn.click({ force: true, timeout: 3000 }).catch(() => {});
+        await page.waitForTimeout(2500);
+      }
+    } else {
+      await page.waitForTimeout(500);
+    }
     return true;
   }
 
