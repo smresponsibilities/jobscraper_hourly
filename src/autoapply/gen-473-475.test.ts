@@ -125,3 +125,24 @@ test('GEN-474: partitionJobsIntoProviderLanes routes workable.com and preserves 
   assert.equal(lanes.lever.length, 2, 'Lever lane must contain both lever and workable jobs');
   assert.equal(lanes.workday.length, 1);
 });
+
+test('GEN-473.2: decodeQuotedPrintableMime normalizes &nbsp; before OTP token extraction', () => {
+  const emailWithNbsp = `
+    <div>
+      <p>Your security code is:</p>
+      <strong>&nbsp;Q9k2Mt7X&nbsp;</strong>
+    </div>
+  `;
+  const res = extractOtpOrLinkFromMime(emailWithNbsp);
+  assert.equal(res.otpCode, 'Q9k2Mt7X', 'Must extract OTP code even with &nbsp; inside tags');
+});
+
+test('GEN-474: immortal-supervisor.ps1 launches drain-backfill-and-hourly with --submit', () => {
+  const supervisorSrc = fs.readFileSync(path.resolve('scripts/immortal-supervisor.ps1'), 'utf8');
+  assert.ok(supervisorSrc.includes('--submit'), 'immortal-supervisor.ps1 MUST launch worker with --submit flag');
+});
+
+test('GEN-473.1: isOtpInput protects postal_code and zip_code from being skipped', () => {
+  const runnerSrc = fs.readFileSync(path.resolve('src/autoapply/runner.ts'), 'utf8');
+  assert.ok(runnerSrc.includes('postal|zip'), 'runner.ts OTP guards must exclude postal/zip codes');
+});

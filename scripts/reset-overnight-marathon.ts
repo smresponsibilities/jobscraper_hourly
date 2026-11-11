@@ -23,13 +23,18 @@ const resetQuery = `
       OR normalized_url LIKE '%ashbyhq.com%'
       OR normalized_url LIKE '%lever.co%'
       OR normalized_url LIKE '%workable.com%'
+      OR payload LIKE '%"provider":"greenhouse"%'
+      OR payload LIKE '%"provider":"ashby"%'
+      OR payload LIKE '%"provider":"lever"%'
+      OR payload LIKE '%"provider":"workable"%'
     )
     AND normalized_url NOT LIKE '%stripe%'
     AND normalized_url NOT LIKE '%avoca%'
     AND normalized_url NOT LIKE '%ssctech%'
     AND normalized_url NOT LIKE '%paypal%'
-    AND payload NOT LIKE '%404%'
-    AND payload NOT LIKE '%closed%'
+    AND payload NOT LIKE '%"job_closed"%'
+    AND payload NOT LIKE '%status_404%'
+    AND payload NOT LIKE '%404 Not Found%'
 `;
 
 const result = db.prepare(resetQuery).run() as { changes: number };

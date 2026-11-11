@@ -38,8 +38,8 @@ while ($true) {
             Remove-Item -Force $_.FullName -ErrorAction SilentlyContinue
         }
 
-        Write-Host "[SUPERVISOR] Launching worker: drain-backfill-and-hourly.ts..." -ForegroundColor Green
-        $proc = Start-Process -FilePath "node" -ArgumentList "--import tsx scripts/drain-backfill-and-hourly.ts --profile state/autoapply/portal-review/candidate.json" -WorkingDirectory $repoRoot -PassThru -NoNewWindow
+        Write-Host "[SUPERVISOR] Launching worker: drain-backfill-and-hourly.ts with --submit..." -ForegroundColor Green
+        $proc = Start-Process -FilePath "node" -ArgumentList "--import tsx scripts/drain-backfill-and-hourly.ts --profile state/autoapply/portal-review/candidate.json --submit" -WorkingDirectory $repoRoot -PassThru -NoNewWindow
         
         Write-Host "[SUPERVISOR] Worker spawned with PID: $($proc.Id). Monitoring execution..." -ForegroundColor Green
         # Wait up to 5s before checking again, or wait for process exit

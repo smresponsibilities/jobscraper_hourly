@@ -258,7 +258,7 @@ export async function healInvalidFieldsAndRetrySubmit(
       const id = (el.id || '').toLowerCase();
       const name = (el.getAttribute('name') || '').toLowerCase();
       const auto = (el.getAttribute('autocomplete') || '').toLowerCase();
-      if (id.includes('security') || name.includes('security') || name.includes('code') || auto === 'one-time-code') return true;
+      if (id.includes('security') || name.includes('security') || (name.includes('code') && !/postal|zip|country|dial|area|currency|phone/i.test(name)) || auto === 'one-time-code') return true;
       if (el.closest('[class*="security-code"], [id*="security_code"], [class*="security_code"], [id*="security-code"]')) return true;
       return false;
     };
@@ -2814,7 +2814,7 @@ export class AutoApplyRunner {
           const name = (element.getAttribute('name') || '').toLowerCase();
           const auto = (element.getAttribute('autocomplete') || '').toLowerCase();
           if (element instanceof HTMLInputElement && element.maxLength === 1) return false;
-          if (id.includes('security') || name.includes('security') || name.includes('code') || auto === 'one-time-code') return false;
+          if (id.includes('security') || name.includes('security') || (name.includes('code') && !/postal|zip|country|dial|area|currency|phone/i.test(name)) || auto === 'one-time-code') return false;
           if (element.closest('[class*="security-code"], [id*="security_code"], [class*="security_code"], [id*="security-code"]')) return false;
           if (workday && element.ownerDocument.querySelector('[data-automation-id^="formField-"]') && (!element.closest('[data-automation-id^="formField-"]') || element.closest('[data-automation-id="responsiveMonikerPrompt"],[data-automation-id="activeListContainer"]'))) return false;
           return true;
@@ -5119,7 +5119,11 @@ export class AutoApplyRunner {
 
         // Ticket GEN-473.1: Right after clicking Submit application on Greenhouse (wait 3000ms for security code prompt to mount),
         // call completeInPageEmailVerificationIfPrompted before running healInvalidFieldsAndRetrySubmit!
-        if (report.ats === 'greenhouse' || (this.page && this.page.url().includes('greenhouse.io'))) {
+        if (
+          report.ats === 'greenhouse' ||
+          (this.page && (this.page.url().includes('greenhouse.io') || this.page.url().includes('gh_jid='))) ||
+          (options.url && (options.url.includes('greenhouse.io') || options.url.includes('gh_jid=')))
+        ) {
           await this.page!.waitForTimeout(3000);
           for (const f of this.page!.frames()) {
             const verified = await completeInPageEmailVerificationIfPrompted(this.page!, f, () => this.activeWatchdog?.heartbeat('inpage_otp')).catch(() => false);

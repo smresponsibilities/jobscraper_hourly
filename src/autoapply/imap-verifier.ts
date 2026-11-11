@@ -47,7 +47,7 @@ export async function withImapMutex<T>(fn: () => Promise<T>): Promise<T> {
 export function decodeQuotedPrintableMime(raw: string): string {
   if (!raw) return '';
   const withoutSoftBreaks = raw.replace(/=(?:\r\n|\r|\n)/g, '');
-  const decoded = withoutSoftBreaks.replace(/(?:=[0-9A-Fa-f]{2})+/g, (match) => {
+  const decoded = withoutSoftBreaks.replace(/(?:=[0-9A-F]{2})+/g, (match) => {
     try {
       const bytes: number[] = [];
       for (let i = 0; i < match.length; i += 3) {
@@ -58,19 +58,21 @@ export function decodeQuotedPrintableMime(raw: string): string {
       return match;
     }
   });
-  return decoded.replace(/&amp;/gi, '&');
+  return decoded.replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&');
 }
 
 export const COMMON_8_LETTER_WORDS = /^(?:security|position|software|engineer|location|linkedin|question|required|optional|uploaded|attached|personal|graduate|bachelor|internal|external|complete|continue|verified|customer|platform|database|frontend|template|document|response|received|applying|greenhouse|dharmesh|mahajan|bengaluru)$/i;
 
 export function extractOtpOrLinkFromMime(decoded: string): { otpCode?: string; verificationUrl?: string } {
+  const cleanDecoded = (decoded || '').replace(/&nbsp;/gi, ' ');
+
   // 1. Check for Workday / ATS Verification Link
-  const linkMatch = decoded.match(
+  const linkMatch = cleanDecoded.match(
     /https?:\/\/[^\s"'<>]+(?:myworkdayjobs\.com|myworkday\.com|smartrecruiters\.com|greenhouse\.io)[^\s"'<>]*(?:verify|confirm|activate|token|code)[^\s"'<>]*/i
   );
 
   // Stage 1: Look for an isolated 6-to-8 char token inside HTML emphasis/table/heading tags
-  const tagMatches = [...decoded.matchAll(/<(?:h1|h2|h3|h4|strong|b|code|td|p|div|span)[^>]*>\s*([A-Za-z0-9]{6,8})\s*<\/(?:h1|h2|h3|h4|strong|b|code|td|p|div|span)>/gi)];
+  const tagMatches = [...cleanDecoded.matchAll(/<(?:h1|h2|h3|h4|strong|b|code|td|p|div|span)[^>]*>\s*([A-Za-z0-9]{6,8})\s*<\/(?:h1|h2|h3|h4|strong|b|code|td|p|div|span)>/gi)];
   let extractedCode: string | undefined;
   for (const m of tagMatches) {
     const cand = m[1]!.trim();
@@ -82,7 +84,7 @@ export function extractOtpOrLinkFromMime(decoded: string): { otpCode?: string; v
   }
 
   // Stage 2: Look after colon or explicit phrase ("application form: X7k9Pq2M" or "code is: 123456")
-  const bodyWithoutHtml = decoded.replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+  const bodyWithoutHtml = cleanDecoded.replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
   if (!extractedCode) {
     const phraseMatch =
       bodyWithoutHtml.match(/(?:application form|paste this[^:]{0,40}|security code[^:]{0,40}|verification code[^:]{0,40}|code is)[:\s]+([A-Za-z0-9]{6,8})\b/i) ||
@@ -356,11 +358,24 @@ export async function completeInPageEmailVerificationIfPrompted(page: Page, fram
       .first();
     if (await submitBtn.isVisible().catch(() => false)) {
       await submitBtn.click({ force: true, timeout: 3000 }).catch(() => {});
+    } else {
+      const pageSubmitBtn = page
+        .locator(
+          'button[type="submit"], button:has-text("Submit application"), button:has-text("Verify"), button:has-text("Submit"), [data-automation-id="click_filter"], button[data-automation-id*="verify" i]'
+        )
+        .filter({ visible: true })
+        .first();
+      if (await pageSubmitBtn.isVisible().catch(() => false)) {
+        await pageSubmitBtn.click({ force: true, timeout: 3000 }).catch(() => {});
+      }
     }
 
     const startWait = Date.now();
     while (Date.now() - startWait < 10000) {
-      const pageTextNow = await page.evaluate(() => (document.body?.innerText || '').toLowerCase()).catch(() => '');
+      let pageTextNow = await frame.evaluate(() => (document.body?.innerText || '').toLowerCase()).catch(() => '');
+      if (!pageTextNow && page && !page.isClosed()) {
+        pageTextNow = await page.evaluate(() => (document.body?.innerText || '').toLowerCase()).catch(() => '');
+      }
       if (/thank you|application submitted|application received|your application has been submitted|congratulations|received your application/i.test(pageTextNow)) {
         break;
       }

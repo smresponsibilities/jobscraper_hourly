@@ -277,6 +277,10 @@ function resetEligiblePausedJobs(dbPath: string): number {
             OR json_extract(payload, '$.reason') LIKE '%No supported submit control found%'
             OR json_extract(payload, '$.error') LIKE '%Next did not change the form%'
             OR json_extract(payload, '$.reason') LIKE '%Next did not change the form%'
+            OR json_extract(payload, '$.error') LIKE '%Ready for submission review%'
+            OR json_extract(payload, '$.reason') LIKE '%Ready for submission review%'
+            OR json_extract(payload, '$.error') LIKE '%use --submit to send%'
+            OR json_extract(payload, '$.reason') LIKE '%use --submit to send%'
           )
         ) OR (
           status = 'failed'
@@ -312,7 +316,7 @@ async function main(): Promise<void> {
     if (['--submit', '--headless', '--skip-sync', '--force-sync', '--once'].includes(key)) {
       flags.add(key);
     } else if (
-      ['--profile', '--state', '--max-jobs', '--time-budget', '--catalog-url'].includes(key) &&
+      ['--profile', '--state', '--max-jobs', '--time-budget', '--time-budget-minutes', '--catalog-url'].includes(key) &&
       args[i + 1] &&
       !args[i + 1]!.startsWith('--')
     ) {
@@ -330,7 +334,11 @@ async function main(): Promise<void> {
   const shouldSubmit = flags.has('--submit');
   const headless = !flags.has('--headless') || flags.has('--headless'); // Default to headless
   const maxJobs = values.has('--max-jobs') ? parseInt(values.get('--max-jobs')!, 10) : 60;
-  const timeBudgetMinutes = values.has('--time-budget') ? parseInt(values.get('--time-budget')!, 10) : 50;
+  const timeBudgetMinutes = values.has('--time-budget-minutes')
+    ? parseInt(values.get('--time-budget-minutes')!, 10)
+    : values.has('--time-budget')
+      ? parseInt(values.get('--time-budget')!, 10)
+      : 50;
   const skipSync = flags.has('--skip-sync');
   const forceSync = flags.has('--force-sync');
   const discoveryCachePath = path.join(stateDir, 'last-discovery-sync.json');
@@ -635,9 +643,16 @@ async function main(): Promise<void> {
         break;
       }
 
+      // Ticket GEN-474: Filter out previously attempted jobs while treating SQLite status = 'queued' as authoritative
+      const freshQueued = filterUnattemptedJobs(eligible);
+      if (freshQueued.length === 0) {
+        console.log(`[DRAIN] All ${eligible.length} eligible queued jobs have already been applied. Exiting continuous loop.`);
+        break;
+      }
+
     // Schwartzian transform: compute priority scores once in O(N) rather than O(N log N) inside .sort()
     const now = Date.now();
-    const scoredCandidates = eligible.map((job) => {
+    const scoredCandidates = freshQueued.map((job) => {
       const aDateStr = (job as any).createdAt || job.postedAt;
       const aTime = Date.parse(aDateStr || '0') || 0;
       const score = computeJobPriorityScore({
@@ -932,6 +947,16 @@ async function main(): Promise<void> {
           finishedAt: jobFinishedAt,
           durationMs,
           receiptVerified: report.status === 'submitted' || !!report.receipt,
+        });
+      }
+
+      // Ticket GEN-474: Record attempted job to persistent registry
+      if (report.status !== 'queued' && report.reason !== 'service_temporarily_unavailable' && report.reason !== 'wifi_drop_requeued') {
+        recordAttemptedJob({
+          jobId: job.id,
+          url: job.jobUrl,
+          company: job.company,
+          status: finalStatus,
         });
       }
 
