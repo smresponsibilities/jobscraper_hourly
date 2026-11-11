@@ -124,4 +124,43 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     });
     return true;
   }
+
+  // Ticket GEN-462: Real-time Semantic Brain Synchronization with Dashboard
+  if (message.type === 'SYNC_BRAIN') {
+    fetch('http://localhost:4321/api/extension-brain')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data && data.semanticMemory) {
+          chrome.storage.local.set({
+            semanticMemory: data.semanticMemory,
+            candidateSummary: data.candidateSummary,
+            resumePaths: data.resumePaths,
+            brainUpdatedAt: data.updatedAt,
+          }, () => {
+            sendResponse({ success: true, ruleCount: data.ruleCount });
+          });
+        } else {
+          sendResponse({ success: false, error: 'Invalid response from brain endpoint' });
+        }
+      })
+      .catch((err) => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
+
+  if (message.type === 'LEARN_FIELD') {
+    fetch('http://localhost:4321/api/extension-brain', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        questionText: message.questionText,
+        resolvedValue: message.resolvedValue,
+        linkedCategory: message.linkedCategory || 'extension_sync',
+        confidence: message.confidence || 0.85,
+      }),
+    })
+      .then((res) => res.json())
+      .then((data) => sendResponse({ success: true, data }))
+      .catch((err) => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
 });

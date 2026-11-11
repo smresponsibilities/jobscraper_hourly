@@ -32,7 +32,7 @@ import { expandWorkdayApplications, findWorkdayApplication, workdayApplicationsE
 import { ensureWorkdayApplicationStarted } from './workday-entry.js';
 import { authenticateWorkdayPortal } from './authentication.js';
 import { runWorkdayStepFastPass, checkWorkdayStepLoopAndRecover, type WorkdayStepLoopState } from './workday-wizard.js';
-import { recordLearnedSuccess, logUnknownFieldForLearning, resolveBySemanticSelfLearning, inferAnswerFromOptionSignature, recordVerifiedAcceptedApplicationAnswers } from './self-learning.js';
+import { recordLearnedSuccess, penalizeLearnedRuleOnValidationFailure, logUnknownFieldForLearning, resolveBySemanticSelfLearning, inferAnswerFromOptionSignature, recordVerifiedAcceptedApplicationAnswers } from './self-learning.js';
 import { resolveEmployerDomain, findFreeCompanyLeads, generateColdOutreachDraft, recordOutreachLead } from '../leads/free-email-finder.js';
 import { captureElementFingerprint, saveAdaptiveFingerprint, findAdaptiveLocator } from './adaptive-relocator.js';
 import { loadHostSessionState, markHostOutcome } from './session-pool.js';
@@ -4631,6 +4631,29 @@ export class AutoApplyRunner {
               invalid = true;
               const ctrlDesc = await control.evaluate((el: Element) => `${el.tagName}#${el.id}[name="${el.getAttribute('name')}"][type="${el.getAttribute('type')}"]: ${(el as HTMLInputElement).validationMessage || el.getAttribute('aria-invalid')}`).catch(() => 'unknown');
               this.log(`Invalid visible control: ${ctrlDesc}`);
+              // Ticket GEN-462: Penalize learned rule on post-submit validation failure
+              const qText = await control.evaluate((el: Element) => {
+                const aria = el.getAttribute('aria-label');
+                if (aria) return aria;
+                if (el.id) {
+                  const lbl = document.querySelector(`label[for="${el.id}"]`);
+                  if (lbl?.textContent) return lbl.textContent.trim();
+                }
+                const pLbl = el.closest('label');
+                if (pLbl?.textContent) return pLbl.textContent.trim();
+                const formGroup = el.closest('.form-group, .field, [class*="form-field"], [class*="question"]');
+                if (formGroup) {
+                  const title = formGroup.querySelector('label, [class*="label"], [class*="title"]');
+                  if (title?.textContent) return title.textContent.trim();
+                }
+                return el.getAttribute('name') || el.id || '';
+              }).catch(() => '');
+              if (qText) {
+                const penalty = penalizeLearnedRuleOnValidationFailure(qText);
+                if (penalty.action === 'decayed' || penalty.action === 'pruned') {
+                  this.log(`[SEMANTIC-MEMORY] Penalized rule for "${qText}": action=${penalty.action}, confidence=${penalty.confidence}`);
+                }
+              }
             }
           }
           for (const group of await frame.locator('fieldset[aria-required="true"],[role="group"][aria-required="true"]').all()) {

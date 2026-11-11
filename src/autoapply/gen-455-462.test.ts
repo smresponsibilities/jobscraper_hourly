@@ -22,6 +22,12 @@ import {
   buildCoverLetterDocx,
   resolveCoverLetterPdfPath,
 } from '../resume/cover-letter-builder.js';
+import {
+  penalizeLearnedRuleOnValidationFailure,
+  recordLearnedSuccess,
+  loadSemanticMemory,
+} from './self-learning.js';
+import { getExtensionBrainData } from '../../scripts/dashboard-server.js';
 
 test('GEN-455.1: classifyEmailLifecycleStage correctly identifies all 5 stages', () => {
   // 1. HARD_BOUNCE_550
@@ -383,5 +389,62 @@ test('GEN-461.1: Cover letter generator creates grounded single-page HTML, DOCX,
   assert.ok(typeof pdfPath === 'string');
   assert.ok(pdfPath.endsWith('.pdf'));
   assert.ok(fs.existsSync(pdfPath));
+});
+
+test('GEN-462.1: penalizeLearnedRuleOnValidationFailure decays confidence and prunes bad rules', () => {
+  const tempMemoryPath = path.resolve('state/autoapply/portal-review/test-semantic-memory.json');
+  try {
+    // 1. Setup a rule
+    recordLearnedSuccess(
+      'What is your notice period?',
+      'notice_period',
+      'Immediate (0 days)',
+      0.85,
+      tempMemoryPath
+    );
+    let mem = loadSemanticMemory(tempMemoryPath);
+    const key = Object.keys(mem)[0];
+    assert.ok(key);
+    const initialConf = mem[key].confidence;
+    assert.ok(initialConf >= 0.85);
+
+    // 2. Penalize once -> confidence decays by 0.25
+    const expectedDecayed = Math.round((initialConf - 0.25) * 100) / 100;
+    const pen1 = penalizeLearnedRuleOnValidationFailure('What is your notice period?', tempMemoryPath);
+    assert.equal(pen1.action, 'decayed');
+    assert.equal(pen1.confidence, expectedDecayed);
+
+    mem = loadSemanticMemory(tempMemoryPath);
+    assert.equal(mem[key].confidence, expectedDecayed);
+
+    // 3. Penalize again -> confidence drops below 0.50 -> pruned completely!
+    const pen2 = penalizeLearnedRuleOnValidationFailure('What is your notice period?', tempMemoryPath);
+    assert.equal(pen2.action, 'pruned');
+    assert.ok(pen2.confidence! < 0.50);
+
+    mem = loadSemanticMemory(tempMemoryPath);
+    assert.equal(mem[key], undefined);
+
+    // 4. Non-existent rule returns not_found
+    const pen3 = penalizeLearnedRuleOnValidationFailure('Non existent question', tempMemoryPath);
+    assert.equal(pen3.action, 'not_found');
+  } finally {
+    if (fs.existsSync(tempMemoryPath)) {
+      try { fs.unlinkSync(tempMemoryPath); } catch {}
+    }
+  }
+});
+
+test('GEN-462.2: getExtensionBrainData returns shared semantic memory, candidate summary, and resume paths', () => {
+  const brainData = getExtensionBrainData();
+  assert.ok(brainData);
+  assert.ok(typeof brainData.ruleCount === 'number');
+  assert.ok(typeof brainData.semanticMemory === 'object');
+  assert.ok(Array.isArray(brainData.resumePaths));
+  assert.ok(brainData.resumePaths.some((p: string) => p.endsWith('.pdf')));
+  if (brainData.candidateSummary) {
+    assert.equal(brainData.candidateSummary.personal?.firstName, 'Shivam');
+    assert.equal(brainData.candidateSummary.personal?.lastName, 'Mahajan');
+  }
 });
 

@@ -28,8 +28,8 @@ export interface UnknownFieldEntry {
   lastSeenAt: string;
 }
 
-const DEFAULT_MEMORY_PATH = path.resolve('state/autoapply/portal-review/semantic-memory.json');
-const DEFAULT_LEDGER_PATH = path.resolve('state/autoapply/portal-review/unknown-fields-ledger.json');
+export const DEFAULT_MEMORY_PATH = path.resolve('state/autoapply/portal-review/semantic-memory.json');
+export const DEFAULT_LEDGER_PATH = path.resolve('state/autoapply/portal-review/unknown-fields-ledger.json');
 
 export function normalizeQuestionKey(q: string): string {
   return q
@@ -73,6 +73,46 @@ export function recordLearnedSuccess(
   };
   fs.mkdirSync(path.dirname(memoryPath), { recursive: true });
   fs.writeFileSync(memoryPath, JSON.stringify(mem, null, 2), 'utf8');
+}
+
+/**
+ * Ticket GEN-462: Self-Pruning Confidence Decay on Validation Failure.
+ * Decrements confidence by 0.25 when a learned field fails validation (:invalid / aria-invalid).
+ * Deletes rule completely if confidence drops below 0.50.
+ */
+export function penalizeLearnedRuleOnValidationFailure(
+  questionText: string,
+  memoryPath = DEFAULT_MEMORY_PATH
+): { key: string; action: 'decayed' | 'pruned' | 'not_found'; confidence?: number } {
+  const targetKey = normalizeQuestionKey(questionText);
+  if (!targetKey) return { key: targetKey, action: 'not_found' };
+
+  const mem = loadSemanticMemory(memoryPath);
+  let matchedKey = targetKey;
+  if (!mem[matchedKey]) {
+    const foundKey = Object.keys(mem).find(
+      k => k === targetKey || normalizeQuestionKey(mem[k]?.sampleRawQuestion || '') === targetKey
+    );
+    if (foundKey) matchedKey = foundKey;
+  }
+
+  const existing = mem[matchedKey];
+  if (!existing) return { key: targetKey, action: 'not_found' };
+
+  const newConfidence = Math.round((existing.confidence - 0.25) * 100) / 100;
+  if (newConfidence < 0.50) {
+    delete mem[matchedKey];
+    fs.mkdirSync(path.dirname(memoryPath), { recursive: true });
+    fs.writeFileSync(memoryPath, JSON.stringify(mem, null, 2), 'utf8');
+    return { key: matchedKey, action: 'pruned', confidence: newConfidence };
+  } else {
+    existing.confidence = newConfidence;
+    existing.lastUsedAt = new Date().toISOString();
+    mem[matchedKey] = existing;
+    fs.mkdirSync(path.dirname(memoryPath), { recursive: true });
+    fs.writeFileSync(memoryPath, JSON.stringify(mem, null, 2), 'utf8');
+    return { key: matchedKey, action: 'decayed', confidence: newConfidence };
+  }
 }
 
 export function logUnknownFieldForLearning(

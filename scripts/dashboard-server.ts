@@ -10,6 +10,7 @@ import { executeFullDatabaseRecovery } from './recover-gen100-103-jobs.js';
 import { runOutreachBatch } from './send-outreach-batch.js';
 import { getDoctorStatus } from '../src/autoapply/health-and-ram-watchdog.js';
 import { loadInboxLifecycleEvents } from '../src/autoapply/inbox-lifecycle-tracker.js';
+import { recordLearnedSuccess, penalizeLearnedRuleOnValidationFailure, loadSemanticMemory } from '../src/autoapply/self-learning.js';
 
 const PORT = Number(process.env.AUTOAPPLY_DASHBOARD_PORT || 4321);
 const LOG_PATH = path.resolve('out/hourly-daemon.log');
@@ -40,6 +41,51 @@ export function getOvernightErrorsData() {
     }
   } catch {}
   return cachedErrorsData || { topFailureCategories: [], topUnknownQuestions: [], missedButtonStalls: [] };
+}
+
+export function getExtensionBrainData(
+  memoryPath = path.resolve('state/autoapply/portal-review/semantic-memory.json'),
+  candidatePath = path.resolve('state/autoapply/portal-review/candidate.json'),
+  resumesDir = path.resolve('state/autoapply/resumes')
+) {
+  const semanticMemory = loadSemanticMemory(memoryPath);
+  let candidateSummary: any = null;
+  if (fs.existsSync(candidatePath)) {
+    try {
+      const fullCandidate = JSON.parse(fs.readFileSync(candidatePath, 'utf8'));
+      candidateSummary = {
+        personal: fullCandidate.personal,
+        education: fullCandidate.education,
+        experience: fullCandidate.experience?.map((e: any) => ({
+          title: e.title,
+          company: e.company,
+          location: e.location,
+          startDate: e.startDate,
+          endDate: e.endDate,
+        })),
+        skills: fullCandidate.skills,
+        workAuthorization: fullCandidate.workAuthorization,
+        eeo: fullCandidate.eeo,
+      };
+    } catch {}
+  }
+
+  let resumePaths: string[] = [];
+  if (fs.existsSync(resumesDir)) {
+    try {
+      resumePaths = fs.readdirSync(resumesDir)
+        .filter(f => f.endsWith('.pdf') || f.endsWith('.docx'))
+        .map(f => path.join(resumesDir, f));
+    } catch {}
+  }
+
+  return {
+    semanticMemory,
+    candidateSummary,
+    resumePaths,
+    ruleCount: Object.keys(semanticMemory).length,
+    updatedAt: new Date().toISOString(),
+  };
 }
 
 let cachedHourlyJobsData: any = null;
@@ -2281,6 +2327,67 @@ export function startDashboardServer(port = PORT): http.Server {
         res.end(JSON.stringify({ error: err?.message || 'Error reading inbox lifecycle events' }));
       }
       return;
+    }
+
+    // Ticket GEN-462: Shared Semantic Brain Endpoint for extension/ & web UI
+    if (url.pathname === '/api/extension-brain') {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204);
+        res.end();
+        return;
+      }
+
+      if (req.method === 'GET') {
+        try {
+          const brainData = getExtensionBrainData();
+          res.writeHead(200, {
+            'Content-Type': 'application/json; charset=utf-8',
+            'Cache-Control': 'no-store, no-cache, must-revalidate',
+          });
+          res.end(JSON.stringify(brainData));
+        } catch (err: any) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: err?.message || 'Error serving extension brain' }));
+        }
+        return;
+      }
+
+      if (req.method === 'POST') {
+        let body = '';
+        req.on('data', chunk => { body += chunk; });
+        req.on('end', () => {
+          try {
+            const payload = body ? JSON.parse(body) : {};
+            const memoryPath = path.resolve('state/autoapply/portal-review/semantic-memory.json');
+            if (payload.questionText && payload.resolvedValue) {
+              recordLearnedSuccess(
+                payload.questionText,
+                payload.linkedCategory || 'extension_sync',
+                payload.resolvedValue,
+                payload.confidence || 0.85,
+                memoryPath
+              );
+              res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+              res.end(JSON.stringify({ ok: true, action: 'learned', questionText: payload.questionText }));
+            } else if (payload.penalizeQuestion) {
+              const penalty = penalizeLearnedRuleOnValidationFailure(payload.penalizeQuestion, memoryPath);
+              res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+              res.end(JSON.stringify({ ok: true, ...penalty }));
+            } else {
+              res.writeHead(400, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: 'Missing questionText and resolvedValue or penalizeQuestion in payload' }));
+            }
+          } catch (err: any) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: err?.message || 'Error updating extension brain' }));
+          }
+        });
+        return;
+      }
     }
 
     if (url.pathname === '/' || url.pathname === '/index.html') {
