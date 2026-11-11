@@ -51,8 +51,8 @@ export function place(position: BzPosition): string {
   return [...new Set(places.map(label).filter(Boolean))].join(' / ');
 }
 
-export async function list(company: Company): Promise<RawJob[]> {
-  const positions = await getJson<BzPosition[]>(`https://${company.token}.breezy.hr/json`);
+export async function list(company: Company, fetchJson: typeof getJson = getJson): Promise<RawJob[]> {
+  const positions = await fetchJson<BzPosition[]>(`https://${company.token}.breezy.hr/json`);
   const jobs: RawJob[] = [];
 
   for (const position of positions ?? []) {

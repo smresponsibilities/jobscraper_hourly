@@ -91,19 +91,30 @@ export function extractJobTimestampMs(candidate: QueuedJobCandidate): { timestam
   const p = candidate.payload || {};
   // 1. Check explicit ISO/epoch timestamp fields in priority order
   const rawStamps: Array<[string, unknown]> = [
+    ['postedAt', p.postedAt],
+    ['publishedAt', p.publishedAt],
+    ['updated_at', p.updated_at],
+    ['first_published', p.first_published],
+    ['releasedDate', p.releasedDate],
+    ['published_on', p.published_on],
+    ['published_at', p.published_at],
+    ['published_date', p.published_date],
+    ['created_at', p.created_at],
+    ['updatedAt', p.updatedAt],
+    ['employer_createdAt', p.createdAt],
     ['discoveredAt', candidate.discoveredAt || p.discoveredAt],
     ['scrapedAt', p.scrapedAt],
-    ['postedAt', p.postedAt || p.publishedAt],
-    ['createdAt', candidate.createdAtMs || p.createdAt || p.firstSeenAt],
-    ['updatedAt', p.updatedAt],
+    ['createdAt', candidate.createdAtMs || p.firstSeenAt],
   ];
   for (const [src, val] of rawStamps) {
-    if (typeof val === 'number' && val > 1_600_000_000_000) {
-      return { timestampMs: val, source: src };
+    if (typeof val === 'number' && Number.isFinite(val) && val > 0) {
+      const timestampMs = val < 1e12 ? val * 1000 : val;
+      if (timestampMs <= 8.64e15) return { timestampMs, source: src };
     }
     if (typeof val === 'string' && val.trim()) {
-      const parsed = Date.parse(val);
-      if (!Number.isNaN(parsed) && parsed > 1_600_000_000_000) {
+      const numeric = /^\d{10,13}$/.test(val.trim()) ? Number(val) : NaN;
+      const parsed = Number.isFinite(numeric) ? (numeric < 1e12 ? numeric * 1000 : numeric) : Date.parse(val);
+      if (!Number.isNaN(parsed) && parsed > 0) {
         return { timestampMs: parsed, source: src };
       }
     }
@@ -120,30 +131,13 @@ export function computeJobPriorityScore(job: QueuedJobCandidate, nowMs = Date.no
   let score = 0;
 
   // Extract accurate timestamp across all possible payload fields
-  const { timestampMs } = extractJobTimestampMs(job);
-  const ageHours = timestampMs > 0 ? Math.max(0, (nowMs - timestampMs) / 3_600_000) : 999;
+  const { timestampMs, source } = extractJobTimestampMs(job);
+  const ageHours = timestampMs > 0 && timestampMs <= nowMs ? (nowMs - timestampMs) / 3_600_000 : 999;
+  const employerTimestamp = ['postedAt', 'publishedAt', 'updated_at', 'updatedAt', 'employer_createdAt', 'first_published', 'releasedDate', 'published_on', 'published_at', 'published_date', 'created_at'].includes(source);
   const isHourlyExpired = timestampMs > 0 && ageHours > 24;
 
-  // 0. Hourly Fresh Job Super Priority (+50,000 pts for Tier-2 fresh, +10,000 pts for Tier-1 fresh)
-  // ONLY grant the hourly priority boost when candidate.url is a fillable ATS URL AND not expired (>24h)!
-  const rawFresh = job.is_hourly_fresh ?? job.isHourlyFresh ?? job.payload?.is_hourly_fresh ?? job.payload?.isHourlyFresh;
-  let freshLevel = 0;
-  if (!isHourlyExpired) {
-    if (typeof rawFresh === 'number') {
-      freshLevel = rawFresh;
-    } else if (rawFresh === true) {
-      freshLevel = 1;
-    } else if (
-      (job.discoveredAt && (nowMs - new Date(job.discoveredAt).getTime()) <= 86400_000) ||
-      (job.payload?.discoveredAt && (nowMs - new Date(job.payload.discoveredAt).getTime()) <= 86400_000)
-    ) {
-      freshLevel = 1;
-    }
-  }
-
-  if (freshLevel >= 2 && isFillableAtsUrl(job.url)) {
-    score += 50000;
-  } else if (freshLevel >= 1 && isFillableAtsUrl(job.url)) {
+  // Legacy freshness flags are not evidence of an employer timestamp.
+  if (!isHourlyExpired && timestampMs > 0 && timestampMs <= nowMs && employerTimestamp && isFillableAtsUrl(job.url)) {
     score += 10000;
   }
 
@@ -159,12 +153,9 @@ export function computeJobPriorityScore(job: QueuedJobCandidate, nowMs = Date.no
     score += fit.priorityBonus;
   }
 
-  // 1. Recency / Freshness Score (Strictly monotonic curve: +15,000 for <= 1h, +12,000 for <= 3h, +9,000 for <= 6h)
-  if (ageHours <= 1) score += 15000;
-  else if (ageHours <= 3) score += 12000;
-  else if (ageHours <= 6) score += 9000;
-  else if (ageHours <= 24) score += Math.round(6000 - ((ageHours - 6) / 18) * 3000);
-  else if (ageHours <= 72) score += Math.round(2500 - ((ageHours - 24) / 48) * 1500);
+  // Employer timestamps alone establish recency.
+  if (employerTimestamp && timestampMs <= nowMs && ageHours <= 24) score += Math.round(15000 - ageHours / 24 * 7000);
+  else if (employerTimestamp && ageHours <= 72) score += Math.round(2500 - ((ageHours - 24) / 48) * 1500);
   else score += 0;
 
   // Also tie-break by SQLite rowId / timestamp so newer DB inserts always beat older ones
@@ -187,23 +178,6 @@ export function computeJobPriorityScore(job: QueuedJobCandidate, nowMs = Date.no
   else if (u.includes('gh_jid=')) score += 220; // Will be unwrapped to direct embed URL by GEN-49!
   else if (u.includes('myworkdayjobs.com')) score += 150;
   else if (u.includes('jobs.lever.co')) score += 100;
-
-  // GEN-469: Date-Bump / Repost Boost (+3500 points within last 24h)
-  const isBumped = Boolean(job.payload?.dateBumpedAt || job.payload?.date_bumped_at);
-  const isReposted = job.payload?.isReposted === true || job.payload?.is_reposted === true;
-  if (isBumped || isReposted) {
-    const bumpStamp = job.payload?.dateBumpedAt || job.payload?.date_bumped_at || job.payload?.repostedAt || job.payload?.reposted_at;
-    let within24h = true;
-    if (bumpStamp) {
-      const ms = Date.parse(bumpStamp);
-      if (!isNaN(ms) && (nowMs - ms) > 86_400_000) {
-        within24h = false;
-      }
-    }
-    if (within24h) {
-      score += 3500;
-    }
-  }
 
   // GEN-469: India GCC / Confirmed Bengaluru Office Priority Boost (+1500 points)
   const compDomain = job.payload?.domain || job.payload?.companyDomain || job.url;

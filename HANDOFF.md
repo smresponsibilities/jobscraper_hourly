@@ -1,5 +1,149 @@
 # Handoff
 
+## Resume, answer safety and daemon audit, 12 November 2026
+
+This section supersedes earlier GEN-492 through GEN-494 completion claims below.
+The independent daemon and historical-answer investigation is documented in
+[`docs/autoapply-daemon-and-answer-audit-2026-11-12.md`](docs/autoapply-daemon-and-answer-audit-2026-11-12.md).
+It includes the watchdog, supervisor, recovery, history and receipt changes,
+their tests, and the limits of the historical telemetry. No supervisor or worker
+was restarted; these are local source changes, not a production deployment.
+
+The runner now replaces a selected stale resume when its bytes differ from the
+current compilation, and avoids attaching resumes to unidentified required file
+fields. It requires a live description or supplied brief and stops when both
+are absent. Its close/timeout handling and history finalization no longer treat
+an attempted submit or completed status as proof of an employer receipt.
+Unscoped semantic memory, option-signature guesses and permissive defaults are
+disabled. Required consent is no longer automatically checked; missing facts
+remain for review. Existing deterministic scoped answers remain available. The
+model is not automatically enabled or connected to a paid service.
+
+An isolated, intercepted Ashby-shaped browser fixture exercised a retained tab,
+replaced an older selected PDF by bytes and made no submission. The first run of
+this fixture accidentally used the repository working directory: runner
+finalization can append synthetic telemetry and update queue-summary.json there.
+Its synthetic ID did not match a queue row. Subsequent runner tests use an
+isolated working directory; inspect and reconcile any synthetic history or
+summary entry using evidence, without changing queue data blindly.
+
+The seven ATS fixture response shapes preserve employer dates into the scheduler;
+future, malformed, missing and legacy flags do not create freshness bonuses.
+Diversified chunk selection preserves the scheduler's order rather than sorting
+by legacy freshness flags, and an isolated selection fixture covers this path.
+Provider lanes can still run concurrently, so finish order is not guaranteed.
+Discovery-only imports in the drain, hourly sync and historical backfill no
+longer create a posting date or fresh flag from the time of discovery. GitHub
+snapshot imports preserve a supplied employer-date field and validate freshness.
+Project ranking now considers domain terms and retains verified project stacks;
+matching project skills are included even when absent from the base archetype.
+Keyword-density diagnostics no longer reject truthful resumes. The owner-provided
+ticket supplies employment assertions; public portfolio descriptions support
+the project descriptions, but independent employment verification is unavailable.
+
+Chrome generated seven one-page sample PDFs. LibreOffice rendered the seven
+matching DOCX samples as one page each. DOCX XML tests check selected bullets,
+project names/stacks and skills against the shared plan; Word's own layout and
+complete PDF text extraction were not tested. Concurrent compilations use
+separate output directories. A cold compile measured 600 ms; six subsequent
+samples measured 223–270 ms. Another warmed run measured 279–361 ms. These are
+measurements on this machine, not a hard 380 ms guarantee. Runtime output
+directories accumulate and need a safe retention policy before deployment.
+Server-side attachments that clear or hide the file input cannot always be
+independently read back; do not claim universal proof for those portals.
+
+The owner confirmed additional language, India-only geography, pay-range,
+paid-role, travel, shifts, demographic and consent facts. Their protected
+profile changes and provenance record are described in the independent audit.
+The resolver reads typed, validated preferences, keeps unavailable pay periods
+and unspecified destinations unresolved, and uses no invented proficiency.
+After integration, an aggregate-only offline replay of 234 historical ledger
+labels produced 135 answers with fact references and 99 unresolved, with zero
+nonempty answers lacking references. This is not a live coverage rate or proof
+that every answer or option is correct; labels may lack current employer context.
+The duplicate-submission fixture also confirms that an ambiguous checkpoint
+survives `retryReviewed` and does not dispatch another submission.
+
+No live submission, outreach send, production restart, unsupported queue
+migration, or push occurred. Existing invented employer dates remain uncorrected
+without provenance. Broad historical tests that expect guessed values or allow
+localhost through the production ATS gate are not equivalent to the focused
+offline fixtures and need separate revision.
+
+## Resume and freshness review follow-up, 12 November 2026
+
+This follow-up is incomplete; do not treat GEN-492 through GEN-494 as accepted.
+Runtime outputs now use a unique directory per compilation, including repeated
+compilations for the same job, so one run cannot overwrite another run's files.
+Removed archetype PDF/DOCX fallbacks from step and submit paths. Freshness scoring
+no longer gives discovery dates, future dates, or legacy tier flags a freshness
+bonus. The drain script calls the scheduler before tenant diversification; actual
+end-to-end queue ordering and all seven adapter integrations still need fixtures.
+
+Focused GEN-492/493/494 tests passed with actual Chrome PDF generation; one PDF
+page was checked and simultaneous compilations for one job used distinct paths.
+The concurrent pair took 1,315 ms; a preceding single compile took 710 ms,
+above the 380 ms target. Build type checking passed. DOCX pagination,
+PDF/DOCX text consistency, full upload/resume behavior,
+offline workflow fixtures and failure handling still need verification. Existing
+workflow fixtures are rejected by the production direct-ATS URL gate. No live
+submissions, production restarts, outreach, queue migrations or pushes occurred.
+Previously invented dates remain uncorrected; they cannot be distinguished from
+employer dates without provenance. Project stack filtering can hide relevant
+skills and keyword limits can reject otherwise truthful resumes; review both.
+Resumed forms may retain an earlier uploaded file; verify file identity before
+claiming that every submission uses the newly compiled artifact. Unique output
+directories accumulate and need a safe retention policy if deployed.
+
+## Runtime resume and employer freshness changes, 12 November 2026
+
+Implemented the attached GEN-492 through GEN-494 request locally.
+
+- Runner renders a resume after extracting the live description, with the supplied
+  application brief as fallback. Four verified experience bullets are ranked by
+  technical overlap, three projects are selected across eight portfolio entries,
+  and existing verified skill categories are reordered. HTML and DOCX use the same
+  selection functions. Runtime experience ranking uses the verified employment
+  bullet pool rather than presenting portfolio ML/systems work as employment.
+- Runtime PDF and DOCX use `Shivam_Mahajan_Resume` filenames under
+  `state/autoapply/resumes/runtime/<job-id-sha256-prefix>/`. The isolated rendering
+  page uses the existing browser context and closes in `finally`. Uploads and
+  later step/submit fallbacks receive the compiled path. PDF bytes are checked for
+  exactly one page after bounded font compaction, without dropping a project.
+  Runtime keyword validation requires below 2% density and at most four occurrences
+  per counted content word, retaining the existing stopword rules. Failed checks
+  stop the run rather than silently attaching an old archetype file.
+- Fast harvest preserves employer timestamps for Greenhouse, Ashby, Lever and
+  Workable, and reuses existing SmartRecruiters, Recruitee and Breezy adapters.
+  `publishedAt`/`postedAt` no longer receive discovery time. Only nonfuture employer
+  timestamps within 24 hours set freshness flags and the harvest priority bonus.
+- Scheduler checks employer date aliases before discovery, scrape and local insert
+  dates. It normalizes epoch seconds and milliseconds. Hourly boosts require an
+  employer timestamp, so stale flags and newly discovered old jobs cannot receive
+  them. Tier-1 real postings within 24 hours receive 18,000 to 25,000 combined
+  freshness/recency points before other fit adjustments.
+- Refreshed the four upstream references. Details in
+  `docs/autoapply-open-source-research.md`. No third-party code was executed.
+
+Verification: build type check passed; four GEN-492/493/494 regressions passed,
+including real Chrome PDF/DOCX generation; all eight existing deterministic resume
+tests passed; existing focused timestamp tests and scraper self-tests passed.
+Seven role families passed runtime keyword checks. The broader
+`workflow.test.ts` run failed on localhost browser fixtures: the existing
+`isSupportedDirectAtsJobUrl` gate returns `unsupported_non_direct_ats_url`
+before the changed runtime code executes. The same gate is present in HEAD.
+That suite is not green, and these failures were not hidden by loosening the
+production allowlist.
+
+Remaining limitation: measured compiler latency was 437–697 ms with an existing
+browser context, above the requested 380 ms ceiling. DOCX files are valid OpenXML;
+Word pagination was not measured. No live applications or outreach were sent,
+no queue data was migrated, no daemon was restarted and nothing was pushed.
+Existing rows previously stamped with invented publication dates are not repaired
+without original employer timestamp evidence. Existing untracked
+`scripts/check-recent-applied.mjs` was left untouched.
+
+
 ## Next-Session Agent Quickstart & Production Health Checklist (Updated 2026-11-11)
 
 > [!IMPORTANT]

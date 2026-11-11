@@ -182,7 +182,7 @@ test('GEN-445: STOP_AUTOAPPLY.flag sentinel prevents unsafe supervisor restarts'
   assert.equal(fs.existsSync(sentinelPath), false, 'STOP_AUTOAPPLY.flag cleanup must succeed');
 });
 
-test('GEN-446: check30MinZeroFillDroughtAndAutoHeal triggers self-healing and doctor report', () => {
+test('GEN-446: drought diagnostics preserve submission policy and host backoff', () => {
   const testStateDir = path.resolve('state/autoapply/test-doctor-state');
   const testReviewDir = path.join(testStateDir, 'portal-review');
   fs.mkdirSync(testReviewDir, { recursive: true });
@@ -214,20 +214,20 @@ test('GEN-446: check30MinZeroFillDroughtAndAutoHeal triggers self-healing and do
   });
 
   assert.equal(report.appliedLast30m, 0);
-  assert.equal(report.healed, true);
-  assert.equal(report.permissiveModeEnabled, true);
-  assert.equal(report.cooldownsReset, true);
-  assert.equal(process.env.FORCE_PERMISSIVE_SUBMIT_ALL, '1');
+  assert.equal(report.healed, false);
+  assert.equal(report.permissiveModeEnabled, false);
+  assert.equal(report.cooldownsReset, false);
+  assert.notEqual(process.env.FORCE_PERMISSIVE_SUBMIT_ALL, '1');
 
   // Verify host health cooldowns were cleared
   const updatedHostHealth = JSON.parse(fs.readFileSync(testHostHealthPath, 'utf8'));
-  assert.equal(updatedHostHealth['boards.greenhouse.io'].consecutiveFailures, 0);
-  assert.equal(updatedHostHealth['boards.greenhouse.io'].cooldownUntil, 0);
+  assert.equal(updatedHostHealth['boards.greenhouse.io'].consecutiveFailures, 3);
+  assert.equal(updatedHostHealth['boards.greenhouse.io'].cooldownUntil, now + 60000);
 
   // Verify getDoctorStatus returns latest report
   const currentStatus = getDoctorStatus();
   assert.ok(currentStatus !== null);
-  assert.equal(currentStatus?.healed, true);
+  assert.equal(currentStatus?.healed, false);
 
   // Cleanup test sandbox
   try { fs.rmSync(testStateDir, { recursive: true, force: true }); } catch {}

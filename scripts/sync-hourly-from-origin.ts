@@ -124,8 +124,6 @@ export function syncHourlyFreshJobsFromOriginMain(dbPath?: string): {
       INSERT OR IGNORE INTO applications (candidate_id, id, canonical_key, normalized_url, status, payload, owner, expires)
       VALUES (?, ?, ?, ?, 'queued', ?, NULL, NULL)
     `);
-    const updateStmt = db.prepare("UPDATE applications SET payload = ? WHERE id = ?");
-
     db.exec('BEGIN TRANSACTION');
     for (const raw of rawJobs) {
       const rawUrl = String(raw.applyUrl || raw.url || '').trim();
@@ -143,15 +141,6 @@ export function syncHourlyFreshJobsFromOriginMain(dbPath?: string): {
 
       const existing = existingByUrl.get(unwrappedUrl) || existingByUrl.get(rawUrl);
       if (existing) {
-        if (existing.status === 'queued' && !existing.payload.isHourlyFresh) {
-          existing.payload.isHourlyFresh = true;
-          existing.payload.is_hourly_fresh = 2;
-          existing.payload.jobUrl = existing.payload.jobUrl || unwrappedUrl;
-          existing.payload.url = existing.payload.url || unwrappedUrl;
-          existing.payload.priorityBonus = fit.priorityBonus;
-          updateStmt.run(JSON.stringify(existing.payload), existing.id);
-          boostedExisting++;
-        }
         continue;
       }
 
@@ -166,10 +155,10 @@ export function syncHourlyFreshJobsFromOriginMain(dbPath?: string): {
         url: unwrappedUrl,
         jobBoard: 'direct_ats',
         location: String(raw.location || 'India').trim(),
-        postedAt: new Date().toISOString(),
+        postedAt: '',
         status: 'queued',
-        isHourlyFresh: true,
-        is_hourly_fresh: 2,
+        isHourlyFresh: false,
+        is_hourly_fresh: 0,
         priorityBonus: fit.priorityBonus,
         ats,
       };
@@ -197,10 +186,6 @@ export function syncHourlyFreshJobsFromOriginMain(dbPath?: string): {
     const hasAtsCol = cols.has('ats');
     const hasHourlyFreshCol = cols.has('is_hourly_fresh');
 
-    const boostStmt = hasHourlyFreshCol
-      ? db.prepare(`UPDATE jobs SET is_hourly_fresh = 1 WHERE id = ? AND status = 'queued' AND COALESCE(is_hourly_fresh, 0) = 0`)
-      : null;
-
     db.exec('BEGIN TRANSACTION');
     for (const raw of rawJobs) {
       const rawUrl = String(raw.applyUrl || raw.url || '').trim();
@@ -218,10 +203,6 @@ export function syncHourlyFreshJobsFromOriginMain(dbPath?: string): {
 
       const existing = existingByUrl.get(unwrappedUrl) || existingByUrl.get(rawUrl);
       if (existing) {
-        if (existing.status === 'queued' && boostStmt && !existing.is_hourly_fresh) {
-          boostStmt.run(existing.id);
-          boostedExisting++;
-        }
         continue;
       }
 
@@ -243,11 +224,11 @@ export function syncHourlyFreshJobsFromOriginMain(dbPath?: string): {
         }
         if (hasHourlyFreshCol) {
           insertCols.push('is_hourly_fresh');
-          insertVals.push(2);
+          insertVals.push(0);
         }
         const placeholders = insertCols.map(() => '?').join(', ');
         db.prepare(`INSERT OR IGNORE INTO jobs (${insertCols.join(', ')}) VALUES (${placeholders})`).run(...insertVals);
-        existingByUrl.set(unwrappedUrl, { id: -1, status: 'queued', is_hourly_fresh: 2 });
+        existingByUrl.set(unwrappedUrl, { id: -1, status: 'queued', is_hourly_fresh: 0 });
         insertedFresh++;
       } catch {}
     }

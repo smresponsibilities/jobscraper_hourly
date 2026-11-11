@@ -1,5 +1,26 @@
 # Open-source autofiller research
 
+## Targeted source recheck, 12 November 2026
+
+Inspected the pinned implementation files again: Workday's
+[`workday.py`](https://github.com/HarshadLambate/workday-autofill/blob/0b288e522b075d4174f63eec86e8cc273b683963/src/wdautofill/workday.py)
+stops before Submit and tracks resume uploads separately; AutoApply's
+[`filler.js`](https://github.com/geckguy/AutoApply/blob/7b5e0a298c2181c26ba081f39d5c7086b8b8dd02/extension/content/filler.js)
+distinguishes submit-like controls and reports failed uploads; ChamPro's
+[`dom-toolkit.js`](https://github.com/ChamPro/ats-autofill/blob/b2b23e3f7b96609139b95c380e7a804d475a205e/skills/fill-app/dom-toolkit.js)
+treats file controls separately from ordinary text fields; Skyvern's current
+[`sessions.md`](https://github.com/Skyvern-AI/skyvern/blob/5ac54bbae6fbb20689685a4fd7ba5dc22c767761/skills/skyvern/references/sessions.md)
+distinguishes an active session from a persisted browser profile. These are
+source observations, not proof of live employer submissions.
+
+The corresponding local review found that resumed file inputs could retain an
+older resume and that required unknown file fields could receive a resume.
+The runner now compares selected file bytes with the current compiled artifact
+and handles explicitly labelled resume controls separately. Legacy unscoped
+answer inference, guessed fallback values and arbitrary dropdown choices are
+disabled pending evidence-backed replacements. Session/tenant isolation and
+receipt requirements remain separate from upload selection.
+
 Research checked on 31 October 2026. Upstream timestamps below are UTC. Actual
 web searches found candidates; GitHub metadata, release endpoints and pinned
 source files establish the observations. No downloaded project was executed and
@@ -110,3 +131,17 @@ not infer an employer identity by fuzzy company display-name matching.
 These are design recommendations derived from source observations. None of the
 reviewed repositories establishes reliable bot evasion or guarantees complete,
 receipt-proven autonomous application submission across all ATS platforms.
+
+
+## Reference refresh, 12 November 2026
+
+Rechecked the four repositories through GitHub's API. Workday-autofill,
+AutoApply and ats-autofill still have the exact heads recorded above.
+Skyvern advanced to `5ac54bbae6fbb20689685a4fd7ba5dc22c767761`, 190 commits
+ahead of the reviewed revision. The comparison reports no changes to the
+reviewed `sessions.md` or `browser_profile_key.py`. This is a targeted refresh,
+not a claim to have audited all 190 commits. No third-party code was executed.
+
+GEN-492 keeps per-job resume files separate and reuses the runner's existing
+browser context, including persistent contexts. Employer receipts, tenant
+isolation and scoped answers retain their existing ownership.

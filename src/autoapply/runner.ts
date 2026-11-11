@@ -1,5 +1,5 @@
 import { chromium, type Browser, type BrowserContext, type Page, type Locator, type Frame, type Request } from 'patchright';
-import { copyFileSync, mkdirSync, readFileSync, writeFileSync, renameSync, existsSync, unlinkSync, utimesSync, appendFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, renameSync, existsSync, unlinkSync, utimesSync, appendFileSync } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { execSync } from 'node:child_process';
@@ -41,7 +41,7 @@ import { createResilientBrowserContext, getResilientContextTier } from './resili
 import { JobActivityWatchdog, getProviderTimeoutConfig } from './watchdog-timer.js';
 import { applyClubbedValueTransform } from './clubbing.js';
 import { runOnDemandHumanPopup } from './hitl-popup.js';
-import { detectJobArchetype, selectBestArchetypeByJdHardMatch } from '../resume/deterministic-builder.js';
+import { compileRuntimeTailoredResumeForJob } from '../resume/deterministic-builder.js';
 import { resolveCoverLetterPdfPath } from '../resume/cover-letter-builder.js';
 import { appendJobRunHistory } from './run-history.js';
 import { capturePageDiagnostics, recordOvernightError, normalizeReasonCode } from './overnight-error-logger.js';
@@ -551,6 +551,8 @@ function retainedText(actual: string, expected: string, type?: string): boolean 
   return false;
 }
 
+const RESUME_INPUTS = 'input[type="file"][name*="resume" i], input[type="file"][id*="resume" i], input[type="file"][name="cv" i], input[type="file"][id="cv" i], input[type="file"][aria-label*="resume" i], label:has-text("Resume") input[type="file"], label:has-text("CV") input[type="file"]';
+
 export async function ensureStepReadyBeforeNext(frame: Frame, resumePath?: string, jobTitle?: string, jdText?: string): Promise<void> {
   // 1. Scroll to bottom and back to trigger lazy-mounted Workday/SmartRecruiters fields
   await frame.evaluate(() => {
@@ -558,71 +560,37 @@ export async function ensureStepReadyBeforeNext(frame: Frame, resumePath?: strin
   }).catch(() => {});
   await frame.waitForTimeout(400);
 
-  // 2. Check any unchecked required consent / privacy / terms checkboxes with DOM events
-  await frame.evaluate(() => {
-    const checkboxes = Array.from(document.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'));
-    for (const cb of checkboxes) {
-      if (cb.disabled || cb.checked) continue;
-      const boxText = (cb.closest('label, fieldset, div')?.textContent || '').toLowerCase();
-      const isConsent = cb.required || cb.getAttribute('aria-required') === 'true' || /\b(agree|acknowledge|consent|privacy|terms|certify|confirm|accurate)\b/i.test(boxText);
-      if (isConsent) {
-        cb.checked = true;
-        cb.dispatchEvent(new Event('change', { bubbles: true }));
-        cb.dispatchEvent(new Event('input', { bubbles: true }));
-        cb.click();
-      }
-    }
-  }).catch(() => {});
-
   // 3. Ensure file upload completed or attach if missing
-  let resolvedResume = resumePath;
-  if (!resolvedResume) {
-    const hardMatch = selectBestArchetypeByJdHardMatch(jobTitle || '', jdText || '');
-    const arch = hardMatch && hardMatch.matchScore > 0 ? hardMatch.archetype : detectJobArchetype(jobTitle || '', jdText || '');
-    const defaultPdf = path.resolve('state/autoapply/resumes', `Shivam_Mahajan_Resume_${arch}.pdf`);
-    const shortPdf = path.resolve('state/autoapply/resumes', `Shivam_Mahajan_Resume_${detectJobArchetype(jobTitle || '', jdText || '')}.pdf`);
-    if (existsSync(defaultPdf)) {
-      resolvedResume = defaultPdf;
-    } else if (existsSync(shortPdf)) {
-      resolvedResume = shortPdf;
-    }
-  }
+  const resolvedResume = resumePath;
+  if (resolvedResume && !existsSync(resolvedResume)) throw new Error('Compiled resume is unavailable');
 
   if (resolvedResume && existsSync(resolvedResume)) {
-    const emptyFileInput = frame.locator('input[type="file"]:not([data-autoapply-skip-file="true"])').filter({ hasNot: frame.locator('[data-autoapply-uploaded="true"]') });
+    const emptyFileInput = frame.locator(RESUME_INPUTS);
     if ((await emptyFileInput.count().catch(() => 0)) > 0) {
       const firstInput = emptyFileInput.first();
-      const hasFiles = await firstInput.evaluate((el: HTMLInputElement) => (el.files?.length ?? 0) > 0).catch(() => true);
-      if (!hasFiles) {
+      {
         let uploadFile = resolvedResume;
-        // Ticket GEN-166: Clean Shivam_Mahajan_Resume.pdf filename
-        if (/\.pdf$/i.test(uploadFile) && path.basename(uploadFile) !== 'Shivam_Mahajan_Resume.pdf') {
-          const stagedResume = path.join(path.dirname(uploadFile), 'Shivam_Mahajan_Resume.pdf');
-          try {
-            copyFileSync(uploadFile, stagedResume);
-            uploadFile = stagedResume;
-          } catch {}
-        }
         const accept = (await firstInput.getAttribute('accept').catch(() => '')) || '';
-        const prefersDocx = Boolean(accept && /\b(\.docx?|msword|wordprocessingml)\b/i.test(accept) && !/\b(\.pdf|application\/pdf)\b/i.test(accept));
+        const prefersDocx = Boolean(accept && /\.docx?|msword|wordprocessingml/i.test(accept) && !/\.pdf|application\/pdf|\*/i.test(accept));
         if (prefersDocx) {
           const docxSibling = resolvedResume.replace(/\.pdf$/i, '.docx');
           if (existsSync(docxSibling)) {
             uploadFile = docxSibling;
-          } else {
-            const hardMatch = selectBestArchetypeByJdHardMatch(jobTitle || '', jdText || '');
-            const arch = hardMatch && hardMatch.matchScore > 0 ? hardMatch.archetype : detectJobArchetype(jobTitle || '', jdText || '');
-            const docxFallback = path.resolve('state/autoapply/resumes', `Shivam_Mahajan_Resume_${arch}.docx`);
-            const docxShortFallback = path.resolve('state/autoapply/resumes', `Shivam_Mahajan_Resume_${detectJobArchetype(jobTitle || '', jdText || '')}.docx`);
-            if (existsSync(docxFallback)) {
-              uploadFile = docxFallback;
-            } else if (existsSync(docxShortFallback)) {
-              uploadFile = docxShortFallback;
-            }
-          }
+          } else throw new Error('Compiled DOCX resume is unavailable');
         }
-        await firstInput.setInputFiles(uploadFile).catch(() => {});
-        await frame.waitForTimeout(600);
+        const expectedHash = sha256(readFileSync(uploadFile));
+        const selectedHash = async () => {
+          const bytes = await firstInput.evaluate(async el => {
+            const file = (el as HTMLInputElement).files?.[0];
+            return file ? Array.from(new Uint8Array(await file.arrayBuffer())) : null;
+          }).catch(() => null);
+          return bytes ? sha256(Buffer.from(bytes)) : null;
+        };
+        if (await selectedHash() !== expectedHash) {
+          await firstInput.setInputFiles(uploadFile);
+          if (await selectedHash() !== expectedHash) throw new Error('Resume upload cannot be verified before advancing');
+          await frame.waitForTimeout(600);
+        }
       }
     }
   }
@@ -1262,49 +1230,30 @@ export class AutoApplyRunner {
    * Ticket GEN-231: Pre-Submit Resume Upload Guarantee.
    * If any dropzone/file-input was missed during step filling, ensure primary resume is uploaded before submit.
    */
-  private async ensureResumeUploadedBeforeSubmit(page: Page, resumePath?: string): Promise<void> {
-    if (!resumePath) return;
-    try {
-      const needsUpload = await page
-        .evaluate(() => {
-          const fileInputs = Array.from(document.querySelectorAll<HTMLInputElement>('input[type="file"]'));
-          if (fileInputs.length === 0) return false;
-          // If any file input already has files attached, or page shows ".pdf" / ".docx" uploaded pill, skip
-          if (fileInputs.some((inp) => inp.files && inp.files.length > 0)) return false;
-          const bodyTxt = (document.body?.innerText || '').toLowerCase();
-          if (bodyTxt.includes('shivam_mahajan_resume.pdf') || bodyTxt.includes('remove file')) return false;
-          return true;
-        })
-        .catch(() => false);
-
-      if (needsUpload) {
-        const primaryFileInput = page
-          .locator('input[type="file"]:not([id*="cover" i]):not([name*="cover" i])')
-          .first();
-        if ((await primaryFileInput.count().catch(() => 0)) > 0) {
-          let uploadPath = resumePath;
-          const acceptAttr = (await primaryFileInput.getAttribute('accept').catch(() => '')) || '';
-          if (/\.docx?|msword|wordprocessingml/i.test(acceptAttr) && !/\.pdf|application\/pdf|\*/i.test(acceptAttr)) {
-            const docxSibling = resumePath.replace(/\.pdf$/i, '.docx');
-            if (existsSync(docxSibling)) {
-              uploadPath = docxSibling;
-            }
-          }
-          await primaryFileInput.setInputFiles(uploadPath, { timeout: 4000 }).catch(() => {});
-          await page.waitForTimeout(800).catch(() => {});
-        }
-
-        // Ticket GEN-461: Auto-upload Cover Letter if separate input[type="file"] exists
-        const coverFileInput = page.locator('input[type="file"][id*="cover" i], input[type="file"][name*="cover" i]').first();
-        if ((await coverFileInput.count().catch(() => 0)) > 0) {
-          const coverPath = resolveCoverLetterPdfPath();
-          if (existsSync(coverPath)) {
-            await coverFileInput.setInputFiles(coverPath, { timeout: 4000 }).catch(() => {});
-            await page.waitForTimeout(600).catch(() => {});
-          }
-        }
-      }
-    } catch {}
+  private async ensureResumeUploadedBeforeSubmit(page: Page, resumePath?: string, uploadedHashes: string[] = []): Promise<void> {
+    if (!resumePath || !existsSync(resumePath)) throw new Error('Compiled resume is unavailable');
+    const docxPath = resumePath.replace(/\.pdf$/i, '.docx');
+    const knownHashes = [resumePath, ...(existsSync(docxPath) ? [docxPath] : [])].map(file => sha256(readFileSync(file)));
+    const input = page.locator(RESUME_INPUTS).first();
+    if (!await input.count()) {
+      if (knownHashes.some(hash => uploadedHashes.includes(hash))) return;
+      throw new Error('Resume upload cannot be verified before submission');
+    }
+    const accept = (await input.getAttribute('accept')) || '';
+    const uploadPath = /\.docx?|msword|wordprocessingml/i.test(accept) && !/\.pdf|application\/pdf|\*/i.test(accept) ? docxPath : resumePath;
+    if (!existsSync(uploadPath)) throw new Error('Compiled DOCX resume is unavailable');
+    const expectedHash = sha256(readFileSync(uploadPath));
+    const selectedHash = async () => {
+      const bytes = await input.evaluate(async el => {
+        const file = (el as HTMLInputElement).files?.[0];
+        return file ? Array.from(new Uint8Array(await file.arrayBuffer())) : null;
+      }).catch(() => null);
+      return bytes ? sha256(Buffer.from(bytes)) : null;
+    };
+    const existing = await selectedHash();
+    if (existing === expectedHash || (!existing && uploadedHashes.includes(expectedHash))) return;
+    await input.setInputFiles(uploadPath, { timeout: 4000 });
+    if (await selectedHash() !== expectedHash) throw new Error('Resume upload cannot be verified before submission');
   }
 
   /**
@@ -3138,14 +3087,6 @@ export class AutoApplyRunner {
           value = process.env.AUTOAPPLY_PHONE || options.profile.personal.phone;
         }
 
-        // Single-Option Dropdown Auto-Select (GEN-89):
-        if ((info.tag === 'select' || info.combobox) && harvested?.options?.length) {
-          const cleanOptions = harvested.options.filter(o => !/^(?:select|choose|please select|--)/i.test(o.trim()));
-          if (cleanOptions.length === 1 && (!value || value === '')) {
-            value = cleanOptions[0];
-          }
-        }
-
         // Ticket GEN-84/GEN-96: When a TEXTAREA resolves to a bare number ("0" or 0 from skill_experience), replace with grounded narrative
         if (info.tag === 'textarea' && (value === undefined || value === '0' || value === 0 || typeof value === 'number' || (typeof value === 'string' && /^\d+$/.test(value.trim())))) {
           value = composeGroundedNarrative(fieldQuestionText, options.profile) || resolveUniversalPermissiveFallback({
@@ -3159,16 +3100,12 @@ export class AutoApplyRunner {
 
         // Ticket GEN-89: Social Profile Links (Facebook, Twitter, etc.)
         if (/\b(facebook|twitter|x\s*\(twitter\)|instagram|threads|tiktok)\b/i.test(descriptor)) {
-          if (!info.required) {
-            continue;
-          } else {
-            value = info.type === 'url' || /url|link/i.test(descriptor) ? 'https://github.com/smresponsibilities' : 'N/A';
-          }
+          if (!info.required) continue;
         }
 
         // Ticket GEN-84: Map Greenhouse split phone country prefix controls to "+91" / "India (+91)"
         if (['country_code', 'phone_country_code'].includes(classification.category as string) || /country\s*code|phone\s*country/i.test(descriptor)) {
-          value = '+91';
+          value = options.profile.personal.phoneCountryCode;
         }
         const matchChoices = (choices: Array<{ value: string; label: string }>, excludeCategories = false) => {
           if (dynamic.reason !== 'source_preferences' || !candidate.referralSources?.length) return value === undefined ? null : matchBestOption(value, choices);
@@ -3226,81 +3163,25 @@ export class AutoApplyRunner {
           value = parts ? info.datePart === 'month' ? parts[2] : parts[1] : undefined;
         }
         let document = info.type === 'file' ? (/cover.?letter/i.test(descriptor) ? candidate.documents?.coverLetter : /resume|\bcv\b/i.test(descriptor) ? candidate.documents?.resume : undefined) : undefined;
-        if (info.type === 'file' && (/resume|\bcv\b/i.test(descriptor) || !/cover.?letter/i.test(descriptor))) {
-          const title = options.applicationBrief?.title || options.company || '';
-          const text = options.applicationBrief?.text || '';
-          const hardMatch = selectBestArchetypeByJdHardMatch(title, text);
-          const archetype = hardMatch && hardMatch.matchScore > 0 ? hardMatch.archetype : detectJobArchetype(title, text);
-          const resumesDir = path.resolve('state/autoapply/resumes');
-          const docxCandidate = path.join(resumesDir, `Shivam_Mahajan_Resume_${archetype}.docx`);
-          const pdfCandidate = path.join(resumesDir, `Shivam_Mahajan_Resume_${archetype}.pdf`);
-          const shortDocxCandidate = path.join(resumesDir, `Shivam_Mahajan_Resume_${detectJobArchetype(title, text)}.docx`);
-          const shortPdfCandidate = path.join(resumesDir, `Shivam_Mahajan_Resume_${detectJobArchetype(title, text)}.pdf`);
-          const prefersDocx = Boolean(info.accept && /\b(\.docx?|msword|wordprocessingml)\b/i.test(info.accept) && !/\b(\.pdf|application\/pdf)\b/i.test(info.accept));
-
-          if (prefersDocx) {
-            document = existsSync(docxCandidate) ? docxCandidate : existsSync(pdfCandidate) ? pdfCandidate : existsSync(shortDocxCandidate) ? shortDocxCandidate : existsSync(shortPdfCandidate) ? shortPdfCandidate : undefined;
-          } else {
-            document = existsSync(pdfCandidate) ? pdfCandidate : existsSync(docxCandidate) ? docxCandidate : existsSync(shortPdfCandidate) ? shortPdfCandidate : existsSync(shortDocxCandidate) ? shortDocxCandidate : undefined;
-          }
-          if (!document && candidate.documents?.resume) {
-            document = candidate.documents.resume;
-          }
+        if (info.type === 'file' && /resume|\bcv\b/i.test(descriptor)) {
+          const resumePath = candidate.documents?.resume;
+          const prefersDocx = /docx|msword|wordprocessingml/i.test(info.accept || '') && !/pdf/i.test(info.accept || '');
+          document = prefersDocx && resumePath ? resumePath.replace(/\.pdf$/i, '.docx') : resumePath;
         }
-        if (info.type === 'file' && /cover.?letter/i.test(descriptor)) {
-          // Ticket GEN-140: Check if "Enter manually" toggle is present
-          const manualToggle = frame.locator('button:has-text("Enter manually"), a:has-text("Enter manually"), [data-source="paste"]').filter({ visible: true }).first();
-          if (await manualToggle.isVisible().catch(() => false)) {
-            await manualToggle.click().catch(() => {});
-            await frame.page().waitForTimeout(300);
-            const clTextarea = frame.locator('#cover_letter_text, textarea[name*="cover_letter" i], textarea[aria-label*="cover letter" i]').filter({ visible: true }).first();
-            if (await clTextarea.isVisible().catch(() => false)) {
-              const narrative = 'I am eager to contribute to your engineering team by leveraging my experience at Morgan Stanley in building scalable distributed systems and backend data pipelines. I look forward to delivering reliable, high-impact software from day one.';
-              await clTextarea.fill(narrative).catch(() => {});
-              report.actions.push({
-                documentHash: undefined,
-                controlKey: key,
-                question: (info.label || info.ariaLabel || info.name || info.id).trim().slice(0, 500),
-                category: classification.category,
-                confidence: classification.confidence,
-                selector: '#cover_letter_text',
-                value: 'composed_cover_letter',
-                elementTag: 'textarea',
-                status: 'filled',
-                error: undefined,
-              });
-              report.fieldsFilled++;
-              continue;
-            }
-          }
-          if (!document) document = candidate.documents?.resume;
-        }
-        if (!document && !options.dryRun && info.type === 'file' && info.required && /cover.?letter/i.test(descriptor)) document = await this.coverLetter(options) || candidate.documents?.resume;
-        if (!document && !options.dryRun && info.type === 'file' && info.required) document = candidate.documents?.resume;
         if (info.type === 'file') value = document;
         if (info.hasFile && !report.actions.some(action => action.controlKey === key && action.documentHash)) {
           const selected = await input.evaluate(async el => {
             const file = (el as HTMLInputElement).files?.[0];
             if (!file) return;
-            const hash = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
-            return { name: file.name, hash: Array.from(new Uint8Array(hash), byte => byte.toString(16).padStart(2, '0')).join('') };
+            return { name: file.name, bytes: Array.from(new Uint8Array(await file.arrayBuffer())) };
           });
-          if (selected) report.actions.push({ controlKey: key, question: info.label, category: classification.category, confidence: classification.confidence, selector: info.id || info.name, value: selected.name, elementTag: 'input', status: 'filled', documentHash: selected.hash });
+          if (selected) report.actions.push({ controlKey: key, question: info.label, category: classification.category, confidence: classification.confidence, selector: info.id || info.name, value: selected.name, elementTag: 'input', status: 'filled', documentHash: sha256(Buffer.from(selected.bytes)) });
         }
         if (info.hasFile && document && uploadedFiles.get(key) === document) continue;
         if (info.hasFile && document && report.actions.some(action => action.controlKey === key && action.documentHash === sha256(readFileSync(document)))) continue;
         const reviewedSelection = options.resume && info.combobox ? await input.evaluate(comboboxSelection) : undefined;
         // Only explicit owner review can preserve an unknown answer; a widget query is not a selection.
-        if (options.resume && dynamic.reason !== 'qa_bank_match' && ((info.value && !info.combobox && !['radio', 'checkbox', 'file'].includes(info.type)) || reviewedSelection?.values.length || (info.type === 'checkbox' && (yesNo ? info.yesNoAnswered : info.checked)) || info.radioAnswered || info.hasFile)) continue;
-        if (info.type === 'checkbox' && value === undefined) {
-          const isConsent = /\b(agree|acknowledge|consent|privacy|terms|certify|confirm|accurate)\b/i.test(info.label);
-          if (isConsent) {
-            value = true;
-          } else if (/\b(?:hear|heard|source|find|learn)\b/i.test(info.questionTitle || info.label)) {
-            const matchesSource = (options.profile.referralSources || []).some(s => matchBestOption(s, [{ value: info.optionLabel, label: info.optionLabel }])) || /linkedin|other.*(?:job|online)|job.*board|website|newsletter|google\s*jobs/i.test(info.optionLabel);
-            value = matchesSource ? true : false;
-          }
-        }
+        if (options.resume && dynamic.reason !== 'qa_bank_match' && ((info.value && !info.combobox && !['radio', 'checkbox', 'file'].includes(info.type)) || reviewedSelection?.values.length || (info.type === 'checkbox' && (yesNo ? info.yesNoAnswered : info.checked)) || info.radioAnswered || (info.hasFile && !document))) continue;
         if (!options.dryRun && value !== undefined && info.value && !info.combobox && info.tag !== 'select' && !['file', 'checkbox', 'radio'].includes(info.type) && retainedText(info.value, String(value), info.type)) continue;
         if (!options.dryRun && info.type === 'checkbox' && typeof value === 'boolean' && info.checked === value && (!yesNo || info.yesNoAnswered)) continue;
         if (!options.dryRun && info.type === 'radio' && info.checked && value !== undefined && matchBestOption(value, [{ value: info.value, label: info.optionLabel }])) continue;
@@ -3320,10 +3201,7 @@ export class AutoApplyRunner {
             }
           }
           if (value === undefined || value === '' || info.type === 'password') {
-          if (info.type === 'checkbox') {
-            action.status = 'skipped';
-            continue;
-          }
+          if (info.type === 'checkbox' && !info.required) { action.status = 'skipped'; continue; }
           if (info.required && action.question.trim().length > 0) {
             report.unmappedFields++;
             action.status = 'failed';
@@ -3366,12 +3244,6 @@ export class AutoApplyRunner {
               ''
             ).toLowerCase();
             const isCoverLetter = /cover[-_ ]?letter/i.test(fileLabel);
-            if (isCoverLetter) {
-              const coverLetterPath = resolveCoverLetterPdfPath(options.company, options.roleTitle || options.jobTitle);
-              if (existsSync(coverLetterPath)) {
-                docToUpload = coverLetterPath;
-              }
-            }
             // Ticket GEN-238: Check accept attribute for .docx-only file inputs
             const acceptAttr = (await input.getAttribute('accept').catch(() => '')) || '';
             if (/\.docx?|msword|wordprocessingml/i.test(acceptAttr) && !/\.pdf|application\/pdf|\*/i.test(acceptAttr)) {
@@ -3409,6 +3281,11 @@ export class AutoApplyRunner {
                 throw new Error('Uploaded file did not remain selected');
               }
             }
+            const selectedBytes = await input.evaluate(async el => {
+              const file = (el as HTMLInputElement).files?.[0];
+              return file ? Array.from(new Uint8Array(await file.arrayBuffer())) : null;
+            }).catch(() => null);
+            if (!selectedBytes || sha256(Buffer.from(selectedBytes)) !== sha256(bytes)) throw new Error('Uploaded file bytes could not be verified');
             action.documentHash = sha256(bytes);
             if (/lever\.co/i.test(frame.url())) {
               // Wait up to 5000ms for Lever's async resume parser (.resume-upload-working / .resume-upload-success) to settle
@@ -3443,23 +3320,7 @@ export class AutoApplyRunner {
             }
             const choices = await input.locator('option').evaluateAll(options => options.map(o => ({ value: (o as HTMLOptionElement).value, label: o.textContent || '' })));
             let best = matchChoices(choices);
-            // Ticket GEN-89: Auto-select single valid non-placeholder option
-            const cleanChoices = choices.filter(c => c.value && !/^(select|choose|--|none|placeholder)/i.test(c.value) && !/^(select|choose|--)/i.test(c.label.trim()));
-            if (!best && cleanChoices.length === 1) {
-              best = cleanChoices[0]!;
-            }
             if (!best && choices.length > 0) {
-              // 1. Stem match against value (e.g. Immediate <-> Immediately)
-              if (value) {
-                const targetStem = String(value).trim().toLowerCase().slice(0, 5);
-                if (targetStem.length >= 3) {
-                  best = choices.find(c => {
-                    const l = c.label.trim().toLowerCase();
-                    const v = c.value.trim().toLowerCase();
-                    return l.startsWith(targetStem) || v.startsWith(targetStem) || (l.length >= 5 && l.slice(0, 5) === targetStem);
-                  }) || null;
-                }
-              }
               // 2. resolveByOptionPolicy
               if (!best) {
                 const optLabels = choices.map(c => c.label.trim()).filter(Boolean);
@@ -4153,6 +4014,7 @@ export class AutoApplyRunner {
     let observer = this.submissionObservation?.observer;
     const semanticLearnedThisRun: Array<{ questionText: string; category: string; value: string }> = [];
     let selfHealAttempted = false;
+    let preserveExistingCheckpoint = false;
     try {
       const apiCheck = await fastApiPreflightCheck(options.url).catch(() => ({ status: 'eligible' as const }));
       if (apiCheck.status === 'skipped') {
@@ -4197,12 +4059,19 @@ export class AutoApplyRunner {
       if (checkpoint && existsSync(checkpoint)) {
         let saved: any = null;
         try { saved = JSON.parse(readFileSync(checkpoint, 'utf8')); } catch {}
-        const isGreenhouseEmbed = options.url.includes('boards.greenhouse.io/embed/job_app') || (saved?.applicationUrl && saved.applicationUrl.includes('boards.greenhouse.io/embed/job_app'));
-        const matchesJob = saved && ((options.jobId && saved.jobId === options.jobId) || saved.applicationUrl === options.url || isGreenhouseEmbed);
-        if (!options.resume || (saved && !matchesJob)) {
+        const matchesJob = saved && ((options.jobId && saved.jobId === options.jobId) || saved.applicationUrl === options.url);
+        const previousAttempt = saved?.report?.submissionAttempted || ['clicked', 'dispatched', 'confirmed'].includes(saved?.report?.submission?.phase);
+        if (saved && !matchesJob && previousAttempt) {
+          preserveExistingCheckpoint = true;
+          report.status = 'paused_for_review';
+          report.reviewKind = 'receipt';
+          report.reason = 'Session contains an unresolved submission for another application';
+          return report;
+        }
+        if ((!options.resume && !previousAttempt) || (saved && !matchesJob)) {
           try { unlinkSync(checkpoint); } catch {}
           saved = null;
-        } else if (saved && saved.applicationUrl !== options.url && !isGreenhouseEmbed) {
+        } else if (saved && saved.applicationUrl !== options.url && !previousAttempt) {
           try { unlinkSync(checkpoint); } catch {}
           saved = null;
         }
@@ -4213,14 +4082,14 @@ export class AutoApplyRunner {
               saved.currentUrl
             );
           if (isSavedConfirmation) {
-            report.status = 'submitted';
-            report.receipt = {
-              url: saved.currentUrl,
-              text: 'Application Submitted',
-              verifiedAt: new Date().toISOString(),
-              selector: 'checkpoint_confirmation_url',
-            };
-            report.reason = 'Previous submission confirmed via confirmation URL; no new submission made';
+            report.submissionAttempted = true;
+            report.reviewKind = 'receipt';
+            if (options.resume && new URL(saved.currentUrl).origin === new URL(options.url).origin) {
+              await this.page!.goto(saved.currentUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
+              report.receipt = await this.receipt();
+            }
+            report.status = report.receipt ? 'submitted' : 'paused_for_review';
+            report.reason = report.receipt ? 'Previous submission confirmed; no new submission made' : 'Confirmation URL requires employer receipt verification; no new submission made';
             return report;
           }
           if (!options.retryReviewed) {
@@ -4230,7 +4099,7 @@ export class AutoApplyRunner {
         }
         report.reconcileAfter = saved.report?.reconcileAfter;
         if (!options.retryReviewed && saved.report?.humanInterventionRequired !== false) report.humanInterventionRequired = true;
-        if ((saved.report?.submissionAttempted || ['clicked', 'dispatched', 'confirmed'].includes(saved.report?.submission?.phase)) && !options.retryReviewed) {
+        if (saved.report?.submissionAttempted || ['clicked', 'dispatched', 'confirmed'].includes(saved.report?.submission?.phase)) {
           report.submissionAttempted = true;
           report.submission = saved.report.submission;
           report.actions = saved.report.actions || [];
@@ -4242,7 +4111,8 @@ export class AutoApplyRunner {
           const current = new URL(this.page!.url());
           const previous = new URL(saved.currentUrl);
           const relatedConfirmation = current.origin === previous.origin && current.pathname === `${previous.pathname.replace(/\/$/, '')}/confirmation`;
-          report.receipt = saved.report.receipt || (options.resume && (this.page!.url() === saved.currentUrl || relatedConfirmation) ? await this.receipt() : undefined);
+          const savedReceipt = saved.report.receipt?.selector === 'checkpoint_confirmation_url' ? undefined : saved.report.receipt;
+          report.receipt = savedReceipt || (options.resume && (this.page!.url() === saved.currentUrl || relatedConfirmation) ? await this.receipt() : undefined);
           if (!report.receipt && options.resume && options.requisition?.provider === 'workday') report.receipt = await this.reconcileWorkday(options, report).catch(() => { report.logs.push('workday_reconcile:exception'); return undefined; });
           if (report.receipt) report.status = 'submitted';
           else report.reviewKind = 'receipt';
@@ -4450,19 +4320,29 @@ export class AutoApplyRunner {
           throw new Error('Loaded application belongs to a different requisition');
         }
       }
-      const descriptions = await this.page!.locator('[data-automation-id=jobPostingDescription],.job-description,[data-testid=job-description],#job-description,.posting-description').allTextContents();
+      const descriptions = await this.page!.locator('[data-automation-id=jobPostingDescription],.job-description,[data-testid=job-description],#job-description,.posting-description,.ashby-job-posting-description,.ashby-job-posting-brief-description').allTextContents();
       const titleCandidate = options.applicationBrief?.title || (options as any).jobTitle || (options as any).title || '';
       const candidateFit = evaluateCandidateJobFit({ title: titleCandidate, company: options.company || '', url: options.url });
       if (!candidateFit.allowed && descriptions.some(text => exceedsExperienceGate(text, titleCandidate))) {
         report.status = 'skipped'; report.reason = 'ineligible_jd_experience'; return report;
       }
+      if (!this.context) throw new Error('Runtime resume requires active browser context');
+      const liveJd = descriptions.join('\n').trim() || options.applicationBrief?.text || '';
+      if (!liveJd.trim()) throw new Error('Job description unavailable for runtime resume');
+      const runtimeResume = await compileRuntimeTailoredResumeForJob({
+        jobId: options.jobId || options.url, company: options.company,
+        jobTitle: titleCandidate, jdText: liveJd, browser: this.context, profile: options.profile,
+      });
+      options = { ...options, profile: { ...options.profile,
+        documents: { ...options.profile.documents, resume: runtimeResume.pdfPath } } };
       const timeout = options.timeoutMs ?? 10000;
       let reviewedSignature: string | undefined;
       const workdayLoopState: WorkdayStepLoopState = { lastStepHash: '', consecutiveCount: 0 };
       for (let step = 1; step <= maxSteps; step++) {
         this.attemptedFieldRefs = new Set<string>();
         if (this.isClosing || !this.page || this.page.isClosed()) {
-          report.status = report.submissionAttempted ? 'submitted' : 'failed';
+          report.status = report.submissionAttempted ? 'paused_for_review' : 'failed';
+          if (report.submissionAttempted) report.reviewKind = 'receipt';
           report.reason = 'Job timed out or runner closed';
           return report;
         }
@@ -4929,7 +4809,7 @@ export class AutoApplyRunner {
           }
         }
         for (const frame of this.page!.frames()) {
-          await ensureStepReadyBeforeNext(frame, options.profile.documents?.resume, options.applicationBrief?.title, options.applicationBrief?.text).catch(() => {});
+          await ensureStepReadyBeforeNext(frame, options.profile.documents?.resume, options.applicationBrief?.title, options.applicationBrief?.text);
         }
         watchdog.heartbeat(`before_next_step_${step}`);
         watchdog.checkOrThrow();
@@ -5028,7 +4908,7 @@ export class AutoApplyRunner {
           let changed = false;
           for (let attempt = 0; attempt < 2; attempt++) {
             for (const frame of this.page!.frames()) {
-              await ensureStepReadyBeforeNext(frame, options.profile.documents?.resume, options.applicationBrief?.title, options.applicationBrief?.text).catch(() => {});
+              await ensureStepReadyBeforeNext(frame, options.profile.documents?.resume, options.applicationBrief?.title, options.applicationBrief?.text);
             }
             if (!await reserveStateAction(this.page!.mainFrame(), next, 'next')) break;
             if (options.mode === 'stealth') await this.pacedClick(next); else await next.click();
@@ -5212,9 +5092,8 @@ export class AutoApplyRunner {
           ).catch(() => 0);
 
           // Ticket GEN-231: Pre-Submit Resume Upload Guarantee
-          const activeResumePath = options.profile?.documents?.resume ||
-            (existsSync(path.resolve('state/autoapply/resumes', 'Shivam_Mahajan_Resume_swe.pdf')) ? path.resolve('state/autoapply/resumes', 'Shivam_Mahajan_Resume_swe.pdf') : undefined);
-          await this.ensureResumeUploadedBeforeSubmit(this.page, activeResumePath);
+          const activeResumePath = options.profile?.documents?.resume;
+          await this.ensureResumeUploadedBeforeSubmit(this.page, activeResumePath, report.actions.flatMap(action => action.documentHash ? [action.documentHash] : []));
         }
         if (!await reserveStateAction(this.page!.mainFrame(), submit, 'submit')) { report.reason = 'Submit already dispatched on this form state'; break; }
         report.submittedFields = [];
@@ -5538,13 +5417,18 @@ export class AutoApplyRunner {
         return report;
       }
       if (this.isClosing || (error instanceof Error && error.message.includes('Target page, context or browser has been closed'))) {
-        report.status = report.submissionAttempted ? 'submitted' : 'failed';
+        report.status = report.submissionAttempted ? 'paused_for_review' : 'failed';
+        if (report.submissionAttempted) report.reviewKind = 'receipt';
         report.reason = 'Job timed out or runner closed';
         return report;
       }
       report.status = report.submissionAttempted || report.reviewKind === 'network' ? 'paused_for_review' : 'failed';
+      if (error instanceof Error && error.message === 'Job description unavailable for runtime resume') {
+        report.status = 'paused_for_review';
+        report.reviewKind = 'answers';
+      }
       // Browser and network exception messages can include candidate data or tokens.
-      const knownReasons = new Set(['Waiting for application requests to finish; retained tab will resume automatically', 'Application controls did not stabilize; review the current form', 'Session belongs to a different application', 'Loaded application belongs to a different requisition', 'Workday repeated section has unrecognized row identifiers', 'Workday repeated section has no unique Add control', 'Workday Add did not create a new row']);
+      const knownReasons = new Set(['Job description unavailable for runtime resume', 'Waiting for application requests to finish; retained tab will resume automatically', 'Application controls did not stabilize; review the current form', 'Session belongs to a different application', 'Loaded application belongs to a different requisition', 'Workday repeated section has unrecognized row identifiers', 'Workday repeated section has no unique Add control', 'Workday Add did not create a new row']);
       report.reason = error instanceof Error && error.message.startsWith('WATCHDOG_') ? error.message : error instanceof Error && knownReasons.has(error.message) ? error.message : error instanceof Error && error.name === 'TimeoutError' ? 'Browser operation timed out; inspect the saved review' : 'Browser operation failed; inspect the saved review';
       this.log(report.reason!);
       if (error instanceof Error && error.stack) this.log(error.stack);
@@ -5571,6 +5455,11 @@ export class AutoApplyRunner {
           report.humanInterventionRequired = false;
         }
       }
+      if (!report.receipt && (report.status === 'submitted' || report.status === 'completed')) {
+        report.status = 'paused_for_review';
+        report.reviewKind = 'receipt';
+        report.reason = 'Submission has no observed employer receipt; review before retrying';
+      }
       if (report.status === 'submitted' || !report.submissionAttempted) { observer?.close(); this.submissionObservation = undefined; }
       if (report.receipt) {
         if (report.submission) report.submission.phase = 'confirmed';
@@ -5578,7 +5467,7 @@ export class AutoApplyRunner {
         try { report.evidenceDir = await captureEvidence(this.page!, options, report, observer?.exchanges); report.receipt.evidenceDir = report.evidenceDir; }
         catch { report.logs.push('Receipt observed; evidence capture incomplete'); }
       }
-      if (report.status === 'submitted' || report.receipt) {
+      if (report.receipt) {
         try {
           const companyName = options.company || options.applicationBrief?.company || 'Company';
           const roleTitle = options.applicationBrief?.title || 'Software Engineer';
@@ -5595,7 +5484,7 @@ export class AutoApplyRunner {
       report.durationMs = Math.min(360_000, Math.max(0, Date.now() - attemptStartWallClockMs));
 
       const finalStatus: 'applied' | 'failed' | 'paused_for_review' | 'skipped' =
-        report.status === 'submitted' || report.status === 'completed'
+        report.receipt
           ? 'applied'
           : report.status === 'paused_for_review'
           ? 'paused_for_review'
@@ -5619,7 +5508,7 @@ export class AutoApplyRunner {
           startedAt: report.startTime,
           finishedAt: report.endTime,
           durationMs: report.durationMs || 0,
-          receiptVerified: report.status === 'submitted' || !!report.receipt,
+          receiptVerified: !!report.receipt,
         });
         try {
           const summaryPath = path.resolve('state/autoapply/portal-review/queue-summary.json');
@@ -5689,7 +5578,7 @@ export class AutoApplyRunner {
           });
         } catch {}
       }
-      if (this.page) await this.checkpoint(options, report);
+      if (this.page && !preserveExistingCheckpoint) await this.checkpoint(options, report);
       if ((options.headless !== false && !options.keepOpen) || report.reason === 'captcha_deferred' || report.status === 'skipped' || report.status === 'submitted') {
         if (this.page) {
           await this.page.close({ runBeforeUnload: false }).catch(() => {});

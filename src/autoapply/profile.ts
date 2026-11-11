@@ -12,6 +12,23 @@ export function validateProfile(value: unknown): asserts value is CandidateExten
   if (value.unlistedSkillYears !== undefined && (typeof value.unlistedSkillYears !== 'number' || !Number.isFinite(value.unlistedSkillYears) || value.unlistedSkillYears < 0)) throw new Error('unlistedSkillYears must be a nonnegative number');
   if (value.completeEmploymentHistory !== undefined && typeof value.completeEmploymentHistory !== 'boolean') throw new Error('completeEmploymentHistory must be boolean');
   if (value.indiaOnlyWorkAuthorization !== undefined && typeof value.indiaOnlyWorkAuthorization !== 'boolean') throw new Error('indiaOnlyWorkAuthorization must be boolean');
+  if (value.applicationPreferences !== undefined) {
+    const prefs = value.applicationPreferences;
+    if (!object(prefs)) throw new Error('applicationPreferences must be an object');
+    for (const key of ['workCountries', 'relocationCountries', 'spokenLanguages', 'employmentTypes', 'travelCountries', 'noExperienceWith']) {
+      if (prefs[key] !== undefined && (!Array.isArray(prefs[key]) || (prefs[key] as unknown[]).some(item => typeof item !== 'string' || !item.trim()))) throw new Error(`applicationPreferences.${key} must contain nonempty text`);
+    }
+    for (const key of ['languageProficiencyLevelsProvided', 'paidRolesOnly', 'nightShifts', 'weekendWork', 'businessTravel', 'recruitmentDataProcessingConsent', 'backgroundCheckConsent', 'marketingConsent']) {
+      if (prefs[key] !== undefined && typeof prefs[key] !== 'boolean') throw new Error(`applicationPreferences.${key} must be boolean`);
+    }
+    if (prefs.citizenship !== undefined && typeof prefs.citizenship !== 'string') throw new Error('applicationPreferences.citizenship must be text');
+    if (prefs.demographicDisclosure !== undefined && prefs.demographicDisclosure !== 'prefer_not_to_disclose') throw new Error('Invalid demographic disclosure preference');
+    if (prefs.languageProficiency !== undefined && (!object(prefs.languageProficiency) || Object.entries(prefs.languageProficiency).some(([language, level]) => !language.trim() || !['native', 'none'].includes(String(level))))) throw new Error('Invalid language proficiency');
+    if (prefs.annualSalaryRangeINR !== undefined) {
+      const range = prefs.annualSalaryRangeINR;
+      if (!object(range) || typeof range.minimum !== 'number' || typeof range.maximum !== 'number' || !Number.isFinite(range.minimum) || !Number.isFinite(range.maximum) || range.minimum < 0 || range.maximum < range.minimum) throw new Error('Invalid annual INR salary range');
+    }
+  }
   if (value.declarations !== undefined && (!object(value.declarations) || Object.entries(value.declarations).some(([key, answer]) => !['termsAndAccuracyConsent', 'talentPoolConsent', 'backgroundCheckConsent', 'relativesAtCompany', 'governmentOfficial', 'big4Auditor'].includes(key) || typeof answer !== 'boolean'))) throw new Error('Invalid declarations');
   for (const key of ['personal', 'professional', 'workAuthorization', 'eeo']) {
     if (!object(value[key])) throw new Error(`Profile.${key} must be an object`);

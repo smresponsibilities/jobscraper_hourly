@@ -2,7 +2,8 @@
 import os from 'node:os';
 import fs from 'node:fs';
 import path from 'node:path';
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
+import { readJobRunHistory } from './run-history.js';
 
 export interface SystemRamAndHealthSnapshot {
   timestamp: string;
@@ -18,6 +19,7 @@ export interface SystemRamAndHealthSnapshot {
 }
 
 export const ActiveBrowserRegistry = new Set<number>();
+export const ActiveJobRegistry = new Set<string>();
 
 /**
  * GEN-436: Returns true ONLY for chrome.exe processes that belong to our automation profiles.
@@ -27,7 +29,7 @@ export function isAutomationChromeCommandLine(cmdLine: string): boolean {
   if (!cmdLine) return false;
   return (
     /browser-profile-lane|state[\\/]autoapply|--enable-automation|playwright_chromiumdev_profile/i.test(cmdLine) &&
-    !/--profile-directory="Default"|--profile-directory="Profile \d+"/i.test(cmdLine)
+    !/--profile-directory(?:=|\s+)["']?(?:Default|Profile\s+\d+)(?:["']|\s|$)/i.test(cmdLine)
   );
 }
 
@@ -53,6 +55,7 @@ export function identifyOrphanedChromePids(
 let totalZombiesReaped = 0;
 
 export function hasJobsInFlight(): boolean {
+  if (ActiveJobRegistry.size > 0) return true;
   try {
     const journalPath = path.resolve('state/autoapply/portal-review/in-flight-checkpoint.json');
     if (fs.existsSync(journalPath)) {
@@ -61,61 +64,67 @@ export function hasJobsInFlight(): boolean {
         return true;
       }
     }
-  } catch {}
+  } catch { return true; }
   return ActiveBrowserRegistry.size > 0;
 }
 
 /**
  * Queries Windows chrome.exe processes and kills any chrome.exe older than maxAgeSeconds not in ActiveBrowserRegistry.
- * If forceKillAll is true (used strictly at 0-in-flight chunk boundaries), kills ALL chrome.exe processes.
+ * Cleanup remains bounded to this worker and never overrides an active job.
  */
+export interface ChromeProcessSnapshot {
+  pid: number; parentPid: number; commandLine: string; ageSeconds: number; workingSetMb: number;
+}
+
+/** Only this worker's descendants can be reaped, never another worker's Chrome. */
+export function selectOwnedChromeForReaping(processes: ChromeProcessSnapshot[], ownerPid: number, maxAgeSeconds: number): number[] {
+  const descendants = new Set([ownerPid]);
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const proc of processes) {
+      if (descendants.has(proc.parentPid) && !descendants.has(proc.pid)) { descendants.add(proc.pid); changed = true; }
+    }
+  }
+  const protectedPids = new Set(ActiveBrowserRegistry);
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const proc of processes) {
+      if (protectedPids.has(proc.parentPid) && !protectedPids.has(proc.pid)) { protectedPids.add(proc.pid); changed = true; }
+      if (protectedPids.has(proc.pid) && !protectedPids.has(proc.parentPid)) { protectedPids.add(proc.parentPid); changed = true; }
+    }
+  }
+  return processes.filter(proc => descendants.has(proc.pid) && !protectedPids.has(proc.pid) &&
+    isAutomationChromeCommandLine(proc.commandLine) && proc.ageSeconds > maxAgeSeconds).map(proc => proc.pid);
+}
+
 export function reapZombieChromeProcesses(maxAgeSeconds = 180, forceKillAll = false): {
-  remainingChromeCount: number;
-  chromeWorkingSetMb: number;
-  reapedCount: number;
+  remainingChromeCount: number; chromeWorkingSetMb: number; reapedCount: number;
 } {
-  if (process.platform !== 'win32') {
-    return { remainingChromeCount: 0, chromeWorkingSetMb: 0, reapedCount: 0 };
-  }
-
-  // TICKET GEN-445: NEVER run taskkill on automation chrome while jobs are in flight!
-  if (!forceKillAll && hasJobsInFlight()) {
-    return { remainingChromeCount: 0, chromeWorkingSetMb: 0, reapedCount: 0 };
-  }
-
-  if (forceKillAll) {
-    try {
-      // GEN-436: Even under forceKillAll, NEVER kill personal Chrome! Filter strictly by automation profile CommandLine
-      const psForce = `powershell -NoProfile -Command "$procs = @(Get-CimInstance Win32_Process -Filter \\"Name = 'chrome.exe'\\" -ErrorAction SilentlyContinue); foreach ($p in $procs) { try { $cl = [string]$p.CommandLine; $isAuto = ($cl -match 'browser-profile-lane|state[\\\\/]autoapply|--enable-automation|playwright_chromiumdev_profile') -and ($cl -notmatch '--profile-directory=\\\"Default\\\"|--profile-directory=\\\"Profile \\\\d+\\\"'); if ($isAuto) { taskkill /F /T /PID [int]$p.ProcessId 2>$null } } catch {} }"`;
-      execSync(psForce, { stdio: 'ignore', timeout: 6000 });
-      totalZombiesReaped += 1;
-    } catch {}
-    return { remainingChromeCount: 0, chromeWorkingSetMb: 0, reapedCount: 1 };
-  }
-
+  const empty = { remainingChromeCount: 0, chromeWorkingSetMb: 0, reapedCount: 0 };
+  if (process.platform !== 'win32' || hasJobsInFlight()) return empty;
   try {
-    const activePidsList = Array.from(ActiveBrowserRegistry).filter((p) => typeof p === 'number' && p > 0);
-    const activePidsArg = activePidsList.length > 0 ? activePidsList.join(',') : '-1';
-    // GEN-436: also filter by CommandLine — only kill automation chrome, never personal Chrome
-    const psCmd = `powershell -NoProfile -Command "$now = Get-Date; $active = @(${activePidsArg}); $procs = @(Get-CimInstance Win32_Process -Filter \\"Name = 'chrome.exe'\\" -ErrorAction SilentlyContinue); $reaped = 0; $rem = 0; $ws = 0; foreach ($p in $procs) { try { $pidNum = [int]$p.ProcessId; if ($active -contains $pidNum) { $rem++; $ws += [double]$p.WorkingSetSize; continue }; $cl = [string]$p.CommandLine; $isAuto = ($cl -match 'browser-profile-lane|state[\\\\/]autoapply|--enable-automation|playwright_chromiumdev_profile') -and ($cl -notmatch '--profile-directory=\\\"Default\\\"|--profile-directory=\\\"Profile \\\\d+\\\"'); if (-not $isAuto) { $rem++; $ws += [double]$p.WorkingSetSize; continue }; $age = ($now - $p.CreationDate).TotalSeconds; if ($age -gt ${maxAgeSeconds}) { taskkill /F /T /PID $pidNum 2>$null; $reaped++ } else { $rem++; $ws += [double]$p.WorkingSetSize } } catch {} }; Write-Output ($rem.ToString() + '|' + [math]::Round($ws / 1048576) + '|' + $reaped.ToString())"`;
-    const out = execSync(psCmd, { encoding: 'utf8', timeout: 8000 }).trim();
-    const [remStr, wsStr, reapedStr] = out.split('|');
-    const reaped = Number(reapedStr) || 0;
-    totalZombiesReaped += reaped;
-    return {
-      remainingChromeCount: Number(remStr) || 0,
-      chromeWorkingSetMb: Number(wsStr) || 0,
-      reapedCount: reaped,
-    };
-  } catch {
-    return { remainingChromeCount: 0, chromeWorkingSetMb: 0, reapedCount: 0 };
-  }
+    const script = `$now = Get-Date; @(Get-CimInstance Win32_Process -Filter "Name = 'chrome.exe'" | ForEach-Object { [pscustomobject]@{ pid=[int]$_.ProcessId; parentPid=[int]$_.ParentProcessId; commandLine=[string]$_.CommandLine; ageSeconds=($now - $_.CreationDate).TotalSeconds; workingSetMb=[double]$_.WorkingSetSize / 1MB } }) | ConvertTo-Json -Compress`;
+    const raw = execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], { encoding: 'utf8', timeout: 8000, windowsHide: true });
+    const data = raw.trim() ? JSON.parse(raw) : [];
+    const processes: ChromeProcessSnapshot[] = Array.isArray(data) ? data : [data];
+    const reaped = new Set<number>();
+    for (const pid of selectOwnedChromeForReaping(processes, process.pid, forceKillAll ? 0 : maxAgeSeconds)) {
+      try {
+        execFileSync('taskkill', ['/F', '/T', '/PID', String(pid)], { stdio: 'ignore', timeout: 6000, windowsHide: true });
+        reaped.add(pid);
+      } catch {}
+    }
+    totalZombiesReaped += reaped.size;
+    const remaining = processes.filter(proc => !reaped.has(proc.pid));
+    return { remainingChromeCount: remaining.length, chromeWorkingSetMb: remaining.reduce((sum, proc) => sum + proc.workingSetMb, 0), reapedCount: reaped.size };
+  } catch { return empty; }
 }
 
 /**
  * Scrubs Chromium profile caches and stale temp folders to free disk & memory-mapped cache files
  */
 export function scrubBrowserCachesAndTempDirs(): number {
+  if (hasJobsInFlight()) return 0;
   let cleaned = 0;
   const bases = ['state/autoapply', 'data'];
   for (const base of bases) {
@@ -124,44 +133,18 @@ export function scrubBrowserCachesAndTempDirs(): number {
       for (const entry of fs.readdirSync(base, { withFileTypes: true })) {
         if (!entry.isDirectory() || !entry.name.startsWith('browser-profile-lane')) continue;
         const profDir = path.join(base, entry.name);
-        for (const sub of ['SingletonLock', 'SingletonCookie', 'SingletonSocket', 'lockfile', 'Default/Code Cache', 'Default/GPUCache', 'Default/Cache', 'GrShaderCache', 'ShaderCache']) {
+        for (const sub of ['Default/Code Cache', 'Default/GPUCache', 'Default/Cache', 'GrShaderCache', 'ShaderCache']) {
           const target = path.join(profDir, sub);
           if (fs.existsSync(target)) {
             try {
+              const relative = path.relative(fs.realpathSync(base), fs.realpathSync(target));
+              if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) continue;
               fs.rmSync(target, { recursive: true, force: true });
               cleaned++;
             } catch {}
           }
         }
       }
-    } catch {}
-  }
-
-  // Clean old playwright temp folders (> 25 minutes old) in os.tmpdir()
-  try {
-    const tmp = os.tmpdir();
-    const cutoff = Date.now() - 25 * 60 * 1000;
-    for (const entry of fs.readdirSync(tmp, { withFileTypes: true })) {
-      if (!entry.isDirectory()) continue;
-      if (!/^(?:playwright|puppeteer|scoped_dir|autoapply)/i.test(entry.name)) continue;
-      const full = path.join(tmp, entry.name);
-      try {
-        const stat = fs.statSync(full);
-        if (stat.mtimeMs < cutoff) {
-          fs.rmSync(full, { recursive: true, force: true });
-          cleaned++;
-        }
-      } catch {}
-    }
-  } catch {}
-
-  // Windows Working-Set trimmer: trim unused memory pages from background processes via PowerShell [System.GC]::Collect() & Node global.gc?.()
-  if (process.platform === 'win32') {
-    try {
-      execSync(
-        'powershell -NoProfile -NonInteractive -Command "try { Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.WorkingSet64 -gt 30MB } | ForEach-Object { try { $_.MinWorkingSet = $_.MinWorkingSet } catch {} } } catch {}; [System.GC]::Collect()"',
-        { stdio: 'ignore', timeout: 4000, windowsHide: true }
-      );
     } catch {}
   }
 
@@ -224,7 +207,7 @@ export function evaluateSystemHealthAndAdaptiveLanes(runReaper = true): SystemRa
     ? reapZombieChromeProcesses(maxChromeAgeSec, false)
     : { remainingChromeCount: 0, chromeWorkingSetMb: 0, reapedCount: 0 };
 
-  if (reaperStats.reapedCount > 0 || freeRamGb < 2.5) {
+  if (!hasJobsInFlight() && (reaperStats.reapedCount > 0 || freeRamGb < 2.5)) {
     scrubBrowserCachesAndTempDirs();
     freeBytes = os.freemem();
     freeRamGb = Number((freeBytes / 1073741824).toFixed(2));
@@ -321,155 +304,35 @@ export function getDoctorStatus(): DoctorSelfHealReport | null {
   return latestDoctorReport;
 }
 
-/**
- * GEN-446: 30-Minute Zero-Fill Self-Healing Doctor.
- * Audits run-history for the last 30 minutes. If appliedCount is 0:
- * 1. Diagnoses failure mode and logs top reasons.
- * 2. If 0 runs processed in last 15m, reaps hung automation chrome and clears profile locks.
- * 3. Resets host cooldowns in host-health.json.
- * 4. Enables FORCE_PERMISSIVE_SUBMIT_ALL = "1".
- * 5. Scrubs profile caches and appends audit log to doctor-heals.jsonl.
- */
+/** Diagnose a lack of confirmations without changing submission or retry policy. */
 export function check30MinZeroFillDroughtAndAutoHeal(params?: {
-  stateDir?: string;
-  runHistoryPath?: string;
-  queueDbPath?: string;
-  nowMs?: number;
+  stateDir?: string; runHistoryPath?: string; queueDbPath?: string; nowMs?: number;
 }): DoctorSelfHealReport {
-  const now = params?.nowMs || Date.now();
-  const stateDir = params?.stateDir || path.resolve('state/autoapply');
-  const historyPath = params?.runHistoryPath || path.join(stateDir, 'portal-review/run-history.jsonl');
-  const healsLogPath = path.join(stateDir, 'portal-review/doctor-heals.jsonl');
-
-  const thirtyMinsAgo = now - 30 * 60 * 1000;
-  const fifteenMinsAgo = now - 15 * 60 * 1000;
-
-  let appliedLast30m = 0;
-  let processedLast30m = 0;
-  let processedLast15m = 0;
-  const failureReasonCounts: Record<string, number> = {};
-
-  if (fs.existsSync(historyPath)) {
-    try {
-      const content = fs.readFileSync(historyPath, 'utf8');
-      const lines = content.split('\n').filter(Boolean);
-      for (const line of lines) {
-        try {
-          const run = JSON.parse(line);
-          const runTime = Date.parse(run.timestamp || run.appliedAt || run.createdAt || '0');
-          if (runTime >= thirtyMinsAgo) {
-            processedLast30m++;
-            if (runTime >= fifteenMinsAgo) {
-              processedLast15m++;
-            }
-            if (run.status === 'applied') {
-              appliedLast30m++;
-            } else {
-              const reason = String(run.error || run.reason || run.failureCategory || 'unspecified_failure').slice(0, 100);
-              failureReasonCounts[reason] = (failureReasonCounts[reason] || 0) + 1;
-            }
-          }
-        } catch {}
-      }
-    } catch {}
-  }
-
-  const topFailureReasons = Object.entries(failureReasonCounts)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 5)
-    .map(([reason, count]) => ({ reason, count }));
-
-  const actionsTaken: string[] = [];
-  let permissiveModeEnabled = false;
-  let cooldownsReset = false;
-
-  // Zero-fill drought trigger: 0 applied in last 30 minutes
-  if (appliedLast30m === 0) {
-    console.warn(`[DOCTOR] 🚨 Zero-fill drought detected: 0 applied in last 30m (processed ${processedLast30m} runs, ${processedLast15m} in last 15m). Initiating self-healing...`);
-
-    // 1. If 0 processed in last 15m, worker is hung/stalled
-    if (processedLast15m === 0) {
-      console.warn('[DOCTOR] Stalled worker detected (0 processed in 15m). Reaping zombie automation chrome and cleaning profile locks...');
-      try {
-        reapZombieChromeProcesses(0, true);
-        scrubBrowserCachesAndTempDirs();
-        actionsTaken.push('reaped_hung_automation_chrome_and_cleaned_locks');
-      } catch (err: any) {
-        actionsTaken.push(`reap_error: ${err?.message}`);
-      }
-    }
-
-    // 2. Reset host cooldowns in host-health.json
-    try {
-      const hostHealthPath = path.join(stateDir, 'host-health.json');
-      if (fs.existsSync(hostHealthPath)) {
-        const raw = fs.readFileSync(hostHealthPath, 'utf8');
-        const parsed = JSON.parse(raw);
-        if (typeof parsed === 'object' && parsed !== null) {
-          for (const key of Object.keys(parsed)) {
-            if (parsed[key] && typeof parsed[key] === 'object') {
-              parsed[key].consecutiveFailures = 0;
-              parsed[key].cooldownUntil = 0;
-              parsed[key].inCooldown = false;
-            }
-          }
-          fs.writeFileSync(hostHealthPath, JSON.stringify(parsed, null, 2), 'utf8');
-          cooldownsReset = true;
-          actionsTaken.push('reset_host_health_cooldowns');
-        }
-      }
-    } catch (err: any) {
-      actionsTaken.push(`host_health_reset_error: ${err?.message}`);
-    }
-
-    // 3. Enable permissive submit mode
-    process.env.FORCE_PERMISSIVE_SUBMIT_ALL = '1';
-    permissiveModeEnabled = true;
-    actionsTaken.push('enabled_force_permissive_submit_all');
-
-    // 4. Scrub browser profile caches
-    try {
-      scrubBrowserCachesAndTempDirs();
-      actionsTaken.push('scrubbed_browser_caches');
-    } catch {}
-
-    // 5. Append audit entry to doctor-heals.jsonl
-    const report: DoctorSelfHealReport = {
-      timestamp: new Date(now).toISOString(),
-      appliedLast30m,
-      processedLast30m,
-      processedLast15m,
-      topFailureReasons,
-      actionsTaken,
-      permissiveModeEnabled,
-      cooldownsReset,
-      healed: true,
-    };
-
-    latestDoctorReport = report;
-
-    try {
-      const dir = path.dirname(healsLogPath);
-      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-      fs.appendFileSync(healsLogPath, JSON.stringify(report) + '\n', 'utf8');
-    } catch {}
-
-    return report;
-  }
-
-  const normalReport: DoctorSelfHealReport = {
-    timestamp: new Date(now).toISOString(),
-    appliedLast30m,
-    processedLast30m,
-    processedLast15m,
-    topFailureReasons,
-    actionsTaken,
-    permissiveModeEnabled,
-    cooldownsReset,
-    healed: false,
+  const now = params?.nowMs ?? Date.now();
+  const stateDir = params?.stateDir || path.resolve('state/autoapply/portal-review');
+  const historyPath = params?.runHistoryPath || path.join(stateDir, 'run-history.jsonl');
+  const report: DoctorSelfHealReport = {
+    timestamp: new Date(now).toISOString(), appliedLast30m: 0, processedLast30m: 0, processedLast15m: 0,
+    topFailureReasons: [], actionsTaken: [], permissiveModeEnabled: false, cooldownsReset: false, healed: false,
   };
-  latestDoctorReport = normalReport;
-  return normalReport;
+  const failures: Record<string, number> = {};
+  for (const run of readJobRunHistory(2000, historyPath)) {
+    const legacy = run as typeof run & { timestamp?: string; createdAt?: string };
+    const time = Date.parse(run.finishedAt || legacy.timestamp || legacy.createdAt || '');
+    if (!Number.isFinite(time) || time > now || time < now - 30 * 60_000) continue;
+    report.processedLast30m++;
+    if (time >= now - 15 * 60_000) report.processedLast15m++;
+    if (run.status === 'applied' && run.receiptVerified === true) report.appliedLast30m++;
+    else {
+      const reason = String(run.reason || 'unspecified_failure').slice(0, 100);
+      failures[reason] = (failures[reason] || 0) + 1;
+    }
+  }
+  report.topFailureReasons = Object.entries(failures).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([reason, count]) => ({ reason, count }));
+  // Empty history is idle/unknown, not evidence that a browser is hung.
+  if (report.processedLast30m > 0 && report.appliedLast30m === 0) report.actionsTaken.push('review_failure_evidence_without_policy_changes');
+  latestDoctorReport = report;
+  return report;
 }
 
 if (process.argv[1] && (process.argv[1].endsWith('health-and-ram-watchdog.ts') || process.argv[1].endsWith('health-and-ram-watchdog.js'))) {

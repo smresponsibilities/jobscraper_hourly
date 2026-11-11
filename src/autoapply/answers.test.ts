@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { translateCanonicalAnswerToOption } from './widgets.js';
 import { resolveCandidateAnswer } from './answers.js';
 import { validateProfile } from './profile.js';
 import { classifyAtsField } from './classifier.js';
@@ -70,6 +71,35 @@ test('phone type and salutation require explicit profile values', () => {
   assert.equal(resolveCandidateAnswer('unknown', candidate, { ...context, question: 'Salutation' }).value, 'Mr.');
   assert.equal(resolveCandidateAnswer('unknown', candidate, { ...context, question: 'Phone device type' }).value, 'Mobile');
   assert.equal(resolveCandidateAnswer('unknown', profile, { ...context, question: 'Phone device type' }).value, undefined);
+});
+
+test('confirmed preferences answer only the matching language, geography and paid terms', () => {
+  const candidate = { ...profile, applicationPreferences: {
+    citizenship: 'Indian', spokenLanguages: ['Hindi', 'English'], languageProficiency: { Hindi: 'native', English: 'native', French: 'none' },
+    relocationCountries: ['India'], travelCountries: ['India'], businessTravel: true, nightShifts: true, weekendWork: true,
+    employmentTypes: ['full-time', 'internship', 'contract'], paidRolesOnly: true,
+    annualSalaryRangeINR: { minimum: 1200000, maximum: 1500000 }, noExperienceWith: ['FIX protocol', 'accounting/ERP software', 'payments products', 'Selenium'],
+  } } as any;
+  const answer = (question: string, extra: object = {}) => resolveCandidateAnswer('unknown', candidate, { ...context, question, ...extra }).value;
+  assert.equal(answer('What is your English proficiency?', { options: ['Native / Bilingual', 'Beginner'] }), 'Native / Bilingual');
+  assert.equal(answer('Can you speak French?'), false);
+  assert.equal(answer('What is your citizenship?'), 'Indian');
+  assert.equal(answer('Are you willing to work night shifts?'), true);
+  assert.equal(answer('Can you travel internationally?'), false);
+  assert.equal(answer('Can you travel within India?'), true);
+  assert.equal(answer('Are you willing to relocate?'), undefined);
+  assert.equal(answer('Are you willing to relocate?', { location: 'Bengaluru, India' }), true);
+  assert.equal(answer('Are you willing to relocate to London?'), false);
+  assert.equal(answer('What is your expected salary?'), '12–15 LPA annually (INR)');
+  assert.equal(answer('What is your expected internship stipend?'), undefined);
+  assert.equal(answer('Are you open to a paid internship?'), true);
+  assert.equal(answer('Are you open to an unpaid internship?'), false);
+  assert.equal(answer('Are you open to an internship?'), undefined);
+  assert.equal(answer('What is your expected salary in USD per hour?'), undefined);
+  assert.equal(answer('Have you used Selenium?', { options: ['Yes', 'No'] }), 'No');
+  assert.equal(answer('Do you consent to waive legal rights?'), undefined);
+  assert.equal(translateCanonicalAnswerToOption('5', 'Years of experience', ['0–1 years', '1–2 years']), null);
+  assert.equal(translateCanonicalAnswerToOption('No', 'Do you need sponsorship?', ['Yes', 'No']), 'No');
 });
 
 test('confirmed declarations do not answer inverted or unrelated questions', () => {

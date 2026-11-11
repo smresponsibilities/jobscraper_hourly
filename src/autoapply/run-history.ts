@@ -40,16 +40,6 @@ export function sanitizeRunHistoryFile(filePath = HISTORY_FILE): number {
             parsed.durationMs = 360_000;
             sanitizedCount++;
           }
-          // TICKET GEN-446: Promote misclassified confirmation runs to applied
-          if (
-            /submission confirmation observed|application submitted|thank you for applying|received your application/i.test(parsed.reason || '') &&
-            (parsed.fieldsFilled || 0) > 0 &&
-            parsed.status !== 'applied'
-          ) {
-            parsed.status = 'applied';
-            parsed.receiptVerified = true;
-            sanitizedCount++;
-          }
           return JSON.stringify(parsed);
         }
       } catch {}
@@ -64,12 +54,7 @@ export function sanitizeRunHistoryFile(filePath = HISTORY_FILE): number {
   }
 }
 
-// Auto-run sanitation on file load
-try {
-  sanitizeRunHistoryFile();
-} catch {}
-
-export function appendJobRunHistory(entry: JobRunHistoryEntry): void {
+export function appendJobRunHistory(entry: JobRunHistoryEntry, filePath = HISTORY_FILE): void {
   // Ticket GEN-70: Deduplicate rapid consecutive calls for the same job
   const now = Date.now();
   if (entry.jobId && entry.jobId === lastAppendedJobId && now - lastAppendedTime < 5000) {
@@ -88,31 +73,25 @@ export function appendJobRunHistory(entry: JobRunHistoryEntry): void {
     }
   }
 
-  // TICKET GEN-446: Whenever reason matches submission confirmation observed or application submitted with fieldsFilled > 0, it MUST be 'applied'
-  if (
-    /submission confirmation observed|application submitted|thank you for applying|received your application/i.test(entry.reason || '') &&
-    (entry.fieldsFilled || 0) > 0
-  ) {
-    entry.status = 'applied';
-    entry.receiptVerified = true;
-  }
+  // Narrative text cannot establish an employer receipt.
+  if (entry.status === 'applied' && entry.receiptVerified !== true) entry.status = 'paused_for_review';
 
-  fs.mkdirSync(path.dirname(HISTORY_FILE), { recursive: true });
-  fs.appendFileSync(HISTORY_FILE, JSON.stringify(entry) + '\n', 'utf8');
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.appendFileSync(filePath, JSON.stringify(entry) + '\n', 'utf8');
 }
 
-export function readJobRunHistory(maxLines = 2000): JobRunHistoryEntry[] {
+export function readJobRunHistory(maxLines = 2000, filePath = HISTORY_FILE): JobRunHistoryEntry[] {
   try {
-    if (!fs.existsSync(HISTORY_FILE)) return [];
-    const stat = fs.statSync(HISTORY_FILE);
+    if (!fs.existsSync(filePath)) return [];
+    const stat = fs.statSync(filePath);
     if (stat.size === 0) return [];
 
     // Fast tail-read: read at most 512KB from the end of the file
     const bytesToRead = Math.min(stat.size, 512 * 1024);
     const buffer = Buffer.alloc(bytesToRead);
-    const fd = fs.openSync(HISTORY_FILE, 'r');
-    fs.readSync(fd, buffer, 0, bytesToRead, stat.size - bytesToRead);
-    fs.closeSync(fd);
+    const fd = fs.openSync(filePath, 'r');
+    try { fs.readSync(fd, buffer, 0, bytesToRead, stat.size - bytesToRead); }
+    finally { fs.closeSync(fd); }
 
     const text = buffer.toString('utf8');
     const lines = text.trim().split(/\r?\n/).filter(Boolean);

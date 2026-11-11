@@ -1,6 +1,7 @@
 // src/resume/deterministic-builder.ts
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { createHash } from 'node:crypto';
 import {
   Document,
   Packer,
@@ -226,7 +227,7 @@ export interface ResumeProject {
   bullets: string[];
 }
 
-export function getArchetypeProjects(archetype: ResumeArchetype | RoleArchetype): ResumeProject[] {
+export function getArchetypeProjects(archetype: ResumeArchetype | RoleArchetype, all = false): ResumeProject[] {
   const norm = String(archetype).toUpperCase();
 
   const PROJECT_CLICKHOUSE: ResumeProject = {
@@ -285,6 +286,11 @@ export function getArchetypeProjects(archetype: ResumeArchetype | RoleArchetype)
     ],
   };
 
+  if (all) return [PROJECT_CLICKHOUSE, PROJECT_QUIZDECK, PROJECT_CHAINCODE, PROJECT_SHOPIFY, PROJECT_FERTILIZER,
+    { title: 'Productivity Caller', stack: 'Kotlin, Jetpack Compose, Android SDK, NLP Parser', bullets: ['Developed a native Android reminder application with automated call scheduling and a pattern-based natural language task parser.'] },
+    { title: "SM'S DEX", stack: 'Astro, TypeScript, Python, GitHub Actions CI/CD', bullets: ['Built a static platform with automated GitHub Actions deployment and Python pull-request validation.'] },
+    { ...PROJECT_SMS_DEX, title: 'Terminal Wordle & Clickless', stack: 'C99, WebAssembly, Rust' }];
+
   if (norm.includes('DATA')) {
     return [PROJECT_CLICKHOUSE, PROJECT_MORGAN_STANLEY, PROJECT_SHOPIFY];
   }
@@ -301,6 +307,48 @@ export function getArchetypeProjects(archetype: ResumeArchetype | RoleArchetype)
     return [PROJECT_MORGAN_STANLEY, PROJECT_CLICKHOUSE, PROJECT_QUIZDECK];
   }
   return [PROJECT_MORGAN_STANLEY, PROJECT_QUIZDECK, PROJECT_CLICKHOUSE];
+}
+
+function keywordOverlap(text: string, terms: string[]): number {
+  return terms.filter(term => new RegExp(`(^|[^a-z0-9])${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^a-z0-9]|$)`, 'i').test(text)).length;
+}
+
+export function rankMorganStanleyBulletsForJd(jobTitle: string, jdText = ''): string[] {
+  const keywords = [
+    ['java', 'spring boot', 'rest', 'api', 'backend', 'oauth', 'mtls', 'rbac'],
+    ['kafka', 'pyspark', 'snowflake', 'etl', 'data', 'warehouse', 'streaming'],
+    ['jenkins', 'ci/cd', 'maven', 'git', 'devops', 'build', 'release'],
+    ['splunk', 'grafana', 'linux', 'monitoring', 'observability', 'sre'],
+    ['react', 'typescript', 'node.js', 'fullstack', 'frontend', 'mongodb'],
+  ];
+  const bullets = [...VERIFIED_MORGAN_STANLEY_BULLETS.map(b => b.text),
+    'Developed full-stack internal tooling and data-access layers integrating React, TypeScript, Node.js, relational databases and MongoDB.'];
+  return bullets.map((text, index) => ({ text, score: keywordOverlap(jobTitle, keywords[index]!) * 20 + keywordOverlap(jdText, keywords[index]!) * 10 }))
+    .sort((a, b) => b.score - a.score).slice(0, 4).map(b => b.text);
+}
+
+export function selectTop3ProjectsForJd(jobTitle: string, jdText = ''): ResumeProject[] {
+  const domainTerms = [
+    ['data', 'pipeline', 'ingestion', 'etl', 'analytics', 'database'],
+    ['real-time', 'concurrency', 'backend', 'frontend', 'multiplayer'],
+    ['ai', 'llm', 'validation', 'api', 'backend', 'security'],
+    ['analytics', 'dashboard', 'frontend', 'e-commerce'],
+    ['machine learning', 'ml', 'prediction', 'model', 'data science'],
+    ['android', 'mobile', 'nlp', 'parser'],
+    ['devops', 'automation', 'ci/cd', 'frontend', 'testing'],
+    ['systems', 'low-level', 'memory', 'performance', 'algorithm'],
+  ];
+  return getArchetypeProjects('GENERAL_SWE', true).map((project, index) => {
+    const terms = [...new Set([...project.stack.split(',').map(s => s.trim().toLowerCase()), ...domainTerms[index]!])];
+    return { project, score: keywordOverlap(jobTitle, terms) * 25 + keywordOverlap(jdText, terms) * 10 };
+  }).sort((a, b) => b.score - a.score).slice(0, 3).map(({ project }) => project);
+}
+
+export function buildDynamicResumePlanForJd(jobTitle: string, jdText = '') {
+  const archetype = selectBestArchetypeByJdHardMatch(jobTitle, jdText).archetype as ResumeArchetype;
+  return { archetype, morganStanleyBullets: rankMorganStanleyBulletsForJd(jobTitle, jdText),
+    selectedProjects: selectTop3ProjectsForJd(jobTitle, jdText),
+    skillLines: getArchetypeCategorizedSkills(archetype, jobTitle, jdText) };
 }
 
 export function prioritizeVerifiedSkillsForRole(
@@ -407,13 +455,17 @@ export function getArchetypeCategorizedSkills(
     for (const [cat, skList] of Object.entries(base)) {
       prioritized[cat] = prioritizeVerifiedSkillsForRole(skList, roleTitle, jdText);
     }
+    const existing = new Set(Object.values(base).flat().map(skill => skill.toLowerCase()));
+    const projectSkills = getArchetypeProjects('GENERAL_SWE', true).flatMap(project => project.stack.split(',').map(skill => skill.trim()));
+    const relevant = [...new Set(projectSkills)].filter(skill => !existing.has(skill.toLowerCase()) && keywordOverlap(`${roleTitle} ${jdText}`, [skill]));
+    if (relevant.length) prioritized['Other relevant skills'] = relevant;
     return prioritized;
   }
 
   return base;
 }
 
-export function verifyNoKeywordStuffing(fullText: string): { clean: boolean; maxFreq: number } {
+export function verifyNoKeywordStuffing(fullText: string, maxDensity = 0.025, maxOccurrences = Infinity): { clean: boolean; maxFreq: number } {
   const stripped = fullText
     .replace(/<style[\s\S]*?<\/style>/gi, ' ')
     .replace(/<[^>]+>/g, ' ')
@@ -442,7 +494,7 @@ export function verifyNoKeywordStuffing(fullText: string): { clean: boolean; max
 
   const maxFreq = maxCount / words.length;
   return {
-    clean: maxFreq < 0.025,
+    clean: maxFreq < maxDensity && maxCount <= maxOccurrences,
     maxFreq: Number(maxFreq.toFixed(4)),
   };
 }
@@ -453,9 +505,9 @@ export function generateResumeHtml(
   roleTitle = '',
   jdText = ''
 ): string {
-  const bullets = getArchetypeOrderedBullets(archetype);
+  const bullets = roleTitle || jdText ? rankMorganStanleyBulletsForJd(roleTitle, jdText) : getArchetypeOrderedBullets(archetype);
   const skillCategories = getArchetypeCategorizedSkills(archetype, roleTitle, jdText);
-  const projects = getArchetypeProjects(archetype);
+  const projects = roleTitle || jdText ? selectTop3ProjectsForJd(roleTitle, jdText) : getArchetypeProjects(archetype);
 
   const p = (candidate as any).profile?.personal || (candidate as any).personal || (candidate as any).basics || {};
   const fullName = [p.firstName, p.lastName].filter(Boolean).join(' ') || (candidate as any).name || 'Shivam Mahajan';
@@ -684,9 +736,9 @@ export async function buildDocxWithLibrary(
   roleTitle = '',
   jdText = ''
 ): Promise<Buffer> {
-  const bullets = getArchetypeOrderedBullets(archetype);
+  const bullets = roleTitle || jdText ? rankMorganStanleyBulletsForJd(roleTitle, jdText) : getArchetypeOrderedBullets(archetype);
   const skillCategories = getArchetypeCategorizedSkills(archetype, roleTitle, jdText);
-  const projects = getArchetypeProjects(archetype);
+  const projects = roleTitle || jdText ? selectTop3ProjectsForJd(roleTitle, jdText) : getArchetypeProjects(archetype);
 
   const p = (candidate as any).profile?.personal || (candidate as any).personal || (candidate as any).basics || {};
   const fullName = [p.firstName, p.lastName].filter(Boolean).join(' ') || (candidate as any).name || 'Shivam Mahajan';
@@ -1365,4 +1417,43 @@ export async function buildResumePdfForArchetype(
 
   const html = generateResumeHtml(candidateProfile, archetype);
   await buildResumePdf(html, outputPath);
+}
+
+export async function compileRuntimeTailoredResumeForJob(input: {
+  jobId: string; company?: string; jobTitle: string; jdText: string;
+  browser: Pick<Browser, 'newPage'>; profile: CandidateExtendedProfile;
+}): Promise<TailoredResumeArtifacts> {
+  if (!input.jobTitle.trim() && !input.jdText.trim()) throw new Error('Runtime resume requires a job title or description');
+  const { archetype } = buildDynamicResumePlanForJd(input.jobTitle, input.jdText);
+  const html = generateResumeHtml(input.profile, archetype, input.jobTitle, input.jdText);
+  const quality = verifyNoKeywordStuffing(html, 0.02, 4);
+  const outputDir = path.resolve('state/autoapply/resumes/runtime',
+    createHash('sha256').update(input.jobId).digest('hex').slice(0, 24));
+  fs.mkdirSync(outputDir, { recursive: true });
+  const runDir = fs.mkdtempSync(path.join(outputDir, 'run-'));
+  const pdfPath = path.join(runDir, 'Shivam_Mahajan_Resume.pdf');
+  const docxPath = path.join(runDir, 'Shivam_Mahajan_Resume.docx');
+  let page: Awaited<ReturnType<typeof input.browser.newPage>> | undefined;
+  try {
+    page = await input.browser.newPage();
+    const renderPage = page;
+    const [pdf, docx] = await Promise.all([
+      (async () => {
+        await renderPage.setContent(html, { waitUntil: 'load' });
+        for (const size of [10, 9.5, 9, 8.5]) {
+          if (size !== 10) await renderPage.evaluate(size => document.documentElement.style.setProperty('--base-font-size', `${size}pt`), size);
+          const bytes = await renderPage.pdf({ format: 'A4', printBackground: true });
+          if (inspectPdfPageCount(bytes) === 1) return bytes;
+        }
+        throw new Error('Runtime resume exceeds one page');
+      })(),
+      buildDocxWithLibrary(input.profile, archetype, input.jobTitle, input.jdText),
+    ]);
+    fs.writeFileSync(pdfPath, pdf);
+    fs.writeFileSync(docxPath, docx);
+  } catch (error) {
+    fs.rmSync(runDir, { recursive: true, force: true });
+    throw error;
+  } finally { await page?.close(); }
+  return { archetype, pdfPath, docxPath, verifiedClean: quality.clean, maxTermFrequency: quality.maxFreq };
 }

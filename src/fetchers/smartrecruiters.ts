@@ -28,11 +28,11 @@ function place(location: SrPosting['location']): string {
  * signal here. It's also the one ATS that returns a structured experience
  * level, which is a far better seniority signal than title text.
  */
-export async function list(company: Company): Promise<RawJob[]> {
+export async function list(company: Company, fetchJson: typeof getJson = getJson): Promise<RawJob[]> {
   const jobs: RawJob[] = [];
 
   for (let page = 0; page < MAX_PAGES; page++) {
-    const data = await getJson<{ totalFound?: number; content?: SrPosting[] }>(
+    const data = await fetchJson<{ totalFound?: number; content?: SrPosting[] }>(
       `https://api.smartrecruiters.com/v1/companies/${company.token}/postings` +
         `?limit=${PAGE_SIZE}&offset=${page * PAGE_SIZE}`,
     );

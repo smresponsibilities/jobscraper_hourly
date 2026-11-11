@@ -304,7 +304,7 @@ async function main(): Promise<void> {
               jobUrl: rawUrl,
               jobBoard,
               location: loc,
-              postedAt: item.postedAt || new Date().toISOString(),
+              postedAt: item.postedAt || '',
               status: 'queued',
             };
 
@@ -470,7 +470,7 @@ async function main(): Promise<void> {
             jobUrl: item.url,
             jobBoard,
             location: item.location,
-            postedAt: new Date().toISOString(),
+            postedAt: '',
             status: 'queued',
           };
 

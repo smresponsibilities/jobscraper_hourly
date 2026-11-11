@@ -88,6 +88,16 @@ export interface ScopedAnswer {
 }
 
 export interface CandidateExtendedProfile {
+  applicationPreferences?: {
+    workCountries?: string[]; relocationCountries?: string[]; citizenship?: string;
+    spokenLanguages?: string[]; languageProficiencyLevelsProvided?: boolean;
+    languageProficiency?: Record<string, 'native' | 'none'>;
+    annualSalaryRangeINR?: { minimum: number; maximum: number };
+    employmentTypes?: string[]; paidRolesOnly?: boolean;
+    nightShifts?: boolean; weekendWork?: boolean; businessTravel?: boolean; travelCountries?: string[];
+    recruitmentDataProcessingConsent?: boolean; backgroundCheckConsent?: boolean;
+    demographicDisclosure?: 'prefer_not_to_disclose'; marketingConsent?: boolean; noExperienceWith?: string[];
+  };
   recruitmentPrivacyConsent?: boolean;
   adult?: boolean;
   completeEmploymentHistory?: boolean;

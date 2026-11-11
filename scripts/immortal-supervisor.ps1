@@ -1,52 +1,59 @@
-# scripts/immortal-supervisor.ps1
-# Immortal Sticky Supervisor for Jobscraper-Next Auto-Apply Worker
-# Runs worker indefinitely, restarts on exit/crash within 5s, stops ONLY on STOP_AUTOAPPLY.flag
+# Keep one project worker alive. The worker owns locks and browser cleanup.
+param([switch]$CheckOnly)
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
-Set-Location $repoRoot
-$stateDir = Join-Path $repoRoot "state/autoapply"
-$flagPath = Join-Path $stateDir "portal-review/STOP_AUTOAPPLY.flag"
+$stateDir = Join-Path $repoRoot 'state/autoapply/portal-review'
+$flagPath = Join-Path $stateDir 'STOP_AUTOAPPLY.flag'
+$workerScript = Join-Path $repoRoot 'scripts/drain-backfill-and-hourly.ts'
+$profilePath = Join-Path $stateDir 'candidate.json'
 
-Write-Host "[SUPERVISOR] Immortal Sticky Supervisor started. Monitoring worker processes..." -ForegroundColor Cyan
-
-while ($true) {
-    if (Test-Path $flagPath) {
-        Write-Host "[SUPERVISOR] STOP_AUTOAPPLY.flag detected at $flagPath. Explicit operator stop active. Exiting supervisor." -ForegroundColor Yellow
-        break
+function Get-AutoApplyWorker {
+    $lockPath = Join-Path $stateDir 'worker.lock'
+    if (Test-Path -LiteralPath $lockPath) {
+        try {
+            $owner = Get-Content -LiteralPath $lockPath -Raw | ConvertFrom-Json
+            $ownerProcess = Get-CimInstance Win32_Process -Filter "ProcessId = $([int]$owner.pid)" -ErrorAction Stop
+            if ($ownerProcess.Name -eq 'node.exe' -and $ownerProcess.CommandLine -match 'drain-backfill-and-hourly|run-overnight-marathon') { return $ownerProcess }
+        } catch {}
     }
-
-    $workerProc = Get-CimInstance Win32_Process | Where-Object { 
-        $_.CommandLine -match "run-overnight-marathon|drain-backfill-and-hourly" -and 
-        $_.ProcessId -ne $PID 
-    }
-
-    if (-not $workerProc) {
-        Write-Host "[SUPERVISOR] No running auto-apply worker found. Cleaning stale locks..." -ForegroundColor Magenta
-
-        # Clean stale locks
-        $workerLock = Join-Path $stateDir "worker.lock"
-        if (Test-Path $workerLock) {
-            Remove-Item -Force $workerLock -ErrorAction SilentlyContinue
-        }
-        $portalReviewLock = Join-Path $stateDir "portal-review/worker.lock"
-        if (Test-Path $portalReviewLock) {
-            Remove-Item -Force $portalReviewLock -ErrorAction SilentlyContinue
-        }
-
-        # Clean browser profile singleton locks
-        Get-ChildItem -Path "$stateDir/browser-profile-*" -Filter "SingletonLock" -Depth 1 -ErrorAction SilentlyContinue | ForEach-Object {
-            Remove-Item -Force $_.FullName -ErrorAction SilentlyContinue
-        }
-
-        Write-Host "[SUPERVISOR] Launching worker: drain-backfill-and-hourly.ts with --submit..." -ForegroundColor Green
-        $proc = Start-Process -FilePath "node" -ArgumentList "--import tsx scripts/drain-backfill-and-hourly.ts --profile state/autoapply/portal-review/candidate.json --submit" -WorkingDirectory $repoRoot -PassThru -NoNewWindow
-        
-        Write-Host "[SUPERVISOR] Worker spawned with PID: $($proc.Id). Monitoring execution..." -ForegroundColor Green
-        # Wait up to 5s before checking again, or wait for process exit
-        $proc | Wait-Process -Timeout 5 -ErrorAction SilentlyContinue
-    } else {
-        Start-Sleep -Seconds 5
-    }
+    return Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" | Where-Object {
+        $_.CommandLine -like "*$workerScript*"
+    } | Select-Object -First 1
 }
 
-Write-Host "[SUPERVISOR] Supervisor stopped." -ForegroundColor Yellow
+if ($CheckOnly) {
+    [pscustomobject]@{ StopRequested = Test-Path -LiteralPath $flagPath; Worker = Get-AutoApplyWorker }
+    return
+}
+
+$hash = [System.Security.Cryptography.SHA256]::Create()
+$mutexId = [System.BitConverter]::ToString($hash.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($repoRoot.ToLowerInvariant()))).Replace('-', '')
+$hash.Dispose()
+$mutex = [System.Threading.Mutex]::new($false, "Local\JobscraperSupervisor-$mutexId")
+$ownsMutex = $false
+try {
+    try { $ownsMutex = $mutex.WaitOne(0) } catch [System.Threading.AbandonedMutexException] { $ownsMutex = $true }
+    if (-not $ownsMutex) { Write-Host '[SUPERVISOR] Another supervisor owns this project.'; return }
+    $restartDelaySeconds = 5
+    while (-not (Test-Path -LiteralPath $flagPath)) {
+        if (Get-AutoApplyWorker) { Start-Sleep -Seconds 5; continue }
+        $startedAt = Get-Date
+        try {
+            $arguments = "--import tsx `"$workerScript`" --profile `"$profilePath`" --state `"$stateDir`" --submit"
+            $worker = Start-Process -FilePath 'node' -ArgumentList $arguments -WorkingDirectory $repoRoot -WindowStyle Hidden -PassThru
+            Write-Host "[SUPERVISOR] Worker started with PID $($worker.Id)."
+            while (-not $worker.HasExited -and -not (Test-Path -LiteralPath $flagPath)) {
+                Start-Sleep -Seconds 1
+                $worker.Refresh()
+            }
+            if ((Test-Path -LiteralPath $flagPath)) { break }
+            Write-Host "[SUPERVISOR] Worker exited with code $($worker.ExitCode)."
+            if (((Get-Date) - $startedAt).TotalSeconds -ge 60) { $restartDelaySeconds = 5 }
+        } catch { Write-Warning "[SUPERVISOR] Launch failed: $($_.Exception.Message)" }
+        for ($waited = 0; $waited -lt $restartDelaySeconds -and -not (Test-Path -LiteralPath $flagPath); $waited++) { Start-Sleep -Seconds 1 }
+        $restartDelaySeconds = [Math]::Min(60, $restartDelaySeconds * 2)
+    }
+} finally {
+    if ($ownsMutex) { $mutex.ReleaseMutex() }
+    $mutex.Dispose()
+}

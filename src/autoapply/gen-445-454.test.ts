@@ -189,8 +189,8 @@ test('GEN-450 & GEN-451: STOP_AUTOAPPLY.flag sentinel & 30-min zero-fill self-he
   });
 
   assert.equal(report.appliedLast30m, 0);
-  assert.equal(report.healed, true);
-  assert.equal(report.permissiveModeEnabled, true);
+  assert.equal(report.healed, false);
+  assert.equal(report.permissiveModeEnabled, false);
 
   try { fs.rmSync(testStateDir, { recursive: true, force: true }); } catch {}
 });

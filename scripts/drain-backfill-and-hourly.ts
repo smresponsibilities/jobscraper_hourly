@@ -1,3 +1,4 @@
+import { stopFlagPath, waitForDaemonWake, hasObservedApplicationReceipt } from '../src/autoapply/daemon-control.js';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createHash } from 'node:crypto';
@@ -38,7 +39,7 @@ import { startDashboardServer } from './dashboard-server.js';
 import { filterUnattemptedJobs, recordAttemptedJob } from '../src/autoapply/attempted-registry.js';
 import { scrubBrowserProfileCaches } from '../src/autoapply/ram-and-pacing.js';
 import { syncGitHubActionsPillars } from './sync-github-actions-pillars.js';
-import { ContinuousRamAndHealthWatchdog, check30MinZeroFillDroughtAndAutoHeal } from '../src/autoapply/health-and-ram-watchdog.js';
+import { ContinuousRamAndHealthWatchdog, check30MinZeroFillDroughtAndAutoHeal, ActiveJobRegistry } from '../src/autoapply/health-and-ram-watchdog.js';
 import { syncInboxLifecycleEvents } from '../src/autoapply/inbox-lifecycle-tracker.js';
 import { selectDiversifiedMultiLaneChunk } from './run-overnight-marathon.js';
 
@@ -93,8 +94,8 @@ export function isPidRunningNode(pid: number): boolean {
   if (pid === process.pid) return true;
   try {
     process.kill(pid, 0);
-  } catch {
-    return false;
+  } catch (error: any) {
+    return error?.code !== 'ESRCH';
   }
   if (process.platform === 'win32') {
     try {
@@ -126,6 +127,7 @@ export function acquireLock(lockPath: string): boolean {
     if (fs.existsSync(lockPath)) {
       const content = fs.readFileSync(lockPath, 'utf8');
       const info: WorkerLockInfo = JSON.parse(content);
+      if (info.pid === process.pid) return true;
       if (info.pid && info.pid !== process.pid) {
         if (isPidRunningNode(info.pid)) {
           console.log(`[DRAIN] Another worker PID ${info.pid} is actively running node.exe. Exiting cleanly.`);
@@ -139,14 +141,13 @@ export function acquireLock(lockPath: string): boolean {
       }
     }
   } catch {
-    try {
-      fs.unlinkSync(lockPath);
-    } catch {}
+    // An unreadable or partially published lock may belong to a live owner.
+    return false;
   }
 
   try {
     fs.mkdirSync(path.dirname(lockPath), { recursive: true });
-    fs.writeFileSync(lockPath, JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }), 'utf8');
+    fs.writeFileSync(lockPath, JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }), { encoding: 'utf8', flag: 'wx' });
     return true;
   } catch (err) {
     console.error('[DRAIN] Failed to write lock file:', err);
@@ -166,144 +167,28 @@ export function releaseLock(lockPath: string): void {
   } catch {}
 }
 
-function reapStrayChrome(): void {
-  if (process.platform !== 'win32') return;
-  try {
-    execSync(
-      `powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \\"Name = 'chrome.exe'\\" | Where-Object { $_.CommandLine -match '--enable-automation|portal-review|browser-profile|playwright|patchright|--window-position=-2400' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"`,
-      { stdio: 'ignore' }
-    );
-  } catch {}
-}
-
-function resetEligiblePausedJobs(dbPath: string): number {
+export function resetEligiblePausedJobs(dbPath: string): number {
   if (!fs.existsSync(dbPath)) return 0;
   const db = new DatabaseSync(dbPath);
-  db.exec('PRAGMA temp_store=MEMORY;');
   try {
-    // 1. Move parked ATS root URLs in paused_for_review/failed to skipped
-    const allPausedOrFailed = db.prepare(`SELECT id, normalized_url FROM applications WHERE status IN ('paused_for_review', 'failed')`).all() as Array<{ id: string; normalized_url: string }>;
-    for (const row of allPausedOrFailed) {
-      if (isAtsRootUrl(row.normalized_url)) {
-        db.prepare(`UPDATE applications SET status = 'skipped', payload = json_set(payload, '$.status', 'skipped', '$.skipReason', 'board_root_not_requisition') WHERE id = ?`).run(row.id);
-      }
-    }
-
-    // 1.5 Reset BROWSER_OPERATION_FAILED and TIMEOUT jobs back to queued (Ticket GEN-45)
-    const browserCrashesReset = db.prepare(`
-      UPDATE applications
-      SET status = 'queued',
-          payload = json_set(payload, '$.status', 'queued', '$.retryCount', 0, '$.error', null, '$.reason', null)
-      WHERE status = 'failed'
-        AND (
-          json_extract(payload, '$.error') LIKE '%Browser operation failed%'
-          OR json_extract(payload, '$.reason') LIKE '%Browser operation failed%'
-          OR json_extract(payload, '$.error') LIKE '%BROWSER_OPERATION_FAILED%'
-          OR json_extract(payload, '$.reason') LIKE '%BROWSER_OPERATION_FAILED%'
-          OR json_extract(payload, '$.error') LIKE '%STEP_TIMEOUT%'
-          OR json_extract(payload, '$.reason') LIKE '%STEP_TIMEOUT%'
-          OR json_extract(payload, '$.error') LIKE '%timed out after%'
-          OR json_extract(payload, '$.reason') LIKE '%timed out after%'
-          OR json_extract(payload, '$.error') LIKE '%Execution failed%'
-          OR json_extract(payload, '$.reason') LIKE '%Execution failed%'
-          OR json_extract(payload, '$.error') LIKE '%disk is full%'
-          OR json_extract(payload, '$.reason') LIKE '%disk is full%'
-        )
-        AND NOT (
-          normalized_url LIKE '%stripe%'
-          OR normalized_url LIKE '%avoca%'
-          OR normalized_url LIKE '%ssctech%'
-          OR normalized_url LIKE '%paypal%'
-          OR json_extract(payload, '$.company') LIKE '%stripe%'
-          OR json_extract(payload, '$.company') LIKE '%avoca%'
-          OR json_extract(payload, '$.company') LIKE '%ssctech%'
-          OR json_extract(payload, '$.company') LIKE '%paypal%'
-        )
-    `).run();
-
-    // 2. Reset solvable applications
-    const targetCompaniesReset = db.prepare(`
-      UPDATE applications
-      SET status = 'queued',
-          payload = json_set(payload, '$.status', 'queued', '$.retryCount', 0)
-      WHERE status IN ('paused_for_review', 'failed')
-        AND (
-          json_extract(payload, '$.company') LIKE '%Effective Altruism%'
-          OR json_extract(payload, '$.company') LIKE '%CEA%'
-          OR json_extract(payload, '$.company') LIKE '%Plane%'
-          OR json_extract(payload, '$.company') LIKE '%Tekion%'
-          OR json_extract(payload, '$.company') LIKE '%Diagrid%'
-          OR json_extract(payload, '$.company') LIKE '%Renesas%'
-          OR json_extract(payload, '$.company') LIKE '%NielsenIQ%'
-          OR json_extract(payload, '$.company') LIKE '%Enviri%'
-          OR json_extract(payload, '$.company') LIKE '%Eurofins%'
-          OR json_extract(payload, '$.company') LIKE '%Fugro%'
-          OR json_extract(payload, '$.company') LIKE '%Western Digital%'
-          OR json_extract(payload, '$.company') LIKE '%Zoom%'
-          OR normalized_url LIKE '%centreforeffectivealtruism%'
-          OR normalized_url LIKE '%/plane/%'
-          OR normalized_url LIKE '%/tekion/%'
-          OR normalized_url LIKE '%/diagrid/%'
-          OR normalized_url LIKE '%renesaselectronics%'
-          OR normalized_url LIKE '%nielseniq%'
-          OR normalized_url LIKE '%enviricorporation%'
-          OR normalized_url LIKE '%/Eurofins/%'
-          OR normalized_url LIKE '%fugro.wd3%'
-          OR normalized_url LIKE '%WesternDigital%'
-          OR normalized_url LIKE '%zoom.wd5%'
-        )
-    `).run();
-
-    // 3. Reset general solvable applications
+    // Reviews and unknown submission outcomes require reconciliation, never a company-name reset.
     const result = db.prepare(`
       UPDATE applications
-      SET status = 'queued',
-          payload = json_set(payload, '$.status', 'queued', '$.retryCount', COALESCE(json_extract(payload, '$.retryCount'), json_extract(payload, '$.retry_count'), 0) + 1)
-      WHERE (
-        (
-          status = 'paused_for_review'
-          AND (
-            json_extract(payload, '$.error') LIKE '%Validation or field errors%'
-            OR json_extract(payload, '$.reason') LIKE '%Validation or field errors%'
-            OR json_extract(payload, '$.error') LIKE '%Login needs browser review%'
-            OR json_extract(payload, '$.reason') LIKE '%Login needs browser review%'
-            OR json_extract(payload, '$.error') LIKE '%Browser operation timed out%'
-            OR json_extract(payload, '$.reason') LIKE '%Browser operation timed out%'
-            OR json_extract(payload, '$.error') LIKE '%Source verification unavailable%'
-            OR json_extract(payload, '$.reason') LIKE '%Source verification unavailable%'
-            OR json_extract(payload, '$.error') LIKE '%Submit clicked but no receipt observed%'
-            OR json_extract(payload, '$.reason') LIKE '%Submit clicked but no receipt observed%'
-            OR json_extract(payload, '$.error') LIKE '%No supported submit control found%'
-            OR json_extract(payload, '$.reason') LIKE '%No supported submit control found%'
-            OR json_extract(payload, '$.error') LIKE '%Next did not change the form%'
-            OR json_extract(payload, '$.reason') LIKE '%Next did not change the form%'
-            OR json_extract(payload, '$.error') LIKE '%Ready for submission review%'
-            OR json_extract(payload, '$.reason') LIKE '%Ready for submission review%'
-            OR json_extract(payload, '$.error') LIKE '%use --submit to send%'
-            OR json_extract(payload, '$.reason') LIKE '%use --submit to send%'
-          )
-        ) OR (
-          status = 'failed'
-          AND (
-            json_extract(payload, '$.error') LIKE '%Runner returned non-completed status%'
-            OR json_extract(payload, '$.reason') LIKE '%Runner returned non-completed status%'
-            OR json_extract(payload, '$.error') LIKE '%Browser operation timed out%'
-            OR json_extract(payload, '$.reason') LIKE '%Browser operation timed out%'
-            OR json_extract(payload, '$.error') LIKE '%Browser operation failed%'
-            OR json_extract(payload, '$.reason') LIKE '%Browser operation failed%'
-            OR json_extract(payload, '$.error') LIKE '%timed out after%'
-            OR json_extract(payload, '$.reason') LIKE '%timed out after%'
-            OR json_extract(payload, '$.error') LIKE '%Next did not change the form%'
-            OR json_extract(payload, '$.reason') LIKE '%Next did not change the form%'
-          )
-        )
-      )
-      AND COALESCE(json_extract(payload, '$.retryCount'), json_extract(payload, '$.retry_count'), 0) < 3
+      SET status = 'queued', payload = json_set(payload, '$.status', 'queued',
+        '$.retryCount', COALESCE(json_extract(payload, '$.retryCount'), json_extract(payload, '$.retry_count'), 0) + 1)
+      WHERE status = 'failed'
+        AND COALESCE(json_extract(payload, '$.retryCount'), json_extract(payload, '$.retry_count'), 0) < 3
+        AND json_extract(payload, '$.receipt') IS NULL
+        AND COALESCE(json_extract(payload, '$.submissionAttempted'), 0) = 0
+        AND COALESCE(json_extract(payload, '$.submission.phase'), '') NOT IN ('clicked', 'dispatched', 'confirmed')
+        AND COALESCE(json_extract(payload, '$.reasonCode'), '') <> 'AMBIGUOUS_DISPATCH'
+        AND (json_extract(payload, '$.error') LIKE '%browserType.launch%'
+          OR json_extract(payload, '$.error') LIKE '%launchPersistentContext%'
+          OR json_extract(payload, '$.reason') LIKE '%browserType.launch%'
+          OR json_extract(payload, '$.reason') LIKE '%launchPersistentContext%')
     `).run();
-    return Number(browserCrashesReset.changes) + Number(targetCompaniesReset.changes) + Number(result.changes);
-  } finally {
-    db.close();
-  }
+    return Number(result.changes);
+  } finally { db.close(); }
 }
 
 async function main(): Promise<void> {
@@ -333,7 +218,7 @@ async function main(): Promise<void> {
   const stateDir = path.resolve(values.get('--state') || 'state/autoapply/portal-review');
   // Ticket GEN-479.1: Default submit = true unless explicitly running dry-run or no-submit
   const shouldSubmit = !process.argv.includes('--dry-run') && !process.argv.includes('--no-submit');
-  const headless = !flags.has('--headless') || flags.has('--headless'); // Default to headless
+  const headless = true;
   const maxJobs = values.has('--max-jobs') ? parseInt(values.get('--max-jobs')!, 10) : 60;
   const timeBudgetMinutes = values.has('--time-budget-minutes')
     ? parseInt(values.get('--time-budget-minutes')!, 10)
@@ -344,16 +229,23 @@ async function main(): Promise<void> {
   const forceSync = flags.has('--force-sync');
   const discoveryCachePath = path.join(stateDir, 'last-discovery-sync.json');
 
+  if (!Number.isInteger(maxJobs) || maxJobs < 1 || !Number.isFinite(timeBudgetMinutes) || timeBudgetMinutes <= 0) {
+    throw new Error('Job count and time budget must be positive numbers');
+  }
+  if (fs.existsSync(stopFlagPath(stateDir))) return;
+  const lockPath = path.join(stateDir, 'worker.lock');
+  if (!acquireLock(lockPath)) return;
+  process.once('exit', () => releaseLock(lockPath));
   const ramWatchdog = new ContinuousRamAndHealthWatchdog(45_000);
   ramWatchdog.start();
-
-  try { startDashboardServer(4321); } catch {}
-  const lockPath = path.join(stateDir, 'worker.lock');
-  if (!acquireLock(lockPath)) {
-    process.exit(0);
-  }
-
-  reapStrayChrome();
+  const dashboard = startDashboardServer(4321);
+  let stopRequested = false;
+  const stopping = () => stopRequested || fs.existsSync(stopFlagPath(stateDir));
+  const requestStop = () => { stopRequested = true; };
+  const onHangup = () => { if (fs.existsSync(stopFlagPath(stateDir))) requestStop(); };
+  process.on('SIGINT', requestStop);
+  process.on('SIGTERM', requestStop);
+  process.on('SIGHUP', onHangup);
 
   const runnerDistPath = path.resolve('out/dist/src/autoapply/runner.js');
   const bootTimeMs = fs.existsSync(runnerDistPath) ? fs.statSync(runnerDistPath).mtimeMs : Date.now();
@@ -399,9 +291,11 @@ async function main(): Promise<void> {
   const vault = new CredentialVault(path.join(stateDir, 'vault'));
 
   try {
+    let discoveryHasRun = false;
+    const syncDiscovery = async () => {
     // Phase A: Hourly Fresh Sync (fetch fresh postings from catalogue + YC/HN/LinkedIn)
     let shouldRunPhaseA = !skipSync;
-    if (shouldRunPhaseA && !forceSync && fs.existsSync(discoveryCachePath)) {
+    if (shouldRunPhaseA && !(forceSync && !discoveryHasRun) && fs.existsSync(discoveryCachePath)) {
       try {
         const cache = JSON.parse(fs.readFileSync(discoveryCachePath, 'utf8'));
         if (cache?.lastSyncAt) {
@@ -409,14 +303,14 @@ async function main(): Promise<void> {
           const FIFTY_FIVE_MINUTES_MS = 55 * 60 * 1000;
           if (ageMs < FIFTY_FIVE_MINUTES_MS) {
             shouldRunPhaseA = false;
-            const minsAgo = Math.floor(ageMs / 60000);
-            console.log(`[DRAIN] Skipping Phase A: discovery cache is only ${minsAgo}m old (< 55m). Pass --force-sync to override.`);
+
           }
         }
       } catch {}
     }
 
     if (shouldRunPhaseA) {
+      discoveryHasRun = true;
       let ingestedCount = 0;
       try {
         const intake = new CatalogueIntake({
@@ -485,9 +379,9 @@ async function main(): Promise<void> {
                 company: lead.company,
                 jobUrl: directAtsUrl,
                 location: lead.location,
-                postedAt: nowIso,
+                postedAt: '',
               });
-              (queuedItem as any).isHourlyFresh = true;
+              (queuedItem as any).isHourlyFresh = false;
               (queuedItem as any).discoveredAt = nowIso;
               (queuedItem as any).hourlySource = hourlySrc;
               try {
@@ -500,8 +394,8 @@ async function main(): Promise<void> {
                   jobUrl: directAtsUrl,
                   location: lead.location,
                   status: 'queued',
-                  postedAt: nowIso,
-                  isHourlyFresh: true,
+                  postedAt: '',
+                  isHourlyFresh: false,
                   discoveredAt: nowIso,
                   hourlySource: hourlySrc,
                 }) + '\n', 'utf8');
@@ -527,9 +421,9 @@ async function main(): Promise<void> {
                     company: job.company,
                     jobUrl: directAtsUrl,
                     location: job.location,
-                    postedAt: job.listedAt || nowIso,
+                    postedAt: '',
                   });
-                  (queuedItem as any).isHourlyFresh = true;
+                  (queuedItem as any).isHourlyFresh = false;
                   (queuedItem as any).discoveredAt = nowIso;
                   (queuedItem as any).hourlySource = 'linkedin_1h';
                   try {
@@ -542,8 +436,9 @@ async function main(): Promise<void> {
                       jobUrl: directAtsUrl,
                       location: job.location,
                       status: 'queued',
-                      postedAt: job.listedAt || nowIso,
-                      isHourlyFresh: true,
+                      postedAt: '',
+                      sourceListedAt: job.listedAt,
+                      isHourlyFresh: false,
                       discoveredAt: nowIso,
                       hourlySource: 'linkedin_1h',
                     }) + '\n', 'utf8');
@@ -593,28 +488,23 @@ async function main(): Promise<void> {
       }
     }
 
+    };
+
     // Phase B: Continuous Autonomous Drain Loop (Step 421 / GEN-421)
     const isContinuousSubmit = shouldSubmit && !flags.has('--once');
     let batchNumber = 0;
 
-    process.on('SIGHUP', () => {
-      const stopFlag = path.join(stateDir, 'portal-review/STOP_AUTOAPPLY.flag');
-      if (fs.existsSync(stopFlag)) {
-        console.log('[DRAIN] SIGHUP received and STOP_AUTOAPPLY.flag set. Exiting cleanly.');
-        process.exit(0);
-      } else {
-        console.log('[DRAIN] SIGHUP received without STOP_AUTOAPPLY.flag. Ignoring signal (sticky mode).');
-      }
-    });
-
     while (true) {
       batchNumber++;
 
-      const stopFlag = path.join(stateDir, 'portal-review/STOP_AUTOAPPLY.flag');
-      if (fs.existsSync(stopFlag)) {
+      const stopFlag = stopFlagPath(stateDir);
+      if (stopping()) {
         console.log(`[DRAIN] STOP_AUTOAPPLY.flag detected at ${stopFlag}. Explicit operator stop requested. Exiting loop.`);
         break;
       }
+
+      await syncDiscovery();
+      if (stopping()) break;
 
       try {
         const docReport = check30MinZeroFillDroughtAndAutoHeal({ stateDir });
@@ -640,15 +530,18 @@ async function main(): Promise<void> {
       }
 
       if (eligible.length === 0) {
-        console.log(`[DRAIN] No eligible queued jobs remaining in queue. Exiting continuous loop.`);
-        break;
+        if (!isContinuousSubmit) break;
+        console.log('[DRAIN] Queue idle; waiting for new work.');
+        await waitForDaemonWake(stateDir, 30_000, stopping);
+        continue;
       }
 
       // Ticket GEN-474: Filter out previously attempted jobs while treating SQLite status = 'queued' as authoritative
       const freshQueued = filterUnattemptedJobs(eligible);
       if (freshQueued.length === 0) {
-        console.log(`[DRAIN] All ${eligible.length} eligible queued jobs have already been applied. Exiting continuous loop.`);
-        break;
+        if (!isContinuousSubmit) break;
+        await waitForDaemonWake(stateDir, 30_000, stopping);
+        continue;
       }
 
     // Schwartzian transform: compute priority scores once in O(N) rather than O(N log N) inside .sort()
@@ -665,7 +558,7 @@ async function main(): Promise<void> {
         rowId: (job as any).rowId || 0,
         isHourlyFresh: Boolean((job as any).isHourlyFresh || (job as any).payload?.isHourlyFresh || (job as any).hourlySource),
         discoveredAt: (job as any).discoveredAt || (job as any).payload?.discoveredAt,
-        payload: (job as any).payload || (job as any),
+        payload: { ...(job as any).payload, postedAt: (job as any).payload?.postedAt ?? job.postedAt },
       }, now);
       return { job, score };
     });
@@ -683,7 +576,12 @@ async function main(): Promise<void> {
       chunkSize,
       (url) => isHostReadyForRequest(url, 45000, hostHealthPath)
     );
-    const candidatePool = chunkJobs.length > 0 ? chunkJobs : sortedEligible.slice(0, chunkSize);
+    if (chunkJobs.length === 0) {
+      if (!isContinuousSubmit) break;
+      await waitForDaemonWake(stateDir, 30_000, stopping);
+      continue;
+    }
+    const candidatePool = chunkJobs;
     const lanes = partitionJobsIntoProviderLanes(candidatePool);
     const activeLanes = (Object.keys(lanes) as Array<keyof typeof lanes>).filter(k => (lanes[k]?.length ?? 0) > 0);
     console.log(
@@ -693,6 +591,8 @@ async function main(): Promise<void> {
     const startTime = Date.now();
     const maxDurationMs = timeBudgetMinutes * 60 * 1000;
     let processedCount = 0;
+    let startedJobs = 0;
+    let runningLanes = 0;
     let appliedCount = 0;
     const loggedDeferredHosts = new Set<string>();
 
@@ -702,7 +602,7 @@ async function main(): Promise<void> {
       laneProfileDir: string,
       laneKey = 'default'
     ): Promise<void> => {
-      if (processedCount >= maxJobs || Date.now() - startTime >= maxDurationMs) return;
+      if (stopping() || startedJobs >= maxJobs || Date.now() - startTime >= maxDurationMs) return;
 
       // GEN-470: 30-Day Duplicate Role Dedup Guard (0ms check)
       const appliedList = queue.list('applied');
@@ -721,6 +621,8 @@ async function main(): Promise<void> {
         }
         return;
       }
+
+      startedJobs++;
 
       // Fast JSON API Preflight Check (GEN-29: Greenhouse / Lever fast check before browser launch)
       const fastApi = await fastApiPreflightCheck(job.jobUrl).catch(() => ({ status: 'eligible' as const }));
@@ -880,20 +782,15 @@ async function main(): Promise<void> {
         markHostOutcome(job.jobUrl, 'success', hostHealthPath);
       }
 
-      const isConfirmedApplied =
-        report.status === 'submitted' ||
-        (report.status as any) === 'applied' ||
-        /submission confirmation observed|application submitted|thank you for applying|received your application/i.test(report.reason || '');
-
+      const isConfirmedApplied = hasObservedApplicationReceipt(report);
+      if ((report.status === 'submitted' || (report.status as string) === 'applied') && !isConfirmedApplied) {
+        report.status = 'paused_for_review';
+        report.reason = 'Submission lacks observed receipt; reconcile before retrying';
+      }
       if (isConfirmedApplied) {
         report.status = 'submitted';
-        report.receipt ||= {
-          url: job.jobUrl,
-          text: report.reason || 'Submission confirmation observed',
-          verifiedAt: new Date().toISOString(),
-        };
         appliedCount++;
-        queue.markApplied(job.id, report.receipt);
+        queue.markApplied(job.id, report.receipt!);
         try {
           const domain = await resolveEmployerDomain(job.company, job.jobUrl);
           const lead = await findFreeCompanyLeads({
@@ -923,9 +820,10 @@ async function main(): Promise<void> {
         queue.markFailed(job.id, report.reason || 'Unknown error');
       }
 
-      const statusMap: Record<string, 'applied' | 'failed' | 'paused_for_review' | 'skipped'> = {
+      const statusMap: Record<string, 'applied' | 'failed' | 'paused_for_review' | 'skipped' | 'queued'> = {
         submitted: 'applied',
         applied: 'applied',
+        queued: 'queued',
         failed: 'failed',
         paused_for_review: 'paused_for_review',
         skipped: 'skipped',
@@ -947,7 +845,7 @@ async function main(): Promise<void> {
           startedAt: jobStartedAt,
           finishedAt: jobFinishedAt,
           durationMs,
-          receiptVerified: report.status === 'submitted' || !!report.receipt,
+          receiptVerified: isConfirmedApplied,
         });
       }
 
@@ -993,19 +891,19 @@ async function main(): Promise<void> {
       );
     };
 
-    const runLane = async (laneKey: keyof typeof lanes, laneIdx = 0): Promise<void> => {
+    const runLane = async (laneKey: keyof typeof lanes): Promise<void> => {
       const jobs = lanes[laneKey] || [];
       if (jobs.length === 0) return;
-      const laneProfileDir = path.resolve('state/autoapply', `browser-profile-lane-${laneKey}`);
-      fs.mkdirSync(laneProfileDir, { recursive: true });
-
-      // Clean up any stale singleton locks in this lane's profile before launching
-      for (const lockFile of ['SingletonLock', 'SingletonCookie', 'SingletonSocket']) {
-        try { fs.unlinkSync(path.join(laneProfileDir, lockFile)); } catch {}
+      while (!stopping() && runningLanes >= ramWatchdog.getRecommendedLanes() && Date.now() - startTime < maxDurationMs) {
+        await waitForDaemonWake(stateDir, 1000, stopping);
       }
-
+      if (stopping() || startedJobs >= maxJobs || Date.now() - startTime >= maxDurationMs) return;
+      runningLanes++;
+      ActiveJobRegistry.add(`drain-lane:${laneKey}`);
+      const laneProfileDir = path.resolve('state/autoapply', `browser-profile-lane-${laneKey}`);
       const laneRunner = new AutoApplyRunner();
       try {
+        fs.mkdirSync(laneProfileDir, { recursive: true });
         let initialized = false;
         for (let attempt = 1; attempt <= 3; attempt++) {
           try {
@@ -1023,11 +921,7 @@ async function main(): Promise<void> {
         }
 
         for (const job of jobs) {
-          if (processedCount >= maxJobs || Date.now() - startTime >= maxDurationMs) break;
-          while (laneIdx >= ramWatchdog.getRecommendedLanes() && processedCount < maxJobs && Date.now() - startTime < maxDurationMs) {
-            await new Promise(r => setTimeout(r, 4000));
-          }
-          if (processedCount >= maxJobs || Date.now() - startTime >= maxDurationMs) break;
+          if (stopping() || startedJobs >= maxJobs || Date.now() - startTime >= maxDurationMs) break;
           try {
             if (!laneRunner.isConnected()) {
               await laneRunner.close().catch(() => {});
@@ -1043,6 +937,8 @@ async function main(): Promise<void> {
         console.error(`[DRAIN] Lane ${laneKey} error:`, err?.message || err);
       } finally {
         await laneRunner.close().catch(() => {});
+        runningLanes--;
+        ActiveJobRegistry.delete(`drain-lane:${laneKey}`);
       }
     };
 
@@ -1052,15 +948,18 @@ async function main(): Promise<void> {
         if (idx > 0) {
           await new Promise(r => setTimeout(r, idx * 3500));
         }
-        return runLane(k, idx);
+        return runLane(k);
       })
     );
 
     console.log(`[DRAIN] [Batch #${batchNumber}] Completed batch execution (${processedCount} processed, ${appliedCount} applied).`);
 
-    if (!isContinuousSubmit) {
+    if (!isContinuousSubmit || stopping()) {
       break;
     }
+
+    if (processedCount === 0) await waitForDaemonWake(stateDir, 30_000, stopping);
+    if (stopping()) break;
 
     // Step 421 (GEN-421): Inter-chunk cleanup between batches
     console.log(`[DRAIN] Performing inter-batch full cleanup and checking hot-respawn...`);
@@ -1091,6 +990,10 @@ async function main(): Promise<void> {
   }
 } finally {
     ramWatchdog.stop();
+    process.off('SIGINT', requestStop);
+    process.off('SIGTERM', requestStop);
+    process.off('SIGHUP', onHangup);
+    dashboard.close();
     await mailbox?.close().catch(() => {});
     try {
       generateParkIssuesScoreboard(path.join(stateDir, 'queue.sqlite'));
@@ -1099,7 +1002,6 @@ async function main(): Promise<void> {
     }
     queue.close();
     releaseLock(lockPath);
-    reapStrayChrome();
     ramWatchdog.performInterChunkFullCleanup();
     const freed = scrubBrowserProfileCaches(stateDir);
     if (freed > 0) {

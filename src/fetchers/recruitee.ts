@@ -39,8 +39,8 @@ export function toIso(value: string | null | undefined): string | undefined {
  * One unpaginated call returns every published offer, full description
  * included — same shape as Ashby, nothing to enrich separately.
  */
-export async function list(company: Company): Promise<RawJob[]> {
-  const data = await getJson<{ offers?: RtOffer[] }>(
+export async function list(company: Company, fetchJson: typeof getJson = getJson): Promise<RawJob[]> {
+  const data = await fetchJson<{ offers?: RtOffer[] }>(
     `https://${company.token}.recruitee.com/api/offers/`,
   );
   return (data.offers ?? []).map((o) => ({
@@ -48,7 +48,7 @@ export async function list(company: Company): Promise<RawJob[]> {
     title: o.title,
     location: place(o),
     url: o.careers_url ?? `https://${company.token}.recruitee.com/o/${o.slug ?? o.id}`,
-    postedAt: toIso(o.published_at ?? o.created_at),
+    postedAt: toIso(o.published_at) ?? toIso(o.created_at),
     text: toPlainText([o.description, o.requirements].filter(Boolean).join(' ')),
   }));
 }

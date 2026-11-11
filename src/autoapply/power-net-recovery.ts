@@ -2,6 +2,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as dns from 'node:dns/promises';
+import { execFileSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 
 const IN_FLIGHT_JOURNAL = path.resolve('state/autoapply/portal-review/in-flight-checkpoint.json');
@@ -23,7 +24,12 @@ export interface InFlightJobCheckpoint {
 export function cleanStaleChromiumProfileLocks(stateRoot = 'state/autoapply'): number {
   let cleaned = 0;
   const resolvedRoot = path.resolve(stateRoot);
-  if (!fs.existsSync(resolvedRoot)) return 0;
+  if (!fs.existsSync(resolvedRoot) || process.platform !== 'win32') return 0;
+  // Fail closed: a profile lock is never stale while Chrome is still running.
+  try {
+    const processes = execFileSync('tasklist', ['/FI', 'IMAGENAME eq chrome.exe', '/FO', 'CSV', '/NH'], { encoding: 'utf8', timeout: 3000, windowsHide: true });
+    if (/chrome\.exe/i.test(processes)) return 0;
+  } catch { return 0; }
 
   const entries = fs.readdirSync(resolvedRoot, { withFileTypes: true });
   for (const entry of entries) {
@@ -65,63 +71,22 @@ export function recoverPowerOffAndNetOffJobs(sqlitePath = 'state/autoapply/porta
   }
 
   try {
-    // Recover any job that was marked in_progress or interrupted by power-off
     let recoveredInFlight = 0;
-    try {
-      if (fs.existsSync(IN_FLIGHT_JOURNAL)) {
-        const raw = fs.readFileSync(IN_FLIGHT_JOURNAL, 'utf8');
-        const journal = JSON.parse(raw) as Record<string, InFlightJobCheckpoint>;
-        const CONFIRMATION_REGEX = /(?:\/confirmation|\/thank(?:s|[-_]?you)|\/application[-_]?submitted|\/submitted)(?:\/|$|\?|#)|[?&](?:submitted|applied|confirmation)=(?:true|1)\b/i;
+    const recoveredNetOffDino = 0;
+    const journalPath = path.join(path.dirname(resolvedDbPath), 'in-flight-checkpoint.json');
+    if (fs.existsSync(journalPath)) {
+      try {
+        const journal = JSON.parse(fs.readFileSync(journalPath, 'utf8')) as Record<string, InFlightJobCheckpoint>;
         for (const jobId of Object.keys(journal)) {
-          const cpFile = path.resolve('state/autoapply/portal-review/applications', jobId, 'checkpoint.json');
-          let isConfirmed = false;
-          let confirmedUrl = '';
-          if (fs.existsSync(cpFile)) {
-            try {
-              const cp = JSON.parse(fs.readFileSync(cpFile, 'utf8'));
-              if (CONFIRMATION_REGEX.test(cp.currentUrl || '') || Boolean(cp.report?.receipt)) {
-                isConfirmed = true;
-                confirmedUrl = cp.currentUrl || cp.report?.receipt?.url || '';
-              }
-            } catch {}
-          }
-          if (isConfirmed) {
-            const row = db.prepare(`SELECT payload FROM applications WHERE id = ?`).get(jobId) as { payload?: string } | undefined;
-            let p: any = {};
-            try { p = JSON.parse(row?.payload || '{}'); } catch {}
-            p.status = 'applied';
-            p.appliedAt = p.appliedAt || new Date().toISOString();
-            p.receipt = { url: confirmedUrl, text: 'Application Submitted', verifiedAt: new Date().toISOString() };
-            db.prepare(`UPDATE applications SET status = 'applied', payload = ? WHERE id = ?`).run(JSON.stringify(p), jobId);
-          } else {
-            const res = db
-              .prepare(`UPDATE applications SET status = 'queued' WHERE id = ? AND status NOT IN ('applied', 'skipped')`)
-              .run(jobId);
-            recoveredInFlight += Number(res.changes || 0);
-          }
+          const result = db.prepare(`UPDATE applications
+            SET status = 'paused_for_review', payload = json_set(payload, '$.status', 'paused_for_review',
+              '$.reasonCode', 'AMBIGUOUS_DISPATCH', '$.error', 'Interrupted application requires receipt reconciliation')
+            WHERE id = ? AND status NOT IN ('applied', 'skipped')`).run(jobId);
+          recoveredInFlight += Number(result.changes);
         }
-        fs.writeFileSync(IN_FLIGHT_JOURNAL, '{}', 'utf8');
-      }
-    } catch {}
-
-    // Recover any job that failed due to Wi-Fi drop ("This site can't be reached" / "Press space to play" / ERR_INTERNET_DISCONNECTED)
-    let recoveredNetOffDino = 0;
-    try {
-      const netOffRes = db
-        .prepare(
-          `UPDATE applications SET status = 'queued' WHERE status = 'failed' AND (
-            payload LIKE '%This site can%t be reached%'
-            OR payload LIKE '%Press space to play%'
-            OR payload LIKE '%ERR_INTERNET_DISCONNECTED%'
-            OR payload LIKE '%ERR_NAME_NOT_RESOLVED%'
-            OR payload LIKE '%ERR_NETWORK_CHANGED%'
-            OR payload LIKE '%ERR_CONNECTION_RESET%'
-            OR payload LIKE '%wifi_drop_requeued%'
-          )`
-        )
-        .run();
-      recoveredNetOffDino = Number(netOffRes.changes || 0);
-    } catch {}
+        // Retain the journal as evidence until each job is reconciled by its owner.
+      } catch {}
+    }
     return { recoveredInFlight, recoveredNetOffDino };
   } finally {
     try { db?.close(); } catch {}

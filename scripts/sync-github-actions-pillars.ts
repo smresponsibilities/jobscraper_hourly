@@ -5,6 +5,7 @@ import { execSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 import { canonicalRequisition } from '../src/autoapply/identity.js';
 import { isStrictlyIsolatedTenant, isEligibleEngineeringRoleTitle } from '../src/autoapply/priority-scheduler.js';
+import { employerPublishedAt, isEmployerHourlyFresh } from '../src/sources/realtime-ats-delta-fetcher.js';
 
 export interface PillarSyncResult {
   fetched: boolean;
@@ -134,6 +135,7 @@ export async function syncGitHubActionsPillars(
               const canonicalKey = req ? req.key : url;
               const id = `hunt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
               const nowIso = new Date().toISOString();
+              const publishedAt = employerPublishedAt(j);
               const payloadObj = {
                 id,
                 title,
@@ -141,9 +143,9 @@ export async function syncGitHubActionsPillars(
                 jobUrl: url,
                 location: j.location || 'India',
                 status: 'queued',
-                postedAt: j.postedAt || nowIso,
+                postedAt: publishedAt || '',
                 canonicalKey,
-                isHourlyFresh: true,
+                isHourlyFresh: isEmployerHourlyFresh(publishedAt),
                 discoveredAt: nowIso,
                 hourlySource: 'github_hunt' as const,
               };

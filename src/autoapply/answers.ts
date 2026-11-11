@@ -3,8 +3,6 @@ import { resolveExtendedProfileValue } from './classifier.js';
 import type { CandidateExtendedProfile, ExtendedFieldCategory, ScopedAnswer } from './types.js';
 import { matchBestOption } from './aihawk.js';
 import { composeGroundedNarrative } from './narrative-composer.js';
-import { resolveBySemanticSelfLearning, resolveOvernightLearnedQuestions } from './self-learning.js';
-import { resolveUniversalPermissiveFallback } from './permissive-fallback.js';
 import { lookupQuestionIn1000Bank } from './portal-question-bank-1000.js';
 
 export interface AnswerContext {
@@ -44,6 +42,7 @@ export const CATEGORY_FACTS: Partial<Record<ExtendedFieldCategory, string[]>> = 
   linkedin: ['personal.linkedinUrl'], github: ['personal.githubUrl'], website: ['personal.portfolioUrl'], school: ['education.0.school'], degree: ['education.0.degree'], discipline: ['education.0.fieldOfStudy'], gpa: ['education.0.gpa'], graduation_year: ['education.0.graduationYear'], start_year: ['education.0.startYear'],
   current_company: ['professional.currentCompany', 'experience.0.company'], current_title: ['professional.currentTitle', 'experience.0.title'], total_experience: ['professional.totalYearsExperience'], current_salary: ['professional.currentSalary'], expected_salary: ['professional.expectedSalary'], salary_currency: ['professional.salaryCurrency'], notice_period: ['professional.noticePeriodDays'], relocate: ['professional.willingToRelocate'], work_preference: ['professional.workPreference'],
   non_compete: ['workAuthorization.hasNonCompete'], security_clearance: ['workAuthorization.hasSecurityClearance'], felony_conviction: ['workAuthorization.felonyConviction'], gender: ['eeo.gender'], race: ['eeo.raceOrEthnicity'], hispanic_latino: ['eeo.isHispanicLatino'], veteran: ['eeo.veteranStatus'], disability: ['eeo.disabilityStatus'],
+  hear_about_us: ['referralSources'],
 };
 
 export function employerKey(url: string): string {
@@ -255,6 +254,55 @@ export function resolveCandidateAnswer(category: ExtendedFieldCategory, profile:
   if (hasScopedMismatch) {
     return result(undefined, 'scope_mismatch');
   }
+  const prefs = profile.applicationPreferences;
+  if (prefs) {
+    if (/\b(?:do not|not willing|not able|not speak|not travel|never|unable|unwilling|decline|reject|refuse)\b/.test(q) && /\b(?:language|speak|french|english|hindi|travel|shift|relocat\w*|experience|selenium|citizenship)\b/.test(q)) return result(undefined, 'negated_preference_requires_review');
+    const optionFor = (patterns: RegExp[]): string | undefined => context.options?.find(option => patterns.some(pattern => pattern.test(option.trim())));
+    if (/\b(?:citizenship|nationality)\b/.test(q) && prefs.citizenship) return result(prefs.citizenship, 'confirmed_preference', ['applicationPreferences.citizenship'], 'citizenship');
+    const language = Object.keys(prefs.languageProficiency || {}).find(name => new RegExp(`\\b${name.toLowerCase()}\\b`).test(q));
+    if (language && /\b(?:speak|spoken|language|proficien\w*|fluen\w*|native|knowledge)\b/.test(q)) {
+      const level = prefs.languageProficiency![language]!;
+      if (/\b(?:proficien\w*|fluen\w*|level|native)\b/.test(q)) {
+        const selected = optionFor(level === 'native' ? [/^(?:native|native speaker|native\s*\/\s*bilingual|native or bilingual)(?:\s+proficiency)?$/i] : [/^(?:none|no proficiency|no knowledge|no experience)$/i]);
+        return result(context.options?.length ? selected : level, 'confirmed_preference', [`applicationPreferences.languageProficiency.${language}`], 'language_proficiency');
+      }
+      return result(level !== 'none', 'confirmed_preference', [`applicationPreferences.languageProficiency.${language}`], 'language');
+    }
+    if (/\b(?:languages? (?:do you |can you )?(?:speak|know)|spoken languages?)\b/.test(q) && prefs.spokenLanguages?.length && !context.options?.length) return result(prefs.spokenLanguages.join(', '), 'confirmed_preference', ['applicationPreferences.spokenLanguages'], 'spoken_languages');
+    const foreign = /\b(?:outside india|international(?:ly)?|united states|usa|u s|united kingdom|uk|london|canada|toronto|germany|berlin|australia|sydney|singapore)\b/.test(q);
+    const india = /\b(?:india|indian|bengaluru|bangalore|mumbai|pune|hyderabad|chennai|delhi|noida|gurgaon|gurugram)\b/.test(q);
+    if (/\b(?:travel|travelling|traveling)\b/.test(q) && prefs.businessTravel !== undefined) {
+      if (foreign && prefs.travelCountries?.length === 1 && prefs.travelCountries[0]!.toLowerCase() === 'india') return result(false, 'confirmed_preference', ['applicationPreferences.travelCountries'], 'travel');
+      if (india) return result(prefs.businessTravel, 'confirmed_preference', ['applicationPreferences.businessTravel', 'applicationPreferences.travelCountries'], 'travel');
+      if (!context.options?.length && context.fieldType !== 'checkbox') return result('Available for business travel within India', 'confirmed_preference', ['applicationPreferences.businessTravel', 'applicationPreferences.travelCountries'], 'travel');
+      return result(undefined, 'travel_destination_not_confirmed');
+    }
+    if (/\b(?:night|overnight)\b.*\bshift|\bshift\w*\b.*\b(?:night|overnight)\b/.test(q) && prefs.nightShifts !== undefined) return result(prefs.nightShifts, 'confirmed_preference', ['applicationPreferences.nightShifts'], 'night_shifts');
+    if (/\bweekend\w*\b/.test(q) && /\b(?:work|shift|available|availability)\b/.test(q) && prefs.weekendWork !== undefined) return result(prefs.weekendWork, 'confirmed_preference', ['applicationPreferences.weekendWork'], 'weekend_work');
+    if (/\b(?:relocat\w*|move to)\b/.test(q) && prefs.relocationCountries?.length === 1 && prefs.relocationCountries[0]!.toLowerCase() === 'india') {
+      if (foreign) return result(false, 'confirmed_preference', ['applicationPreferences.relocationCountries'], 'relocate');
+      const destination = normalizeQuestion(context.location || '');
+      if (india || (/\b(?:india|bengaluru|bangalore|mumbai|pune|hyderabad|chennai|delhi|noida|gurgaon|gurugram)\b/.test(destination) && !/\b(?:united states|usa|london|canada|germany|australia|singapore)\b/.test(destination))) return result(true, 'confirmed_preference', ['applicationPreferences.relocationCountries'], 'relocate');
+      return result(undefined, 'relocation_destination_not_authorized');
+    }
+    if (/\b(?:unpaid|without pay|no pay)\b/.test(q) && !/\b(?:not|decline|reject|refuse)\b/.test(q) && prefs.paidRolesOnly === true && /\b(?:role|work|internship|position)\b/.test(q)) return result(false, 'confirmed_preference', ['applicationPreferences.paidRolesOnly'], 'employment_type');
+    if (/\bpaid\b/.test(q) && !/\b(?:not|unpaid|decline|reject|refuse)\b/.test(q) && /\b(?:open|accept|willing|available|interest)\w*\b/.test(q)) {
+      const kinds = [['full time', 'full-time'], ['permanent', 'permanent'], ['internship', 'internship'], ['apprenticeship', 'apprenticeship'], ['contract', 'contract']] as const;
+      const mentioned = kinds.filter(([phrase]) => q.includes(phrase));
+      if (mentioned.length && prefs.employmentTypes) return result(mentioned.every(([, kind]) => prefs.employmentTypes!.includes(kind)), 'confirmed_preference', ['applicationPreferences.employmentTypes', 'applicationPreferences.paidRolesOnly'], 'employment_type');
+    }
+    if (/\b(?:stipend|internship|apprenticeship)\b/.test(q) && /\b(?:salary|compensation|pay|stipend|ctc)\b/.test(q)) return result(undefined, 'stipend_not_provided');
+    if (/\b(?:expected|desired|target)\b/.test(q) && /\b(?:salary|compensation|ctc)\b/.test(q) && prefs.annualSalaryRangeINR && !context.options?.length && context.fieldType !== 'number' && !/\b(?:hour|hourly|month|monthly|usd|eur|gbp)\b/.test(q)) {
+      const range = prefs.annualSalaryRangeINR;
+      return result(`${range.minimum / 100000}–${range.maximum / 100000} LPA annually (INR)`, 'confirmed_preference', ['applicationPreferences.annualSalaryRangeINR'], 'expected_salary');
+    }
+    for (const [pattern, name] of [[/\b(?:fix protocol|financial information exchange)\b/, 'FIX protocol'], [/\b(?:accounting|erp)\b/, 'accounting/ERP software'], [/\bpayments?\b/, 'payments products'], [/\bselenium\b/, 'Selenium']] as const) {
+      if (pattern.test(q) && /\b(?:experience|used|use|worked|familiar|proficien\w*)\b/.test(q) && prefs.noExperienceWith?.includes(name)) {
+        const negative = optionFor([/^(?:none|no experience|no|0|0 years?)$/i]);
+        return result(context.options?.length ? negative : context.fieldType === 'number' ? 0 : `No experience with ${name}`, 'confirmed_preference', ['applicationPreferences.noExperienceWith'], 'specific_experience');
+      }
+    }
+  }
   const policy = resolveByOptionPolicy(context.question, context.options || [], profile, context.location);
   if (policy) return policy;
 
@@ -266,186 +314,12 @@ export function resolveCandidateAnswer(category: ExtendedFieldCategory, profile:
     return result(undefined, 'unprovided_background_check_consent');
   }
 
-  // Ticket GEN-205: Extended 50-Category Portal Question Taxonomy
-  const taxonomyAnswer = resolveExtendedPortalQuestionTaxonomy(
-    context.question,
-    context.fieldType || (context as any).widgetKind || 'text'
-  );
-  if (taxonomyAnswer !== undefined) {
-    return result(taxonomyAnswer, 'extended_portal_taxonomy', [], category);
-  }
-
-  // Ashby _systemfield_name and Full Name direct resolution (Ticket GEN-132)
-  if (category === 'full_name' || labels.some(l => /_systemfield_name/i.test(l)) || /^(?:full\s*name|name)\*?$/i.test(q)) {
-    const fullName = [profile.personal?.firstName, profile.personal?.lastName].filter(Boolean).join(' ') || 'Shivam Mahajan';
-    return result(fullName, 'explicit_profile', ['personal.firstName', 'personal.lastName'], 'full_name');
-  }
-
-  // Earliest start date / date available ISO date normalizer (Ticket GEN-132)
-  if (/\b(?:start\s*date|earliest\s*(?:start|start\s*date)|date\s*available|available\s*(?:start\s*)?date)\b/i.test(q)) {
-    const isDateKind = context.fieldType === 'date' || (context as any).widgetKind === 'date' || (!context.options?.length && !/\b(?:days|weeks|months)\b/i.test(q));
-    if (isDateKind) {
-      const isoIn3Days = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10);
-      return result(isoIn3Days, 'explicit_profile', [], 'start_date');
-    }
-  }
-
-  // Phone direct resolution (Ticket GEN-95 / GEN-96)
-  if (category === 'phone' || /^(?:phone|mobile|telephone|contact number)\*?$/i.test(q)) {
-    const phoneVal = process.env.AUTOAPPLY_PHONE || profile.personal?.phone;
-    if (phoneVal) return result(phoneVal, 'explicit_profile', ['personal.phone']);
-  }
-
-  // Total years of full time experience (GitLab / Section 4 - Ticket GEN-96)
-  if (/\b(how many years of (?:full[- ]?time\s+|total\s+|overall\s+|work\s+|professional\s+)?experience|years of full[- ]?time experience|total years of experience)\b/i.test(q)) {
-    return result('1', 'explicit_profile', ['professional.totalYearsExperience']);
-  }
-  // GitLab / Company former employee or consultant (Ticket GEN-96)
-  if (/\b(previously worked at|consulted for|ever worked for|former employee|worked at or consulted for)\b/i.test(q)) {
-    return result('No', 'explicit_profile', ['workAuthorization.formerEmployee']);
-  }
-  // Sponsorship required (Ticket GEN-96 - string 'No' for text/unknown/combobox)
-  if (category !== 'sponsorship' && category !== 'work_authorization' && /\b(require.*sponsorship|visa sponsorship|immigration sponsorship)\b/i.test(q)) {
-    return result('No', 'explicit_profile', ['workAuthorization.requiresSponsorshipNowOrFuture']);
-  }
-  // Textarea narrative handling for unfamiliar stacks / Ruby on Rails (Ticket GEN-96)
-  if (context.fieldType?.toLowerCase() === 'textarea' || (context as any).widgetKind?.toLowerCase() === 'textarea') {
-    if (/\b(ruby|rails|ruby on rails)\b/i.test(q)) {
-      const narrative = composeGroundedNarrative(q, profile, context.company);
-      if (narrative) return result(narrative, 'certified_experience_excerpt', ['experience']);
-    }
-  }
-
-  const learnedOvernight = resolveOvernightLearnedQuestions(context.question, context.fieldType || '', context.options || null, profile);
-  if (learnedOvernight !== null) {
-    return result(learnedOvernight, 'overnight_learned_question', [], category);
-  }
-  if ((category === 'hear_about_us' || /\b(?:how\s+did\s+you\s+(?:hear|learn|come\s+to\s+know)|where\s+did\s+you\s+(?:hear|learn|find))\b/i.test(q)) && profile.referralSources?.length) {
-    return result(profile.referralSources[0], 'source_preferences', ['referralSources'], 'hear_about_us');
-  }
-  if (/\b(?:last\s*working\s*day|lwd|relieving\s*date)\b/i.test(q)) {
-    const lastDate = profile.experience[0]?.endDate || '2026-08-31';
-    return result(lastDate, 'explicit_profile', ['experience.0.endDate'], 'last_working_day');
-  }
-  // Legacy unscoped entries may supply ordinary facts, never consents or employer claims.
   if (profile.recruitmentPrivacyConsent !== undefined && isRecruitmentPrivacyAcknowledgement(context.question)) return result(profile.recruitmentPrivacyConsent, 'explicit_recruitment_privacy_authorization', ['recruitmentPrivacyConsent']);
   if (profile.adult !== undefined && /\b(?:at least|over|aged?|older than)\s+(?:18|eighteen)\b|\b(?:18|eighteen)\s+years?\s+(?:of age|old|or older)\b|\bage of majority\b/.test(q) && !/\b(?:under|not|less than|younger than)\b/.test(q)) return result(profile.adult, 'explicit_profile', ['adult'], 'adult');
+  if (/\b(?:confirm|verify|re enter|reenter)\s+(?:your\s+)?e\s*mail\b/i.test(q)) return result(profile.personal.email, 'explicit_profile', ['personal.email'], 'email');
+  if ((category === 'full_name' || /^(?:full\s*name|name)$/i.test(q)) && profile.personal.firstName && profile.personal.lastName) return result(`${profile.personal.firstName} ${profile.personal.lastName}`, 'explicit_profile', ['personal.firstName', 'personal.lastName'], 'full_name');
   if (/\b(?:salutation|honorific|name prefix)\b/.test(q) && profile.personal.prefix) return result(profile.personal.prefix, 'explicit_profile', ['personal.prefix'], 'prefix');
   if (/\b(?:phone|telephone) (?:device )?type\b/.test(q) && profile.personal.phoneDeviceType) return result(profile.personal.phoneDeviceType, 'explicit_profile', ['personal.phoneDeviceType'], 'phone_device_type');
-  if (/\b(?:aadhaar|pan\s*card|government\s*id|national\s*id|official\s*name)\b/.test(q)) {
-    const fullName = [profile.personal.firstName, profile.personal.lastName].filter(Boolean).join(' ') || 'Shivam Mahajan';
-    return result(fullName, 'explicit_profile', ['personal.firstName', 'personal.lastName'], 'full_name');
-  }
-  if (/\b(?:(?:currently\s+)?(?:located|residing|live|living)\s+in\s+the\s+(?:u\.?\s*s\.?|united states)|which\s+(?:u\.?\s*s\.?|united states)\s*state)\b/.test(q)) {
-    if (/which.*state/i.test(q)) {
-      return result('N/A (India)', 'explicit_profile', ['personal.country'], 'us_state');
-    }
-    if (context.options?.length) {
-      const noOpt = context.options.find(o => /^no\b/i.test(o.trim())) || 'No';
-      return result(noOpt, 'explicit_profile', ['personal.country'], 'located_in_us');
-    }
-    return result(false, 'explicit_profile', ['personal.country'], 'located_in_us');
-  }
-  if (/\b(?:closed.*deals|closed.*contracts|annual contract value|sales quota|book of business)\b/.test(q)) {
-    if (context.options?.length) {
-      const noOpt = context.options.find(o => /^no\b/i.test(o.trim())) || 'No';
-      return result(noOpt, 'explicit_profile', [], 'sales_deals_negative');
-    }
-    return result(false, 'explicit_profile', [], 'sales_deals_negative');
-  }
-  if (/\b(?:sold or scoped consulting engagements|scoped consulting|agentic workflow solutions|client conversations at the executive level)\b/.test(q)) {
-    return result('While my primary focus is technical engineering—designing and deploying high-throughput distributed systems and data pipelines at Morgan Stanley—I have architected AI agent workflows and collaborated with senior stakeholders to articulate the business impact and architectural feasibility of automated solutions.', 'explicit_profile', [], 'consulting_ai_agentic_solutions');
-  }
-  if (/\b(?:employment agreements?|post[- ]employment restrictions?|non[- ]compete)\b/.test(q)) {
-    const noOpt = context.options?.length ? (context.options.find(o => /^no\b/i.test(o.trim())) || 'No') : 'No';
-    return result(noOpt, 'explicit_profile', [], 'employment_restrictions');
-  }
-  if (/\b(?:work in shifts?|24\s*[\/-]?\s*7\s*environment)\b/.test(q)) {
-    const yesOpt = context.options?.length ? (context.options.find(o => /^yes\b/i.test(o.trim())) || 'Yes') : 'Yes';
-    return result(yesOpt, 'explicit_profile', [], 'shift_work');
-  }
-  if (/\b(?:authorization concepts|role based access control|rbac|fine grained permissions)\b/.test(q)) {
-    return result('Yes, extensive hands-on experience implementing Role-Based Access Control (RBAC) and fine-grained permissions across microservices and data pipelines.', 'explicit_profile', [], 'authorization_rbac_experience');
-  }
-  if (/\b(?:commuting distance to columbus|columbus.*office)\b/.test(q)) {
-    if (context.options?.length) {
-      const opt = context.options.find(o => /relocate/i.test(o)) || context.options.find(o => /^no\b/i.test(o.trim())) || 'No';
-      return result(opt, 'explicit_profile', ['personal.city'], 'commute_distance');
-    }
-    return result(false, 'explicit_profile', ['personal.city'], 'commute_distance');
-  }
-  if (/\b(?:total\s*(?:years\s*(?:of\s*)?)?(?:work\s*|relevant\s*)?experience|overall\s*experience)\b/.test(q) && !/\b(?:using|with|in\s+[a-z]+)\b/.test(q)) {
-    const yoe = profile.professional.totalYearsExperience ?? 1;
-    return result(context.fieldType === 'number' ? yoe : String(yoe), 'explicit_profile', ['professional.totalYearsExperience'], 'total_experience');
-  }
-  if (!['expected_salary', 'current_salary'].includes(category) && /\b(?:cctc|ectc|current ctc|expected ctc)\b/.test(q)) {
-    const salary = profile.professional?.expectedSalary ?? 1200000;
-    const isNum = context.fieldType === 'number';
-    const lpa = Math.round(salary / 100000);
-    return result(isNum ? salary : `${lpa} LPA`, 'explicit_profile', ['professional.expectedSalary'], 'ctc_inr');
-  }
-  if (/\b(?:offer in hand|competing offers?|active offers?)\b/.test(q)) {
-    return result(context.options?.length ? (context.options.find(o => /^no\b/i.test(o.trim())) || 'No') : 'No', 'explicit_profile', [], 'offer_in_hand');
-  }
-  if (/\b(?:where do you currently reside|where do you reside|where are you located|current location|preferred location|location preference)\b/.test(q)) {
-    return result('Bengaluru, Karnataka, India', 'explicit_profile', ['personal.city', 'personal.country'], 'preferred_location');
-  }
-  if (/\b(?:relocate at your own expense|willing to relocate)\b/.test(q)) {
-    const yesOpt = context.options?.length ? (context.options.find(o => /^yes\b/i.test(o.trim())) || 'Yes') : 'Yes';
-    return result(yesOpt, 'explicit_profile', ['professional.willingToRelocate'], 'relocate');
-  }
-  if (/\b(?:what interests you about this role|share what interests you|why do you want to work|why are you interested in|why this role)\b/.test(q)) {
-    return result(
-      'I am eager to contribute to your engineering team by leveraging my experience at Morgan Stanley in building scalable distributed systems and backend data pipelines. I am excited by your product mission and look forward to delivering reliable, high-impact software from day one.',
-      'explicit_profile',
-      [],
-      'role_interest_motivation'
-    );
-  }
-  if (/\b(?:require any help.*to file visa|help.*to file visa)\b/.test(q)) {
-    const noOpt = context.options?.length ? (context.options.find(o => /^no\b/i.test(o.trim())) || 'No') : 'No';
-    return result(noOpt, 'explicit_profile', ['personal.country'], 'visa_help_future');
-  }
-  if (/\b(?:still student|currently a student|current student)\b/.test(q)) {
-    return result(true, 'explicit_profile', ['education.0.graduationYear'], 'still_student');
-  }
-  if (/\b(?:currently a tekion employee|tekion employee)\b/.test(q)) {
-    return result(false, 'explicit_profile', [], 'tekion_employee');
-  }
-  if (/\b(?:open to the following roles|open to other roles|interested in other roles)\b/.test(q)) {
-    return result(true, 'explicit_profile', [], 'open_to_roles');
-  }
-  if (/\b(?:contractor or consultant for|related to.*relationship with|(?:have|did)\s+you\s+work(?:ed)?\s+here\s+before|previously worked for us|ever been employed by|former associate)\b/.test(q)) {
-    const noOpt = context.options?.length ? (context.options.find(o => /^no\b/i.test(o.trim())) || 'No') : 'No';
-    return result(noOpt, 'explicit_profile', [], 'previous_employment_relation');
-  }
-  if (/\b(?:gaming|aerospace|automotive|pharma|oil|aviation)\s+(?:industry\s+)?experience\b/.test(q)) {
-    return result(context.fieldType === 'number' ? 0 : '0', 'explicit_profile', [], 'specialized_experience');
-  }
-  if (/\b(?:bachelors?(?:\s*degree)?|have a bachelor)\b/.test(q)) {
-    const yesOpt = context.options?.length ? (context.options.find(o => /^yes\b/i.test(o.trim())) || 'Yes') : 'Yes';
-    return result(yesOpt, 'explicit_profile', ['education.0.degree'], 'bachelors_degree');
-  }
-  if (/\b(?:itar|u\.?s\.?\s*citizen for itar|u\.?s\.?\s*person)\b|\b(?:legally requires|criteria).*u\.?s\.?\s*person\b/i.test(q)) {
-    const noOpt = context.options?.length ? (context.options.find(o => /^no\b/i.test(o.trim())) || 'No') : 'No';
-    return result(noOpt, 'explicit_profile', ['personal.country'], 'itar_us_person_status');
-  }
-  // Ticket GEN-120: SmartRecruiters Confirm Email Address / verify email
-  if (/confirm\s*e-?mail|re-?enter\s*e-?mail|verify\s*e-?mail/i.test(q) || labels.some(l => /confirm\s*e-?mail|re-?enter\s*e-?mail/i.test(l))) {
-    return result(profile.personal.email, 'explicit_profile', ['personal.email'], 'email');
-  }
-
-  // Ticket GEN-120: Lever org / current company
-  if (/^(?:org|current\s*company|current\s*employer|present\s*company)$/i.test(q) || labels.some(l => /^(?:org|current\s*company|current\s*employer|present\s*company)$/i.test(l))) {
-    return result('Morgan Stanley', 'explicit_employment_history', ['experience.0.company'], 'current_company');
-  }
-
-  if (/\b(?:linkedin|linkedln)\s*(?:profile|url)?\b/.test(q)) {
-    return result(profile.personal.linkedinUrl || 'https://www.linkedin.com/in/mahajanshivam', 'explicit_profile', ['personal.linkedinUrl'], 'linkedin');
-  }
-  if (/\b(?:career aspirations?|short[- ]term.*long[- ]term|aspirations)\b/.test(q)) {
-    return result('Short-term: Excel as a backend and distributed systems engineer building high-throughput microservices. Long-term: Lead architectural design and scalable infrastructure.', 'explicit_profile', [], 'career_aspirations');
-  }
   const declarations = profile.declarations;
   if (declarations && !/\b(?:not|never|no|decline|disagree|refuse|withdraw|marketing|arbitration|recording)\b/.test(q)) {
     let key: keyof NonNullable<CandidateExtendedProfile['declarations']> | undefined;
@@ -469,7 +343,7 @@ export function resolveCandidateAnswer(category: ExtendedFieldCategory, profile:
   const outsideIndia = /\b(?:outside|other than) india\b/.test(q) || (!!explicitCountry && explicitCountry !== 'India') || (!!country && country !== 'India') || (!mentionsIndia && Boolean(profile.indiaOnlyWorkAuthorization));
   const indiaOnly = profile.indiaOnlyWorkAuthorization && outsideIndia ? { authorizedInCountry: false, requiresSponsorshipNowOrFuture: true } : undefined;
   const useScoped = !!scoped && !/\b(?:outside|other than) india\b/.test(q);
-  const authorization = useScoped ? scoped : (mentionsIndia && home ? profile.workAuthorization : (indiaOnly || (home && !outsideIndia ? profile.workAuthorization : undefined)));
+  const authorization = useScoped ? scoped : (indiaOnly || (home && !outsideIndia ? profile.workAuthorization : undefined));
   const authSource = useScoped ? `workAuthorizationByCountry.${country}` : indiaOnly ? 'indiaOnlyWorkAuthorization' : 'workAuthorization';
   const authFact = (key: string) => !useScoped && indiaOnly ? authSource : `${authSource}.${key}`;
   if (/\b(?:authorized|eligible|right) to work\b|\bwork authorization\b|\bsponsor(?:ship)?\b/.test(q) || ['work_authorization', 'sponsorship'].includes(category)) {
@@ -513,24 +387,6 @@ export function resolveCandidateAnswer(category: ExtendedFieldCategory, profile:
       }
     }
     if (skills.length > 1 || /\bexperience (?:with|in|using)\b/.test(q)) {
-      if ((context as any).isRequired || (context as any).permissiveFallback || /\b(?:fix\s*protocol|financial information exchange|describe your experience)\b/i.test(context.question || '')) {
-        const fallback = resolveUniversalPermissiveFallback({
-          questionText: context.question,
-          widgetKind: context.fieldType || 'TEXT',
-          options: context.options || null,
-          profileEmail: profile.personal.email,
-        });
-        if (fallback !== undefined) {
-          return {
-            value: fallback,
-            confidence: 0.85,
-            reason: 'universal_permissive_fallback',
-            canonicalIntent: 'skill_experience',
-            sourceFactKeys: [],
-            isEmployerSpecific: false,
-          };
-        }
-      }
       return result(undefined, 'skill_specific_fact_missing');
     }
   }
@@ -539,6 +395,7 @@ export function resolveCandidateAnswer(category: ExtendedFieldCategory, profile:
     const amount = profile.professional[key];
     if (amount === undefined) return result(undefined, 'underlying_fact_missing');
     const currency = /\b(usd|inr|eur|gbp|cad|aud)\b/i.exec(q)?.[1]?.toUpperCase();
+    if (!currency && context.country && normalizeQuestion(context.country) !== 'india' && profile.professional.salaryCurrency?.toUpperCase() === 'INR') return result(undefined, 'currency_conversion_not_authorized');
     if (currency && currency !== profile.professional.salaryCurrency?.toUpperCase()) return result(undefined, 'currency_conversion_not_authorized');
     if (/\bhour(?:ly)?\b/.test(q)) return result(undefined, 'hourly_rate_not_provided');
     const factor = /\b(?:lpa|lakhs?)\b/.test(q) ? 100000 : /\bcrores?\b/.test(q) ? 10000000 : /\bthousands?\b/.test(q) ? 1000 : /\bmonth(?:ly)?\b/.test(q) ? 12 : 1;
@@ -549,7 +406,7 @@ export function resolveCandidateAnswer(category: ExtendedFieldCategory, profile:
     const days = profile.professional.noticePeriodDays;
     if (context.options?.length) {
       const rightAway = context.options.find(opt => /right away|i can start right away|immediate|asap|start now/i.test(opt.trim()));
-      if (rightAway) return result(rightAway, 'explicit_profile', ['professional.noticePeriodDays']);
+      if (rightAway && days === 0) return result(rightAway, 'explicit_profile', ['professional.noticePeriodDays']);
     }
     if (days === undefined) return result(undefined, 'underlying_fact_missing');
     if (/\bweeks?\b/.test(q)) return result(days / 7, 'explicit_profile', ['professional.noticePeriodDays']);
@@ -575,46 +432,6 @@ export function resolveCandidateAnswer(category: ExtendedFieldCategory, profile:
     const narrative = composeGroundedNarrative(context.question, profile, context.company);
     if (narrative) return result(narrative, 'certified_experience_excerpt', ['experience', 'skillYears']);
   }
-  if (value === undefined && context.question) {
-    const learned = resolveBySemanticSelfLearning(
-      context.question,
-      context.fieldType || '',
-      context.options || null,
-      null,
-      profile
-    );
-    if (learned) {
-      return {
-        value: learned.value,
-        confidence: learned.confidence,
-        reason: 'semantic_self_learning',
-        canonicalIntent: learned.category,
-        sourceFactKeys: [],
-        isEmployerSpecific: false,
-      };
-    }
-  }
-
-  // Ticket GEN-76: Universal Permissive Fallback on Attempt 1 whenever strict/policy/semantic resolvers return undefined on required/permissive fields
-  if (value === undefined && context.question && ((context as any).isRequired || (context as any).permissiveFallback || (context as any).attemptNumber === 1 || (context as any).attempt === 1 || /\b(?:fix\s*protocol|financial information exchange|describe your experience)\b/i.test(context.question))) {
-    const fallback = resolveUniversalPermissiveFallback({
-      questionText: context.question,
-      widgetKind: context.fieldType || 'TEXT',
-      options: context.options || null,
-      profileEmail: profile.personal.email,
-    });
-    if (fallback !== undefined) {
-      return {
-        value: fallback,
-        confidence: 0.85,
-        reason: 'universal_permissive_fallback',
-        canonicalIntent: 'permissive_fallback',
-        sourceFactKeys: [],
-        isEmployerSpecific: false,
-      };
-    }
-  }
-
   const facts = (CATEGORY_FACTS[category] || []).filter(key => key.split('.').reduce<unknown>((value, part) => value && typeof value === 'object' ? (value as Record<string, unknown>)[part] : undefined, profile) !== undefined);
   return result(value, value === undefined ? 'needs_review' : 'explicit_profile', value === undefined ? [] : facts);
 }
@@ -628,13 +445,13 @@ export function resolveByOptionPolicy(question: string, options: string[], profi
     // Failure 3A: Foreign office check
     const foreignCity = /\b(new york|san francisco|london|berlin|toronto|seattle|austin|boston|dublin|singapore|tokyo|sydney)\b/i.test(`${question} ${location}`);
     const localOverride = /\b(india|bengaluru|bangalore|karnataka|remote)\b/i.test(`${question} ${location}`);
-    if (foreignCity && !localOverride) {
+    if (foreignCity) {
       return undefined;
     }
     const cities = `${q} ${normalizeQuestion(location)}`.match(/\b(?:bangalore|bengaluru|mumbai|delhi|hyderabad|pune|chennai|london|austin)\b/g) || [];
     const sameCity = (city: string) => normalizeQuestion(city).replace('bangalore', 'bengaluru') === normalizeQuestion(office.city).replace('bangalore', 'bengaluru');
     const days = /\b([1-7])\s*days?\b/.exec(q)?.[1] || (/\bfive days\b/.test(q) ? '5' : undefined);
-    const cityOk = cities.length === 0 || cities.every(sameCity) || localOverride;
+    const cityOk = cities.length === 0 || cities.every(sameCity);
     if (cityOk && (!days || Number(days) <= office.maxDaysPerWeek) && !/\b(?:not|unable|unwilling|outside|other than)\b/.test(q)) {
       if (!options.length) return result(true, 'professional.officeAttendance');
       const preferred = options.find(
@@ -661,17 +478,10 @@ export function resolveByOptionPolicy(question: string, options: string[], profi
   else if (/\b(?:total|overall|professional|work)\b/.test(q) && /\bexperience\b/.test(q) && !/\b(?:production|react|java|python|using|with)\b/.test(q)) {
     value = profile.professional.totalYearsExperience;
     fact = 'professional.totalYearsExperience';
-    // Failure 3B: "0 - 2 Years" regex fallback
-    const expOption = options.find(option => /\b(0\s*-\s*[123]|1\s*-\s*[234]|less than [23]|\b1\s*year|entry|junior|associate|graduate|fresher)\b/i.test(option));
-    if (expOption) return result(expOption, fact);
   }
   else if (/\bdegree\b/.test(q)) { value = profile.education[0]?.degree; fact = 'education.0.degree'; }
   else if (/\b(?:hear|heard|source|find|learn)\b/.test(q) && /\b(?:us|job|position|role|opportunity|about)\b/.test(q)) {
     for (const source of profile.referralSources || []) { const best = matchBestOption(source, options.map(label => ({ value: label, label }))); if (best) return result(best.label, 'referralSources'); }
-    for (const ranked of ['careers website', 'company website', 'corporate website', 'website', 'linkedin', 'job board', 'internet', 'other']) {
-      const found = options.find(opt => opt.toLowerCase().includes(ranked));
-      if (found) return result(found, 'referralSources');
-    }
     return;
   }
   if (value === undefined) return;

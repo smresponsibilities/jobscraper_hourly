@@ -787,8 +787,8 @@ export function resolveExtendedProfileValue(
     case 'date_month': return undefined;
     case 'date_day': return undefined;
 
-    case 'current_company': return prof.currentCompany || exp?.company;
-    case 'current_title': return prof.currentTitle || exp?.title;
+    case 'current_company': return prof.currentCompany;
+    case 'current_title': return prof.currentTitle;
     case 'total_experience': return prof.totalYearsExperience;
     case 'notice_period': return prof.noticePeriodDays === undefined ? undefined : `${prof.noticePeriodDays} days`;
     case 'current_salary': return prof.currentSalary;
@@ -812,8 +812,8 @@ export function resolveExtendedProfileValue(
     case 'disability_signature_name': return eeo.legalSignatureName;
     case 'disability_signature_date': return eeo.signatureDate;
 
-    case 'hear_about_us': return profile.referralSources?.[0] || 'Company Careers Website';
-    case 'referral_name': return '';
+    case 'hear_about_us': return profile.referralSources?.[0];
+    case 'referral_name': return undefined;
     case 'cover_letter': return profile.coverLetterText;
     default: return undefined;
   }

@@ -1,10 +1,13 @@
+import { employerPublishedAt, isEmployerHourlyFresh } from '../src/sources/realtime-ats-delta-fetcher.js';
+import { list as listSmartRecruiters } from '../src/fetchers/smartrecruiters.js';
+import { list as listRecruitee } from '../src/fetchers/recruitee.js';
+import { list as listBreezy } from '../src/fetchers/breezy.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { canonicalRequisition } from '../src/autoapply/identity.js';
 import { createRequire } from 'node:module';
 const _require = createRequire(import.meta.url);
-const { syncQueueSummaryFromDb } = _require('./sync-summary.mjs') as { syncQueueSummaryFromDb: () => void };
 
 interface CompanyEntry {
   name: string;
@@ -55,7 +58,7 @@ async function fetchWithTimeout(url: string, timeoutMs = 4500): Promise<any | nu
   }
 }
 
-async function fetchGreenhouseJobs(slug: string, companyName: string): Promise<Array<{ title: string; url: string; location: string }>> {
+export async function fetchGreenhouseJobs(slug: string, companyName: string): Promise<Array<{ title: string; url: string; location: string; publishedAt?: string }>> {
   const data = await fetchWithTimeout(`https://boards-api.greenhouse.io/v1/boards/${slug}/jobs`);
   if (!data?.jobs || !Array.isArray(data.jobs)) return [];
   const results = [];
@@ -66,13 +69,14 @@ async function fetchGreenhouseJobs(slug: string, companyName: string): Promise<A
         title: String(j.title).trim(),
         url: String(j.absolute_url).trim(),
         location: loc.trim(),
+        publishedAt: employerPublishedAt(j),
       });
     }
   }
   return results;
 }
 
-async function fetchAshbyJobs(slug: string, companyName: string): Promise<Array<{ title: string; url: string; location: string }>> {
+export async function fetchAshbyJobs(slug: string, companyName: string): Promise<Array<{ title: string; url: string; location: string; publishedAt?: string }>> {
   const data = await fetchWithTimeout(`https://api.ashbyhq.com/posting-api/job-board/${slug}`);
   if (!data?.jobs || !Array.isArray(data.jobs)) return [];
   const results = [];
@@ -87,13 +91,14 @@ async function fetchAshbyJobs(slug: string, companyName: string): Promise<Array<
         title: String(j.title).trim(),
         url: String(j.jobUrl).trim(),
         location: loc.trim(),
+        publishedAt: employerPublishedAt(j),
       });
     }
   }
   return results;
 }
 
-async function fetchLeverJobs(slug: string, companyName: string): Promise<Array<{ title: string; url: string; location: string }>> {
+export async function fetchLeverJobs(slug: string, companyName: string): Promise<Array<{ title: string; url: string; location: string; publishedAt?: string }>> {
   const data = await fetchWithTimeout(`https://api.lever.co/v0/postings/${slug}?mode=json`);
   if (!data || !Array.isArray(data)) return [];
   const results = [];
@@ -105,13 +110,14 @@ async function fetchLeverJobs(slug: string, companyName: string): Promise<Array<
         title: String(j.text).trim(),
         url: applyUrl.trim(),
         location: loc.trim(),
+        publishedAt: employerPublishedAt(j),
       });
     }
   }
   return results;
 }
 
-async function fetchWorkableJobs(slug: string, companyName: string): Promise<Array<{ title: string; url: string; location: string }>> {
+export async function fetchWorkableJobs(slug: string, companyName: string): Promise<Array<{ title: string; url: string; location: string; publishedAt?: string }>> {
   const data = await fetchWithTimeout(`https://apply.workable.com/api/v3/accounts/${slug}/jobs`);
   if (!data?.results || !Array.isArray(data.results)) return [];
   const results = [];
@@ -125,6 +131,7 @@ async function fetchWorkableJobs(slug: string, companyName: string): Promise<Arr
         title: String(j.title).trim(),
         url: url.trim(),
         location: loc.trim(),
+        publishedAt: employerPublishedAt(j),
       });
     }
   }
@@ -140,7 +147,7 @@ export async function harvestFastAtsJobs(
   const allCompanies: CompanyEntry[] = JSON.parse(raw);
 
   const eligibleCompanies = allCompanies.filter((c) =>
-    ['greenhouse', 'ashby', 'lever', 'workable'].includes(c.ats.toLowerCase()) &&
+    ['greenhouse', 'ashby', 'lever', 'workable', 'smartrecruiters', 'recruitee', 'breezy'].includes(c.ats.toLowerCase()) &&
     (c.token || (c as any).slug)
   );
 
@@ -196,6 +203,11 @@ export async function harvestFastAtsJobs(
         const slug = (company.token || (company as any).slug || '').trim();
         const ats = company.ats.toLowerCase();
         try {
+          const adapter = ats === 'smartrecruiters' ? listSmartRecruiters : ats === 'recruitee' ? listRecruitee : ats === 'breezy' ? listBreezy : undefined;
+          if (adapter) {
+            const jobs = await adapter({ ...company, token: slug } as any);
+            return { company, jobs: jobs.map(job => ({ title: job.title, url: job.url, location: job.location || '', publishedAt: employerPublishedAt(job as unknown as Record<string, unknown>) })) };
+          }
           if (ats === 'greenhouse') return { company, jobs: await fetchGreenhouseJobs(slug, company.name) };
           if (ats === 'ashby') return { company, jobs: await fetchAshbyJobs(slug, company.name) };
           if (ats === 'lever') return { company, jobs: await fetchLeverJobs(slug, company.name) };
@@ -240,17 +252,18 @@ export async function harvestFastAtsJobs(
           jobUrl: job.url,
           jobBoard: 'direct_ats',
           location: job.location || 'India (Remote / Hybrid)',
-          postedAt: nowIso,
+          publishedAt: job.publishedAt,
+          postedAt: job.publishedAt,
           discoveredAt: nowIso,
           status: 'queued',
           error: null,
           retryCount: 0,
           retry_count: 0,
           reasonCode: null,
-          is_hourly_fresh: true,
-          isHourlyFresh: true,
-          priorityBonus: 15000,
-          priorityScore: 15000,
+          is_hourly_fresh: isEmployerHourlyFresh(job.publishedAt),
+          isHourlyFresh: isEmployerHourlyFresh(job.publishedAt),
+          priorityBonus: isEmployerHourlyFresh(job.publishedAt) ? 15000 : 0,
+          priorityScore: isEmployerHourlyFresh(job.publishedAt) ? 15000 : 0,
           provider: res.company.ats,
         };
 
@@ -264,6 +277,7 @@ export async function harvestFastAtsJobs(
   }
 
   db.close();
+  const { syncQueueSummaryFromDb } = _require('./sync-summary.mjs') as { syncQueueSummaryFromDb: () => void };
   syncQueueSummaryFromDb();
 
   console.log(`[HARVEST COMPLETED] Polled ${companiesPolled} companies, successfully inserted ${insertedCount} fresh open fast-ATS jobs!`);

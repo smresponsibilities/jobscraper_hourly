@@ -1,3 +1,4 @@
+import { stopFlagPath } from '../src/autoapply/daemon-control.js';
 // scripts/run-overnight-marathon.ts
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -56,41 +57,20 @@ import {
   scrubBrowserProfileCaches,
   getRecommendedLaneConcurrency,
 } from '../src/autoapply/ram-and-pacing.js';
-import { ContinuousRamAndHealthWatchdog, check30MinZeroFillDroughtAndAutoHeal } from '../src/autoapply/health-and-ram-watchdog.js';
+import { ContinuousRamAndHealthWatchdog, check30MinZeroFillDroughtAndAutoHeal, reapZombieChromeProcesses } from '../src/autoapply/health-and-ram-watchdog.js';
 import { startDashboardServer } from './dashboard-server.js';
 import { filterUnattemptedJobs, recordAttemptedJob, removeAttemptedJob } from '../src/autoapply/attempted-registry.js';
 import { syncGitHubActionsPillars } from './sync-github-actions-pillars.js';
 
-// Enforce unattended overnight execution environment
-process.env.AUTOAPPLY_DISABLE_HITL_POPUP = '1';
-process.env.AUTOAPPLY_NO_MODEL = '1';
 export const MARATHON_BOOT_MS = Date.now();
 
 export function reapStrayChrome(): number {
-  if (process.platform !== 'win32') return 0;
-  try {
-    const output = execSync(
-      `powershell -NoProfile -Command "$c = 0; Get-CimInstance Win32_Process -Filter \\"Name = 'chrome.exe'\\" | Where-Object { \$_.CommandLine -match '--enable-automation|portal-review|browser-profile|playwright|patchright|--window-position=-2400' } | ForEach-Object { Stop-Process -Id \$_.ProcessId -Force -ErrorAction SilentlyContinue; \$c++ }; \$c"`,
-      { encoding: 'utf8', timeout: 8000 }
-    ).trim();
-    return parseInt(output, 10) || 0;
-  } catch {
-    return 0;
-  }
+  return reapZombieChromeProcesses(180).reapedCount;
 }
 
-export function reapStrayChromeForProfile(profileDir: string): number {
-  if (process.platform !== 'win32') return 0;
-  try {
-    const normDir = path.basename(profileDir);
-    const output = execSync(
-      `powershell -NoProfile -Command "$c = 0; Get-CimInstance Win32_Process -Filter \\"Name = 'chrome.exe'\\" | Where-Object { \$_.CommandLine -like '*${normDir}*' } | ForEach-Object { Stop-Process -Id \$_.ProcessId -Force -ErrorAction SilentlyContinue; \$c++ }; \$c"`,
-      { encoding: 'utf8', timeout: 5000 }
-    ).trim();
-    return parseInt(output, 10) || 0;
-  } catch {
-    return 0;
-  }
+export function reapStrayChromeForProfile(_profileDir: string): number {
+  // Ownership and active-job guards take precedence over a matching profile name.
+  return reapZombieChromeProcesses(180).reapedCount;
 }
 
 export function countAutomationChrome(): number {
@@ -205,89 +185,10 @@ export function selectDiversifiedMultiLaneChunk(
     return true;
   };
 
-  const fastAtsCandidates: AutoaplyJobItem[] = [];
-  const slowAtsCandidates: AutoaplyJobItem[] = [];
-
   for (const job of allSortedCandidates) {
-    if (!job || !job.jobUrl || !isSupportedDirectAtsJobUrl(job.jobUrl)) continue;
-    if (/stripe/i.test(job.company) || /stripe/i.test(job.jobUrl)) continue;
-
-    const u = job.jobUrl.toLowerCase();
-    const ats = String((job as any).ats || '').toLowerCase();
-    const isFast =
-      u.includes('greenhouse.io') ||
-      u.includes('gh_jid=') ||
-      u.includes('ashbyhq.com') ||
-      u.includes('lever.co') ||
-      u.includes('workable.com') ||
-      ats === 'greenhouse' ||
-      ats === 'ashby' ||
-      ats === 'lever' ||
-      ats === 'workable';
-
-    if (isFast) {
-      fastAtsCandidates.push(job);
-    } else {
-      slowAtsCandidates.push(job);
-    }
-  }
-
-  const sortByPriority = (a: AutoaplyJobItem, b: AutoaplyJobItem) => {
-    const freshA = Number((a as any).is_hourly_fresh ?? (a as any).isHourlyFresh ?? (a as any).payload?.is_hourly_fresh ?? (a as any).payload?.isHourlyFresh ?? 0);
-    const freshB = Number((b as any).is_hourly_fresh ?? (b as any).isHourlyFresh ?? (b as any).payload?.is_hourly_fresh ?? (b as any).payload?.isHourlyFresh ?? 0);
-    if (freshB !== freshA) return freshB - freshA;
-
-    const scoreA = Number((a as any).priority_score ?? (a as any).priorityScore ?? 0);
-    const scoreB = Number((b as any).priority_score ?? (b as any).priorityScore ?? 0);
-    if (scoreB !== scoreA) return scoreB - scoreA;
-
-    const fitA = evaluateCandidateJobFit({ company: a.company, title: a.title, location: (a as any).location, url: a.jobUrl });
-    const fitB = evaluateCandidateJobFit({ company: b.company, title: b.title, location: (b as any).location, url: b.jobUrl });
-    if (fitB.priorityBonus !== fitA.priorityBonus) return fitB.priorityBonus - fitA.priorityBonus;
-
-    const rowIdA = Number((a as any).rowId) || 0;
-    const rowIdB = Number((b as any).rowId) || 0;
-    if (rowIdB !== rowIdA) return rowIdB - rowIdA;
-
-    return String(b.id || '').localeCompare(String(a.id || ''));
-  };
-
-  fastAtsCandidates.sort(sortByPriority);
-  slowAtsCandidates.sort(sortByPriority);
-
-  // Ticket GEN-283: 85% Fast-ATS (Greenhouse, Ashby, Lever) / 15% GCC (Workday, SmartRecruiters)
-  const fastAtsSlots = Math.round(chunkSize * 0.85); // 34 slots for chunkSize = 40
-
-  // 1. Fill up to 34 slots with Fast-ATS candidates
-  for (const job of fastAtsCandidates) {
+    if (!job?.jobUrl || !isSupportedDirectAtsJobUrl(job.jobUrl)) continue;
     takeCandidate(job);
-    if (selected.length >= fastAtsSlots) break;
-  }
-
-  // 2. Fill up to 6 slots with GCC / Slow-ATS candidates (is_hourly_fresh >= 2 prioritized)
-  for (const job of slowAtsCandidates) {
-    takeCandidate(job);
-    if (selected.length >= chunkSize) return selected;
-  }
-
-  // 3. If GCC candidates < 6, backfill remaining slots with any remaining Fast-ATS candidates
-  if (selected.length < chunkSize) {
-    for (const job of fastAtsCandidates) {
-      if (!selected.includes(job)) {
-        takeCandidate(job);
-        if (selected.length >= chunkSize) return selected;
-      }
-    }
-  }
-
-  // 4. If still under chunkSize, backfill with any remaining Slow-ATS candidates
-  if (selected.length < chunkSize) {
-    for (const job of slowAtsCandidates) {
-      if (!selected.includes(job)) {
-        takeCandidate(job);
-        if (selected.length >= chunkSize) return selected;
-      }
-    }
+    if (selected.length >= chunkSize) break;
   }
 
   return selected;
@@ -452,6 +353,8 @@ export async function runOvernightMarathon(config: {
   submit?: boolean;
   headless?: boolean;
 }): Promise<void> {
+  process.env.AUTOAPPLY_DISABLE_HITL_POPUP = '1';
+  process.env.AUTOAPPLY_NO_MODEL = '1';
   const stateDir = path.resolve(config.stateDir);
   const profilePath = path.resolve(config.profilePath);
   const chunkSize = config.chunkSize ?? 40;
@@ -532,7 +435,7 @@ export async function runOvernightMarathon(config: {
   const hostHealthPath = path.join(stateDir, 'host-health.json');
 
   process.on('SIGHUP', () => {
-    const stopFlag = path.join(stateDir, 'portal-review/STOP_AUTOAPPLY.flag');
+    const stopFlag = stopFlagPath(stateDir);
     if (fs.existsSync(stopFlag)) {
       console.log('[MARATHON] SIGHUP received and STOP_AUTOAPPLY.flag set. Exiting cleanly.');
       process.exit(0);
@@ -545,7 +448,7 @@ export async function runOvernightMarathon(config: {
     while (Date.now() - marathonStartMs < maxDurationMs && totalProcessedOverall < maxJobs) {
       cycleIndex++;
 
-      const stopFlag = path.join(stateDir, 'portal-review/STOP_AUTOAPPLY.flag');
+      const stopFlag = stopFlagPath(stateDir);
       if (fs.existsSync(stopFlag)) {
         console.log(`[MARATHON] STOP_AUTOAPPLY.flag detected at ${stopFlag}. Explicit operator stop requested. Exiting.`);
         break;
@@ -667,7 +570,7 @@ export async function runOvernightMarathon(config: {
           is_hourly_fresh: typeof rawFresh === 'number' ? rawFresh : undefined,
           discoveredAt: (job as any).discoveredAt || (job as any).payload?.discoveredAt,
           hourlySource: (job as any).hourlySource || (job as any).payload?.hourlySource,
-          payload: (job as any).payload,
+          payload: { ...(job as any).payload, postedAt: (job as any).payload?.postedAt ?? job.postedAt },
         }, nowMs);
         return { job, score };
       }).sort((a: { job: AutoaplyJobItem; score: number }, b: { job: AutoaplyJobItem; score: number }) => {
@@ -675,28 +578,8 @@ export async function runOvernightMarathon(config: {
         return (Number((b.job as any).rowId) || 0) - (Number((a.job as any).rowId) || 0);
       });
 
-      // Ticket GEN-90: Drain Priority #1 (Hourly Fresh Jobs) FIRST, Backfill Queue SECOND
-      const hourlyCandidates: AutoaplyJobItem[] = [];
-      const backfillCandidates: AutoaplyJobItem[] = [];
+      const prioritizedCandidates = scoredCandidates.map(item => item.job);
 
-      for (const item of scoredCandidates) {
-        const jobAny = item.job as any;
-        const rawFresh = jobAny.is_hourly_fresh ?? jobAny.isHourlyFresh ?? jobAny.payload?.is_hourly_fresh ?? jobAny.payload?.isHourlyFresh;
-        const isFresh = Boolean(
-          rawFresh ||
-          (jobAny.discoveredAt && (nowMs - new Date(jobAny.discoveredAt).getTime()) <= 86400_000) ||
-          (jobAny.payload?.discoveredAt && (nowMs - new Date(jobAny.payload.discoveredAt).getTime()) <= 86400_000)
-        );
-        if (isFresh) {
-          hourlyCandidates.push(item.job);
-        } else {
-          backfillCandidates.push(item.job);
-        }
-      }
-
-      const prioritizedCandidates = [...hourlyCandidates, ...backfillCandidates];
-
-      // Ticket GEN-97 & GEN-283: Select Diversified Multi-Lane Chunk (85% Fast-ATS / 15% GCC, max 2 per tenant)
       const chunkJobs = selectDiversifiedMultiLaneChunk(
         prioritizedCandidates,
         chunkSize,
