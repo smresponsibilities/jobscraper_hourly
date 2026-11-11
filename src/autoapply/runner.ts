@@ -901,7 +901,7 @@ export class AutoApplyRunner {
 
     // GEN-441: Broader Lever selectedLocation dropdown clicker
     try {
-      await fillLeverLocationInput(page.mainFrame());
+      await fillLeverLocationInput(getActiveFormFrame(page));
     } catch {}
   }
 
@@ -3966,6 +3966,8 @@ export class AutoApplyRunner {
                 if (!doc) return false;
                 const els: any[] = Array.from(doc.querySelectorAll('input, select, [role="combobox"]'));
                 return els.some((el: any) => {
+                  if (el.type === 'hidden' || el.style?.display === 'none' || el.style?.visibility === 'hidden') return false;
+                  if (typeof el.offsetParent !== 'undefined' && el.offsetParent === null && el.tagName !== 'BODY') return false;
                   const meta = [
                     el.id,
                     el.getAttribute('name'),
@@ -4035,7 +4037,11 @@ export class AutoApplyRunner {
             if (isPhoneInvalid) {
               const rawDigits = String(value).replace(/\D/g, '');
               const tenDigits = rawDigits.length === 12 && rawDigits.startsWith('91') ? rawDigits.slice(2) : rawDigits.slice(-10);
-              const alternatePhone = String(value).trim().startsWith('+') ? tenDigits : `+91${tenDigits}`;
+              const isShort = await input.evaluate((el: HTMLElement) => {
+                const ml = (el as HTMLInputElement).maxLength;
+                return ml === 10 || ml === 11 || el.getAttribute('maxlength') === '10' || el.getAttribute('maxlength') === '11';
+              }).catch(() => false);
+              const alternatePhone = String(value).trim().startsWith('+') || isShort ? tenDigits : `+91${tenDigits}`;
               if (tenDigits.length === 10) {
                 await this.humanType(input, alternatePhone);
                 await input.blur().catch(() => {});

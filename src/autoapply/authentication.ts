@@ -648,17 +648,27 @@ export async function authenticateWorkdayPortal(
 
   const updatedPwCount = await getVisiblePasswordInputs().count().catch(() => 0);
 
+  const authOpts = {
+    email,
+    password,
+    sinceMs: Date.now() - 60_000,
+    companyHint: currentHost,
+  };
+
   // Case A: On Create Account form (>= 2 password fields or switched from Sign In)
   if (updatedPwCount >= 2) {
     await fillAndSubmitCreateAccount(email, password);
-    const verified = await completeInPageEmailVerificationIfPrompted(page, getActiveFormFrame(page));
+    const verified = await completeInPageEmailVerificationIfPrompted(page, getActiveFormFrame(page), undefined, authOpts);
     if (verified) await postVerifyWorkdaySignIn();
     const errText = await page.locator('[role="alert"], [data-automation-id="errorMessage"], .error').allTextContents().catch(() => []);
     const pwComplexityErr = errText.some(t => /password.*(?:match|complexity|requirements|criteria|must contain|characters|invalid)|does not meet/i.test(t));
     if (pwComplexityErr) {
       console.log('[AUTH] Workday password complexity error detected; retrying with 16-char fallback');
       await fillAndSubmitCreateAccount(email, WORKDAY_COMPLEXITY_FALLBACK_PASSWORD);
-      await completeInPageEmailVerificationIfPrompted(page, getActiveFormFrame(page));
+      await completeInPageEmailVerificationIfPrompted(page, getActiveFormFrame(page), undefined, {
+        ...authOpts,
+        password: WORKDAY_COMPLEXITY_FALLBACK_PASSWORD,
+      });
     }
     const accountExists = errText.some(t => /already exists|already registered/i.test(t));
     if (accountExists) {
@@ -671,7 +681,7 @@ export async function authenticateWorkdayPortal(
         if ((await getVisiblePasswordInputs().count().catch(() => 0)) > 0 && rawPassword !== password) {
           await fillAndSubmitSignIn(email, password);
         }
-        await completeInPageEmailVerificationIfPrompted(page, getActiveFormFrame(page));
+        await completeInPageEmailVerificationIfPrompted(page, getActiveFormFrame(page), undefined, authOpts);
 
         // Ticket GEN-185: If Sign In failed on existing account, fall back to +alias Create Account immediately
         if ((await getVisiblePasswordInputs().count().catch(() => 0)) > 0) {
@@ -690,7 +700,10 @@ export async function authenticateWorkdayPortal(
             await createLink.click({ force: true, timeout: 5000 }).catch(() => {});
             await page.waitForTimeout(1000);
             await fillAndSubmitCreateAccount(aliasEmail, password);
-            await completeInPageEmailVerificationIfPrompted(page, getActiveFormFrame(page));
+            await completeInPageEmailVerificationIfPrompted(page, getActiveFormFrame(page), undefined, {
+              ...authOpts,
+              email: aliasEmail,
+            });
           }
         }
       }
@@ -705,7 +718,7 @@ export async function authenticateWorkdayPortal(
     if ((await getVisiblePasswordInputs().count().catch(() => 0)) > 0 && rawPassword !== password) {
       await fillAndSubmitSignIn(email, password);
     }
-    await completeInPageEmailVerificationIfPrompted(page, getActiveFormFrame(page));
+    await completeInPageEmailVerificationIfPrompted(page, getActiveFormFrame(page), undefined, authOpts);
 
     if ((await getVisiblePasswordInputs().count().catch(() => 0)) === 0) {
       markWorkdayHostVerified(currentHost);
@@ -721,7 +734,7 @@ export async function authenticateWorkdayPortal(
         await createLink.click({ force: true, timeout: 5000 }).catch(() => {});
         await page.waitForTimeout(1000);
         await fillAndSubmitCreateAccount(email, password);
-        const verified = await completeInPageEmailVerificationIfPrompted(page, getActiveFormFrame(page));
+        const verified = await completeInPageEmailVerificationIfPrompted(page, getActiveFormFrame(page), undefined, authOpts);
         if (verified) await postVerifyWorkdaySignIn();
         if ((await getVisiblePasswordInputs().count().catch(() => 0)) === 0) {
           markWorkdayHostVerified(currentHost);

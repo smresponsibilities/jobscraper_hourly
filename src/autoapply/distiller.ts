@@ -46,17 +46,21 @@ export async function fetchGreenhouseQuestionSchema(jobUrl: string, frame?: Fram
     if (!board && frame) {
       try {
         const info = await frame.evaluate(() => {
-          if (typeof document === 'undefined') return { action: '', metaOg: '' };
-          const form = document.querySelector('form#application_form') as HTMLFormElement | null;
+          if (typeof document === 'undefined') return { action: '', metaOg: '', linkCanonical: '' };
+          const form = document.querySelector('form#application_form, form#application-form, form[action*="job_app"], form[action*="/jobs/"]') as HTMLFormElement | null;
           const action = form?.getAttribute('action') || form?.action || '';
           const metaOg = document.querySelector('meta[property="og:url"]')?.getAttribute('content') || '';
-          return { action, metaOg };
+          const linkCanonical = document.querySelector('link[rel="canonical"]')?.getAttribute('href') || '';
+          return { action, metaOg, linkCanonical };
         });
-        for (const candidate of [info?.action, info?.metaOg]) {
+        const reservedSegments = new Set(['embed', 'jobs', 'v1', 'api', 'applications', 'search']);
+        for (const candidate of [info?.action, info?.metaOg, info?.linkCanonical]) {
           if (!candidate) continue;
           try {
             const parsed = new URL(candidate, u.origin);
-            const parsedBoard = parsed.searchParams.get('for') || (parsed.pathname.split('/').filter(Boolean)[0] !== 'embed' ? parsed.pathname.split('/').filter(Boolean)[0] : null);
+            const firstPart = parsed.pathname.split('/').filter(Boolean)[0];
+            const pathSlug = firstPart && !reservedSegments.has(firstPart.toLowerCase()) ? firstPart : null;
+            const parsedBoard = parsed.searchParams.get('for') || pathSlug;
             if (parsedBoard) {
               board = parsedBoard;
               if (!jobId) {
@@ -66,7 +70,7 @@ export async function fetchGreenhouseQuestionSchema(jobUrl: string, frame?: Fram
             }
           } catch {
             const m = candidate.match(/(?:boards(?:-api)?\.greenhouse\.io\/|\/)([a-zA-Z0-9_\-]+)\/jobs\/(\d+)/);
-            if (m && m[1] && m[1] !== 'embed') {
+            if (m && m[1] && !reservedSegments.has(m[1].toLowerCase())) {
               board = m[1];
               if (!jobId && m[2]) jobId = m[2];
               break;

@@ -33,6 +33,14 @@ test('GEN-483.1: Workday /fr-FR/ and /de-DE/ URL rewriting forces English (/en-U
   // URLs without a locale prefix must not be modified
   const noLocaleUrl = 'https://bosch.wd3.myworkdayjobs.com/Bosch_Jobs/job/Paris/Software-Engineer_12345';
   assert.equal(unwrapDirectAtsApplicationUrl(noLocaleUrl), noLocaleUrl);
+
+  // myworkdaysite.com and underscore locale support
+  const siteUrl = 'https://company.myworkdaysite.com/fr_FR/Careers/job/123';
+  assert.equal(unwrapDirectAtsApplicationUrl(siteUrl), 'https://company.myworkdaysite.com/en-US/Careers/job/123');
+
+  // Attacker domain with myworkdayjobs.com suffix must not be rewritten
+  const evilUrl = 'https://evil-myworkdayjobs.com/fr-FR/Careers/job/123';
+  assert.equal(unwrapDirectAtsApplicationUrl(evilUrl), evilUrl);
 });
 
 test('GEN-483.2: fetchGreenhouseQuestionSchema extracts board slug from frame form action or og:url on embed URLs', async () => {
@@ -194,6 +202,28 @@ test('GEN-485.1: resolveUniversalPermissiveFallback returns "false" for conflict
     options: null,
   });
   assert.equal(resAgreement, 'true');
+
+  // Negative / disqualifying checkboxes must NEVER return 'true'
+  const resSponsorship = resolveUniversalPermissiveFallback({
+    questionText: 'Will you now or in the future require visa sponsorship?',
+    widgetKind: 'CHECKBOX',
+    options: null,
+  });
+  assert.equal(resSponsorship, 'false');
+
+  const resFelony = resolveUniversalPermissiveFallback({
+    questionText: 'Have you ever been convicted of a felony or misdemeanor?',
+    widgetKind: 'CHECKBOX',
+    options: null,
+  });
+  assert.equal(resFelony, 'false');
+
+  const resNonCompete = resolveUniversalPermissiveFallback({
+    questionText: 'Are you subject to any non-compete agreement or restrictive covenant?',
+    widgetKind: 'CHECKBOX',
+    options: null,
+  });
+  assert.equal(resNonCompete, 'false');
 });
 
 test('GEN-486.1: completeInPageEmailVerificationIfPrompted auto signs in after Workday verification link reload', async () => {
@@ -234,6 +264,9 @@ test('GEN-486.1: completeInPageEmailVerificationIfPrompted auto signs in after W
               if (selector.includes('password')) {
                 passwordFilled = val;
               }
+            },
+            evaluate: async (fn?: any, arg?: any) => {
+              if (typeof fn === 'function') fn({}, arg);
             },
           }),
         }),

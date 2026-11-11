@@ -55,7 +55,6 @@ export function resolveUniversalPermissiveFallback(params: {
     ) {
       return 'false';
     }
-    return 'true';
   }
 
   // Ticket GEN-212: 1,050+ Question Portal Ontology Engine
@@ -67,6 +66,9 @@ export function resolveUniversalPermissiveFallback(params: {
         opts.find(o => new RegExp(`\\b${bankHit}\\b`, 'i').test(o.trim())) ||
         opts.find(o => /yes|align|agree|confirm/i.test(o.trim()));
       if (match) return match;
+    }
+    if (params.widgetKind === 'CHECKBOX') {
+      return /^(yes|true|1|agree)$/i.test(String(bankHit).trim()) ? 'true' : 'false';
     }
     return bankHit;
   }
@@ -80,6 +82,9 @@ export function resolveUniversalPermissiveFallback(params: {
         opts.find(o => new RegExp(`\\b${taxonomy}\\b`, 'i').test(o.trim())) ||
         opts.find(o => /yes|align|agree|confirm/i.test(o.trim()));
       if (match) return match;
+    }
+    if (params.widgetKind === 'CHECKBOX') {
+      return /^(yes|true|1|agree)$/i.test(String(taxonomy).trim()) ? 'true' : 'false';
     }
     return taxonomy;
   }
@@ -153,7 +158,8 @@ export function resolveUniversalPermissiveFallback(params: {
   if (params.widgetKind === 'CHECKBOX') {
     if (
       /\b(currently work here|current job|do not contact|disability|veteran|hispanic)\b/i.test(params.questionText) ||
-      /\b(currently work here|current job|do not contact|disability|veteran|hispanic)\b/i.test(q)
+      /\b(currently work here|current job|do not contact|disability|veteran|hispanic)\b/i.test(q) ||
+      /\b(sponsorship|visa|restrict|non-compete|covenant|criminal|convict|felony|former employee|previously worked|relatives|family member|government official|politically exposed|auditor|pwc|deloitte|kpmg|ey\b|debarred|sanctioned)\b/i.test(q)
     ) {
       return 'false';
     }

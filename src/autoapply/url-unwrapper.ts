@@ -78,10 +78,10 @@ export function unwrapDirectAtsApplicationUrl(rawUrl: string): string {
     }
 
     // 8. Workday (GEN-483.1): Force English (/en-US/) locale on Workday URLs
-    if (u.hostname.toLowerCase().endsWith('myworkdayjobs.com')) {
-      const localeMatch = u.pathname.match(/^\/([a-z]{2}(?:-[A-Za-z]{2,4})?)\//i);
+    if (/(^|\.)(myworkdayjobs\.com|myworkdaysite\.com)$/i.test(u.hostname)) {
+      const localeMatch = u.pathname.match(/^\/([a-z]{2}(?:[-_][A-Za-z]{2,4})?)\//i);
       if (localeMatch && !localeMatch[1]?.toLowerCase().startsWith('en')) {
-        u.pathname = u.pathname.replace(/^\/[a-z]{2}(?:-[A-Za-z]{2,4})?\//i, '/en-US/');
+        u.pathname = u.pathname.replace(/^\/[a-z]{2}(?:[-_][A-Za-z]{2,4})?\//i, '/en-US/');
         return u.toString();
       }
     }

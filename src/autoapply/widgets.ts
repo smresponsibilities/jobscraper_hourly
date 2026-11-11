@@ -911,16 +911,17 @@ export async function fillPhoneInputSmart(
   rawPhone: string,
   hasSeparateCountryCodeField = false
 ): Promise<string> {
+  const target = typeof control.first === 'function' ? control.first() : control;
   const digitsOnly = String(rawPhone || '').replace(/\D/g, '');
   const tenDigitNational = digitsOnly.slice(-10);
   const e164 = `+91${tenDigitNational}`;
 
   if (tenDigitNational.length < 10) {
-    await control.fill(rawPhone).catch(() => {});
+    await target.fill(rawPhone).catch(() => {});
     return rawPhone;
   }
 
-  const isShortMaxLength = await control.evaluate((el: HTMLElement) => {
+  const isShortMaxLength = await target.evaluate((el: HTMLElement) => {
     const input = el as HTMLInputElement;
     const ml = input.maxLength;
     const attr = input.getAttribute('maxlength');
@@ -928,18 +929,18 @@ export async function fillPhoneInputSmart(
   }).catch(() => false);
 
   if (hasSeparateCountryCodeField || isShortMaxLength) {
-    await control.fill(tenDigitNational).catch(() => {});
+    await target.fill(tenDigitNational).catch(() => {});
     return tenDigitNational;
   }
 
-  await control.fill(e164).catch(() => {});
-  const readBack = typeof control.inputValue === 'function'
-    ? await control.inputValue().catch(() => '')
-    : await control.evaluate((el: any) => el.value || '').catch(() => '');
+  await target.fill(e164).catch(() => {});
+  const readBack = typeof target.inputValue === 'function'
+    ? await target.inputValue().catch(() => '')
+    : await target.evaluate((el: any) => el.value || '').catch(() => '');
   const readBackDigits = String(readBack || '').replace(/\D/g, '');
   const lastFour = tenDigitNational.slice(-4);
   if (!readBackDigits.endsWith(lastFour)) {
-    await control.fill(tenDigitNational).catch(() => {});
+    await target.fill(tenDigitNational).catch(() => {});
     return tenDigitNational;
   }
   return e164;
@@ -957,6 +958,7 @@ export function getActiveFormFrame(page: Page): Frame {
       url.includes('greenhouse.io') ||
       url.includes('lever.co') ||
       url.includes('myworkdayjobs.com') ||
+      url.includes('myworkdaysite.com') ||
       url.includes('smartrecruiters') ||
       url.includes('ashbyhq') ||
       url.includes('workable') ||

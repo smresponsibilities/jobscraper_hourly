@@ -369,25 +369,41 @@ export async function completeInPageEmailVerificationIfPrompted(
       const passwordToUse = ensureWorkdayCompliantPassword(options?.password || process.env.AUTOAPPLY_PASSWORD || '');
 
       const emailInput = page
-        .locator('#input-4, [data-automation-id="formField-email"] input, input[type="email"]')
+        .locator('#input-4, [data-automation-id="formField-email"] input, [data-automation-id="email"] input, input[data-automation-id="email"], input[type="email"], input[aria-label*="Email" i], input[name="username"]')
         .filter({ visible: true })
         .first();
       if (await emailInput.isVisible().catch(() => false)) {
         await emailInput.click({ timeout: 2000 }).catch(() => {});
         await emailInput.fill(emailToUse).catch(() => {});
+        if (typeof emailInput.evaluate === 'function') {
+          await emailInput.evaluate((el: HTMLInputElement, val: string) => {
+            el.value = val;
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+            el.dispatchEvent(new Event('blur', { bubbles: true }));
+          }, emailToUse).catch(() => {});
+        }
       }
 
       const pwInput = page
-        .locator('input[type="password"], [data-automation-id="password"]')
+        .locator('input[type="password"], [data-automation-id="password"], [data-automation-id="formField-password"] input')
         .filter({ visible: true })
         .first();
       if (await pwInput.isVisible().catch(() => false)) {
         await pwInput.click({ timeout: 2000 }).catch(() => {});
         await pwInput.fill(passwordToUse).catch(() => {});
+        if (typeof pwInput.evaluate === 'function') {
+          await pwInput.evaluate((el: HTMLInputElement, val: string) => {
+            el.value = val;
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+            el.dispatchEvent(new Event('blur', { bubbles: true }));
+          }, passwordToUse).catch(() => {});
+        }
       }
 
       const submitBtn = page
-        .locator('[data-automation-id="signInSubmitButton"], [data-automation-id="click_filter"]')
+        .locator('[data-automation-id="signInSubmitButton"], [data-automation-id="click_filter"], button[type="submit"]:has-text("Sign In")')
         .filter({ visible: true })
         .first();
       if (await submitBtn.isVisible().catch(() => false)) {
