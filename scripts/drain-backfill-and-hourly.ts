@@ -577,19 +577,34 @@ async function main(): Promise<void> {
     const sortedEligible = scoredCandidates.map((s) => s.job);
 
     const hostHealthPath = path.join(stateDir, 'host-health.json');
-    // Ticket GEN-474: Select Diversified Multi-Lane Chunk across distinct tenants concurrently
-    const chunkSize = Math.max(maxJobs, 40);
-    const chunkJobs = selectDiversifiedMultiLaneChunk(
-      sortedEligible,
-      chunkSize,
-      (url) => isHostReadyForRequest(url, 45000, hostHealthPath)
-    );
-    if (chunkJobs.length === 0) {
+    // Ticket GEN-513: Preflight-verify candidates during selection so closed/exceeds_exp jobs do not consume batch slots
+    const targetChunkSize = Math.min(maxJobs, 25);
+    const verifiedChunkJobs: AutoaplyJobItem[] = [];
+
+    for (const cand of sortedEligible) {
+      if (verifiedChunkJobs.length >= targetChunkSize) break;
+      if (!isHostReadyForRequest(cand.jobUrl, 45000, hostHealthPath)) continue;
+
+      const preflight = await fastApiPreflightCheck(cand.jobUrl).catch(() => ({ status: 'eligible' as const }));
+      if (preflight.status === 'skipped') {
+        try {
+          queue.skip(cand.id, preflight.reason || 'fast_api_preflight_skipped');
+          const dbFast = new DatabaseSync(dbPath);
+          dbFast.exec('PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 15000;');
+          dbFast.prepare(`UPDATE applications SET status = 'skipped', last_error = ? WHERE id = ?`).run(`preflight_${preflight.reason || 'skipped'}`, cand.id);
+          dbFast.close();
+        } catch {}
+        continue;
+      }
+      verifiedChunkJobs.push(cand);
+    }
+
+    if (verifiedChunkJobs.length === 0) {
       if (!isContinuousSubmit) break;
       await waitForDaemonWake(stateDir, 30_000, stopping);
       continue;
     }
-    const candidatePool = chunkJobs;
+    const candidatePool = verifiedChunkJobs;
     const lanes = partitionJobsIntoProviderLanes(candidatePool);
     const activeLanes = (Object.keys(lanes) as Array<keyof typeof lanes>).filter(k => (lanes[k]?.length ?? 0) > 0);
     console.log(

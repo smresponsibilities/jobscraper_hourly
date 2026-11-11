@@ -1,5 +1,6 @@
 import { chromium, type Browser, type BrowserContext, type Page, type Locator, type Frame, type Request } from 'patchright';
 import { mkdirSync, readFileSync, writeFileSync, renameSync, existsSync, unlinkSync, utimesSync, appendFileSync } from 'node:fs';
+import * as os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { execSync } from 'node:child_process';
@@ -437,6 +438,13 @@ export async function healInvalidFieldsAndRetrySubmit(
             affirmative.checked = true;
             affirmative.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
             affirmative.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+          }
+          // Clear required constraint on sibling checkboxes in this group so entire group is valid
+          for (const sibling of group) {
+            sibling.required = false;
+            sibling.removeAttribute('required');
+            sibling.removeAttribute('aria-required');
+            sibling.setAttribute('aria-invalid', 'false');
           }
           fixed++;
         }
@@ -1545,6 +1553,11 @@ export class AutoApplyRunner {
         const contentType = response.headers()['content-type'] || '';
         if (contentType.includes('application/json')) {
           const bodyText = await response.text().catch(() => '');
+          // Ticket GEN-516: Ignore candidate messaging/consent mutations (not full application submission receipts!)
+          if (/"(?:submitCandidateTextingConsent|submitCandidateWhatsAppConsent|updateCandidateConsent)"/i.test(bodyText)) {
+            this.log(`Submit endpoint ignored non-submission consent mutation: ${bodyText.slice(0, 100)}`);
+            return;
+          }
           if (
             /"(?:errors|errorMessages|validationErrors|fieldErrors|formErrors)"\s*:\s*\[[^\]]+\]|"(?:isSuccess|success|ok)"\s*:\s*false/i.test(
               bodyText
@@ -4456,14 +4469,42 @@ export class AutoApplyRunner {
         report.status = 'skipped'; report.reason = 'ineligible_jd_experience'; return report;
       }
       if (!this.context) throw new Error('Runtime resume requires active browser context');
-      const liveJd = descriptions.join('\n').trim() || options.applicationBrief?.text || '';
-      if (!liveJd.trim()) throw new Error('Job description unavailable for runtime resume');
-      const runtimeResume = await compileRuntimeTailoredResumeForJob({
-        jobId: options.jobId || options.url, company: options.company,
-        jobTitle: titleCandidate, jdText: liveJd, browser: this.context, profile: options.profile,
-      });
-      options = { ...options, profile: { ...options.profile,
-        documents: { ...options.profile.documents, resume: runtimeResume.pdfPath } } };
+      const liveJd = descriptions.join('\n').trim() ||
+        options.applicationBrief?.text ||
+        (await this.page!.evaluate(() => (window as any).__appData?.posting?.descriptionPlainText).catch(() => '')) ||
+        titleCandidate ||
+        options.company ||
+        'Software Engineer';
+
+      const fallbackResumePdf = path.resolve('state/autoapply/resumes/Shivam_Mahajan_Resume_BACKEND.pdf');
+      const freeMemLow = os.freemem() < 1.2 * 1024 * 1024 * 1024;
+      let resumePdfPath = options.profile.documents?.resume || fallbackResumePdf;
+
+      if (!freeMemLow && liveJd.trim()) {
+        try {
+          const runtimeResume = await compileRuntimeTailoredResumeForJob({
+            jobId: options.jobId || options.url,
+            company: options.company,
+            jobTitle: titleCandidate,
+            jdText: liveJd,
+            browser: this.context,
+            profile: options.profile,
+          });
+          if (runtimeResume?.pdfPath && existsSync(runtimeResume.pdfPath)) {
+            resumePdfPath = runtimeResume.pdfPath;
+          }
+        } catch {
+          resumePdfPath = options.profile.documents?.resume || fallbackResumePdf;
+        }
+      }
+
+      options = {
+        ...options,
+        profile: {
+          ...options.profile,
+          documents: { ...options.profile.documents, resume: resumePdfPath },
+        },
+      };
       const timeout = options.timeoutMs ?? 10000;
       let reviewedSignature: string | undefined;
       const workdayLoopState: WorkdayStepLoopState = { lastStepHash: '', consecutiveCount: 0 };
@@ -4804,6 +4845,17 @@ export class AutoApplyRunner {
           }
         }
         if (login) { report.reviewKind = 'authentication'; report.reason = 'Login needs browser review'; break; }
+
+        // Ticket GEN-515: In-place heal pass over all :invalid / [aria-invalid="true"] controls BEFORE checking/logging invalid
+        for (const frame of this.page!.frames()) {
+          await healInvalidFieldsAndRetrySubmit(
+            frame,
+            options.profile.personal.email,
+            options.profile.personal.phone,
+            this.attemptedFieldRefs
+          ).catch(() => 0);
+        }
+
         let invalid = false;
         for (const frame of this.page!.frames()) {
           for (const control of await frame.locator('input:invalid,select:invalid,textarea:invalid,[aria-invalid="true"]').all()) {

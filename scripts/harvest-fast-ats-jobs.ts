@@ -16,21 +16,20 @@ interface CompanyEntry {
   slug?: string;
 }
 
-const STRICT_INDIA_LOC_REGEX = /\b(india|bengaluru|bangalore|hyderabad|pune|gurgaon|gurugram|noida|mumbai|delhi|chennai)\b/i;
-const FOREIGN_LOC_REGEX = /\b(united states|usa|\bus\b|canada|ontario|toronto|uk|london|germany|berlin|france|paris|ireland|dublin|spain|madrid|australia|sydney|philippines|manila|mexico|taiwan|netherlands|dutch|brazil|poland|singapore|japan|tokyo|israel|tel aviv|emea|latam|americas|new york|california|san francisco|chicago|austin|seattle|boston)\b/i;
+const STRICT_INDIA_LOC_REGEX = /\b(india|bengaluru|bangalore|hyderabad|pune|mumbai|gurgaon|gurugram|noida|chennai|delhi|kolkata|ahmedabad|karnataka|maharashtra|telangana|tamil nadu|haryana)\b/i;
+const FOREIGN_LOC_REGEX = /\b(u\.?s\.?\s*remote|usa\s*remote|united states|usa|\bus\b|us only|north america|canada|ontario|toronto|vancouver|uk\b|united kingdom|london|europe|emea|eu only|germany|berlin|france|paris|spain|madrid|poland|brazil|latam|mexico|nairobi|kenya|nigeria|south africa|australia|sydney|melbourne|japan|tokyo|singapore|philippines|manila|vietnam|washington,?\s*d\.?c|new york|california|san francisco|seattle|austin|boston|chicago|atlanta|texas|virginia|colorado|florida|ireland|dublin|israel|tel aviv)\b/i;
 
-const POSITIVE_ENGINEERING_REGEX = /\b(software|developer|engineer|backend|frontend|fullstack|data|devops|sde|sdet|platform|cloud|infrastructure|ai|ml|machine learning|python|java|react|node|intern|trainee|apprentice|associate engineer)\b/i;
-const INELIGIBLE_ROLE_REGEX = /\b(nurse|psychologist|doctor|paralegal|therapist|talent pool|sourcer|community|sales|account executive|representative|practitioner|claims|billing|pharmacist|counselor|broker|coordinator|recruiter|recruiting|marketing|customer success|operations specialist|assistant|specialist|officer|advisor|investigator|growth hacker|problem solver)\b/i;
-const SENIOR_ROLE_REGEX = /\b(staff|principal|director|head of|\bvp\b|chief|architect|\bmanager\b)\b/i;
+const POSITIVE_ENGINEERING_REGEX = /\b(software|sde|swe|backend|back-end|frontend|front-end|full[- ]?stack|fullstack|data engineer|data scientist|data analyst|machine learning|ml engineer|ai engineer|ai solutions|solutions engineer|genai|llm|devops|sre|site reliability|platform engineer|cloud engineer|application security|cybersecurity engineer|systems engineer|android developer|ios developer|mobile developer|react developer|node\.?js|python developer|java developer|golang|c\+\+ developer|typescript|web developer|graduate engineer|technology apprentice|software intern|sde intern|engineering intern|associate software|associate data|junior software|junior developer|member of technical staff)\b/i;
+
+const INELIGIBLE_ROLE_REGEX = /\b(senior|sr\.?|staff|principal|lead|manager|director|vp|head of|chief|distinguished|fellow|iii|iv|v\b|level [3-9]|lv\.?\s*[3-9]|2nd engineer|3rd engineer|marine|carnival|cruise|ship|vessel|photographer|supervisor|deck|pool|floor|hospitality|chef|steward|nurse|clinical|medical|pharmacist|fire|life safety|hvac|plumbing|bim|revit|autocad|civil|structural|mechanical|electrical|cfd|egress|public relation|pr intern|hr\b|human resources|talent acquisition|recruiter|recruiting|sales|marketing|marketer|business development|account executive|customer success|customer support|bpo|finance|accountant|tax|audit|legal|counsel|compliance|procurement|supply chain|warehouse|logistics|driver|technician|electrician|mechanic|welder|machinist|inspector|architect|operations specialist|assistant|specialist|officer|advisor|investigator|growth hacker|problem solver)\b/i;
 
 export function isStrictTechRole(title: string): boolean {
-  if (!POSITIVE_ENGINEERING_REGEX.test(title)) return false;
   if (INELIGIBLE_ROLE_REGEX.test(title)) return false;
-  if (SENIOR_ROLE_REGEX.test(title)) return false;
+  if (!POSITIVE_ENGINEERING_REGEX.test(title)) return false;
   return true;
 }
 
-export function isStrictIndiaLocation(location: string, title: string): boolean {
+export function isStrictIndiaLocation(location: string, title = ''): boolean {
   const combined = `${location} ${title}`;
   if (FOREIGN_LOC_REGEX.test(location) && !STRICT_INDIA_LOC_REGEX.test(location)) return false;
   if (STRICT_INDIA_LOC_REGEX.test(combined)) return true;

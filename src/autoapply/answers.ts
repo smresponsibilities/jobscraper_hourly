@@ -539,16 +539,18 @@ export function resolveCandidateAnswer(category: ExtendedFieldCategory, profile:
       const val = isForeign ? (isEasyYes ? '$20,000' : '$15,000') : (isEasyYes ? '15,00,000 INR' : '12,00,000 INR');
       return result(context.fieldType === 'number' ? (isForeign ? (isEasyYes ? 20000 : 15000) : (isEasyYes ? 1500000 : 1200000)) : val, 'confirmed_preference', ['professional.expectedSalary'], 'base_compensation_expectations');
     }
-    if (/\b(?:u\.?s\.?\s*person|[“"]u\.?s\.?\s*person[”"])\b/i.test(q)) {
+    if (/\b(?:u\.?\s*s\.?\s*person|united\s*states\s*person|citizen.*permanent\s*resident.*asylee|export\s*control|itar)\b/i.test(q)) {
       const opt = optionFor([
         /not a u\.?s\.?\s*person/i,
+        /non-u\.?s\.?/i,
         /not a united states person/i,
+        /foreign national/i,
         /neither/i,
         /none of the above/i,
         /other/i,
         /no\b/i
       ]);
-      return result(context.options?.length ? (opt || 'I am not a U.S. person') : 'No', 'confirmed_preference', ['workAuthorization.authorizedInUs'], 'us_person_status');
+      return result(context.options?.length ? (opt || context.options[context.options.length - 1] || 'I am not a U.S. person') : 'No', 'confirmed_preference', ['workAuthorization.authorizedInUs'], 'us_person_status');
     }
   }
   const policy = resolveByOptionPolicy(context.question, context.options || [], profile, context.location);
