@@ -25,6 +25,7 @@ import {
   isDay5FollowUpEligible,
   buildDay5FollowUpDraft,
 } from '../src/outreach/follow-up-sequencer.js';
+import { verifyMailboxExistsBeforeSend } from '../src/outreach/zero-bounce-verifier.js';
 
 // Load .env variables into process.env if present
 export function loadEnvFile(envPath = '.env'): void {
@@ -453,6 +454,21 @@ export async function runOutreachBatch(options: {
     const roleTitle = (lead.roleTitle || '').trim();
     let domain = ((lead as any).domain || (email.includes('@') ? email.split('@')[1] : '') || '').trim().toLowerCase();
 
+    // Ticket GEN-488: Quarantined unverified role guesses are skipped immediately
+    if (lead.sendEligible === false || (lead as any).tier === 'TIER_C_UNVERIFIED_GUESS') {
+      resultItems.push({
+        company,
+        targetEmail: email,
+        roleTitle,
+        archetype: lead.archetype || determineJobArchetype(roleTitle),
+        resumePdf: '',
+        status: 'skipped',
+        reason: 'Quarantined unverified role guess (TIER_C_UNVERIFIED_GUESS)',
+      });
+      skippedCount++;
+      continue;
+    }
+
     // GEN-456: Suppress domain if lifecycle event indicates rejection, interview/OA, or recruiter direct reply
     const suppressCheck = isDomainSuppressedByInboxLifecycle(company, domain, lifecycleEvents);
     if (suppressCheck.suppressed) {
@@ -535,6 +551,29 @@ export async function runOutreachBatch(options: {
       continue;
     }
 
+    // 4.5. Ticket GEN-488: Zero-Bounce Mailbox Existence & Tier verification
+    const verification = await verifyMailboxExistsBeforeSend(email, lead.discoveryStep || lead.source);
+    if (!verification.deliverable) {
+      recordWonderPillDeadEnd({
+        sourceOrigin: 'zero_bounce_verifier',
+        whatWentWrong: `Mailbox unverified or role guess: ${email} (${verification.tier})`,
+        whyDisqualifying: verification.reason || 'Blocked by zero-bounce pre-send mailbox verifier',
+        company,
+        domain,
+      });
+      resultItems.push({
+        company,
+        targetEmail: email,
+        roleTitle,
+        archetype: lead.archetype || determineJobArchetype(roleTitle),
+        resumePdf: '',
+        status: 'skipped',
+        reason: `zero_bounce_blocked: ${verification.tier}`,
+      });
+      skippedCount++;
+      continue;
+    }
+
     // 5. Archetype and PDF Resume attachment resolution
     const archetype = lead.archetype || determineJobArchetype(roleTitle);
     const resumePdf = resolveResumeAttachmentForArchetype(archetype);
@@ -607,6 +646,31 @@ export async function runOutreachBatch(options: {
         secure: true,
         auth: { user, pass },
       });
+
+      // Ticket GEN-488.1: Verify Mailbox Exists Before Send right before transporter.sendMail()
+      const emailToVerify = lead.email || lead.targetEmail || email;
+      const liveVerification = await verifyMailboxExistsBeforeSend(emailToVerify, lead.discoveryStep);
+      if (!liveVerification.deliverable) {
+        console.warn(`[OUTREACH_LIVE] Prevented bounce: ${emailToVerify} deliverable=false (${liveVerification.tier})`);
+        recordWonderPillDeadEnd({
+          sourceOrigin: 'zero_bounce_verifier',
+          whatWentWrong: `Pre-send verification failed for ${emailToVerify} (${liveVerification.tier})`,
+          whyDisqualifying: liveVerification.reason || 'Blocked by zero-bounce pre-send mailbox verifier',
+          company,
+          domain,
+        });
+        resultItems.push({
+          company,
+          targetEmail: emailToVerify,
+          roleTitle,
+          archetype,
+          resumePdf,
+          status: 'skipped',
+          reason: `zero_bounce_blocked: ${liveVerification.tier}`,
+        });
+        skippedCount++;
+        continue;
+      }
 
       console.log(`[OUTREACH_LIVE] Sending cold outreach to ${email} (${company} - ${roleTitle})...`);
 

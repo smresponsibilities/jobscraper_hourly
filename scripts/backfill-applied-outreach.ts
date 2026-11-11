@@ -29,6 +29,10 @@ export interface OutreachLeadItem {
   personName?: string;
   personRole?: string;
   discoveryStep?: string;
+  tier?: 'TIER_A_VERBATIM_OBSERVED' | 'TIER_B_MAILBOX_VERIFIED' | 'TIER_C_UNVERIFIED_GUESS';
+  sendEligible?: boolean;
+  email?: string;
+  domain?: string;
 }
 
 export function determineJobArchetype(roleTitle: string): JobArchetype {

@@ -24,7 +24,7 @@ import { comboboxSelection, isVisibleApplicationControl, harvestControlOptions, 
 import { unwrapDirectAtsApplicationUrl, isOfflineDinoPage, waitForInternetRecoveryIfOffline } from './url-unwrapper.js';
 import { installRamDietRouteFilter, enforceHumanSubmissionPacingFloor } from './ram-and-pacing.js';
 export { stealthClick, getActiveFormFrame } from './widgets.js';
-import { annotateQuestionClusters, isInteractiveChoiceReadOnly } from './distiller.js';
+import { annotateQuestionClusters, isInteractiveChoiceReadOnly, distillFormStep } from './distiller.js';
 import { reserveStateAction } from './state-guard.js';
 import { exceedsExperienceGate, isSupportedDirectAtsJobUrl } from './preflight.js';
 import { prepareText, type ApplicationBrief } from './prepare.js';
@@ -4721,6 +4721,8 @@ export class AutoApplyRunner {
           if (report.ats === 'workday' || frame.url().toLowerCase().includes('myworkdayjobs.com')) {
             await runWorkdayStepFastPass(frame, options.profile.documents?.resume).catch(() => {});
           }
+          // Ticket GEN-487.1: Run full distillFormStep + fillFrame pass on each step
+          await distillFormStep(frame).catch(() => []);
           try { await this.fillFrame(frame, { ...options, resume: preserveReviewedValues && step === 1 }, report); }
           catch (error: any) {
             const confirmedReceipt = await this.receipt().catch(() => undefined);
@@ -4962,7 +4964,7 @@ export class AutoApplyRunner {
               const nextDirect = root.querySelector('[data-test="footer-next"], oc-button[data-test="footer-next"], button[data-test="footer-next"]') as HTMLElement | null;
               if (nextDirect) return { el: nextDirect, kind: 'next' };
 
-              const submitDirect = root.querySelector('[data-ui="application-form-submit"], [data-test="footer-submit"], oc-button[data-test="footer-submit"], button[data-test="footer-submit"]') as HTMLElement | null;
+              const submitDirect = root.querySelector('[data-ui="application-form-submit"], [data-test="footer-submit"], button[data-test="job-apply-submit"], oc-button[data-test="footer-submit"], button[data-test="footer-submit"]') as HTMLElement | null;
               if (submitDirect) {
                 const txt = (submitDirect.textContent || '').trim();
                 if (/^(?:next|continue|save\s*(?:and|&)\s*continue|proceed)$/i.test(txt)) {
@@ -5030,6 +5032,12 @@ export class AutoApplyRunner {
             }
             if (!await reserveStateAction(this.page!.mainFrame(), next, 'next')) break;
             if (options.mode === 'stealth') await this.pacedClick(next); else await next.click();
+            // Ticket GEN-487.1: SmartRecruiters Step-2 loop: On /oneclick-ui/, wait 2000ms for Step 2 screening questions to mount
+            if (report.ats === 'smartrecruiters' || (this.page && (/\/oneclick-ui\//i.test(this.page.url()) || this.page.url().includes('smartrecruiters.com')))) {
+              await this.page!.waitForTimeout(2000).catch(() => {});
+              changed = true;
+              break;
+            }
             if (await this.waitChanged(before, timeout, workdayStep)) { changed = true; break; }
             if (this.dependentRequests.size) break;
             const invalidCount = await this.page!.locator('input:invalid,select:invalid,textarea:invalid,[aria-invalid="true"]').filter({ visible: true }).count();
@@ -5107,14 +5115,14 @@ export class AutoApplyRunner {
           this.learnedFields = [];
           selfHealAttempted = false;
           watchdog.heartbeat(`advanced_step_${step}`);
-          if (report.ats === 'smartrecruiters' || this.page!.url().includes('smartrecruiters.com')) {
-            await this.page!.waitForTimeout(1800).catch(() => {});
+          if (report.ats === 'smartrecruiters' || this.page!.url().includes('smartrecruiters.com') || /\/oneclick-ui\//i.test(this.page!.url())) {
+            await this.page!.waitForTimeout(2000).catch(() => {});
           }
           continue;
         }
         let submit = submitControl || (await this.button(SUBMIT, ATS_STRATEGIES[report.ats]?.submit, 'flow_submit_button'));
         if (!submit && this.page) {
-          const shadowBtn = this.page.locator('[data-autoapply-shadow-submit="true"], button[data-ui="application-form-submit"], [data-test="footer-submit"], oc-button[data-test="footer-submit"], [role="button"]:has-text("Submit"), [role="button"]:has-text("Apply"), button[data-automation-id*="submit" i], a.btn-submit').first();
+          const shadowBtn = this.page.locator('[data-autoapply-shadow-submit="true"], button[data-ui="application-form-submit"], [data-test="footer-submit"], button[data-test="job-apply-submit"], oc-button[data-test="footer-submit"], [role="button"]:has-text("Submit"), [role="button"]:has-text("Apply"), button[data-automation-id*="submit" i], a.btn-submit').first();
           if (await shadowBtn.count().catch(() => 0) > 0 && await shadowBtn.isVisible().catch(() => false)) {
             submit = shadowBtn;
           }
