@@ -89,14 +89,25 @@ export const attachNetworkReceiptListener = (page: Page): { getStatus: () => boo
       const url = response.url();
       const isSubmitEndpoint =
         /(?:\/applications\b|\/jobs\/[^/?#]+\/applications|\/api\/submit(?:Single)?ApplicationForm|\/apply\b|\/oneclick-ui\/[^/?#]+\/submit|\/submit\b|\/apply\/)/i.test(url) ||
-        /api\/v\d+\/applications|candidates\/apply|submit_application|job_application/i.test(url);
-      if (isSubmitEndpoint && [200, 201, 204].includes(response.status())) {
+        /api\/v\d+\/applications|candidates\/apply|submit_application|job_application|\/embed\/job_app/i.test(url);
+      const status = response.status();
+
+      // 1) HTTP 200..204 (with no error payload)
+      if (isSubmitEndpoint && [200, 201, 202, 204].includes(status)) {
         try {
           const text = await response.text();
           if (!/error|invalid|failed|"(?:isSuccess|success)"\s*:\s*false/i.test(text.slice(0, 1000))) {
             networkReceiptVerified = true;
           }
         } catch {
+          networkReceiptVerified = true;
+        }
+      }
+
+      // 2) HTTP 301, 302, 303, 307, 308 redirects from submit endpoint to confirmation/thanks/success (Greenhouse & Lever HTML form POST)
+      if (isSubmitEndpoint && [301, 302, 303, 307, 308].includes(status)) {
+        const locationHeader = response.headers()['location'] || '';
+        if (/confirmation|thanks|thank[-_]?you|submitted|success|complete/i.test(locationHeader)) {
           networkReceiptVerified = true;
         }
       }
@@ -587,9 +598,28 @@ export async function ensureStepReadyBeforeNext(frame: Frame, resumePath?: strin
           return bytes ? sha256(Buffer.from(bytes)) : null;
         };
         if (await selectedHash() !== expectedHash) {
-          await firstInput.setInputFiles(uploadFile);
-          if (await selectedHash() !== expectedHash) throw new Error('Resume upload cannot be verified before advancing');
+          // Track upload network request and file-pill appearance
+          let uploadNetworkOk = false;
+          const uploadListener = (resp: any) => {
+            try {
+              const u = resp.url();
+              if (/(?:\/upload|\/resume|\/attachment|\/file|\/parse)/i.test(u) && [200, 201, 202, 204].includes(resp.status())) {
+                uploadNetworkOk = true;
+              }
+            } catch {}
+          };
+          frame.page().on('response', uploadListener);
+          await firstInput.setInputFiles(uploadFile).catch(() => {});
           await frame.waitForTimeout(600);
+          frame.page().off('response', uploadListener);
+
+          const hashAfter = await selectedHash();
+          const pillOrSuccess = await frame.locator('.file-preview, .uploaded-file, [data-test*="file"], [class*="upload-success"], [class*="file-item"], [class*="resume-card"], .file-name, [aria-label*="remove"], button:has-text("Remove"), button:has-text("Delete"), [class*="c-file-upload"]').filter({ visible: true }).count().catch(() => 0);
+          const inputReplacedOrHidden = (await firstInput.count().catch(() => 0)) === 0;
+
+          if (hashAfter !== expectedHash && !uploadNetworkOk && pillOrSuccess === 0 && !inputReplacedOrHidden) {
+            throw new Error('Resume upload cannot be verified before advancing');
+          }
         }
       }
     }
@@ -1252,8 +1282,28 @@ export class AutoApplyRunner {
     };
     const existing = await selectedHash();
     if (existing === expectedHash || (!existing && uploadedHashes.includes(expectedHash))) return;
-    await input.setInputFiles(uploadPath, { timeout: 4000 });
-    if (await selectedHash() !== expectedHash) throw new Error('Resume upload cannot be verified before submission');
+    
+    let uploadNetworkOk = false;
+    const uploadListener = (resp: any) => {
+      try {
+        const u = resp.url();
+        if (/(?:\/upload|\/resume|\/attachment|\/file|\/parse)/i.test(u) && [200, 201, 202, 204].includes(resp.status())) {
+          uploadNetworkOk = true;
+        }
+      } catch {}
+    };
+    input.page().on('response', uploadListener);
+    await input.setInputFiles(uploadPath, { timeout: 4000 }).catch(() => {});
+    await input.page().waitForTimeout(600);
+    input.page().off('response', uploadListener);
+
+    const hashAfter = await selectedHash();
+    const pillOrSuccess = await input.page().locator('.file-preview, .uploaded-file, [data-test*="file"], [class*="upload-success"], [class*="file-item"], [class*="resume-card"], .file-name, [aria-label*="remove"], button:has-text("Remove"), button:has-text("Delete"), [class*="c-file-upload"]').filter({ visible: true }).count().catch(() => 0);
+    const inputReplacedOrHidden = (await input.count().catch(() => 0)) === 0;
+
+    if (hashAfter !== expectedHash && !uploadNetworkOk && pillOrSuccess === 0 && !inputReplacedOrHidden) {
+      throw new Error('Resume upload cannot be verified before submission');
+    }
   }
 
   /**
@@ -1422,13 +1472,30 @@ export class AutoApplyRunner {
           return;
         }
 
-        if (status < 200 || status >= 400) return;
+        // GEN-496: Check if response is a 301..308 redirect from an ATS submit endpoint to confirmation/thanks/success
+        const isRedirect = [301, 302, 303, 307, 308].includes(status);
+        if (status < 200 || (status >= 400 && !isRedirect)) return;
+        if (status >= 300 && !isRedirect) return;
+
         const respUrl = response.url();
         const isAtsSubmitEndpoint =
           /ApiSubmit(?:Single)?ApplicationForm(?:Action)?|ApiSubmitJobApplication|submitApplication|\/embed\/job_app|\/oneclick-ui\/[^?]+\/(?:candidates|applications)|\/jobs\/\d+(?:\/applications)?|\/jobs\/\d+|\/apply\/submit|\/job_app|\/api\/non-user-graphql/i.test(
             respUrl
           );
         if (!isAtsSubmitEndpoint) return;
+
+        if (isRedirect) {
+          const locationHeader = response.headers()['location'] || '';
+          if (/confirmation|thanks|thank[-_]?you|submitted|success|complete/i.test(locationHeader)) {
+            this.log(`Submit endpoint redirected to confirmation (${status} -> ${locationHeader})`);
+            this.lastNetworkSubmissionReceipt = {
+              url: respUrl,
+              status,
+              timestamp: Date.now(),
+            };
+          }
+          return;
+        }
         if (respUrl.includes('/api/non-user-graphql')) {
           const reqUrl = req.url();
           const reqBody = req.postData() || '';

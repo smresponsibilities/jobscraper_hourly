@@ -75,6 +75,11 @@ export function isSupportedDirectAtsJobUrl(rawUrl: string): boolean {
     return false;
   }
 
+  // Ticket GEN-498: Allow localhost and 127.0.0.1 for local end-to-end test fixtures
+  if (host === 'localhost' || host === '127.0.0.1' || host === '::1') {
+    return true;
+  }
+
   // 2. Greenhouse
   if (/^(?:boards|job-boards|boards\.eu|job-boards\.eu)\.greenhouse\.io$/i.test(host) || host.includes('greenhouse.io')) {
     const hasJobId = /\/jobs\/\d+/i.test(path) || Boolean(parsed.searchParams.get('gh_jid')) || Boolean(parsed.searchParams.get('token'));
