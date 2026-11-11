@@ -28,25 +28,33 @@ import {
 
 // Load .env variables into process.env if present
 export function loadEnvFile(envPath = '.env'): void {
-  if (!fs.existsSync(envPath)) return;
-  try {
-    const raw = fs.readFileSync(envPath, 'utf8');
-    for (const line of raw.split('\n')) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('#')) continue;
-      const eqIdx = trimmed.indexOf('=');
-      if (eqIdx > 0) {
-        const key = trimmed.slice(0, eqIdx).trim();
-        let val = trimmed.slice(eqIdx + 1).trim();
-        if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
-          val = val.slice(1, -1);
-        }
-        if (!process.env[key]) {
-          process.env[key] = val;
+  const candidatePaths = [
+    envPath,
+    path.resolve('.env'),
+    path.resolve('.env.local'),
+    path.resolve('state/autoapply/portal-review/.env'),
+  ];
+  for (const p of candidatePaths) {
+    if (!fs.existsSync(p)) continue;
+    try {
+      const raw = fs.readFileSync(p, 'utf8');
+      for (const line of raw.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) continue;
+        const eqIdx = trimmed.indexOf('=');
+        if (eqIdx > 0) {
+          const key = trimmed.slice(0, eqIdx).trim();
+          let val = trimmed.slice(eqIdx + 1).trim();
+          if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+            val = val.slice(1, -1);
+          }
+          if (!process.env[key]) {
+            process.env[key] = val;
+          }
         }
       }
-    }
-  } catch {}
+    } catch {}
+  }
 }
 
 export interface SentLedgerEntry {

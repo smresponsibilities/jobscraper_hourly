@@ -1,5 +1,7 @@
 import { ImapFlow } from 'imapflow';
 import type { Frame, Page } from 'patchright';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { loadDotEnvIntoProcess } from './env-credentials.js';
 
 export interface ImapVerificationResult {
@@ -12,8 +14,41 @@ export interface ImapVerificationResult {
 // Ticket GEN-192: Cross-lane IMAP OTP token isolation
 export const CONSUMED_VERIFICATION_TOKENS = new Set<string>();
 
+// Ticket GEN-480: Cross-job consumed OTP codes persistence & isolation
+export const USED_OTP_CODES_FILE = path.resolve('state/autoapply/portal-review/used-otp-codes.json');
+export const consumedOtpCodes = new Set<string>();
+
+export function loadConsumedOtpCodes(): void {
+  try {
+    if (fs.existsSync(USED_OTP_CODES_FILE)) {
+      const data = JSON.parse(fs.readFileSync(USED_OTP_CODES_FILE, 'utf8'));
+      if (Array.isArray(data)) {
+        for (const code of data) {
+          if (typeof code === 'string' && code.trim()) {
+            consumedOtpCodes.add(code.trim());
+            CONSUMED_VERIFICATION_TOKENS.add(code.trim());
+          }
+        }
+      }
+    }
+  } catch {}
+}
+loadConsumedOtpCodes();
+
+export function recordConsumedOtpCode(code: string): void {
+  if (!code) return;
+  const clean = code.trim();
+  consumedOtpCodes.add(clean);
+  CONSUMED_VERIFICATION_TOKENS.add(clean);
+  try {
+    const list = Array.from(consumedOtpCodes).slice(-50);
+    fs.mkdirSync(path.dirname(USED_OTP_CODES_FILE), { recursive: true });
+    fs.writeFileSync(USED_OTP_CODES_FILE, JSON.stringify(list, null, 2), 'utf8');
+  } catch {}
+}
+
 export function hasConsumedVerificationToken(token: string): boolean {
-  return CONSUMED_VERIFICATION_TOKENS.has(token);
+  return CONSUMED_VERIFICATION_TOKENS.has(token) || consumedOtpCodes.has(token);
 }
 
 // Ticket GEN-225: Cross-lane IMAP Mutex ensuring serial IMAP mailbox access
@@ -119,6 +154,7 @@ export function makeGmailTenantAlias(baseEmail: string, tenantUrl: string): stri
 
 export async function pollImapForVerificationCodeOrLink(params: {
   senderOrSubjectHint?: string;
+  companyHint?: string;
   sinceMs?: number;
   maxWaitMs?: number;
   onActivity?: () => void;
@@ -133,7 +169,7 @@ export async function pollImapForVerificationCodeOrLink(params: {
   }
 
   const maxWaitMs = params.maxWaitMs ?? 35_000;
-  const sinceTime = (params.sinceMs ?? Date.now()) - 120_000; // Look back 2 minutes
+  const sinceTime = params.sinceMs !== undefined ? params.sinceMs : Date.now() - 120_000; // Exact sinceMs or look back 2 minutes
   const start = Date.now();
 
   while (Date.now() - start < maxWaitMs) {
@@ -190,8 +226,20 @@ export async function pollImapForVerificationCodeOrLink(params: {
               }
             }
 
-            // Check newest messages first
-            messages.sort((a, b) => b.date.getTime() - a.date.getTime());
+            // Ticket GEN-480: Prioritize emails matching companyHint if provided, then newest first
+            if (params.companyHint) {
+              const hint = params.companyHint.toLowerCase();
+              messages.sort((a, b) => {
+                const aMatch = a.subject.toLowerCase().includes(hint) || a.sourceText.toLowerCase().includes(hint);
+                const bMatch = b.subject.toLowerCase().includes(hint) || b.sourceText.toLowerCase().includes(hint);
+                if (aMatch && !bMatch) return -1;
+                if (!aMatch && bMatch) return 1;
+                return b.date.getTime() - a.date.getTime();
+              });
+            } else {
+              messages.sort((a, b) => b.date.getTime() - a.date.getTime());
+            }
+
             for (const m of messages) {
               if (
                 !/verify|verification|security code|confirmation|confirm your email|activate|workday|greenhouse|smartrecruiters|lever|one-time|passcode/i.test(
@@ -204,15 +252,20 @@ export async function pollImapForVerificationCodeOrLink(params: {
               // Ticket GEN-276: Decode quoted-printable soft line breaks and hex characters
               const decoded = decodeQuotedPrintableMime(m.sourceText);
 
-              // Ticket GEN-276 & GEN-473: Multi-stage OTP and token extractor preserving exact case
+              // Ticket GEN-276, GEN-473 & GEN-480: Multi-stage OTP extractor checking consumedOtpCodes
               const extracted = extractOtpOrLinkFromMime(decoded);
+              if (extracted.otpCode && (consumedOtpCodes.has(extracted.otpCode) || CONSUMED_VERIFICATION_TOKENS.has(extracted.otpCode))) {
+                continue;
+              }
               const candidateToken = extracted.otpCode || extracted.verificationUrl || '';
               if (candidateToken && CONSUMED_VERIFICATION_TOKENS.has(candidateToken)) {
                 continue;
               }
 
               if (extracted.verificationUrl || extracted.otpCode) {
-                if (candidateToken) {
+                if (extracted.otpCode) {
+                  recordConsumedOtpCode(extracted.otpCode);
+                } else if (candidateToken) {
                   CONSUMED_VERIFICATION_TOKENS.add(candidateToken);
                 }
                 return {
@@ -247,7 +300,12 @@ export async function pollImapForVerificationCodeOrLink(params: {
 /**
  * Automatically completes in-page Email OTP or Activation Link verification on Workday, Greenhouse, and SmartRecruiters.
  */
-export async function completeInPageEmailVerificationIfPrompted(page: Page, frame: Frame, onActivity?: () => void): Promise<boolean> {
+export async function completeInPageEmailVerificationIfPrompted(
+  page: Page,
+  frame: Frame,
+  onActivity?: () => void,
+  options?: { sinceMs?: number; companyHint?: string }
+): Promise<boolean> {
   const pageText = await frame.evaluate(() => (document.body?.innerText || '').slice(0, 3000)).catch(() => '');
   const hasSecurityInput = await frame
     .locator('input[id^="security-input-"], input[id^="security_code"], input[name*="security_code"], input[maxlength="1"], input[id*="security-code"], input[name*="security-code"], input[id*="verification_code"], input[name*="verification_code"], input[aria-label*="security code"], input[aria-label*="verification code"], input[placeholder*="security code"], input[placeholder*="verification code"], #security-code, #security_code, [class*="security-code"] input, [id*="security_code"] input, [data-automation-id*="securityCode"], [data-automation-id*="verificationCode"]')
@@ -265,7 +323,12 @@ export async function completeInPageEmailVerificationIfPrompted(page: Page, fram
 
   if (!needsVerification) return false;
 
-  const res = await pollImapForVerificationCodeOrLink({ sinceMs: Date.now() - 60_000, maxWaitMs: 35_000, onActivity });
+  const res = await pollImapForVerificationCodeOrLink({
+    sinceMs: options?.sinceMs ?? (Date.now() - 60_000),
+    companyHint: options?.companyHint,
+    maxWaitMs: 35_000,
+    onActivity,
+  });
   if (!res.found) return false;
 
   // Case 1: Activation URL clicked via background tab

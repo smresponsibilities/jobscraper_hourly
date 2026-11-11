@@ -859,10 +859,30 @@ export class AutoApplyRunner {
             vals.portfolio,
             false
           );
+
+          // Ticket GEN-481.1: Ensure input[name="consent[store]"] is checked if visible and unchecked
+          const consent = document.querySelector<HTMLInputElement>('input[name="consent[store]"]');
+          if (consent && !consent.checked) {
+            consent.click();
+            if (!consent.checked) {
+              consent.checked = true;
+              consent.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+            }
+          }
         },
         { fullName, email, phone, linkedin, github, portfolio }
       )
       .catch(() => {});
+
+    // Ticket GEN-481.1: Ensure Lever consent[store] checkbox checked via Locator
+    try {
+      const consentBox = page.locator('input[name="consent[store]"]').filter({ visible: true }).first();
+      if (await consentBox.isVisible().catch(() => false)) {
+        if (!await consentBox.isChecked().catch(() => false)) {
+          await consentBox.click({ force: true }).catch(() => {});
+        }
+      }
+    } catch {}
 
     // If input[name="location"] on Lever is filled, ensure that if .itta-results .itta-item, .location-results li is visible, the first suggestion is clicked so Lever's hidden selectedLocation field is populated.
     try {
@@ -883,6 +903,53 @@ export class AutoApplyRunner {
     try {
       await fillLeverLocationInput(page.mainFrame());
     } catch {}
+  }
+
+  /**
+   * Ticket GEN-481.1: Fills SmartRecruiters core fields after resume parser settle wait.
+   */
+  private async fillSmartRecruitersCoreFields(frame: Frame, candidate: CandidateExtendedProfile): Promise<void> {
+    const fn = candidate.personal.firstName || 'Shivam';
+    const ln = candidate.personal.lastName || 'Mahajan';
+    const em = candidate.personal.email || '';
+    const ph = candidate.personal.phone || '+919999999999';
+    const country = candidate.personal.country || 'India';
+
+    await frame.evaluate((vals) => {
+      const setInput = (selector: string, val: string) => {
+        if (!val) return;
+        const els = Array.from(document.querySelectorAll<HTMLInputElement>(selector));
+        for (const el of els) {
+          const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+          if (setter) setter.call(el, val);
+          else el.value = val;
+          el.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+          el.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+          el.dispatchEvent(new Event('blur', { bubbles: true, composed: true }));
+        }
+      };
+
+      // First Name
+      setInput('input[name="firstName"], input#firstName, [data-test="first-name"] input, oc-input[name="firstName"] input, input[aria-label*="First name" i], input[placeholder*="First name" i]', vals.fn);
+      // Last Name
+      setInput('input[name="lastName"], input#lastName, [data-test="last-name"] input, oc-input[name="lastName"] input, input[aria-label*="Last name" i], input[placeholder*="Last name" i]', vals.ln);
+      // Email
+      setInput('input[name="email"], input#email, [data-test="email"] input, oc-input[name="email"] input, input[aria-label*="Email" i]:not([aria-label*="confirm" i]), input[placeholder*="Email" i]:not([placeholder*="confirm" i])', vals.em);
+      // Confirm Email
+      setInput('input[name="confirmEmail"], input#confirmEmail, [data-test="confirm-email"] input, oc-input[name="confirmEmail"] input, input[aria-label*="Confirm" i], input[placeholder*="Confirm" i]', vals.em);
+      // Phone
+      setInput('input[name="phoneNumber"], input#phoneNumber, input[type="tel"], [data-test="phone-number"] input, oc-input[name="phoneNumber"] input, input[aria-label*="Phone" i], input[placeholder*="Phone" i]', vals.ph);
+
+      // Country / Region select / input (India)
+      const countryInput = document.querySelector<HTMLInputElement>('input[name="country"], [data-test="country-select"] input, input[aria-label*="Country" i], oc-select[name="country"] input');
+      if (countryInput) {
+        const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+        if (setter) setter.call(countryInput, vals.country);
+        else countryInput.value = vals.country;
+        countryInput.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+        countryInput.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+      }
+    }, { fn, ln, em, ph, country }).catch(() => {});
   }
 
   /**
@@ -1510,7 +1577,6 @@ export class AutoApplyRunner {
   }
 
   private async authenticationStep(options: AutoApplyOptions, report: BotRunReport, submittedCredentials?: Set<'signup' | 'signin'>): Promise<'progress' | 'review'> {
-    if (!options.vault) return 'review';
     return authenticateApplication(this.page!, { vault: options.vault, tenant: options.requisition ? canonicalEmployerKey(options.url, options.requisition.key) : new URL(options.url).hostname, email: options.profile.personal.email, recruitmentPrivacyConsent: options.profile.recruitmentPrivacyConsent, candidateNames: [options.profile.personal.firstName, options.profile.personal.lastName || ''], mailbox: options.mailbox, interaction: this.interactions(options), submittedCredentials, beforeCredentialSubmit: submittedCredentials ? async () => { report.credentialAttempts = [...submittedCredentials]; await this.checkpoint(options, report); } : undefined, since: new Date(report.startTime), onDiagnostic: code => report.logs.push(`workday_reconcile:auth_${code}`), verification: { provider: options.requisition?.provider || report.ats, recipient: options.profile.personal.email, since: new Date(report.startTime), applicationUrl: options.url, company: options.company, claim: options.claimMail } }).catch(() => { report.logs.push('workday_reconcile:auth_exception'); return 'review' as const; });
   }
 
@@ -3326,6 +3392,11 @@ export class AutoApplyRunner {
                 await frame.page().waitForTimeout(350).catch(() => {});
               }
             }
+            if (/smartrecruiters\.com/i.test(frame.url()) || (this.page && /smartrecruiters\.com/i.test(this.page.url()))) {
+              // Ticket GEN-481.1: Wait 3500ms for SmartRecruiters' AI resume parser to finish auto-filling before filling fields
+              await frame.page().waitForTimeout(3500).catch(() => {});
+              await this.fillSmartRecruitersCoreFields(frame, candidate);
+            }
           }
           else if (info.tag === 'select') {
             const selectedFast = await selectHarvestedOption(frame, input, String(value), action.question).catch(() => false);
@@ -5114,10 +5185,11 @@ export class AutoApplyRunner {
         watchdog.checkOrThrow();
         await this.enforceLeverCoreFieldsBeforeSubmit(this.page!);
         await this.performHumanPreSubmitTelemetry(this.page!, submit);
+        const submitClickedTime = Date.now();
         if (options.mode === 'stealth') await this.pacedClick(submit);
         else await submit.click();
 
-        // Ticket GEN-473.1: Right after clicking Submit application on Greenhouse (wait 3000ms for security code prompt to mount),
+        // Ticket GEN-473.1 & GEN-480: Right after clicking Submit application on Greenhouse (wait 3000ms for security code prompt to mount),
         // call completeInPageEmailVerificationIfPrompted before running healInvalidFieldsAndRetrySubmit!
         if (
           report.ats === 'greenhouse' ||
@@ -5126,7 +5198,15 @@ export class AutoApplyRunner {
         ) {
           await this.page!.waitForTimeout(3000);
           for (const f of this.page!.frames()) {
-            const verified = await completeInPageEmailVerificationIfPrompted(this.page!, f, () => this.activeWatchdog?.heartbeat('inpage_otp')).catch(() => false);
+            const verified = await completeInPageEmailVerificationIfPrompted(
+              this.page!,
+              f,
+              () => this.activeWatchdog?.heartbeat('inpage_otp'),
+              {
+                sinceMs: submitClickedTime - 10_000,
+                companyHint: options.company || (options.requisition as any)?.company,
+              }
+            ).catch(() => false);
             if (verified) {
               await this.page!.waitForTimeout(3000);
               report.receipt ||= await this.receipt();
@@ -5142,7 +5222,6 @@ export class AutoApplyRunner {
         let lastMailPoll = 0;
         let captchaCheckedAfterSubmit = false;
         let inpageOtpAttempted = false;
-        const submitClickedTime = Date.now();
         do {
           watchdog.heartbeat('post_submit_poll');
           if (options.mailbox && Date.now() - lastMailPoll >= 2000) {
@@ -5179,7 +5258,15 @@ export class AutoApplyRunner {
           if (!report.receipt && !this.page!.isClosed() && ['greenhouse', 'workday', 'smartrecruiters', 'unknown'].includes(report.ats) && (has428 || (!inpageOtpAttempted && Date.now() - submitClickedTime >= 3500))) {
             inpageOtpAttempted = true;
             for (const f of this.page!.frames()) {
-              const verified = await completeInPageEmailVerificationIfPrompted(this.page!, f, () => this.activeWatchdog?.heartbeat('inpage_otp')).catch(() => false);
+              const verified = await completeInPageEmailVerificationIfPrompted(
+                this.page!,
+                f,
+                () => this.activeWatchdog?.heartbeat('inpage_otp'),
+                {
+                  sinceMs: submitClickedTime - 10_000,
+                  companyHint: options.company || (options.requisition as any)?.company,
+                }
+              ).catch(() => false);
               if (verified) {
                 await this.page!.waitForTimeout(3000);
                 report.receipt ||= await this.receipt();
@@ -5198,7 +5285,15 @@ export class AutoApplyRunner {
           }
           if (!report.receipt && !this.page!.isClosed()) {
             for (const frame of this.page!.frames()) {
-              const verified = await completeInPageEmailVerificationIfPrompted(this.page!, frame, () => this.activeWatchdog?.heartbeat('inpage_otp')).catch(() => false);
+              const verified = await completeInPageEmailVerificationIfPrompted(
+                this.page!,
+                frame,
+                () => this.activeWatchdog?.heartbeat('inpage_otp'),
+                {
+                  sinceMs: submitClickedTime - 10_000,
+                  companyHint: options.company || (options.requisition as any)?.company,
+                }
+              ).catch(() => false);
               if (verified) {
                 await this.page!.waitForTimeout(3000);
                 report.receipt ||= await this.receipt();

@@ -1236,7 +1236,7 @@ async function main(): Promise<void> {
 
   for (let i = 0; i < args.length; i++) {
     const key = args[i]!;
-    if (['--submit', '--headless'].includes(key)) {
+    if (['--submit', '--headless', '--dry-run', '--no-submit'].includes(key)) {
       flags.add(key);
     } else if (
       ['--profile', '--state', '--chunk-size', '--max-hours', '--max-jobs'].includes(key) &&
@@ -1252,7 +1252,8 @@ async function main(): Promise<void> {
   const chunkSize = values.has('--chunk-size') ? Number(values.get('--chunk-size')) : 40;
   const maxHours = values.has('--max-hours') ? Number(values.get('--max-hours')) : 48;
   const maxJobs = values.has('--max-jobs') ? Number(values.get('--max-jobs')) : 99999;
-  const shouldSubmit = flags.has('--submit');
+  // Ticket GEN-479.1: Default submit = true unless explicitly running dry-run or no-submit
+  const shouldSubmit = !process.argv.includes('--dry-run') && !process.argv.includes('--no-submit');
   const headless = !args.includes('--no-headless');
 
   await runOvernightMarathon({

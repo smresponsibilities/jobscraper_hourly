@@ -313,7 +313,7 @@ async function main(): Promise<void> {
 
   for (let i = 0; i < args.length; i++) {
     const key = args[i]!;
-    if (['--submit', '--headless', '--skip-sync', '--force-sync', '--once'].includes(key)) {
+    if (['--submit', '--headless', '--skip-sync', '--force-sync', '--once', '--dry-run', '--no-submit'].includes(key)) {
       flags.add(key);
     } else if (
       ['--profile', '--state', '--max-jobs', '--time-budget', '--time-budget-minutes', '--catalog-url'].includes(key) &&
@@ -331,7 +331,8 @@ async function main(): Promise<void> {
       : rawProfileArg
   );
   const stateDir = path.resolve(values.get('--state') || 'state/autoapply/portal-review');
-  const shouldSubmit = flags.has('--submit');
+  // Ticket GEN-479.1: Default submit = true unless explicitly running dry-run or no-submit
+  const shouldSubmit = !process.argv.includes('--dry-run') && !process.argv.includes('--no-submit');
   const headless = !flags.has('--headless') || flags.has('--headless'); // Default to headless
   const maxJobs = values.has('--max-jobs') ? parseInt(values.get('--max-jobs')!, 10) : 60;
   const timeBudgetMinutes = values.has('--time-budget-minutes')

@@ -458,7 +458,14 @@ export function groupKeyFor(el: Element): string | null {
   return null;
 }
 
-export function isBotTrapOrHoneypot(el: Element): boolean {
+export function isHoneypot(el: Element): boolean {
+  const name = (el.getAttribute('name') || '').toLowerCase();
+  if (name.startsWith('_systemfield_')) {
+    if (name !== '_systemfield_name' && name !== '_systemfield_email' && name !== '_systemfield_resume') {
+      return true;
+    }
+  }
+
   const meta = [
     el.id,
     el.getAttribute('name'),
@@ -476,6 +483,10 @@ export function isBotTrapOrHoneypot(el: Element): boolean {
     return true;
   }
   return false;
+}
+
+export function isBotTrapOrHoneypot(el: Element): boolean {
+  return isHoneypot(el);
 }
 
 export function isDisabledControl(el: Element): boolean {
@@ -508,6 +519,10 @@ export function annotateQuestionClusters(elements: Element[]): void {
   if (typeof (globalThis as any).__name !== 'function') (globalThis as any).__name = __name;
 
   const controls = elements.filter(el => {
+    const name = (el.getAttribute('name') || '').toLowerCase();
+    if (name.startsWith('_systemfield_') && name !== '_systemfield_name' && name !== '_systemfield_email' && name !== '_systemfield_resume') {
+      return false;
+    }
     const meta = [
       el.id,
       el.getAttribute('name'),
