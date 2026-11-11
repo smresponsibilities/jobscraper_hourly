@@ -19,40 +19,52 @@ const resetQuery = `
   WHERE status IN ('failed', 'paused_for_review')
     AND (
       normalized_url LIKE '%greenhouse.io%'
+      OR normalized_url LIKE '%gh_jid=%'
       OR normalized_url LIKE '%ashbyhq.com%'
-      OR normalized_url LIKE '%myworkdayjobs.com%'
       OR normalized_url LIKE '%lever.co%'
-      OR normalized_url LIKE '%smartrecruiters.com%'
+      OR normalized_url LIKE '%workable.com%'
     )
     AND normalized_url NOT LIKE '%stripe%'
     AND normalized_url NOT LIKE '%avoca%'
     AND normalized_url NOT LIKE '%ssctech%'
     AND normalized_url NOT LIKE '%paypal%'
+    AND payload NOT LIKE '%404%'
+    AND payload NOT LIKE '%closed%'
 `;
 
 const result = db.prepare(resetQuery).run() as { changes: number };
 console.log(`Reset ${result.changes} failed/paused applications back to queued.`);
 
 // Clean attempt registries: retain only applied jobs
-const appliedRows = db.prepare("SELECT id FROM applications WHERE status = 'applied'").all() as Array<{ id: string }>;
+const appliedRows = db.prepare("SELECT id, normalized_url FROM applications WHERE status = 'applied'").all() as Array<{ id: string; normalized_url: string }>;
 const appliedIds = new Set(appliedRows.map(r => r.id));
+const appliedUrls = new Set(appliedRows.map(r => r.normalized_url));
 console.log(`Total applied jobs in database: ${appliedIds.size}`);
 
 const attemptedIdsPath = path.resolve('state/autoapply/portal-review/attempted-job-ids.json');
 if (fs.existsSync(attemptedIdsPath)) {
   try {
     const raw = JSON.parse(fs.readFileSync(attemptedIdsPath, 'utf8'));
-    let cleaned: any;
-    if (Array.isArray(raw)) {
-      cleaned = raw.filter(id => appliedIds.has(id));
-    } else if (typeof raw === 'object' && raw !== null) {
-      cleaned = {};
-      for (const [k, v] of Object.entries(raw)) {
-        if (appliedIds.has(k)) cleaned[k] = v;
+    const cleanedJobIds: Record<string, any> = {};
+    const cleanedUrls: Record<string, any> = {};
+    if (raw && typeof raw === 'object') {
+      const sourceJobIds = raw.jobIds || raw;
+      for (const [k, v] of Object.entries(sourceJobIds)) {
+        if (appliedIds.has(k)) cleanedJobIds[k] = v;
+      }
+      if (raw.normalizedUrls) {
+        for (const [k, v] of Object.entries(raw.normalizedUrls)) {
+          if (appliedUrls.has(k) || (v as any)?.status === 'applied') cleanedUrls[k] = v;
+        }
       }
     }
+    const cleaned = {
+      jobIds: cleanedJobIds,
+      normalizedUrls: cleanedUrls,
+      updatedAt: new Date().toISOString(),
+    };
     fs.writeFileSync(attemptedIdsPath, JSON.stringify(cleaned, null, 2), 'utf8');
-    console.log(`Cleaned attempted-job-ids.json to retain only applied.`);
+    console.log(`Cleaned attempted-job-ids.json to retain only applied (${Object.keys(cleanedJobIds).length} ids).`);
   } catch (err) {
     console.warn('Failed cleaning attempted-job-ids.json:', err);
   }
@@ -68,7 +80,7 @@ if (fs.existsSync(jobAttemptsPath)) {
         if (appliedIds.has(k)) cleaned[k] = v;
       }
       fs.writeFileSync(jobAttemptsPath, JSON.stringify(cleaned, null, 2), 'utf8');
-      console.log(`Cleaned job-attempts.json to retain only applied.`);
+      console.log(`Cleaned job-attempts.json to retain only applied (${Object.keys(cleaned).length} ids).`);
     }
   } catch (err) {
     console.warn('Failed cleaning job-attempts.json:', err);

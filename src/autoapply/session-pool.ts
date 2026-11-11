@@ -102,22 +102,36 @@ export async function loadHostSessionState(
   }
 }
 
+let cachedHealthMap: HostHealthMap | null = null;
+let cachedHealthPath = '';
+let cachedHealthMtime = 0;
+
 export function loadHostHealth(stateFilePath?: string): HostHealthMap {
   const filePath = stateFilePath || DEFAULT_HOST_HEALTH_PATH;
   if (!fs.existsSync(filePath)) return {};
   try {
+    const stat = fs.statSync(filePath);
+    if (cachedHealthMap && cachedHealthPath === filePath && cachedHealthMtime === stat.mtimeMs) {
+      return cachedHealthMap;
+    }
     const raw = fs.readFileSync(filePath, 'utf8');
-    return JSON.parse(raw);
+    cachedHealthMap = JSON.parse(raw);
+    cachedHealthPath = filePath;
+    cachedHealthMtime = stat.mtimeMs;
+    return cachedHealthMap || {};
   } catch {
-    return {};
+    return cachedHealthMap ? cachedHealthMap : {};
   }
 }
 
 export function saveHostHealth(health: HostHealthMap, stateFilePath?: string): void {
   const filePath = stateFilePath || DEFAULT_HOST_HEALTH_PATH;
+  cachedHealthMap = health;
+  cachedHealthPath = filePath;
   try {
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
     fs.writeFileSync(filePath, JSON.stringify(health, null, 2), 'utf8');
+    try { cachedHealthMtime = fs.statSync(filePath).mtimeMs; } catch {}
   } catch {
     // Non-fatal error on disk write
   }

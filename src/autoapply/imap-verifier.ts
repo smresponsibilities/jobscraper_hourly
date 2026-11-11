@@ -61,6 +61,43 @@ export function decodeQuotedPrintableMime(raw: string): string {
   return decoded.replace(/&amp;/gi, '&');
 }
 
+export const COMMON_8_LETTER_WORDS = /^(?:security|position|software|engineer|location|linkedin|question|required|optional|uploaded|attached|personal|graduate|bachelor|internal|external|complete|continue|verified|customer|platform|database|frontend|template|document|response|received|applying|greenhouse|dharmesh|mahajan|bengaluru)$/i;
+
+export function extractOtpOrLinkFromMime(decoded: string): { otpCode?: string; verificationUrl?: string } {
+  // 1. Check for Workday / ATS Verification Link
+  const linkMatch = decoded.match(
+    /https?:\/\/[^\s"'<>]+(?:myworkdayjobs\.com|myworkday\.com|smartrecruiters\.com|greenhouse\.io)[^\s"'<>]*(?:verify|confirm|activate|token|code)[^\s"'<>]*/i
+  );
+
+  // Stage 1: Look for an isolated 6-to-8 char token inside HTML emphasis/table/heading tags
+  const tagMatches = [...decoded.matchAll(/<(?:h1|h2|h3|h4|strong|b|code|td|p|div|span)[^>]*>\s*([A-Za-z0-9]{6,8})\s*<\/(?:h1|h2|h3|h4|strong|b|code|td|p|div|span)>/gi)];
+  let extractedCode: string | undefined;
+  for (const m of tagMatches) {
+    const cand = m[1]!.trim();
+    // Prefer tokens that contain at least 1 digit OR mixed case, and are not common English words
+    if (!COMMON_8_LETTER_WORDS.test(cand) && (/\d/.test(cand) || (/[a-z]/.test(cand) && /[A-Z]/.test(cand)))) {
+      extractedCode = cand;
+      break;
+    }
+  }
+
+  // Stage 2: Look after colon or explicit phrase ("application form: X7k9Pq2M" or "code is: 123456")
+  const bodyWithoutHtml = decoded.replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+  if (!extractedCode) {
+    const phraseMatch =
+      bodyWithoutHtml.match(/(?:application form|paste this[^:]{0,40}|security code[^:]{0,40}|verification code[^:]{0,40}|code is)[:\s]+([A-Za-z0-9]{6,8})\b/i) ||
+      bodyWithoutHtml.match(/\b([0-9]{6,8})\b/);
+    if (phraseMatch?.[1] && !COMMON_8_LETTER_WORDS.test(phraseMatch[1])) {
+      extractedCode = phraseMatch[1].trim();
+    }
+  }
+
+  return {
+    otpCode: extractedCode,
+    verificationUrl: linkMatch?.[0],
+  };
+}
+
 /**
  * Generates a deterministic Gmail +alias for a Workday tenant when the base email account
  * is locked or has a mismatched password from an older session.
@@ -165,35 +202,21 @@ export async function pollImapForVerificationCodeOrLink(params: {
               // Ticket GEN-276: Decode quoted-printable soft line breaks and hex characters
               const decoded = decodeQuotedPrintableMime(m.sourceText);
 
-              // 1. Check for Workday / ATS Verification Link
-              const linkMatch = decoded.match(
-                /https?:\/\/[^\s"'<>]+(?:myworkdayjobs\.com|myworkday\.com|smartrecruiters\.com|greenhouse\.io)[^\s"'<>]*(?:verify|confirm|activate|token|code)[^\s"'<>]*/i
-              );
-
-              // 2. Check for 6-to-8 character OTP / Security Code (Greenhouse, Workday, SmartRecruiters)
-              const hTagMatch = decoded.match(/<h[1-6][^>]*>\s*([A-Za-z0-9]{6,8})\s*<\/h[1-6]>/i);
-              const bodyWithoutHtml = decoded.replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
-              const codeMatch =
-                hTagMatch ||
-                bodyWithoutHtml.match(
-                  /(?:verification code|security code|confirmation code|passcode|code is|enter the code|security code field[^\n:]*:)[:\s]*([A-Za-z0-9]{6,8})\b/i
-                ) ||
-                bodyWithoutHtml.match(/\b([0-9]{8})\b/) ||
-                bodyWithoutHtml.match(/\b([0-9]{6})\b/);
-
-              const candidateToken = codeMatch?.[1] || linkMatch?.[0] || '';
+              // Ticket GEN-276 & GEN-473: Multi-stage OTP and token extractor preserving exact case
+              const extracted = extractOtpOrLinkFromMime(decoded);
+              const candidateToken = extracted.otpCode || extracted.verificationUrl || '';
               if (candidateToken && CONSUMED_VERIFICATION_TOKENS.has(candidateToken)) {
                 continue;
               }
 
-              if (linkMatch?.[0] || codeMatch?.[1]) {
+              if (extracted.verificationUrl || extracted.otpCode) {
                 if (candidateToken) {
                   CONSUMED_VERIFICATION_TOKENS.add(candidateToken);
                 }
                 return {
                   found: true,
-                  otpCode: codeMatch?.[1],
-                  verificationUrl: linkMatch?.[0],
+                  otpCode: extracted.otpCode,
+                  verificationUrl: extracted.verificationUrl,
                   subject: m.subject,
                 };
               }
@@ -225,12 +248,12 @@ export async function pollImapForVerificationCodeOrLink(params: {
 export async function completeInPageEmailVerificationIfPrompted(page: Page, frame: Frame, onActivity?: () => void): Promise<boolean> {
   const pageText = await frame.evaluate(() => (document.body?.innerText || '').slice(0, 3000)).catch(() => '');
   const hasSecurityInput = await frame
-    .locator('input[id*="security_code" i], input[id*="security-code" i], input[name*="security_code" i], input[name*="security-code" i], input[id*="verification_code" i], input[name*="verification_code" i], input[aria-label*="security code" i], input[aria-label*="verification code" i], input[placeholder*="security code" i], input[placeholder*="verification code" i], input[id^="security-input-"], input[id^="security-code-"], #security-code, #security_code, [data-automation-id*="securityCode" i], [data-automation-id*="verificationCode" i], .security-code-input input, input[name="otp" i], input[id="otp" i], input[aria-label="otp" i]')
+    .locator('input[id^="security-input-"], input[id^="security_code"], input[name*="security_code"], input[maxlength="1"], input[id*="security-code"], input[name*="security-code"], input[id*="verification_code"], input[name*="verification_code"], input[aria-label*="security code"], input[aria-label*="verification code"], input[placeholder*="security code"], input[placeholder*="verification code"], #security-code, #security_code, [class*="security-code"] input, [id*="security_code"] input, [data-automation-id*="securityCode"], [data-automation-id*="verificationCode"]')
     .filter({ visible: true })
     .count()
     .catch(() => 0);
 
-  const hasExplicitOtpPrompt = /\b(?:security code|verification code|enter the 8-character|enter the 6-digit|enter security code|resubmit your application with the code|one-time passcode|one-time password)\b/i.test(
+  const hasExplicitOtpPrompt = /security code|verification code|enter the 8-character|enter the 6-digit|enter security code|resubmit your application with the code|one-time passcode|one-time password/i.test(
     pageText
   );
 
@@ -265,54 +288,51 @@ export async function completeInPageEmailVerificationIfPrompted(page: Page, fram
   // Case 2: 6-to-8 Character OTP Code Input (Workday / Greenhouse security-input-0..7 / SmartRecruiters)
   if (res.otpCode) {
     const code = res.otpCode.trim();
-    // Check if Greenhouse split 6-to-8 box security code inputs exist
-    const splitBoxes = frame.locator('input[id^="security-input-"], input[id^="security-code-"], .security-code-input input, input[aria-label*="Character" i], fieldset input[maxlength="1"]').filter({ visible: true });
-    if ((await splitBoxes.count().catch(() => 0)) >= 6) {
-      await frame.evaluate((otpCode: string) => {
-        const boxes = Array.from(
-          document.querySelectorAll<HTMLInputElement>(
-            'input[id^="security-input-"], input[id^="security-code-"], .security-code-input input, fieldset input[maxlength="1"]'
-          )
-        );
-        const nativeSetter = Object.getOwnPropertyDescriptor(
-          window.HTMLInputElement.prototype,
-          'value'
-        )?.set;
-        if (boxes.length >= 6) {
-          const chars = otpCode.trim().split('');
-          boxes.forEach((box, idx) => {
-            const ch = chars[idx] ?? '';
-            box.focus();
-            if (nativeSetter) {
-              nativeSetter.call(box, ch);
-            } else {
-              box.value = ch;
-            }
-            box.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
-            box.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
-          });
-          // Also dispatch synthetic paste event on first box for React paste handlers
-          try {
-            const dt = new DataTransfer();
-            dt.setData('text/plain', otpCode.trim());
-            boxes[0]?.dispatchEvent(
-              new ClipboardEvent('paste', {
-                clipboardData: dt,
-                bubbles: true,
-                cancelable: true,
-                composed: true,
-              })
-            );
-          } catch {}
-        }
+    // Ticket GEN-473: Check if Greenhouse split 6-to-8 box security code inputs exist
+    const splitBoxes = frame.locator('input[id^="security-input-"], input[id^="security-code-"], [class*="security-code"] input, fieldset input[maxlength="1"], input[maxlength="1"]').filter({ visible: true });
+    const splitCount = await splitBoxes.count().catch(() => 0);
+    if (splitCount >= 6) {
+      await splitBoxes.first().click({ timeout: 2000 }).catch(() => {});
+      // Dispatch synthetic ClipboardEvent('paste') with res.otpCode on splitBoxes.first()
+      await splitBoxes.first().evaluate((el, otp) => {
+        try {
+          const dt = new DataTransfer();
+          dt.setData('text/plain', otp);
+          el.dispatchEvent(
+            new ClipboardEvent('paste', {
+              clipboardData: dt,
+              bubbles: true,
+              cancelable: true,
+              composed: true,
+            })
+          );
+        } catch {}
       }, code).catch(() => {});
 
-      await splitBoxes.first().click({ timeout: 2000 }).catch(() => {});
-      await page.keyboard.type(code, { delay: 40 }).catch(() => {});
+      // AND loop i = 0 to code.length - 1: on splitBoxes.nth(i), set the single character code[i] using the native HTMLInputElement.prototype.value setter and dispatch input, change, and keyup events!
+      for (let i = 0; i < code.length && i < splitCount; i++) {
+        const char = code[i]!;
+        const box = splitBoxes.nth(i);
+        await box.evaluate((el: HTMLInputElement, ch: string) => {
+          el.focus();
+          const setter = Object.getOwnPropertyDescriptor(
+            window.HTMLInputElement.prototype,
+            'value'
+          )?.set;
+          if (setter) {
+            setter.call(el, ch);
+          } else {
+            el.value = ch;
+          }
+          el.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+          el.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+          el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, composed: true, key: ch }));
+        }, char).catch(() => {});
+      }
     } else {
       const codeInput = frame
         .locator(
-          'input[id*="security_code" i], input[id*="security-code" i], input[name*="security_code" i], input[name*="security-code" i], input[id*="verification_code" i], input[name*="verification_code" i], input[aria-label*="security code" i], input[aria-label*="verification code" i], input[placeholder*="security code" i], input[placeholder*="verification code" i], #security-code, #security_code, input[data-automation-id*="verificationCode" i], input[data-automation-id*="securityCode" i], input[name="otp" i], input[id="otp" i], input[id*="security" i], input[name*="security" i]'
+          'input#security_code, input[name*="security_code" i], input[id*="security_code" i], input[id*="security-code" i], input[name*="security-code" i], input[id*="verification_code" i], input[name*="verification_code" i], input[aria-label*="security code" i], input[aria-label*="verification code" i], input[placeholder*="security code" i], input[placeholder*="verification code" i], #security-code, input[data-automation-id*="verificationCode" i], input[data-automation-id*="securityCode" i], input[name="otp" i], input[id="otp" i], input[id*="security" i], input[name*="security" i]'
         )
         .filter({ visible: true })
         .first();
@@ -326,27 +346,25 @@ export async function completeInPageEmailVerificationIfPrompted(page: Page, fram
       }
     }
 
-    const submitVerifyBtn = frame
+    // Ticket GEN-473.3: Wait 800ms, then click submit button again and wait up to 10,000ms for confirmation receipt!
+    await page.waitForTimeout(800);
+    const submitBtn = frame
       .locator(
-        'button[data-automation-id*="verify" i], button:has-text("Verify"), button:has-text("Submit"), button:has-text("Continue"), [data-automation-id="click_filter"]'
+        'button[type="submit"], button:has-text("Submit application"), button:has-text("Verify"), button:has-text("Submit"), [data-automation-id="click_filter"], button[data-automation-id*="verify" i]'
       )
       .filter({ visible: true })
       .first();
-    if (await submitVerifyBtn.isVisible().catch(() => false)) {
-      await submitVerifyBtn.click({ force: true, timeout: 3000 }).catch(() => {});
-      await page.waitForTimeout(1500);
+    if (await submitBtn.isVisible().catch(() => false)) {
+      await submitBtn.click({ force: true, timeout: 3000 }).catch(() => {});
     }
 
-    // Ticket GEN-118: Click post-OTP final Submit Application button on Greenhouse
-    const finalSubmit = frame
-      .locator(
-        'button[type="submit"], input[type="submit"], button:has-text("Submit Application"), button:has-text("Submit"), button:has-text("Verify and Submit")'
-      )
-      .filter({ visible: true })
-      .first();
-    if (await finalSubmit.isVisible().catch(() => false)) {
-      await finalSubmit.click({ force: true, timeout: 3000 }).catch(() => {});
-      await page.waitForTimeout(3000);
+    const startWait = Date.now();
+    while (Date.now() - startWait < 10000) {
+      const pageTextNow = await page.evaluate(() => (document.body?.innerText || '').toLowerCase()).catch(() => '');
+      if (/thank you|application submitted|application received|your application has been submitted|congratulations|received your application/i.test(pageTextNow)) {
+        break;
+      }
+      await page.waitForTimeout(500);
     }
     return true;
   }

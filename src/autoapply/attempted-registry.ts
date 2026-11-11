@@ -63,44 +63,22 @@ export function loadAttemptedRegistry(filePath = DEFAULT_ATTEMPTED_REGISTRY_PATH
     } catch {}
   }
 
-  // Bootstrap from run-history.jsonl
+  // Bootstrap from run-history.jsonl (Ticket GEN-474: retain ONLY applied jobs in registry)
   if (fs.existsSync(RUN_HISTORY_PATH)) {
     try {
       const lines = fs.readFileSync(RUN_HISTORY_PATH, 'utf8').split(/\r?\n/).filter(Boolean);
       for (const line of lines) {
         try {
           const item = JSON.parse(line);
+          if (item.status !== 'applied') continue;
           const jid = String(item.jobId || '').trim();
           const u = String(item.url || item.jobUrl || '').trim();
           const rec: AttemptedRecord = {
             jobId: jid,
             company: String(item.company || 'Unknown'),
             url: u,
-            status: String(item.status || 'attempted'),
+            status: 'applied',
             attemptedAt: String(item.finishedAt || item.startedAt || new Date().toISOString()),
-          };
-          if (jid) reg.jobIds[jid] = rec;
-          if (u) reg.normalizedUrls[normalizeAttemptUrl(u)] = rec;
-        } catch {}
-      }
-    } catch {}
-  }
-
-  // Bootstrap from overnight-errors.jsonl
-  if (fs.existsSync(OVERNIGHT_ERRORS_PATH)) {
-    try {
-      const lines = fs.readFileSync(OVERNIGHT_ERRORS_PATH, 'utf8').split(/\r?\n/).filter(Boolean);
-      for (const line of lines) {
-        try {
-          const item = JSON.parse(line);
-          const jid = String(item.jobId || '').trim();
-          const u = String(item.url || item.jobUrl || '').trim();
-          const rec: AttemptedRecord = {
-            jobId: jid,
-            company: String(item.company || 'Unknown'),
-            url: u,
-            status: String(item.status || 'failed'),
-            attemptedAt: String(item.timestamp || new Date().toISOString()),
           };
           if (jid) reg.jobIds[jid] = rec;
           if (u) reg.normalizedUrls[normalizeAttemptUrl(u)] = rec;
@@ -135,8 +113,6 @@ export function isJobAlreadyAttempted(jobId: string, url: string, registry?: Att
   // Strategy-Mutating 2-Attempt Escalation (Ticket GEN-57 & GEN-62)
   const attemptCount = getJobAttemptCount(jobId);
   if (attemptCount >= 2) return true;
-  if (jobId && reg.jobIds[jobId]) return true;
-  if (url && reg.normalizedUrls[normalizeAttemptUrl(url)]) return true;
   return false;
 }
 
@@ -192,6 +168,14 @@ export function filterUnattemptedJobs(
   const unattempted: AutoaplyJobItem[] = [];
 
   for (const job of jobs) {
+    // Ticket GEN-474: Treat SQLite status = 'queued' as authoritative!
+    if (job.status === 'queued') {
+      if (registry.jobIds[job.id]?.status === 'applied') continue;
+      const norm = normalizeAttemptUrl(job.jobUrl);
+      if (norm && registry.normalizedUrls[norm]?.status === 'applied') continue;
+      unattempted.push(job);
+      continue;
+    }
     const alreadyRun = isJobAlreadyAttempted(job.id, job.jobUrl, registry);
     if (!alreadyRun) {
       unattempted.push(job);

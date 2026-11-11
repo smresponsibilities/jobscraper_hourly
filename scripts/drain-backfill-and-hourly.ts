@@ -40,6 +40,7 @@ import { scrubBrowserProfileCaches } from '../src/autoapply/ram-and-pacing.js';
 import { syncGitHubActionsPillars } from './sync-github-actions-pillars.js';
 import { ContinuousRamAndHealthWatchdog, check30MinZeroFillDroughtAndAutoHeal } from '../src/autoapply/health-and-ram-watchdog.js';
 import { syncInboxLifecycleEvents } from '../src/autoapply/inbox-lifecycle-tracker.js';
+import { selectDiversifiedMultiLaneChunk } from './run-overnight-marathon.js';
 
 export function partitionJobsIntoProviderLanes<T extends { url?: string; jobUrl?: string; provider?: string; externalJobId?: string }>(jobs: T[]): Record<string, T[]> {
   const lanes: Record<string, T[]> = {
@@ -59,9 +60,10 @@ export function partitionJobsIntoProviderLanes<T extends { url?: string; jobUrl?
     const provider = (job as any).provider?.toLowerCase() || canonicalRequisition(rawUrl, (job as any).externalJobId)?.provider?.toLowerCase() || '';
     if (u.includes('greenhouse.io') || u.includes('gh_jid=') || provider === 'greenhouse') lanes.greenhouse!.push(job);
     else if (u.includes('ashbyhq.com') || provider === 'ashby') lanes.ashby!.push(job);
-    else if (u.includes('lever.co') || provider === 'lever') lanes.lever!.push(job);
+    else if (u.includes('lever.co') || provider === 'lever' || u.includes('workable.com') || provider === 'workable') lanes.lever!.push(job);
     else if (u.includes('smartrecruiters.com') || provider === 'smartrecruiters') lanes.smartrecruiters!.push(job);
     else if (u.includes('myworkdayjobs.com') || provider === 'workday') lanes.workday!.push(job);
+    else lanes.other!.push(job);
   }
   return lanes;
 }
@@ -658,12 +660,18 @@ async function main(): Promise<void> {
     const sortedEligible = scoredCandidates.map((s) => s.job);
 
     const hostHealthPath = path.join(stateDir, 'host-health.json');
-    const interleavedJobs = interleaveJobsByProvider(sortedEligible);
-
-    const lanes = partitionJobsIntoProviderLanes(sortedEligible);
+    // Ticket GEN-474: Select Diversified Multi-Lane Chunk across distinct tenants concurrently
+    const chunkSize = Math.max(maxJobs, 40);
+    const chunkJobs = selectDiversifiedMultiLaneChunk(
+      sortedEligible,
+      chunkSize,
+      (url) => isHostReadyForRequest(url, 45000, hostHealthPath)
+    );
+    const candidatePool = chunkJobs.length > 0 ? chunkJobs : sortedEligible.slice(0, chunkSize);
+    const lanes = partitionJobsIntoProviderLanes(candidatePool);
     const activeLanes = (Object.keys(lanes) as Array<keyof typeof lanes>).filter(k => (lanes[k]?.length ?? 0) > 0);
     console.log(
-      `[DRAIN] Eligible queued backfill jobs: ${eligible.length} partitioned into provider lanes: ${activeLanes.map(k => `${k}(${lanes[k]?.length ?? 0})`).join(', ')}. Running drain (budget: ${timeBudgetMinutes}m, max: ${maxJobs})...`
+      `[DRAIN] Selected ${candidatePool.length} diversified multi-lane chunk jobs (out of ${eligible.length} queued) partitioned into: ${activeLanes.map(k => `${k}(${lanes[k]?.length ?? 0})`).join(', ')}. Running drain (budget: ${timeBudgetMinutes}m, max: ${maxJobs})...`
     );
 
     const startTime = Date.now();

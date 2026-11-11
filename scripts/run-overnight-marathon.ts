@@ -219,9 +219,11 @@ export function selectDiversifiedMultiLaneChunk(
       u.includes('gh_jid=') ||
       u.includes('ashbyhq.com') ||
       u.includes('lever.co') ||
+      u.includes('workable.com') ||
       ats === 'greenhouse' ||
       ats === 'ashby' ||
-      ats === 'lever';
+      ats === 'lever' ||
+      ats === 'workable';
 
     if (isFast) {
       fastAtsCandidates.push(job);

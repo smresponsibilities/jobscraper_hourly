@@ -247,11 +247,21 @@ export async function healInvalidFieldsAndRetrySubmit(
 ): Promise<number> {
   const phone = profilePhone || process.env.AUTOAPPLY_PHONE || '9000000000';
   const result = await frame.evaluate(([email, ph]) => {
-    // Ticket GEN-130: Abort healer immediately if OTP / security code inputs are visible!
+    // Ticket GEN-130 & GEN-473: Abort healer immediately if OTP / security code inputs are visible!
     const hasOtp = !!document.querySelector(
-      'input[id^="security-input-"], input[id^="security-code"], #security-code, .security-code-input input, input[name*="security_code" i], input[aria-label*="security code" i], input[aria-label*="verification code" i]'
+      'input[id^="security-input-"], input[id^="security-code"], #security-code, #security_code, .security-code-input input, input[name*="security_code" i], input[name*="security-code" i], input[aria-label*="security code" i], input[aria-label*="verification code" i], input[maxlength="1"], input[autocomplete="one-time-code"], [class*="security-code"], [id*="security_code"], [id*="security-code"]'
     );
     if (hasOtp) return { fixed: 0, refsToUnlock: [] };
+
+    const isOtpInput = (el: Element): boolean => {
+      if (el instanceof HTMLInputElement && el.maxLength === 1) return true;
+      const id = (el.id || '').toLowerCase();
+      const name = (el.getAttribute('name') || '').toLowerCase();
+      const auto = (el.getAttribute('autocomplete') || '').toLowerCase();
+      if (id.includes('security') || name.includes('security') || name.includes('code') || auto === 'one-time-code') return true;
+      if (el.closest('[class*="security-code"], [id*="security_code"], [class*="security_code"], [id*="security-code"]')) return true;
+      return false;
+    };
 
     let fixed = 0;
     // GEN-191: Tag controls inside error-flagged field wrappers ([id$="-error"], [role="alert"], _fieldEntry_, .field-error)
@@ -274,6 +284,7 @@ export async function healInvalidFieldsAndRetrySubmit(
         )
       );
       for (const ctrl of controls) {
+        if (isOtpInput(ctrl)) continue;
         ctrl.setAttribute('aria-invalid', 'true');
         const ref = ctrl.getAttribute('data-autoapply-ref');
         if (ref) refsToUnlock.push(ref);
@@ -340,13 +351,14 @@ export async function healInvalidFieldsAndRetrySubmit(
     const badInputs = allDomNodes.filter(
       (n): n is HTMLInputElement | HTMLTextAreaElement =>
         (n instanceof HTMLInputElement || n instanceof HTMLTextAreaElement) &&
+        !isOtpInput(n) &&
         (n.matches('input:invalid, textarea:invalid, input[aria-invalid="true"], textarea[aria-invalid="true"], input[required], textarea[required], input[aria-required="true"], textarea[aria-required="true"]') ||
           n.hasAttribute('invalid') ||
           n.getAttribute('aria-invalid') === 'true' ||
           !!n.closest('.ashby-application-form-field-entry, [class*="form-group" i], [class*="field-entry" i]')?.querySelector('*[class*="required" i], *[aria-label*="required" i], span[class*="_required_"]'))
     );
     for (const inp of badInputs) {
-      if (inp.type === 'hidden' || inp.type === 'file' || inp.disabled || inp.readOnly) continue;
+      if (inp.type === 'hidden' || inp.type === 'file' || inp.disabled || inp.readOnly || isOtpInput(inp)) continue;
       // Skip React-Select inner search inputs when a single-value pill already exists!
       if (inp.classList.contains('select__input')) {
         const hasPill = inp.closest('.select__control')?.querySelector('.select__single-value, .select__multi-value');
@@ -2795,7 +2807,18 @@ export class AutoApplyRunner {
       let fields: Array<{ key: string; priority: number; postFillWaitMs: number; widget: boolean; state: string }> = [];
       try {
         await scope.locator(INPUTS).evaluateAll(annotateQuestionClusters);
-        fields = await scope.locator(INPUTS).evaluateAll((elements, { scan, serial, workday }) => elements.filter(element => !/beecatcher|honey-?pot|bot-trap|languageselector/i.test([element.id, element.getAttribute('name'), element.getAttribute('data-automation-id')].join(' ')) && (!workday || !element.ownerDocument.querySelector('[data-automation-id^="formField-"]') || (element.closest('[data-automation-id^="formField-"]') && !element.closest('[data-automation-id="responsiveMonikerPrompt"],[data-automation-id="activeListContainer"]')))).map((element, index) => {
+        fields = await scope.locator(INPUTS).evaluateAll((elements, { scan, serial, workday }) => elements.filter(element => {
+          if (/beecatcher|honey-?pot|bot-trap|languageselector/i.test([element.id, element.getAttribute('name'), element.getAttribute('data-automation-id')].join(' '))) return false;
+          // Ticket GEN-473: NEVER fill or touch any OTP / Security Code input in fillFrame
+          const id = (element.id || '').toLowerCase();
+          const name = (element.getAttribute('name') || '').toLowerCase();
+          const auto = (element.getAttribute('autocomplete') || '').toLowerCase();
+          if (element instanceof HTMLInputElement && element.maxLength === 1) return false;
+          if (id.includes('security') || name.includes('security') || name.includes('code') || auto === 'one-time-code') return false;
+          if (element.closest('[class*="security-code"], [id*="security_code"], [class*="security_code"], [id*="security-code"]')) return false;
+          if (workday && element.ownerDocument.querySelector('[data-automation-id^="formField-"]') && (!element.closest('[data-automation-id^="formField-"]') || element.closest('[data-automation-id="responsiveMonikerPrompt"],[data-automation-id="activeListContainer"]'))) return false;
+          return true;
+        }).map((element, index) => {
           let key = element.getAttribute('data-autoapply-control');
           if (!key?.startsWith(scan)) { key = `${scan}-${serial + index}`; element.setAttribute('data-autoapply-control', key); }
           const control = element as HTMLInputElement;
@@ -5093,6 +5116,24 @@ export class AutoApplyRunner {
         await this.performHumanPreSubmitTelemetry(this.page!, submit);
         if (options.mode === 'stealth') await this.pacedClick(submit);
         else await submit.click();
+
+        // Ticket GEN-473.1: Right after clicking Submit application on Greenhouse (wait 3000ms for security code prompt to mount),
+        // call completeInPageEmailVerificationIfPrompted before running healInvalidFieldsAndRetrySubmit!
+        if (report.ats === 'greenhouse' || (this.page && this.page.url().includes('greenhouse.io'))) {
+          await this.page!.waitForTimeout(3000);
+          for (const f of this.page!.frames()) {
+            const verified = await completeInPageEmailVerificationIfPrompted(this.page!, f, () => this.activeWatchdog?.heartbeat('inpage_otp')).catch(() => false);
+            if (verified) {
+              await this.page!.waitForTimeout(3000);
+              report.receipt ||= await this.receipt();
+              if (report.receipt) {
+                report.status = 'submitted';
+                report.reason = 'Submission confirmation observed';
+                break;
+              }
+            }
+          }
+        }
         const deadline = Date.now() + Math.min(timeout, 25_000);
         let lastMailPoll = 0;
         let captchaCheckedAfterSubmit = false;
