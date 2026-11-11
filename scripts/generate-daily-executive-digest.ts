@@ -24,6 +24,7 @@ export interface ExecutiveDigestData {
   };
   inboxLifecycle: {
     totalEvents: number;
+    applicationConfirmations: number;
     interviewsAndOas: number;
     recruiterReplies: number;
     rejections: number;
@@ -122,6 +123,7 @@ export async function generateDailyExecutiveDigest(options: {
 
   // 3. Inbox Lifecycle Events (GEN-455)
   const lifecycleEvents: InboxLifecycleEvent[] = loadInboxLifecycleEvents();
+  const applicationConfirmations = lifecycleEvents.filter(e => e.stage === 'APPLICATION_CONFIRMATION').length;
   const interviewsAndOas = lifecycleEvents.filter(e => e.stage === 'INTERVIEW_OR_OA_INVITE').length;
   const recruiterReplies = lifecycleEvents.filter(e => e.stage === 'RECRUITER_DIRECT_REPLY').length;
   const rejections = lifecycleEvents.filter(e => e.stage === 'APPLICATION_REJECTED').length;
@@ -176,6 +178,7 @@ export async function generateDailyExecutiveDigest(options: {
     `- **Live Lead Outreach Pool**: **${totalLeadsReady}** verified tech leads ready (Target: 301+)`,
     `- **Day-5 Follow-Ups Queued**: **${day5FollowUpsQueued}** second-touch candidates with new proof\n`,
     `## 2. Inbound Lifecycle & Candidate Traction (GEN-455)`,
+    `- **Application Confirmations Received**: **${applicationConfirmations}**`,
     `- **Interviews / Online Assessments (OAs)**: **${interviewsAndOas}**`,
     `- **Recruiter Direct Replies**: **${recruiterReplies}**`,
     `- **Rejections Tracked & Suppressed**: **${rejections}**`,
@@ -231,6 +234,7 @@ export async function generateDailyExecutiveDigest(options: {
     },
     inboxLifecycle: {
       totalEvents: lifecycleEvents.length,
+      applicationConfirmations,
       interviewsAndOas,
       recruiterReplies,
       rejections,

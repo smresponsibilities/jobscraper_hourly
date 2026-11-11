@@ -205,24 +205,26 @@ export async function runMode2WonderPillInvertedLeadFinder(params: {
       if (!data) continue;
 
       // Extract maintainers from search results or direct package metadata
-      const candidateList: Array<{ name?: string; email?: string }> = [];
+      const candidateList: Array<{ name?: string; email?: string; pkgName?: string }> = [];
 
       if (Array.isArray(data.objects)) {
         for (const obj of data.objects) {
+          const pkgName = obj.package?.name;
           if (obj.package?.maintainers && Array.isArray(obj.package.maintainers)) {
-            candidateList.push(...obj.package.maintainers);
+            candidateList.push(...obj.package.maintainers.map((m: any) => ({ ...m, pkgName })));
           }
           if (obj.package?.publisher?.email) {
-            candidateList.push({ name: obj.package.publisher.username, email: obj.package.publisher.email });
+            candidateList.push({ name: obj.package.publisher.username, email: obj.package.publisher.email, pkgName });
           }
           if (obj.package?.author?.email) {
-            candidateList.push({ name: obj.package.author.name, email: obj.package.author.email });
+            candidateList.push({ name: obj.package.author.name, email: obj.package.author.email, pkgName });
           }
         }
       } else if (data.maintainers && Array.isArray(data.maintainers)) {
-        candidateList.push(...data.maintainers);
+        const pkgName = data.name;
+        candidateList.push(...data.maintainers.map((m: any) => ({ ...m, pkgName })));
       } else if (data.author?.email) {
-        candidateList.push(data.author);
+        candidateList.push({ ...data.author, pkgName: data.name });
       }
 
       for (const cand of candidateList) {
@@ -237,7 +239,7 @@ export async function runMode2WonderPillInvertedLeadFinder(params: {
           contacts.push({
             email: em,
             name: cand.name || 'NPM Maintainer / Core Engineer',
-            role: 'Engineering Lead / Maintainer',
+            role: cand.pkgName ? `Maintainer (${cand.pkgName})` : 'Engineering Lead / Maintainer',
             company,
             domain: cleanDomain,
             confidence: 0.92,
@@ -339,7 +341,7 @@ export async function runMode2WonderPillInvertedLeadFinder(params: {
               contacts.push({
                 email: authorEmail,
                 name: authorName,
-                role: 'Open-Source Contributor / Systems Engineer',
+                role: `Open-Source Contributor (${repo.name})`,
                 company,
                 domain: cleanDomain,
                 confidence: 0.95,

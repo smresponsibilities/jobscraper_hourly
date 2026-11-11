@@ -47,7 +47,8 @@ export function isDay5FollowUpEligible(
     if (
       ev.stage === 'APPLICATION_REJECTED' ||
       ev.stage === 'INTERVIEW_OR_OA_INVITE' ||
-      ev.stage === 'RECRUITER_DIRECT_REPLY'
+      ev.stage === 'RECRUITER_DIRECT_REPLY' ||
+      ev.stage === 'HARD_BOUNCE_550'
     ) {
       const evDom = (ev.fromDomain || '').toLowerCase().trim();
       const evComp = (ev.company || '').toLowerCase().trim();

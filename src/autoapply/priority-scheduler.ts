@@ -283,7 +283,11 @@ export function isAlreadyAppliedSameCompanyRoleWithin30Days(
   appliedRows: Array<{ company?: string; title?: string; appliedAt?: string; payload?: string | any }>,
   nowMs = Date.now()
 ): boolean {
+  if (!company?.trim() || !roleTitle?.trim()) {
+    return false;
+  }
   const targetSig = normalizeCompanyRoleSignature(company, roleTitle);
+  if (targetSig === '::') return false;
   const thirtyDaysMs = 30 * 86_400_000;
 
   for (const row of appliedRows) {

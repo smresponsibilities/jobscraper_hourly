@@ -720,7 +720,7 @@ export async function runOvernightMarathon(config: {
         if (totalProcessedOverall >= maxJobs || Date.now() - marathonStartMs >= maxDurationMs) return;
 
         // GEN-470: 30-Day Duplicate Role Dedup Guard (0ms check)
-        const appliedList = queue.list().filter(j => j.status === 'applied');
+        const appliedList = queue.list('applied');
         if (isAlreadyAppliedSameCompanyRoleWithin30Days(job.company, job.title, appliedList)) {
           queue.skip(job.id, 'already_applied_same_company_role_30d');
           console.log(`[MARATHON] Dedup guard 0ms skipped ${job.company} - ${job.title}: already applied in last 30 days.`);

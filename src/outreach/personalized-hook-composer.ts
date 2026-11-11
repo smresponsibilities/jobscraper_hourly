@@ -15,19 +15,31 @@ export function composeTechnicalOpenerHook(input: HookInput): string {
       ? `Hi ${firstName},`
       : `Hi ${input.company} Engineering Team,`;
 
+  const rawRole = input.personRole?.trim() || '';
   const artifactMatch =
-    input.personRole?.match(/\(([^)]+)\)/)?.[1] ||
-    (input.personRole && !/^(engineer|maintainer|developer|lead|team|contributor)/i.test(input.personRole.trim())
-      ? input.personRole.trim()
+    rawRole.match(/\(([^)]+)\)/)?.[1]?.trim() ||
+    rawRole.match(/(?:maintaining|maintains|maintainer\s+of|contributor\s+to|commits?\s+on|working\s+on|repo:|pkg:|package:)\s+([@a-z0-9_./-]+)/i)?.[1]?.trim() ||
+    (rawRole && !/^(engineer|developer|lead|team|contributor|head|director|manager|founder|co-founder)/i.test(rawRole)
+      ? rawRole
       : undefined);
 
-  if (input.discoveryStep === 'inversion1_npm_maintainer_registry' && artifactMatch) {
+  const isNpm =
+    input.discoveryStep === 'inversion1_npm_maintainer_registry' ||
+    input.discoveryStep === 'mode2_npm_maintainer' ||
+    /npm/i.test(input.discoveryStep || '') ||
+    /npm|package|pkg|maintain/i.test(rawRole);
+
+  const isGit =
+    input.discoveryStep === 'inversion2_git_patch_header' ||
+    input.discoveryStep === 'github_org_events' ||
+    input.discoveryStep === 'mode2_git_patch' ||
+    /git/i.test(input.discoveryStep || '') ||
+    /github|repo|commit|patch/i.test(rawRole);
+
+  if (isNpm && artifactMatch) {
     return `${greeting}\n\nI came across your work maintaining the ${artifactMatch} package while researching ${input.company}'s engineering stack, and wanted to reach out after applying for the ${input.roleTitle} role.`;
   }
-  if (
-    (input.discoveryStep === 'inversion2_git_patch_header' || input.discoveryStep === 'github_org_events') &&
-    artifactMatch
-  ) {
+  if (isGit && artifactMatch) {
     return `${greeting}\n\nI saw your recent engineering contributions to ${artifactMatch} on GitHub and wanted to connect directly after applying for the ${input.roleTitle} position at ${input.company}.`;
   }
   return `${greeting}\n\nI recently submitted my application for the ${input.roleTitle} role at ${input.company} and wanted to share a quick overview of my production engineering work.`;

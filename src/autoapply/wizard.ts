@@ -211,8 +211,24 @@ export const ATS_STRATEGIES: Record<string, { domains: string[]; form: string; m
   workable: { domains: ['workable.com'], form: 'section[data-ui="application-form"]', marker: /data-ui=["']application-form["']/i, submit: 'button[data-ui="submit-application"], button[type="submit"]' },
   oracle: { domains: ['oraclecloud.com'], form: '[data-test-component="form"],spl-form-field', marker: /spl-form-field|data-test-component=["']form["']/i },
   successfactors: { domains: ['successfactors.com', 'successfactors.eu'], form: '#applyForm,.sf-form', marker: /id=["']applyForm["']|class=["'][^"']*\bsf-form\b/i, next: 'input[type="submit"][value="Next" i],input[type="submit"][value="Continue" i]' },
-  taleo: { domains: ['taleo.net'], form: '#mainContent,.tal-form', marker: /requisitionDescriptionInterface|\btal-form\b/i, next: TALEO_SELECTORS.nextButton, submit: TALEO_SELECTORS.submitButton },
-  recruitee: { domains: ['recruitee.com'], form: '.offer-apply-form', marker: /\boffer-apply-form\b/i },
+  recruitee: {
+    domains: ['recruitee.com'],
+    form: '.offer-apply-form, form[action*="/c/new"]',
+    marker: /\boffer-apply-form\b|\brecruitee\b/i,
+    submit: 'button[type="submit"], input[type="submit"], [data-test="apply-button"], button.btn-primary',
+  },
+  breezy: {
+    domains: ['breezy.hr'],
+    form: '#apply-form, form.breezy-form, form[action*="/apply"], form.application-form',
+    marker: /\bbreezy-form\b|data-breezy|breezy\.hr/i,
+    submit: 'button[type="submit"], input[type="submit"], #apply-button, button.button-submit, .btn-submit',
+  },
+  teamtailor: {
+    domains: ['teamtailor.com'],
+    form: 'form[action*="/apply"], form[action*="/jobs/"], .teamtailor-form',
+    marker: /teamtailor|tt-candidate/i,
+    submit: 'button[type="submit"], input[type="submit"], button.apply-button',
+  },
 };
 
 export function identifyApplicationAts(url: string, htmlSnippet = ''): string {

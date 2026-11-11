@@ -113,7 +113,7 @@ export function selectBestArchetypeByJdHardMatch(
   };
 
   let bestArchetype = 'BACKEND_DISTRIBUTED';
-  let bestScore = -1;
+  let bestScore = 0;
   let bestMatched: string[] = [];
 
   for (const [arch, keywords] of Object.entries(matrix)) {

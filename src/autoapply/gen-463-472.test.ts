@@ -13,6 +13,7 @@ import {
 } from '../outreach/follow-up-sequencer.js';
 import { isSupportedDirectAtsJobUrl } from './preflight.js';
 import { unwrapDirectAtsApplicationUrl } from './url-unwrapper.js';
+import { identifyApplicationAts } from './wizard.js';
 import { selectBestArchetypeByJdHardMatch } from '../resume/deterministic-builder.js';
 import {
   normalizeCompanyRoleSignature,
@@ -58,7 +59,32 @@ test('GEN-463: composeTechnicalOpenerHook generates role/artifact-grounded hooks
   assert.match(orgEventHook, /^Hi James,/);
   assert.match(orgEventHook, /recent engineering contributions to posthog on GitHub/);
 
-  // 4. Clean fallback hook (no artifacts)
+  // 4. Non-parenthesized personRole & mode2 discovery step hooks
+  const npmUnwrapped = composeTechnicalOpenerHook({
+    company: 'Vercel',
+    roleTitle: 'Frontend Engineer',
+    personName: 'Guillermo',
+    personRole: 'maintainer of turbo',
+  });
+  assert.match(npmUnwrapped, /maintaining the turbo package/);
+
+  const gitUnwrapped = composeTechnicalOpenerHook({
+    company: 'Supabase',
+    roleTitle: 'Systems Engineer',
+    personName: 'Paul',
+    personRole: 'repo: postgrest-js',
+  });
+  assert.match(gitUnwrapped, /recent engineering contributions to postgrest-js on GitHub/);
+
+  // 5. Generic person names fallback to company team greeting
+  const genericNameHook = composeTechnicalOpenerHook({
+    company: 'Vercel',
+    roleTitle: 'Backend Engineer',
+    personName: 'Talent Acquisition',
+  });
+  assert.match(genericNameHook, /^Hi Vercel Engineering Team,/);
+
+  // 6. Clean fallback hook (no artifacts)
   const cleanHook = composeTechnicalOpenerHook({
     company: 'Acme Corp',
     roleTitle: 'Software Engineer',
@@ -117,8 +143,20 @@ test('GEN-464: composeDay5FollowUpWithNewProof and buildDay5FollowUpDraft inject
       },
     ]
   );
-  assert.equal(suppressedCheck.eligible, false);
-  assert.match(suppressedCheck.reason || '', /suppressed_by_inbox_lifecycle/);
+  // Ineligible if domain suppressed by hard bounce
+  const hardBounceCheck = isDay5FollowUpEligible(
+    { company: 'Datadog', domain: 'datadog.com', sentAt: sixDaysAgo, followUpCount: 0 },
+    [
+      {
+        messageId: 'bnc-1',
+        fromDomain: 'datadog.com',
+        stage: 'HARD_BOUNCE_550',
+        receivedAt: new Date().toISOString(),
+      },
+    ]
+  );
+  assert.equal(hardBounceCheck.eligible, false);
+  assert.match(hardBounceCheck.reason || '', /suppressed_by_inbox_lifecycle/);
 
   // Full draft builder
   const draft = buildDay5FollowUpDraft(
@@ -131,7 +169,7 @@ test('GEN-464: composeDay5FollowUpWithNewProof and buildDay5FollowUpDraft inject
   assert.match(draft.body || '', /QuizDeck/);
 });
 
-test('GEN-465 & GEN-466: Recruitee and BreezyHR direct URL unwrapping and preflight support', () => {
+test('GEN-465 & GEN-466: Recruitee, BreezyHR & Teamtailor direct URL unwrapping and preflight support', () => {
   // Recruitee unwrapping
   const recruiteeUrl = 'https://acme.recruitee.com/o/backend-engineer';
   assert.equal(unwrapDirectAtsApplicationUrl(recruiteeUrl), 'https://acme.recruitee.com/o/backend-engineer/c/new');
@@ -153,6 +191,12 @@ test('GEN-465 & GEN-466: Recruitee and BreezyHR direct URL unwrapping and prefli
   // Preflight isSupportedDirectAtsJobUrl
   assert.equal(isSupportedDirectAtsJobUrl('https://acme.recruitee.com/o/backend-engineer'), true);
   assert.equal(isSupportedDirectAtsJobUrl('https://acme.breezy.hr/p/12345-data-engineer'), true);
+  assert.equal(isSupportedDirectAtsJobUrl('https://acme.teamtailor.com/jobs/12345-data-engineer'), true);
+
+  // ATS Strategy identification
+  assert.equal(identifyApplicationAts('https://acme.recruitee.com/o/job'), 'recruitee');
+  assert.equal(identifyApplicationAts('https://acme.breezy.hr/p/job'), 'breezy');
+  assert.equal(identifyApplicationAts('https://acme.teamtailor.com/jobs/job'), 'teamtailor');
 
   // Root or vendor pages must be rejected
   assert.equal(isSupportedDirectAtsJobUrl('https://acme.recruitee.com/'), false);
@@ -204,6 +248,12 @@ test('GEN-467 & GEN-468: selectBestArchetypeByJdHardMatch maps generic titles to
   );
   assert.equal(matchBackend.archetype, 'BACKEND_DISTRIBUTED');
   assert.ok(matchBackend.matchedKeywords.includes('kafka'));
+
+  // 6. Generic title with no matching keywords defaults to BACKEND_DISTRIBUTED with score 0
+  const matchFallback = selectBestArchetypeByJdHardMatch('Software Engineer', '');
+  assert.equal(matchFallback.archetype, 'BACKEND_DISTRIBUTED');
+  assert.equal(matchFallback.matchScore, 0);
+  assert.deepEqual(matchFallback.matchedKeywords, []);
 });
 
 test('GEN-469 & GEN-470: Date-bump boost and 30-day same company+role dedup guard', () => {
@@ -243,6 +293,11 @@ test('GEN-469 & GEN-470: Date-bump boost and 30-day same company+role dedup guar
   // Microsoft never applied -> eligible
   const msftCheck = isAlreadyAppliedSameCompanyRoleWithin30Days('Microsoft', 'Software Engineer', appliedRows, now);
   assert.equal(msftCheck, false);
+
+  // Empty or whitespace inputs never false-match
+  assert.equal(isAlreadyAppliedSameCompanyRoleWithin30Days('', 'Software Engineer', appliedRows, now), false);
+  assert.equal(isAlreadyAppliedSameCompanyRoleWithin30Days('Amazon', '', appliedRows, now), false);
+  assert.equal(isAlreadyAppliedSameCompanyRoleWithin30Days('   ', '   ', appliedRows, now), false);
 
   // 3. Date-bump priority boost (+3500 points)
   const baseJob = {
@@ -289,12 +344,14 @@ test('GEN-471: generateDailyExecutiveDigest writes Markdown and returns complete
   assert.ok(typeof digest.throughput.last1Hour === 'number');
   assert.ok(typeof digest.throughput.last24Hours === 'number');
   assert.ok(typeof digest.inboxLifecycle.totalEvents === 'number');
+  assert.ok(typeof digest.inboxLifecycle.applicationConfirmations === 'number');
   assert.ok(typeof digest.doctorHealth.active === 'boolean');
 
   // Validate generated markdown
   assert.ok(digest.markdown.includes('# Daily Executive Digest'));
   assert.ok(digest.markdown.includes('Total Confirmed Applications'));
   assert.ok(digest.markdown.includes('Inbound Lifecycle & Candidate Traction'));
+  assert.ok(digest.markdown.includes('Application Confirmations Received'));
   assert.ok(digest.markdown.includes('Per-ATS Conversion Rate'));
   assert.ok(digest.markdown.includes('Cold Outreach & Day-5 Second-Touch Engine'));
   assert.ok(digest.markdown.includes('Doctor 30-Minute Self-Heal Status'));

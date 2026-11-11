@@ -21,6 +21,10 @@ import {
   composeDay5FollowUpWithNewProof,
   composeTechnicalOpenerHook,
 } from '../src/outreach/personalized-hook-composer.js';
+import {
+  isDay5FollowUpEligible,
+  buildDay5FollowUpDraft,
+} from '../src/outreach/follow-up-sequencer.js';
 
 // Load .env variables into process.env if present
 export function loadEnvFile(envPath = '.env'): void {
@@ -265,12 +269,20 @@ export async function runOutreachBatch(options: {
         break;
       }
 
-      if (entry.isFollowUp || (entry.followUpCount ?? 0) > 0) {
-        continue;
-      }
-
-      const sentTime = Date.parse(entry.sentAt);
-      if (isNaN(sentTime) || now - sentTime < fiveDaysMs) {
+      const eligibility = isDay5FollowUpEligible(entry, lifecycleEvents, now);
+      if (!eligibility.eligible) {
+        if (eligibility.reason?.startsWith('suppressed_by_inbox_lifecycle')) {
+          resultItems.push({
+            company: entry.company,
+            targetEmail: entry.targetEmail,
+            roleTitle: entry.roleTitle,
+            archetype: entry.archetype,
+            resumePdf: entry.resumePdf || '',
+            status: 'skipped',
+            reason: eligibility.reason,
+          });
+          skippedCount++;
+        }
         continue;
       }
 
@@ -278,22 +290,6 @@ export async function runOutreachBatch(options: {
       const domain = (entry.domain || '').trim().toLowerCase();
       const email = (entry.targetEmail || '').trim().toLowerCase();
       const roleTitle = (entry.roleTitle || '').trim();
-
-      // Check inbox lifecycle suppression
-      const suppressCheck = isDomainSuppressedByInboxLifecycle(company, domain, lifecycleEvents);
-      if (suppressCheck.suppressed) {
-        resultItems.push({
-          company,
-          targetEmail: email,
-          roleTitle,
-          archetype: entry.archetype,
-          resumePdf: entry.resumePdf || '',
-          status: 'skipped',
-          reason: suppressCheck.reason || 'suppressed_by_inbox_lifecycle',
-        });
-        skippedCount++;
-        continue;
-      }
 
       const domainKey = domain.toLowerCase();
       const companyKey = company.toLowerCase();
@@ -307,10 +303,21 @@ export async function runOutreachBatch(options: {
           ? entry.resumePdf
           : resolveResumeAttachmentForArchetype(entry.archetype);
 
-      const followUpDraft = composeDay5FollowUpWithNewProof({
-        company,
-        roleTitle,
-      });
+      const draftResult = buildDay5FollowUpDraft(
+        {
+          company,
+          roleTitle,
+          domain,
+          followUpCount: entry.followUpCount,
+        },
+        entry.sentAt,
+        lifecycleEvents,
+        now
+      );
+      const followUpDraft = {
+        subject: draftResult.subject || `Re: Applied for ${roleTitle} — Shivam Mahajan (Morgan Stanley / CSE '26)`,
+        body: draftResult.body || composeDay5FollowUpWithNewProof({ company, roleTitle }).body,
+      };
 
       seenDomainsInBatch.add(domainKey);
       seenCompaniesInBatch.add(companyKey);
@@ -537,6 +544,27 @@ export async function runOutreachBatch(options: {
       });
       skippedCount++;
       continue;
+    }
+
+    // GEN-463: Ensure technical opener hook is applied if discovery metadata is present
+    if (lead.discoveryStep || lead.personRole) {
+      const hook = composeTechnicalOpenerHook({
+        company,
+        roleTitle,
+        personName: lead.personName,
+        personRole: lead.personRole,
+        discoveryStep: lead.discoveryStep,
+      });
+      if (lead.body && !lead.body.includes(hook)) {
+        const paragraphs = lead.body.split('\n\n');
+        if (paragraphs.length >= 2 && /^Hi\s+/i.test(paragraphs[0] || '')) {
+          lead.body = [hook, ...paragraphs.slice(2)].join('\n\n');
+        } else {
+          lead.body = `${hook}\n\n${lead.body}`;
+        }
+      } else if (!lead.body) {
+        lead.body = `${hook}\n\nI am based in Bengaluru with immediate availability and would welcome a brief conversation.\n\nBest regards,\nShivam Mahajan`;
+      }
     }
 
     seenDomainsInBatch.add(domainKey);

@@ -120,6 +120,11 @@ export function isSupportedDirectAtsJobUrl(rawUrl: string): boolean {
     return true;
   }
 
+  // 10. Teamtailor
+  if (host.endsWith('.teamtailor.com') && /\/jobs\/[a-z0-9-]+/i.test(path)) {
+    return true;
+  }
+
   return false;
 }
 
