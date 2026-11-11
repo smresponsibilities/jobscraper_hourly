@@ -21,7 +21,13 @@ import { getProviderTimeoutConfig } from '../src/autoapply/watchdog-timer.js';
 import { generateParkIssuesScoreboard } from '../src/autoapply/park-telemetry.js';
 import { buildTailoredResumePair } from '../src/resume/deterministic-builder.js';
 import { appendJobRunHistory } from '../src/autoapply/run-history.js';
-import { isStrictlyIsolatedTenant, isEligibleEngineeringRoleTitle, computeJobPriorityScore } from '../src/autoapply/priority-scheduler.js';
+import {
+  isStrictlyIsolatedTenant,
+  isEligibleEngineeringRoleTitle,
+  computeJobPriorityScore,
+  normalizeCompanyRoleSignature,
+  isAlreadyAppliedSameCompanyRoleWithin30Days,
+} from '../src/autoapply/priority-scheduler.js';
 import {
   cleanStaleChromiumProfileLocks,
   recoverPowerOffAndNetOffJobs,
@@ -673,6 +679,14 @@ async function main(): Promise<void> {
       laneKey = 'default'
     ): Promise<void> => {
       if (processedCount >= maxJobs || Date.now() - startTime >= maxDurationMs) return;
+
+      // GEN-470: 30-Day Duplicate Role Dedup Guard (0ms check)
+      const appliedList = queue.list().filter(j => j.status === 'applied');
+      if (isAlreadyAppliedSameCompanyRoleWithin30Days(job.company, job.title, appliedList)) {
+        queue.skip(job.id, 'already_applied_same_company_role_30d');
+        console.log(`[DRAIN] Dedup guard 0ms skipped ${job.company} - ${job.title}: already applied in last 30 days.`);
+        return;
+      }
 
       // Host cooldown check (GEN-28: 45s cooldown per host, 15-60m backoff on rate limit/challenge)
       if (!isHostReadyForRequest(job.jobUrl, 45000, hostHealthPath)) {

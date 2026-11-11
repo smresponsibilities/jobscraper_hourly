@@ -11,6 +11,7 @@ import { runOutreachBatch } from './send-outreach-batch.js';
 import { getDoctorStatus } from '../src/autoapply/health-and-ram-watchdog.js';
 import { loadInboxLifecycleEvents } from '../src/autoapply/inbox-lifecycle-tracker.js';
 import { recordLearnedSuccess, penalizeLearnedRuleOnValidationFailure, loadSemanticMemory } from '../src/autoapply/self-learning.js';
+import { generateDailyExecutiveDigest } from './generate-daily-executive-digest.js';
 
 const PORT = Number(process.env.AUTOAPPLY_DASHBOARD_PORT || 4321);
 const LOG_PATH = path.resolve('out/hourly-daemon.log');
@@ -2388,6 +2389,33 @@ export function startDashboardServer(port = PORT): http.Server {
         });
         return;
       }
+    }
+
+    // Ticket GEN-471: Executive Daily Digest Endpoint
+    if (url.pathname === '/api/executive-digest') {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204);
+        res.end();
+        return;
+      }
+
+      generateDailyExecutiveDigest()
+        .then((digest) => {
+          res.writeHead(200, {
+            'Content-Type': 'application/json; charset=utf-8',
+            'Cache-Control': 'no-store, no-cache, must-revalidate',
+          });
+          res.end(JSON.stringify(digest));
+        })
+        .catch((err: any) => {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: err?.message || 'Error generating executive digest' }));
+        });
+      return;
     }
 
     if (url.pathname === '/' || url.pathname === '/index.html') {

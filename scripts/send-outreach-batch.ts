@@ -17,6 +17,10 @@ import {
   type LifecycleStage,
 } from '../src/autoapply/inbox-lifecycle-tracker.js';
 import { recordWonderPillDeadEnd } from '../src/outreach/dual-mode-lead-finder.js';
+import {
+  composeDay5FollowUpWithNewProof,
+  composeTechnicalOpenerHook,
+} from '../src/outreach/personalized-hook-composer.js';
 
 // Load .env variables into process.env if present
 export function loadEnvFile(envPath = '.env'): void {
@@ -52,6 +56,9 @@ export interface SentLedgerEntry {
   sentAt: string;
   messageId: string;
   mode: 'dry-run' | 'live';
+  followUpCount?: number;
+  lastFollowUpAt?: string;
+  isFollowUp?: boolean;
 }
 
 export interface SentLedgerState {
@@ -229,6 +236,7 @@ export async function runOutreachBatch(options: {
   leadsPath?: string;
   ledgerPath?: string;
   lifecycleEvents?: InboxLifecycleEvent[];
+  followUps?: boolean;
 }): Promise<OutreachBatchResult> {
   loadEnvFile();
 
@@ -238,6 +246,171 @@ export async function runOutreachBatch(options: {
 
   const leadsPath = options.leadsPath || path.resolve('state/autoapply/portal-review/outreach-leads.json');
   const ledgerPath = options.ledgerPath || DEFAULT_SENT_LEDGER_PATH;
+  const ledger = loadSentLedger(ledgerPath);
+  const lifecycleEvents = options.lifecycleEvents || loadInboxLifecycleEvents();
+
+  const resultItems: OutreachBatchResult['items'] = [];
+  const seenDomainsInBatch = new Set<string>();
+  const seenCompaniesInBatch = new Set<string>();
+  let sentCount = 0;
+  let skippedCount = 0;
+
+  // GEN-464: Day-5 Follow-up branch
+  if (options.followUps) {
+    const now = Date.now();
+    const fiveDaysMs = 5 * 86_400_000;
+
+    for (const entry of ledger.records) {
+      if (resultItems.filter((i) => i.status !== 'skipped').length >= limit) {
+        break;
+      }
+
+      if (entry.isFollowUp || (entry.followUpCount ?? 0) > 0) {
+        continue;
+      }
+
+      const sentTime = Date.parse(entry.sentAt);
+      if (isNaN(sentTime) || now - sentTime < fiveDaysMs) {
+        continue;
+      }
+
+      const company = (entry.company || '').trim();
+      const domain = (entry.domain || '').trim().toLowerCase();
+      const email = (entry.targetEmail || '').trim().toLowerCase();
+      const roleTitle = (entry.roleTitle || '').trim();
+
+      // Check inbox lifecycle suppression
+      const suppressCheck = isDomainSuppressedByInboxLifecycle(company, domain, lifecycleEvents);
+      if (suppressCheck.suppressed) {
+        resultItems.push({
+          company,
+          targetEmail: email,
+          roleTitle,
+          archetype: entry.archetype,
+          resumePdf: entry.resumePdf || '',
+          status: 'skipped',
+          reason: suppressCheck.reason || 'suppressed_by_inbox_lifecycle',
+        });
+        skippedCount++;
+        continue;
+      }
+
+      const domainKey = domain.toLowerCase();
+      const companyKey = company.toLowerCase();
+      if (seenDomainsInBatch.has(domainKey) || seenCompaniesInBatch.has(companyKey)) {
+        skippedCount++;
+        continue;
+      }
+
+      const resumePdf =
+        entry.resumePdf && fs.existsSync(entry.resumePdf)
+          ? entry.resumePdf
+          : resolveResumeAttachmentForArchetype(entry.archetype);
+
+      const followUpDraft = composeDay5FollowUpWithNewProof({
+        company,
+        roleTitle,
+      });
+
+      seenDomainsInBatch.add(domainKey);
+      seenCompaniesInBatch.add(companyKey);
+
+      if (dryRun) {
+        console.log(
+          `[OUTREACH_FOLLOWUP_DRY_RUN] Day-5 Follow-up verified: ${company} | ${roleTitle} -> ${email} | Resume: ${path.basename(resumePdf)}`
+        );
+        resultItems.push({
+          company,
+          targetEmail: email,
+          roleTitle,
+          archetype: entry.archetype,
+          resumePdf,
+          status: 'dry_run_passed',
+        });
+        sentCount++;
+      } else {
+        const host = process.env.SMTP_HOST || 'smtp.gmail.com';
+        const user = process.env.SMTP_USER || process.env.IMAP_USER || process.env.AUTOAPPLY_EMAIL || '';
+        const pass = process.env.SMTP_PASS || process.env.IMAP_PASSWORD || '';
+
+        if (!user || !pass) {
+          throw new Error('SMTP credentials missing: set SMTP_USER / SMTP_PASS in .env');
+        }
+
+        const transporter = nodemailer.createTransport({
+          host,
+          port: 465,
+          secure: true,
+          auth: { user, pass },
+        });
+
+        console.log(`[OUTREACH_LIVE_FOLLOWUP] Sending Day-5 follow-up to ${email} (${company} - ${roleTitle})...`);
+
+        const info = await transporter.sendMail({
+          from: `Shivam Mahajan <${user}>`,
+          to: email,
+          subject: followUpDraft.subject,
+          text: followUpDraft.body,
+          attachments: fs.existsSync(resumePdf)
+            ? [
+                {
+                  filename: `Shivam_Mahajan_Resume_${entry.archetype}.pdf`,
+                  path: resumePdf,
+                  contentType: 'application/pdf',
+                },
+              ]
+            : [],
+        });
+
+        entry.followUpCount = (entry.followUpCount || 0) + 1;
+        entry.lastFollowUpAt = new Date().toISOString();
+
+        const followUpEntry: SentLedgerEntry = {
+          company,
+          domain,
+          targetEmail: email,
+          roleTitle,
+          archetype: entry.archetype,
+          resumePdf,
+          subject: followUpDraft.subject,
+          sentAt: new Date().toISOString(),
+          messageId: info.messageId || `msg_fu_${Date.now()}`,
+          mode: 'live',
+          isFollowUp: true,
+          followUpCount: 1,
+        };
+
+        ledger.records.push(followUpEntry);
+        saveSentLedger(ledger, ledgerPath);
+
+        resultItems.push({
+          company,
+          targetEmail: email,
+          roleTitle,
+          archetype: entry.archetype,
+          resumePdf,
+          status: 'sent',
+        });
+        sentCount++;
+
+        if (resultItems.filter((i) => i.status === 'sent').length < limit) {
+          const jitterMs = Math.floor(45_000 + Math.random() * 45_000);
+          console.log(`[OUTREACH_LIVE] Pacing jitter: waiting ${Math.round(jitterMs / 1000)}s before next send...`);
+          await new Promise((r) => setTimeout(r, jitterMs));
+        }
+      }
+    }
+
+    return {
+      dryRun,
+      totalLeads: ledger.records.length,
+      eligibleCount: resultItems.length,
+      processedCount: resultItems.length,
+      sentCount,
+      skippedCount,
+      items: resultItems,
+    };
+  }
 
   if (!fs.existsSync(leadsPath)) {
     console.warn(`[OUTREACH_BATCH] Leads file not found at ${leadsPath}`);
@@ -253,14 +426,6 @@ export async function runOutreachBatch(options: {
   }
 
   const leads: OutreachLeadItem[] = JSON.parse(fs.readFileSync(leadsPath, 'utf8'));
-  const ledger = loadSentLedger(ledgerPath);
-  const lifecycleEvents = options.lifecycleEvents || loadInboxLifecycleEvents();
-
-  const resultItems: OutreachBatchResult['items'] = [];
-  const seenDomainsInBatch = new Set<string>();
-  const seenCompaniesInBatch = new Set<string>();
-  let sentCount = 0;
-  let skippedCount = 0;
 
   // Filter and process leads
   for (const lead of leads) {
@@ -475,6 +640,7 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const isSend = args.includes('--send');
   const dryRun = !isSend || args.includes('--dry-run');
+  const followUps = args.includes('--follow-ups');
 
   let limit = 5;
   const limitIdx = args.indexOf('--limit');
@@ -482,8 +648,8 @@ async function main(): Promise<void> {
     limit = parseInt(args[limitIdx + 1]!, 10) || 5;
   }
 
-  console.log(`[OUTREACH] Initializing batch: mode=${dryRun ? 'DRY-RUN' : 'LIVE'}, limit=${limit}`);
-  const result = await runOutreachBatch({ dryRun, limit });
+  console.log(`[OUTREACH] Initializing batch: mode=${dryRun ? 'DRY-RUN' : 'LIVE'}, followUps=${followUps}, limit=${limit}`);
+  const result = await runOutreachBatch({ dryRun, limit, followUps });
 
   console.log('\n=== OUTREACH BATCH SUMMARY ===');
   console.log(`Mode: ${result.dryRun ? 'DRY-RUN' : 'LIVE SEND'}`);

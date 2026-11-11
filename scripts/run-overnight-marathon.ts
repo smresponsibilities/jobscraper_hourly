@@ -37,6 +37,8 @@ import {
   isStrictlyIsolatedTenant,
   isEligibleEngineeringRoleTitle,
   computeJobPriorityScore,
+  normalizeCompanyRoleSignature,
+  isAlreadyAppliedSameCompanyRoleWithin30Days,
 } from '../src/autoapply/priority-scheduler.js';
 import { syncHourlyFreshJobsFromOriginMain } from './sync-hourly-from-origin.js';
 import { runHourly100JobsHarvester } from './harvest-100-hourly-jobs.js';
@@ -716,6 +718,16 @@ export async function runOvernightMarathon(config: {
         laneKey: string
       ): Promise<void> => {
         if (totalProcessedOverall >= maxJobs || Date.now() - marathonStartMs >= maxDurationMs) return;
+
+        // GEN-470: 30-Day Duplicate Role Dedup Guard (0ms check)
+        const appliedList = queue.list().filter(j => j.status === 'applied');
+        if (isAlreadyAppliedSameCompanyRoleWithin30Days(job.company, job.title, appliedList)) {
+          queue.skip(job.id, 'already_applied_same_company_role_30d');
+          console.log(`[MARATHON] Dedup guard 0ms skipped ${job.company} - ${job.title}: already applied in last 30 days.`);
+          chunkProcessedCount++;
+          totalProcessedOverall++;
+          return;
+        }
 
         // Host cooldown check (45s cooldown per host)
         if (!isHostReadyForRequest(job.jobUrl, 45000, hostHealthPath)) {

@@ -10,6 +10,7 @@ import {
 } from '../src/outreach/free-contact-discovery.js';
 import { isSafeOutreachEmailSyntax } from './sync-applied-to-outreach.js';
 import { resolveCompanyOfficialDomain } from './enrich-applied-outreach.js';
+import { composeTechnicalOpenerHook } from '../src/outreach/personalized-hook-composer.js';
 
 export type JobArchetype = 'BACKEND' | 'DATA' | 'DEVOPS' | 'FULLSTACK' | 'AI_ML';
 
@@ -25,6 +26,9 @@ export interface OutreachLeadItem {
   body: string;
   generatedAt: string;
   source: string;
+  personName?: string;
+  personRole?: string;
+  discoveryStep?: string;
 }
 
 export function determineJobArchetype(roleTitle: string): JobArchetype {
@@ -78,7 +82,8 @@ export function getArchetypeProject(archetype: JobArchetype): { project: string;
 export function composeTailored4SentenceColdEmail(
   company: string,
   roleTitle: string,
-  archetype: JobArchetype
+  archetype: JobArchetype,
+  contact?: { personName?: string; personRole?: string; discoveryStep?: string }
 ): { subject: string; body: string; matchedProject: string } {
   const cleanCompany = (company || '').trim() || 'your team';
   const cleanRole = (roleTitle || '').trim() || 'Software Engineer';
@@ -86,27 +91,55 @@ export function composeTailored4SentenceColdEmail(
 
   const subject = `Applied: ${cleanRole} at ${cleanCompany} — Shivam Mahajan (Morgan Stanley / 9.35 CGPA)`;
 
+  const hasHook = Boolean(contact && (contact.discoveryStep || contact.personRole));
+  const hookOpener = hasHook
+    ? composeTechnicalOpenerHook({
+        company: cleanCompany,
+        roleTitle: cleanRole,
+        personName: contact?.personName,
+        personRole: contact?.personRole,
+        discoveryStep: contact?.discoveryStep,
+      })
+    : undefined;
+
   const sentence1 = `I recently submitted my application for the ${cleanRole} role at ${cleanCompany} and wanted to reach out directly to express my strong enthusiasm for what your engineering team is building.`;
   const sentence2 = `Currently a Technology Apprentice at Morgan Stanley (graduating B.E. CSE from Chitkara University with a 9.35/10.0 CGPA), I engineer customer-facing data pipelines and microservices processing 5,000,000+ daily events.`;
   const sentence3 = `Relevant to ${cleanCompany}'s focus, I built the ${project} (${proofLine}, portfolio at https://shivammahajan.com/projects/).`;
   const sentence4 = `Based in Bengaluru with immediate availability and 1,255+ consecutive days of coding commitment, I would welcome the opportunity to discuss how my hands-on background can add immediate value to ${cleanCompany}.`;
 
-  const body = [
-    `Hi ${cleanCompany} Team,`,
-    ``,
-    `${sentence1} ${sentence2}`,
-    ``,
-    `${sentence3}`,
-    ``,
-    `${sentence4}`,
-    ``,
-    `Best regards,`,
-    `Shivam Mahajan`,
-    `Bengaluru, India`,
-    `Portfolio: https://shivammahajan.com`,
-    `LinkedIn: https://www.linkedin.com/in/mahajanshivam`,
-    `GitHub: https://github.com/smresponsibilities`,
-  ].join('\n');
+  const body = hasHook && hookOpener
+    ? [
+        hookOpener,
+        ``,
+        sentence2,
+        ``,
+        sentence3,
+        ``,
+        sentence4,
+        ``,
+        `Best regards,`,
+        `Shivam Mahajan`,
+        `Bengaluru, India`,
+        `Portfolio: https://shivammahajan.com`,
+        `LinkedIn: https://www.linkedin.com/in/mahajanshivam`,
+        `GitHub: https://github.com/smresponsibilities`,
+      ].join('\n')
+    : [
+        `Hi ${cleanCompany} Team,`,
+        ``,
+        `${sentence1} ${sentence2}`,
+        ``,
+        `${sentence3}`,
+        ``,
+        `${sentence4}`,
+        ``,
+        `Best regards,`,
+        `Shivam Mahajan`,
+        `Bengaluru, India`,
+        `Portfolio: https://shivammahajan.com`,
+        `LinkedIn: https://www.linkedin.com/in/mahajanshivam`,
+        `GitHub: https://github.com/smresponsibilities`,
+      ].join('\n');
 
   return { subject, body, matchedProject: project };
 }
@@ -191,6 +224,7 @@ export async function backfillAppliedOutreachLeads(
     // Try contact discovery
     let targetEmail = '';
     let source = 'role_fallback';
+    let contactMeta: { personName?: string; personRole?: string; discoveryStep?: string } | undefined;
 
     // 1. Check website contacts
     const webContacts = await discoverPublicWebsiteContacts(company, domain).catch(() => []);
@@ -200,6 +234,10 @@ export async function backfillAppliedOutreachLeads(
     if (validWebContact) {
       targetEmail = validWebContact.email;
       source = 'website_contact';
+      contactMeta = {
+        personName: validWebContact.name,
+        personRole: (validWebContact as any).role,
+      };
     }
 
     // 2. Check GitHub commit contacts if needed
@@ -211,6 +249,11 @@ export async function backfillAppliedOutreachLeads(
       if (validGitContact) {
         targetEmail = validGitContact.email;
         source = 'github_commit_osint';
+        contactMeta = {
+          personName: validGitContact.name,
+          personRole: (validGitContact as any).repo || (validGitContact as any).repository,
+          discoveryStep: 'github_org_events',
+        };
       }
     }
 
@@ -223,6 +266,11 @@ export async function backfillAppliedOutreachLeads(
       if (validMode2) {
         targetEmail = validMode2.email;
         source = validMode2.source;
+        contactMeta = {
+          personName: validMode2.name,
+          personRole: validMode2.role,
+          discoveryStep: validMode2.source === 'mode2_npm_maintainer' ? 'inversion1_npm_maintainer_registry' : 'inversion2_git_patch_header',
+        };
       }
     }
 
@@ -244,7 +292,7 @@ export async function backfillAppliedOutreachLeads(
     }
 
     const archetype = determineJobArchetype(roleTitle);
-    const { subject, body, matchedProject } = composeTailored4SentenceColdEmail(company, roleTitle, archetype);
+    const { subject, body, matchedProject } = composeTailored4SentenceColdEmail(company, roleTitle, archetype, contactMeta);
 
     const lead: OutreachLeadItem = {
       company,
@@ -258,6 +306,9 @@ export async function backfillAppliedOutreachLeads(
       body,
       generatedAt: new Date().toISOString(),
       source,
+      personName: contactMeta?.personName,
+      personRole: contactMeta?.personRole,
+      discoveryStep: contactMeta?.discoveryStep,
     };
 
     leads.push(lead);

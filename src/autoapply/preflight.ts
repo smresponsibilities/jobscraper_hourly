@@ -110,6 +110,16 @@ export function isSupportedDirectAtsJobUrl(rawUrl: string): boolean {
     return true;
   }
 
+  // 8. Recruitee (GEN-465)
+  if (host.endsWith('.recruitee.com') && /\/o\/[^/]+/i.test(path)) {
+    return true;
+  }
+
+  // 9. BreezyHR (GEN-466)
+  if (host.endsWith('.breezy.hr') && /\/p\/[a-z0-9-]+/i.test(path)) {
+    return true;
+  }
+
   return false;
 }
 

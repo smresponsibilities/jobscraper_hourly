@@ -188,5 +188,132 @@ export function computeJobPriorityScore(job: QueuedJobCandidate, nowMs = Date.no
   else if (u.includes('myworkdayjobs.com')) score += 150;
   else if (u.includes('jobs.lever.co')) score += 100;
 
+  // GEN-469: Date-Bump / Repost Boost (+3500 points within last 24h)
+  const isBumped = Boolean(job.payload?.dateBumpedAt || job.payload?.date_bumped_at);
+  const isReposted = job.payload?.isReposted === true || job.payload?.is_reposted === true;
+  if (isBumped || isReposted) {
+    const bumpStamp = job.payload?.dateBumpedAt || job.payload?.date_bumped_at || job.payload?.repostedAt || job.payload?.reposted_at;
+    let within24h = true;
+    if (bumpStamp) {
+      const ms = Date.parse(bumpStamp);
+      if (!isNaN(ms) && (nowMs - ms) > 86_400_000) {
+        within24h = false;
+      }
+    }
+    if (within24h) {
+      score += 3500;
+    }
+  }
+
+  // GEN-469: India GCC / Confirmed Bengaluru Office Priority Boost (+1500 points)
+  const compDomain = job.payload?.domain || job.payload?.companyDomain || job.url;
+  if (isIndiaGccOrConfirmedOffice(job.company, compDomain)) {
+    score += 1500;
+  }
+
   return score;
+}
+
+let cachedGccDomains: Set<string> | null = null;
+export function getIndiaGccDomains(): Set<string> {
+  if (cachedGccDomains) return cachedGccDomains;
+  const set = new Set<string>();
+  const paths = [
+    path.resolve('domains-gcc.txt'),
+    path.resolve('domains-gcc2.txt'),
+  ];
+  for (const p of paths) {
+    if (fs.existsSync(p)) {
+      try {
+        const lines = fs.readFileSync(p, 'utf8').split('\n');
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed.startsWith('#')) continue;
+          const dom = trimmed.split(',')[0]!.trim().toLowerCase();
+          if (dom) set.add(dom);
+        }
+      } catch {}
+    }
+  }
+  cachedGccDomains = set;
+  return set;
+}
+
+export function isIndiaGccOrConfirmedOffice(company: string, domainOrUrl?: string): boolean {
+  if (hasConfirmedOffice(company)) return true;
+  const gcc = getIndiaGccDomains();
+  const cleanComp = (company || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  if (domainOrUrl) {
+    let host = domainOrUrl.toLowerCase().trim();
+    try {
+      if (host.startsWith('http://') || host.startsWith('https://')) {
+        host = new URL(host).hostname;
+      }
+    } catch {}
+    host = host.replace(/^www\./, '');
+    if (gcc.has(host)) return true;
+    for (const d of gcc) {
+      if (host.endsWith('.' + d) || host === d) return true;
+    }
+  }
+
+  for (const d of gcc) {
+    const slug = d.split('.')[0]!;
+    if (slug.length >= 4 && cleanComp.includes(slug)) return true;
+  }
+  return false;
+}
+
+export function normalizeCompanyRoleSignature(company: string, roleTitle: string): string {
+  const c = (company || '')
+    .toLowerCase()
+    .replace(/\b(india|pvt|ltd|llc|inc|corp|corporation)\b/g, '')
+    .replace(/[^a-z0-9]/g, '');
+  const r = (roleTitle || '')
+    .toLowerCase()
+    .replace(/\b(india|bengaluru|bangalore|remote|hybrid|hyderabad|pune)\b/g, '')
+    .replace(/[^a-z0-9]/g, '');
+  return `${c}::${r}`;
+}
+
+export function isAlreadyAppliedSameCompanyRoleWithin30Days(
+  company: string,
+  roleTitle: string,
+  appliedRows: Array<{ company?: string; title?: string; appliedAt?: string; payload?: string | any }>,
+  nowMs = Date.now()
+): boolean {
+  const targetSig = normalizeCompanyRoleSignature(company, roleTitle);
+  const thirtyDaysMs = 30 * 86_400_000;
+
+  for (const row of appliedRows) {
+    let rowComp = row.company;
+    let rowTitle = row.title;
+    let appliedAt = row.appliedAt;
+
+    if (row.payload) {
+      try {
+        const p = typeof row.payload === 'string' ? JSON.parse(row.payload) : row.payload;
+        rowComp = rowComp || p.company;
+        rowTitle = rowTitle || p.title;
+        appliedAt = appliedAt || p.appliedAt || p.updatedAt || p.submittedAt;
+      } catch {}
+    }
+
+    if (!rowComp || !rowTitle) continue;
+    const rowSig = normalizeCompanyRoleSignature(rowComp, rowTitle);
+    if (rowSig === targetSig) {
+      if (appliedAt) {
+        const ms = Date.parse(appliedAt);
+        if (!isNaN(ms)) {
+          if (nowMs - ms <= thirtyDaysMs) {
+            return true;
+          }
+          continue;
+        }
+      }
+      return true;
+    }
+  }
+  return false;
 }

@@ -41,7 +41,7 @@ import { createResilientBrowserContext, getResilientContextTier } from './resili
 import { JobActivityWatchdog, getProviderTimeoutConfig } from './watchdog-timer.js';
 import { applyClubbedValueTransform } from './clubbing.js';
 import { runOnDemandHumanPopup } from './hitl-popup.js';
-import { detectJobArchetype } from '../resume/deterministic-builder.js';
+import { detectJobArchetype, selectBestArchetypeByJdHardMatch } from '../resume/deterministic-builder.js';
 import { resolveCoverLetterPdfPath } from '../resume/cover-letter-builder.js';
 import { appendJobRunHistory } from './run-history.js';
 import { capturePageDiagnostics, recordOvernightError, normalizeReasonCode } from './overnight-error-logger.js';
@@ -565,9 +565,15 @@ export async function ensureStepReadyBeforeNext(frame: Frame, resumePath?: strin
   // 3. Ensure file upload completed or attach if missing
   let resolvedResume = resumePath;
   if (!resolvedResume) {
-    const arch = detectJobArchetype(jobTitle || '', jdText || '');
+    const hardMatch = selectBestArchetypeByJdHardMatch(jobTitle || '', jdText || '');
+    const arch = hardMatch && hardMatch.matchScore > 0 ? hardMatch.archetype : detectJobArchetype(jobTitle || '', jdText || '');
     const defaultPdf = path.resolve('state/autoapply/resumes', `Shivam_Mahajan_Resume_${arch}.pdf`);
-    if (existsSync(defaultPdf)) resolvedResume = defaultPdf;
+    const shortPdf = path.resolve('state/autoapply/resumes', `Shivam_Mahajan_Resume_${detectJobArchetype(jobTitle || '', jdText || '')}.pdf`);
+    if (existsSync(defaultPdf)) {
+      resolvedResume = defaultPdf;
+    } else if (existsSync(shortPdf)) {
+      resolvedResume = shortPdf;
+    }
   }
 
   if (resolvedResume && existsSync(resolvedResume)) {
@@ -592,9 +598,15 @@ export async function ensureStepReadyBeforeNext(frame: Frame, resumePath?: strin
           if (existsSync(docxSibling)) {
             uploadFile = docxSibling;
           } else {
-            const arch = detectJobArchetype(jobTitle || '', jdText || '');
+            const hardMatch = selectBestArchetypeByJdHardMatch(jobTitle || '', jdText || '');
+            const arch = hardMatch && hardMatch.matchScore > 0 ? hardMatch.archetype : detectJobArchetype(jobTitle || '', jdText || '');
             const docxFallback = path.resolve('state/autoapply/resumes', `Shivam_Mahajan_Resume_${arch}.docx`);
-            if (existsSync(docxFallback)) uploadFile = docxFallback;
+            const docxShortFallback = path.resolve('state/autoapply/resumes', `Shivam_Mahajan_Resume_${detectJobArchetype(jobTitle || '', jdText || '')}.docx`);
+            if (existsSync(docxFallback)) {
+              uploadFile = docxFallback;
+            } else if (existsSync(docxShortFallback)) {
+              uploadFile = docxShortFallback;
+            }
           }
         }
         await firstInput.setInputFiles(uploadFile).catch(() => {});
@@ -3091,19 +3103,21 @@ export class AutoApplyRunner {
         }
         let document = info.type === 'file' ? (/cover.?letter/i.test(descriptor) ? candidate.documents?.coverLetter : /resume|\bcv\b/i.test(descriptor) ? candidate.documents?.resume : undefined) : undefined;
         if (info.type === 'file' && (/resume|\bcv\b/i.test(descriptor) || !/cover.?letter/i.test(descriptor))) {
-          const archetype = detectJobArchetype(
-            options.applicationBrief?.title || options.company || '',
-            options.applicationBrief?.text || ''
-          );
+          const title = options.applicationBrief?.title || options.company || '';
+          const text = options.applicationBrief?.text || '';
+          const hardMatch = selectBestArchetypeByJdHardMatch(title, text);
+          const archetype = hardMatch && hardMatch.matchScore > 0 ? hardMatch.archetype : detectJobArchetype(title, text);
           const resumesDir = path.resolve('state/autoapply/resumes');
           const docxCandidate = path.join(resumesDir, `Shivam_Mahajan_Resume_${archetype}.docx`);
           const pdfCandidate = path.join(resumesDir, `Shivam_Mahajan_Resume_${archetype}.pdf`);
+          const shortDocxCandidate = path.join(resumesDir, `Shivam_Mahajan_Resume_${detectJobArchetype(title, text)}.docx`);
+          const shortPdfCandidate = path.join(resumesDir, `Shivam_Mahajan_Resume_${detectJobArchetype(title, text)}.pdf`);
           const prefersDocx = Boolean(info.accept && /\b(\.docx?|msword|wordprocessingml)\b/i.test(info.accept) && !/\b(\.pdf|application\/pdf)\b/i.test(info.accept));
 
           if (prefersDocx) {
-            document = existsSync(docxCandidate) ? docxCandidate : existsSync(pdfCandidate) ? pdfCandidate : undefined;
+            document = existsSync(docxCandidate) ? docxCandidate : existsSync(pdfCandidate) ? pdfCandidate : existsSync(shortDocxCandidate) ? shortDocxCandidate : existsSync(shortPdfCandidate) ? shortPdfCandidate : undefined;
           } else {
-            document = existsSync(pdfCandidate) ? pdfCandidate : existsSync(docxCandidate) ? docxCandidate : undefined;
+            document = existsSync(pdfCandidate) ? pdfCandidate : existsSync(docxCandidate) ? docxCandidate : existsSync(shortPdfCandidate) ? shortPdfCandidate : existsSync(shortDocxCandidate) ? shortDocxCandidate : undefined;
           }
           if (!document && candidate.documents?.resume) {
             document = candidate.documents.resume;

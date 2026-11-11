@@ -59,6 +59,24 @@ export function unwrapDirectAtsApplicationUrl(rawUrl: string): string {
       }
     }
 
+    // 6. Recruitee (GEN-465): Ensure *.recruitee.com/o/{slug} jumps directly to /c/new form!
+    if (u.hostname.endsWith('.recruitee.com')) {
+      const m = u.pathname.match(/^\/o\/([^/]+)\/?$/i);
+      if (m && m[1] !== 'c') {
+        u.pathname = `/o/${m[1]}/c/new`;
+        return u.toString();
+      }
+    }
+
+    // 7. BreezyHR (GEN-466): Ensure *.breezy.hr/p/{slug} jumps directly to /apply form!
+    if (u.hostname.endsWith('.breezy.hr')) {
+      const m = u.pathname.match(/^\/p\/([^/]+)\/?$/i);
+      if (m && m[1] !== 'apply') {
+        u.pathname = `/p/${m[1]}/apply`;
+        return u.toString();
+      }
+    }
+
     return rawUrl;
   } catch {
     return rawUrl;

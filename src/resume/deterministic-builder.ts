@@ -99,6 +99,38 @@ export function detectJobArchetype(jobTitle = '', jdText = ''): ResumeArchetype 
   return 'BACKEND';
 }
 
+export function selectBestArchetypeByJdHardMatch(
+  jobTitle: string,
+  jdText = ''
+): { archetype: string; matchedKeywords: string[]; matchScore: number } {
+  const text = `${jobTitle} ${jdText}`.toLowerCase();
+  const matrix: Record<string, string[]> = {
+    DATA_ENGINEERING: ['pyspark', 'apache spark', 'spark', 'snowflake', 'etl', 'data warehouse', 'hive', 'olap', 'clickhouse', 'data pipeline', 'sql', 'airflow', 'databricks'],
+    AI_ML_SYSTEMS: ['machine learning', 'deep learning', 'tensorflow', 'scikit-learn', 'xgboost', 'llm', 'genai', 'gemini', 'nlp', 'ai engineer', 'mlops', 'model'],
+    FULLSTACK_REACT: ['react', 'next.js', 'nextjs', 'typescript', 'javascript', 'frontend', 'full stack', 'Full-Stack', 'node.js', 'html5', 'css3', 'ui', 'websocket'],
+    SYSTEMS_LOWLEVEL: ['c++', 'c99', 'rust', 'webassembly', 'wasm', 'embedded', 'linux', 'unix', 'kernel', 'systems', 'low-level', 'concurrency', 'multithreading'],
+    BACKEND_DISTRIBUTED: ['java', 'spring boot', 'kafka', 'microservice', 'rest api', 'distributed', 'oauth', 'mtls', 'rbac', 'backend', 'jenkins', 'maven', 'ciam'],
+  };
+
+  let bestArchetype = 'BACKEND_DISTRIBUTED';
+  let bestScore = -1;
+  let bestMatched: string[] = [];
+
+  for (const [arch, keywords] of Object.entries(matrix)) {
+    const hits = keywords.filter(kw => text.includes(kw.toLowerCase()));
+    // Title matches count double
+    const titleHits = keywords.filter(kw => jobTitle.toLowerCase().includes(kw.toLowerCase()));
+    const score = hits.length * 10 + titleHits.length * 15;
+    if (score > bestScore) {
+      bestScore = score;
+      bestArchetype = arch;
+      bestMatched = hits;
+    }
+  }
+
+  return { archetype: bestArchetype, matchedKeywords: bestMatched, matchScore: bestScore };
+}
+
 export function classifyRoleArchetype(jobTitle = '', jobDescription = ''): RoleArchetype {
   const arch = detectJobArchetype(jobTitle, jobDescription);
   switch (arch) {
