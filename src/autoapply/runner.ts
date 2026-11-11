@@ -949,6 +949,14 @@ export class AutoApplyRunner {
         countryInput.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
         countryInput.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
       }
+      const countrySelect = document.querySelector<HTMLSelectElement>('select[name="country"], select[aria-label*="Country" i]');
+      if (countrySelect) {
+        const opt = Array.from(countrySelect.options).find(o => /india/i.test(o.text) || /in\b/i.test(o.value));
+        if (opt) {
+          countrySelect.value = opt.value;
+          countrySelect.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+        }
+      }
     }, { fn, ln, em, ph, country }).catch(() => {});
   }
 
@@ -1582,7 +1590,7 @@ export class AutoApplyRunner {
 
   private async reconcileWorkday(options: AutoApplyOptions, report: BotRunReport): Promise<BotRunReport['receipt'] | undefined> {
     const home = workdayCandidateHomeUrl(options.url);
-    if (!home || options.requisition?.provider !== 'workday' || !this.page || !options.vault) return;
+    if (!home || options.requisition?.provider !== 'workday' || !this.page) return;
     const tenant = canonicalEmployerKey(options.url, options.requisition.key);
     const origin = new URL(home).origin;
     let signInAttempted = false;
@@ -1607,7 +1615,7 @@ export class AutoApplyRunner {
           try { await this.page.getByRole('heading', { name: /^(?:my applications|application history)$/i }).filter({ visible: true }).first().waitFor({ state: 'visible', timeout: 15000 }); continue; }
           catch { report.logs.push('workday_reconcile:sign_in_pending'); return; }
         }
-        if (!options.vault.get(tenant) && !options.mailbox) { report.logs.push('workday_reconcile:no_authentication'); return; }
+        if (options.vault && !options.vault.get(tenant) && !options.mailbox && !process.env.AUTOAPPLY_EMAIL) { report.logs.push('workday_reconcile:no_authentication'); return; }
         const beforeUrl = this.page.url();
         const beforePasswords = await this.page.locator('input[type=password]').filter({ visible: true }).count();
         if (await this.authenticationStep(options, report) !== 'progress') { report.logs.push('workday_reconcile:authentication_review'); return; }
@@ -4442,7 +4450,7 @@ export class AutoApplyRunner {
           break;
         }
         const { login, challenge } = await this.browserGates();
-        if (login && !challenge && options.vault && ['workday', 'icims'].includes(options.requisition?.provider || report.ats)) {
+        if (login && !challenge && (options.vault || ['workday', 'icims'].includes(options.requisition?.provider || report.ats))) {
           const progress = await this.authenticationStep(options, report, submittedCredentials);
           if (progress === 'progress') { await this.page!.waitForTimeout(300); continue; }
         }
@@ -5315,10 +5323,18 @@ export class AutoApplyRunner {
                   report.receipt ||= await this.receipt();
                   if (report.receipt) break;
 
-                  // Ticket GEN-302: Check for in-page email OTP / verification prompt after healed retry submit
+                  // Ticket GEN-302 & GEN-480: Check for in-page email OTP / verification prompt after healed retry submit
                   if (!report.receipt && !this.page!.isClosed()) {
                     for (const f of this.page!.frames()) {
-                      const verified = await completeInPageEmailVerificationIfPrompted(this.page!, f, () => this.activeWatchdog?.heartbeat('inpage_otp')).catch(() => false);
+                      const verified = await completeInPageEmailVerificationIfPrompted(
+                        this.page!,
+                        f,
+                        () => this.activeWatchdog?.heartbeat('inpage_otp'),
+                        {
+                          sinceMs: submitClickedTime - 10_000,
+                          companyHint: options.company || (options.requisition as any)?.company,
+                        }
+                      ).catch(() => false);
                       if (verified) {
                         await this.page!.waitForTimeout(3000);
                         report.receipt ||= await this.receipt();
@@ -5376,10 +5392,18 @@ export class AutoApplyRunner {
                 await this.page!.waitForTimeout(3000);
                 report.receipt ||= await this.receipt();
 
-                // Ticket GEN-302: Check for in-page email OTP / verification prompt after self-healed retry submit
+                // Ticket GEN-302 & GEN-480: Check for in-page email OTP / verification prompt after self-healed retry submit
                 if (!report.receipt && !this.page!.isClosed()) {
                   for (const f of this.page!.frames()) {
-                    const verified = await completeInPageEmailVerificationIfPrompted(this.page!, f, () => this.activeWatchdog?.heartbeat('inpage_otp')).catch(() => false);
+                    const verified = await completeInPageEmailVerificationIfPrompted(
+                      this.page!,
+                      f,
+                      () => this.activeWatchdog?.heartbeat('inpage_otp'),
+                      {
+                        sinceMs: submitClickedTime - 10_000,
+                        companyHint: options.company || (options.requisition as any)?.company,
+                      }
+                    ).catch(() => false);
                     if (verified) {
                       await this.page!.waitForTimeout(3000);
                       report.receipt ||= await this.receipt();

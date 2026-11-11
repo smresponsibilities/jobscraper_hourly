@@ -460,8 +460,11 @@ export function groupKeyFor(el: Element): string | null {
 
 export function isHoneypot(el: Element): boolean {
   const name = (el.getAttribute('name') || '').toLowerCase();
-  if (name.startsWith('_systemfield_')) {
-    if (name !== '_systemfield_name' && name !== '_systemfield_email' && name !== '_systemfield_resume') {
+  const id = (el.id || '').toLowerCase();
+  const fieldPath = (el.getAttribute('data-field-path') || '').toLowerCase();
+  const systemIdentifier = name.startsWith('_systemfield_') ? name : id.startsWith('_systemfield_') ? id : fieldPath.startsWith('_systemfield_') ? fieldPath : '';
+  if (systemIdentifier) {
+    if (systemIdentifier !== '_systemfield_name' && systemIdentifier !== '_systemfield_email' && systemIdentifier !== '_systemfield_resume') {
       return true;
     }
   }
@@ -520,7 +523,10 @@ export function annotateQuestionClusters(elements: Element[]): void {
 
   const controls = elements.filter(el => {
     const name = (el.getAttribute('name') || '').toLowerCase();
-    if (name.startsWith('_systemfield_') && name !== '_systemfield_name' && name !== '_systemfield_email' && name !== '_systemfield_resume') {
+    const id = (el.id || '').toLowerCase();
+    const fieldPath = (el.getAttribute('data-field-path') || '').toLowerCase();
+    const systemIdentifier = name.startsWith('_systemfield_') ? name : id.startsWith('_systemfield_') ? id : fieldPath.startsWith('_systemfield_') ? fieldPath : '';
+    if (systemIdentifier && systemIdentifier !== '_systemfield_name' && systemIdentifier !== '_systemfield_email' && systemIdentifier !== '_systemfield_resume') {
       return false;
     }
     const meta = [

@@ -155,3 +155,41 @@ test('GEN-479.1: Drain scripts default submit to true unless --dry-run or --no-s
     process.argv = originalArgv;
   }
 });
+
+test('GEN-478.2: makeGmailTenantAlias generates correct tenant slug from both URLs and plain hostnames', async () => {
+  const { makeGmailTenantAlias } = await import('./imap-verifier.js');
+  const base = 'shivam2314.be22@chitkara.edu.in';
+
+  // With full URL
+  const aliasUrl = makeGmailTenantAlias(base, 'https://fidelity.wd1.myworkdayjobs.com/FidelityCareers');
+  assert.equal(aliasUrl, 'shivam2314.be22+wd_fidelity@chitkara.edu.in');
+
+  // With plain hostname (without https://)
+  const aliasHost = makeGmailTenantAlias(base, 'fidelity.wd1.myworkdayjobs.com');
+  assert.equal(aliasHost, 'shivam2314.be22+wd_fidelity@chitkara.edu.in');
+
+  // Dyson tenant
+  const aliasDyson = makeGmailTenantAlias(base, 'https://dyson.wd3.myworkdayjobs.com/DysonCareers');
+  assert.equal(aliasDyson, 'shivam2314.be22+wd_dyson@chitkara.edu.in');
+});
+
+test('GEN-481.2: isHoneypot detects _systemfield_ honeypots on id and data-field-path as well as name', () => {
+  const createMockElement = (attrs: Record<string, string>): Element => {
+    return {
+      id: attrs.id || '',
+      getAttribute: (k: string) => attrs[k] || null,
+      closest: () => null,
+      classList: { contains: () => false },
+      tabIndex: 0,
+      tagName: 'INPUT',
+      type: attrs.type || 'text',
+    } as unknown as Element;
+  };
+
+  const idTrap = createMockElement({ id: '_systemfield_company_id' });
+  const pathTrap = createMockElement({ 'data-field-path': '_systemfield_phone_trap' });
+
+  assert.equal(isHoneypot(idTrap), true, 'id starting with _systemfield_ trap must be honeypot');
+  assert.equal(isHoneypot(pathTrap), true, 'data-field-path starting with _systemfield_ trap must be honeypot');
+});
+

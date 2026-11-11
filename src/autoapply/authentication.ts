@@ -169,7 +169,20 @@ export async function authenticateApplication(page: Page, options: { vault?: Cre
   try {
     currentHost = new URL(page.url()).hostname;
   } catch {}
-  const isWorkday = currentHost.includes('myworkdayjobs.com') || page.url().includes('myworkdayjobs.com');
+  if (!currentHost && options.tenant) {
+    try {
+      currentHost = options.tenant.includes('://') ? new URL(options.tenant).hostname : options.tenant;
+    } catch {}
+  }
+  if (!currentHost && options.verification?.applicationUrl) {
+    try {
+      currentHost = new URL(options.verification.applicationUrl).hostname;
+    } catch {}
+  }
+  const isWorkday = currentHost.includes('myworkdayjobs.com') ||
+    page.url().includes('myworkdayjobs.com') ||
+    (options.tenant && options.tenant.includes('myworkdayjobs.com')) ||
+    options.verification?.provider === 'workday';
   const isVerifiedHost = currentHost ? isWorkdayHostVerified(currentHost) : false;
 
   const body = await page.locator('body').innerText();
@@ -232,7 +245,11 @@ export async function authenticateApplication(page: Page, options: { vault?: Cre
 
       options.submittedCredentials?.add('signup');
       await options.beforeCredentialSubmit?.('signup');
-      await click(submit);
+      try {
+        await click(submit);
+      } catch {
+        await submit.click({ force: true }).catch(() => {});
+      }
       options.onDiagnostic?.('signup_submitted');
       await page.waitForTimeout(3000);
       return true;
@@ -249,7 +266,7 @@ export async function authenticateApplication(page: Page, options: { vault?: Cre
 
     if (accountExists) {
       options.onDiagnostic?.('account_already_exists_collision');
-      let aliasEmail = makeGmailTenantAlias(cred.email, page.url());
+      let aliasEmail = makeGmailTenantAlias(cred.email, page.url() || currentHost);
       if (aliasEmail === cred.email && cred.email.includes('@')) {
         const [l, d] = cred.email.split('@');
         aliasEmail = `${l}+wd${Date.now().toString().slice(-4)}@${d}`;
@@ -260,7 +277,10 @@ export async function authenticateApplication(page: Page, options: { vault?: Cre
 
     // Call completeInPageEmailVerificationIfPrompted if Workday asks to verify email
     try {
-      await completeInPageEmailVerificationIfPrompted(page, page.mainFrame());
+      await completeInPageEmailVerificationIfPrompted(page, page.mainFrame(), undefined, {
+        sinceMs: options.since.getTime() - 10_000,
+        companyHint: options.tenant || currentHost,
+      });
     } catch {}
 
     if (currentHost) {

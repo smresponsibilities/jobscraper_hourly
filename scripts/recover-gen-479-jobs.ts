@@ -24,10 +24,11 @@ const selectQuery = `
   FROM applications
   WHERE status IN ('paused_for_review', 'failed')
     AND (
-      json_extract(payload, '$.reason') LIKE '%Ready for submission review%'
+      payload LIKE '%Ready for submission review%'
+      OR json_extract(payload, '$.reason') LIKE '%Ready for submission review%'
       OR json_extract(payload, '$.error') LIKE '%Ready for submission review%'
       OR (
-        (json_extract(payload, '$.reason') LIKE '%Login needs browser review%' OR json_extract(payload, '$.error') LIKE '%Login needs browser review%')
+        (payload LIKE '%Login needs browser review%' OR json_extract(payload, '$.reason') LIKE '%Login needs browser review%' OR json_extract(payload, '$.error') LIKE '%Login needs browser review%')
         AND (
           normalized_url LIKE '%myworkdayjobs.com%'
           OR payload LIKE '%myworkdayjobs.com%'
@@ -50,10 +51,11 @@ if (rowsToReset.length > 0) {
         payload = json_set(payload, '$.status', 'queued', '$.error', null, '$.reason', null, '$.skipReason', null)
     WHERE status IN ('paused_for_review', 'failed')
       AND (
-        json_extract(payload, '$.reason') LIKE '%Ready for submission review%'
+        payload LIKE '%Ready for submission review%'
+        OR json_extract(payload, '$.reason') LIKE '%Ready for submission review%'
         OR json_extract(payload, '$.error') LIKE '%Ready for submission review%'
         OR (
-          (json_extract(payload, '$.reason') LIKE '%Login needs browser review%' OR json_extract(payload, '$.error') LIKE '%Login needs browser review%')
+          (payload LIKE '%Login needs browser review%' OR json_extract(payload, '$.reason') LIKE '%Login needs browser review%' OR json_extract(payload, '$.error') LIKE '%Login needs browser review%')
           AND (
             normalized_url LIKE '%myworkdayjobs.com%'
             OR payload LIKE '%myworkdayjobs.com%'
@@ -64,6 +66,14 @@ if (rowsToReset.length > 0) {
   `;
   const result = db.prepare(updateQuery).run() as { changes: number };
   console.log(`Successfully reset ${result.changes} applications to 'queued'.`);
+}
+
+// Ensure all currently queued jobs are also scrubbed from attempted-job-ids.json and job-attempts.json
+const allQueuedRows = db.prepare("SELECT id, normalized_url FROM applications WHERE status = 'queued'").all() as Array<{ id: string; normalized_url: string }>;
+for (const q of allQueuedRows) {
+  resetIds.add(q.id);
+  if (q.normalized_url) resetUrls.add(q.normalized_url);
+}
 
   // Remove reset jobs from attempted-job-ids.json
   const attemptedIdsPath = path.resolve('state/autoapply/portal-review/attempted-job-ids.json');
@@ -130,6 +140,5 @@ if (rowsToReset.length > 0) {
       console.warn('Failed updating queue-summary.json:', err);
     }
   }
-}
 
 db.close();

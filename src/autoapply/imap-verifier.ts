@@ -145,7 +145,8 @@ export function makeGmailTenantAlias(baseEmail: string, tenantUrl: string): stri
   if (!local || !domain) return baseEmail;
   let tenantSlug = 'wd';
   try {
-    const host = new URL(tenantUrl).hostname.toLowerCase();
+    const rawUrl = tenantUrl.includes('://') ? tenantUrl : `https://${tenantUrl}`;
+    const host = new URL(rawUrl).hostname.toLowerCase();
     tenantSlug = host.split('.')[0]?.replace(/[^a-z0-9]/g, '').slice(0, 10) || 'wd';
   } catch {}
   const cleanLocal = local.split('+')[0]!;
@@ -160,6 +161,7 @@ export async function pollImapForVerificationCodeOrLink(params: {
   onActivity?: () => void;
 }): Promise<ImapVerificationResult> {
   loadDotEnvIntoProcess();
+  loadConsumedOtpCodes();
   const host = process.env.IMAP_HOST || 'imap.gmail.com';
   const user = process.env.IMAP_USER || process.env.AUTOAPPLY_EMAIL || process.env.EMAIL || '';
   const pass = process.env.IMAP_PASSWORD || process.env.IMAP_PASS || process.env.GMAIL_APP_PASSWORD || process.env.SMTP_PASS || '';
