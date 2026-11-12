@@ -44,6 +44,16 @@ import { syncInboxLifecycleEvents } from '../src/autoapply/inbox-lifecycle-track
 import { selectDiversifiedMultiLaneChunk } from './run-overnight-marathon.js';
 import { harvestFastAtsJobs } from './harvest-fast-ats-jobs.js';
 
+const STOP_FLAG_PATH = path.resolve('state/autoapply/portal-review/STOP_AUTOAPPLY.flag');
+
+// Global crash shields: Never allow a stray Playwright/network promise rejection to kill the infinite daemon!
+process.on('uncaughtException', err => {
+  console.error(`[INFINITE-DAEMON] Caught uncaughtException (continuing loop): ${(err as any)?.message || err}`);
+});
+process.on('unhandledRejection', reason => {
+  console.error(`[INFINITE-DAEMON] Caught unhandledRejection (continuing loop): ${String(reason)}`);
+});
+
 export function partitionJobsIntoProviderLanes<T extends { url?: string; jobUrl?: string; provider?: string; externalJobId?: string }>(jobs: T[]): Record<string, T[]> {
   const lanes: Record<string, T[]> = {
     greenhouse: [],
@@ -202,7 +212,7 @@ async function main(): Promise<void> {
     if (['--submit', '--headless', '--skip-sync', '--force-sync', '--once', '--dry-run', '--no-submit'].includes(key)) {
       flags.add(key);
     } else if (
-      ['--profile', '--state', '--max-jobs', '--time-budget', '--time-budget-minutes', '--catalog-url'].includes(key) &&
+      ['--profile', '--state', '--max-jobs', '--max-cycles', '--time-budget', '--time-budget-minutes', '--catalog-url'].includes(key) &&
       args[i + 1] &&
       !args[i + 1]!.startsWith('--')
     ) {
@@ -221,6 +231,7 @@ async function main(): Promise<void> {
   const shouldSubmit = !process.argv.includes('--dry-run') && !process.argv.includes('--no-submit');
   const headless = true;
   const maxJobs = values.has('--max-jobs') ? parseInt(values.get('--max-jobs')!, 10) : 60;
+  const maxCycles = values.has('--max-cycles') ? parseInt(values.get('--max-cycles')!, 10) : Infinity;
   const timeBudgetMinutes = values.has('--time-budget-minutes')
     ? parseInt(values.get('--time-budget-minutes')!, 10)
     : values.has('--time-budget')
@@ -240,6 +251,7 @@ async function main(): Promise<void> {
   const ramWatchdog = new ContinuousRamAndHealthWatchdog(45_000);
   ramWatchdog.start();
   const dashboard = startDashboardServer(4321);
+  (dashboard as any)?.unref?.();
   let stopRequested = false;
   const stopping = () => stopRequested || fs.existsSync(stopFlagPath(stateDir));
   const requestStop = () => { stopRequested = true; };
@@ -294,6 +306,7 @@ async function main(): Promise<void> {
   try {
     let discoveryHasRun = false;
     const syncDiscovery = async () => {
+      if (skipSync) return;
       // Ingest fast-ATS jobs from companies.json
       try {
         await harvestFastAtsJobs(dbPath, 30);
@@ -498,131 +511,159 @@ async function main(): Promise<void> {
     };
 
     // Phase B: Continuous Autonomous Drain Loop (Step 421 / GEN-421)
-    // Ticket GEN-506: Continuous runner runs indefinitely unless STOP_AUTOAPPLY.flag is present
+    // Ticket GEN-506 & GEN-526: Continuous runner runs indefinitely unless STOP_AUTOAPPLY.flag is present
     const isContinuousSubmit = shouldSubmit;
     let batchNumber = 0;
 
-    while (true) {
+    while (!stopping() && batchNumber < maxCycles) {
       batchNumber++;
+      const cycleStartMs = Date.now();
+      const cycleBudgetMs = Math.min(timeBudgetMinutes * 60 * 1000, 25 * 60 * 1000);
+      const cycleDeadline = cycleStartMs + cycleBudgetMs;
+      const targetChunkSize = Math.min(maxJobs, 20);
+      const idleWaitMs = maxCycles < Infinity ? 200 : 30_000;
+      let processedCount = 0;
+      let startedJobs = 0;
+      let appliedCount = 0;
+      let runningLanes = 0;
+      const loggedDeferredHosts = new Set<string>();
 
-      const stopFlag = stopFlagPath(stateDir);
-      if (stopping()) {
-        console.log(`[DRAIN] STOP_AUTOAPPLY.flag detected at ${stopFlag}. Explicit operator stop requested. Exiting loop.`);
-        break;
-      }
-
-      await syncDiscovery();
-      if (stopping()) break;
-
-      try {
-        const docReport = check30MinZeroFillDroughtAndAutoHeal({ stateDir });
-        if (docReport.healed) {
-          console.log(`[DRAIN] Doctor self-healing applied: actions=[${docReport.actionsTaken.join(', ')}]`);
-        }
-      } catch {}
+      console.log(`\n================================================================`);
+      console.log(`[INFINITE-DAEMON] 🚀 STARTING CYCLE #${batchNumber} at ${new Date(cycleStartMs).toISOString()}`);
+      console.log(`================================================================`);
 
       try {
-        syncInboxLifecycleEvents(25).catch(() => {});
-      } catch {}
-
-      const allJobs = queue.list();
-      const eligible: AutoaplyJobItem[] = [];
-      for (const job of allJobs) {
-        if (job.status !== 'queued') continue;
-        // Ticket GEN-91: Fast-fail non-direct ATS jobs (filter in-memory without blocking disk writes)
-        if (!isSupportedDirectAtsJobUrl(job.jobUrl)) continue;
-        if (isStrictlyIsolatedTenant(job.company, job.jobUrl)) continue;
-        const titleCheck = isEligibleEngineeringRoleTitle(job.title);
-        if (!titleCheck.eligible) continue;
-        eligible.push(job);
-      }
-
-      if (eligible.length === 0) {
-        if (!isContinuousSubmit) break;
-        console.log('[DRAIN] Queue idle; waiting for new work.');
-        await waitForDaemonWake(stateDir, 30_000, stopping);
-        continue;
-      }
-
-      // Ticket GEN-524: Auto-refill fast-ATS pool if queued fast-ATS jobs are low
-      const queuedFastAtsCount = eligible.filter(j =>
-        /(?:greenhouse\.io|gh_jid=|ashbyhq\.com|lever\.co|workable\.com|recruitee\.com|breezy\.hr)/i.test(j.jobUrl)
-      ).length;
-      if (queuedFastAtsCount < 40) {
-        console.log(`[DRAIN] Queued fast-ATS count (${queuedFastAtsCount}) below 40. Auto-harvesting next 800 boards...`);
-        try {
-          await harvestFastAtsJobs(dbPath, 120);
-        } catch (err: any) {
-          console.warn(`[DRAIN] Auto-harvest warning: ${err?.message || err}`);
+        const stopFlag = stopFlagPath(stateDir);
+        if (stopping()) {
+          console.log(`[DRAIN] STOP_AUTOAPPLY.flag detected at ${stopFlag}. Explicit operator stop requested. Exiting loop.`);
+          break;
         }
-      }
 
-      // Ticket GEN-474: Filter out previously attempted jobs while treating SQLite status = 'queued' as authoritative
-      const freshQueued = filterUnattemptedJobs(eligible);
-      if (freshQueued.length === 0) {
-        if (!isContinuousSubmit) break;
-        await waitForDaemonWake(stateDir, 30_000, stopping);
-        continue;
-      }
+        await syncDiscovery();
+        if (stopping()) break;
 
-    // Schwartzian transform: compute priority scores once in O(N) rather than O(N log N) inside .sort()
-    const now = Date.now();
-    const scoredCandidates = freshQueued.map((job) => {
-      const aDateStr = (job as any).createdAt || job.postedAt;
-      const aTime = Date.parse(aDateStr || '0') || 0;
-      const score = computeJobPriorityScore({
-        id: job.id,
-        company: job.company,
-        title: job.title,
-        url: job.jobUrl || (job as any).url,
-        createdAtMs: aTime,
-        rowId: (job as any).rowId || 0,
-        isHourlyFresh: Boolean((job as any).isHourlyFresh || (job as any).payload?.isHourlyFresh || (job as any).hourlySource),
-        discoveredAt: (job as any).discoveredAt || (job as any).payload?.discoveredAt,
-        payload: { ...(job as any).payload, postedAt: (job as any).payload?.postedAt ?? job.postedAt },
-      }, now);
-      return { job, score };
-    });
-    scoredCandidates.sort((a, b) => {
-      if (b.score !== a.score) return b.score - a.score;
-      return (Number((b.job as any).rowId) || 0) - (Number((a.job as any).rowId) || 0);
-    });
-    const sortedEligible = scoredCandidates.map((s) => s.job);
-
-    const hostHealthPath = path.join(stateDir, 'host-health.json');
-    // Ticket GEN-513 & GEN-520: Preflight-verify candidates during selection and cap chunk size to 20
-    const targetChunkSize = Math.min(maxJobs, 20);
-    const verifiedChunkJobs: AutoaplyJobItem[] = [];
-
-    for (const cand of sortedEligible) {
-      if (verifiedChunkJobs.length >= targetChunkSize) break;
-      if (!isHostReadyForRequest(cand.jobUrl, 45000, hostHealthPath)) continue;
-
-      const preflight = await fastApiPreflightCheck(cand.jobUrl).catch(() => ({ status: 'eligible' as const }));
-      if (preflight.status === 'skipped') {
         try {
-          queue.skip(cand.id, preflight.reason || 'fast_api_preflight_skipped');
-          const dbFast = new DatabaseSync(dbPath);
-          dbFast.exec('PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 15000;');
-          dbFast.prepare(`UPDATE applications SET status = 'skipped', last_error = ? WHERE id = ?`).run(`preflight_${preflight.reason || 'skipped'}`, cand.id);
-          dbFast.close();
+          const docReport = check30MinZeroFillDroughtAndAutoHeal({ stateDir });
+          if (docReport.healed) {
+            console.log(`[DRAIN] Doctor self-healing applied: actions=[${docReport.actionsTaken.join(', ')}]`);
+          }
         } catch {}
+
+        if (!skipSync) {
+          try {
+            syncInboxLifecycleEvents(25).catch(() => {});
+          } catch {}
+        }
+
+        const allJobs = queue.list();
+        const eligible: AutoaplyJobItem[] = [];
+        for (const job of allJobs) {
+          if (job.status !== 'queued') continue;
+          // Ticket GEN-91: Fast-fail non-direct ATS jobs (filter in-memory without blocking disk writes)
+          if (!isSupportedDirectAtsJobUrl(job.jobUrl)) continue;
+          if (isStrictlyIsolatedTenant(job.company, job.jobUrl)) continue;
+          const titleCheck = isEligibleEngineeringRoleTitle(job.title);
+          if (!titleCheck.eligible) continue;
+          eligible.push(job);
+        }
+
+        if (eligible.length === 0) {
+          if ((!isContinuousSubmit && maxCycles === Infinity) || batchNumber >= maxCycles) break;
+          console.log('[DRAIN] Queue idle; waiting for new work.');
+          await waitForDaemonWake(stateDir, idleWaitMs, stopping);
+          continue;
+        }
+
+        // Ticket GEN-524: Auto-refill fast-ATS pool if queued fast-ATS jobs are low
+        const queuedFastAtsCount = eligible.filter(j =>
+          /(?:greenhouse\.io|gh_jid=|ashbyhq\.com|lever\.co|workable\.com|recruitee\.com|breezy\.hr)/i.test(j.jobUrl)
+        ).length;
+        if (queuedFastAtsCount < 40 && !skipSync) {
+          console.log(`[DRAIN] Queued fast-ATS count (${queuedFastAtsCount}) below 40. Auto-harvesting next 800 boards...`);
+          try {
+            await harvestFastAtsJobs(dbPath, 120);
+          } catch (err: any) {
+            console.warn(`[DRAIN] Auto-harvest warning: ${err?.message || err}`);
+          }
+        }
+
+        // Ticket GEN-474: Filter out previously attempted jobs while treating SQLite status = 'queued' as authoritative
+        const freshQueued = filterUnattemptedJobs(eligible);
+        if (freshQueued.length === 0) {
+          if ((!isContinuousSubmit && maxCycles === Infinity) || batchNumber >= maxCycles) break;
+          await waitForDaemonWake(stateDir, idleWaitMs, stopping);
+          continue;
+        }
+
+      // Schwartzian transform: compute priority scores once in O(N) rather than O(N log N) inside .sort()
+      const now = Date.now();
+      const scoredCandidates = freshQueued.map((job) => {
+        const aDateStr = (job as any).createdAt || job.postedAt;
+        const aTime = Date.parse(aDateStr || '0') || 0;
+        const score = computeJobPriorityScore({
+          id: job.id,
+          company: job.company,
+          title: job.title,
+          url: job.jobUrl || (job as any).url,
+          createdAtMs: aTime,
+          rowId: (job as any).rowId || 0,
+          isHourlyFresh: Boolean((job as any).isHourlyFresh || (job as any).payload?.isHourlyFresh || (job as any).hourlySource),
+          discoveredAt: (job as any).discoveredAt || (job as any).payload?.discoveredAt,
+          payload: { ...(job as any).payload, postedAt: (job as any).payload?.postedAt ?? job.postedAt },
+        }, now);
+        return { job, score };
+      });
+      scoredCandidates.sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score;
+        return (Number((b.job as any).rowId) || 0) - (Number((a.job as any).rowId) || 0);
+      });
+      const sortedEligible = scoredCandidates.map((s) => s.job);
+
+      const hostHealthPath = path.join(stateDir, 'host-health.json');
+      // Ticket GEN-513, GEN-520 & GEN-524: Multi-lane chunk selection capping Workday <= 2 and SR <= 2
+      const chunkCandidates = selectDiversifiedMultiLaneChunk(
+        sortedEligible,
+        targetChunkSize * 2,
+        (url) => isHostReadyForRequest(url, 45000, hostHealthPath)
+      );
+      const verifiedChunkJobs: AutoaplyJobItem[] = [];
+      let workdayInChunk = 0;
+      let srInChunk = 0;
+
+      for (const cand of chunkCandidates) {
+        if (verifiedChunkJobs.length >= targetChunkSize) break;
+        const isWd = /myworkdayjobs\.com|myworkdaysite\.com/i.test(cand.jobUrl);
+        const isSr = /smartrecruiters\.com|smartr\.me/i.test(cand.jobUrl);
+        if (isWd && workdayInChunk >= 2) continue;
+        if (isSr && srInChunk >= 2) continue;
+
+        const preflight = await fastApiPreflightCheck(cand.jobUrl).catch(() => ({ status: 'eligible' as const }));
+        if (preflight.status === 'skipped') {
+          try {
+            queue.skip(cand.id, preflight.reason || 'fast_api_preflight_skipped');
+            const dbFast = new DatabaseSync(dbPath);
+            dbFast.exec('PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 15000;');
+            dbFast.prepare(`UPDATE applications SET status = 'skipped', last_error = ? WHERE id = ?`).run(`preflight_${preflight.reason || 'skipped'}`, cand.id);
+            dbFast.close();
+          } catch {}
+          continue;
+        }
+        if (isWd) workdayInChunk++;
+        if (isSr) srInChunk++;
+        verifiedChunkJobs.push(cand);
+      }
+
+      if (verifiedChunkJobs.length === 0) {
+        if ((!isContinuousSubmit && maxCycles === Infinity) || batchNumber >= maxCycles) break;
+        await waitForDaemonWake(stateDir, idleWaitMs, stopping);
         continue;
       }
-      verifiedChunkJobs.push(cand);
-    }
-
-    if (verifiedChunkJobs.length === 0) {
-      if (!isContinuousSubmit) break;
-      await waitForDaemonWake(stateDir, 30_000, stopping);
-      continue;
-    }
-    const candidatePool = verifiedChunkJobs;
-    const lanes = partitionJobsIntoProviderLanes(candidatePool);
-    const activeLanes = (Object.keys(lanes) as Array<keyof typeof lanes>).filter(k => (lanes[k]?.length ?? 0) > 0);
-    console.log(
-      `[DRAIN] Selected ${candidatePool.length} diversified multi-lane chunk jobs (out of ${eligible.length} queued) partitioned into: ${activeLanes.map(k => `${k}(${lanes[k]?.length ?? 0})`).join(', ')}. Running drain (budget: ${timeBudgetMinutes}m, max: ${maxJobs})...`
-    );
+      const candidatePool = verifiedChunkJobs;
+      const lanes = partitionJobsIntoProviderLanes(candidatePool);
+      const activeLanes = (Object.keys(lanes) as Array<keyof typeof lanes>).filter(k => (lanes[k]?.length ?? 0) > 0);
+      console.log(
+        `[DRAIN] Selected ${candidatePool.length} diversified multi-lane chunk jobs (out of ${eligible.length} queued) partitioned into: ${activeLanes.map(k => `${k}(${lanes[k]?.length ?? 0})`).join(', ')}. Running drain (budget: ${(cycleBudgetMs / 60000).toFixed(0)}m, max: ${targetChunkSize})...`
+      );
 
     const startTime = Date.now();
     const maxDurationMs = timeBudgetMinutes * 60 * 1000;
@@ -957,7 +998,7 @@ async function main(): Promise<void> {
         }
 
         for (const job of jobs) {
-          if (stopping() || startedJobs >= maxJobs || Date.now() - startTime >= maxDurationMs) break;
+          if (stopping() || startedJobs >= targetChunkSize || Date.now() >= cycleDeadline) break;
           try {
             if (!laneRunner.isConnected()) {
               await laneRunner.close().catch(() => {});
@@ -989,41 +1030,49 @@ async function main(): Promise<void> {
     );
 
     console.log(`[DRAIN] [Batch #${batchNumber}] Completed batch execution (${processedCount} processed, ${appliedCount} applied).`);
-
-    if (!isContinuousSubmit || stopping()) {
-      break;
-    }
-
-    if (processedCount === 0) await waitForDaemonWake(stateDir, 30_000, stopping);
-    if (stopping()) break;
-
-    // Step 421 (GEN-421): Inter-chunk cleanup between batches
-    console.log(`[DRAIN] Performing inter-batch full cleanup and checking hot-respawn...`);
-    ramWatchdog.performInterChunkFullCleanup();
-    const freed = scrubBrowserProfileCaches(stateDir);
-    if (freed > 0) {
-      console.log(`[DRAIN] [RAM DIET] Scrubbed ${freed} cache directories across browser profiles.`);
-    }
-
-    // Hot-respawn check if out/dist/src/autoapply/runner.js was recompiled
-    if (fs.existsSync(runnerDistPath)) {
-      const currentMtime = fs.statSync(runnerDistPath).mtimeMs;
-      if (currentMtime > bootTimeMs) {
-        console.log(`[DRAIN] Recompiled runner.js detected (${new Date(currentMtime).toISOString()} > ${new Date(bootTimeMs).toISOString()}). Hot-respawning continuous daemon...`);
-        ramWatchdog.stop();
-        await mailbox?.close().catch(() => {});
-        queue.close();
-        releaseLock(lockPath);
-        const { spawn } = await import('node:child_process');
-        const child = spawn(process.execPath, process.argv.slice(1), {
-          detached: true,
-          stdio: 'ignore',
-        });
-        (child as any)?.unref?.();
-        process.exit(0);
+      } catch (cycleErr: any) {
+        console.error(`[INFINITE-DAEMON] ⚠️ Cycle #${batchNumber} error (recovering in 8s): ${cycleErr?.message || cycleErr}`);
       }
+
+      if (stopping() || batchNumber >= maxCycles) {
+        break;
+      }
+
+      if (processedCount === 0) await waitForDaemonWake(stateDir, idleWaitMs, stopping);
+      if (stopping() || batchNumber >= maxCycles) break;
+
+      // Step 421 (GEN-421): Inter-chunk cleanup between batches
+      console.log(`[DRAIN] Performing inter-batch full cleanup and checking hot-respawn...`);
+      ramWatchdog.performInterChunkFullCleanup();
+      const freed = scrubBrowserProfileCaches(stateDir);
+      if (freed > 0) {
+        console.log(`[DRAIN] [RAM DIET] Scrubbed ${freed} cache directories across browser profiles.`);
+      }
+
+      // Hot-respawn check if out/dist/src/autoapply/runner.js was recompiled
+      if (fs.existsSync(runnerDistPath)) {
+        const currentMtime = fs.statSync(runnerDistPath).mtimeMs;
+        if (currentMtime > bootTimeMs) {
+          console.log(`[DRAIN] Recompiled runner.js detected (${new Date(currentMtime).toISOString()} > ${new Date(bootTimeMs).toISOString()}). Hot-respawning continuous daemon...`);
+          ramWatchdog.stop();
+          await mailbox?.close().catch(() => {});
+          queue.close();
+          releaseLock(lockPath);
+          const { spawn } = await import('node:child_process');
+          const child = spawn(process.execPath, process.argv.slice(1), {
+            detached: true,
+            stdio: 'ignore',
+          });
+          (child as any)?.unref?.();
+          process.exit(0);
+        }
+      }
+
+      // Breather between cycles to flush OS sockets and GC
+      const breatherMs = maxCycles < Infinity ? 200 : 8000;
+      console.log(`[INFINITE-DAEMON] Breather ${breatherMs}ms before Cycle #${batchNumber + 1}...`);
+      await new Promise(r => setTimeout(r, breatherMs));
     }
-  }
 } finally {
     ramWatchdog.stop();
     process.off('SIGINT', requestStop);
@@ -1046,9 +1095,13 @@ async function main(): Promise<void> {
   }
 }
 
+export { main as runInfiniteDrainDaemon };
+
 if (process.argv[1] && (process.argv[1].endsWith('drain-backfill-and-hourly.ts') || process.argv[1].endsWith('drain-backfill-and-hourly.js'))) {
-  main().catch(err => {
-    console.error('[DRAIN] Fatal error:', err);
-    process.exit(1);
-  });
+  main()
+    .then(() => process.exit(0))
+    .catch(err => {
+      console.error('[DRAIN] Fatal error:', err);
+      process.exit(1);
+    });
 }

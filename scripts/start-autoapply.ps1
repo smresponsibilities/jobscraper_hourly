@@ -24,7 +24,15 @@ Get-ChildItem -Path "$stateDir/browser-profile-*" -Filter "SingletonLock" -Depth
     Remove-Item -Force $_.FullName -ErrorAction SilentlyContinue
 }
 
-Write-Host "[START] Starting immortal supervisor in background..." -ForegroundColor Green
-Start-Process -FilePath "powershell.exe" -ArgumentList "-ExecutionPolicy Bypass -File `"$PSScriptRoot\immortal-supervisor.ps1`"" -WorkingDirectory $repoRoot -WindowStyle Hidden
+# Ensure Scheduled Task is registered
+$TaskName = "Jobscraper Autoapply"
+$existingTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+if (-not $existingTask) {
+    Write-Host "[START] Registering Scheduled Task '$TaskName'..." -ForegroundColor Cyan
+    & "$PSScriptRoot\install-autoapply-startup.ps1" -Submit
+}
 
-Write-Host "[START] Immortal supervisor launched." -ForegroundColor Green
+Write-Host "[START] Starting Scheduled Task '$TaskName' via Windows Task Scheduler Service..." -ForegroundColor Green
+Start-ScheduledTask -TaskName $TaskName
+
+Write-Host "[START] Task Scheduler launched immortal supervisor outside agent job object." -ForegroundColor Green

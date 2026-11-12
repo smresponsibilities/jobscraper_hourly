@@ -81,8 +81,9 @@ try {
         }
         $startedAt = Get-Date
         try {
-            $arguments = "--import tsx `"$workerScript`" --profile `"$profilePath`" --state `"$stateDir`" --submit"
-            $worker = Start-Process -FilePath 'node' -ArgumentList $arguments -WorkingDirectory $repoRoot -WindowStyle Hidden -PassThru
+            $daemonLog = Join-Path $logDir "hourly-daemon.log"
+            $arguments = "/c node --import tsx `"$workerScript`" --profile `"$profilePath`" --state `"$stateDir`" --submit >> `"$daemonLog`" 2>&1"
+            $worker = Start-Process -FilePath 'cmd.exe' -ArgumentList $arguments -WorkingDirectory $repoRoot -WindowStyle Hidden -PassThru
             Log-Supervisor "Spawned worker PID $($worker.Id)"
             while (-not $worker.HasExited -and -not (Test-Path -LiteralPath $flagPath)) {
                 Start-Sleep -Seconds 1
