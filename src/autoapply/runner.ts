@@ -42,7 +42,7 @@ import { createResilientBrowserContext, getResilientContextTier } from './resili
 import { JobActivityWatchdog, getProviderTimeoutConfig } from './watchdog-timer.js';
 import { applyClubbedValueTransform } from './clubbing.js';
 import { runOnDemandHumanPopup } from './hitl-popup.js';
-import { compileRuntimeTailoredResumeForJob } from '../resume/deterministic-builder.js';
+import { compileRuntimeTailoredResumeForJob, selectBestArchetypeByJdHardMatch } from '../resume/deterministic-builder.js';
 import { resolveCoverLetterPdfPath } from '../resume/cover-letter-builder.js';
 import { appendJobRunHistory } from './run-history.js';
 import { capturePageDiagnostics, recordOvernightError, normalizeReasonCode } from './overnight-error-logger.js';
@@ -4480,7 +4480,11 @@ export class AutoApplyRunner {
         options.company ||
         'Software Engineer';
 
-      const fallbackResumePdf = path.resolve('state/autoapply/resumes/Shivam_Mahajan_Resume_BACKEND.pdf');
+      const matchedArchetype = selectBestArchetypeByJdHardMatch(titleCandidate, liveJd).archetype;
+      const archetypePdfPath = path.resolve(`state/autoapply/resumes/Shivam_Mahajan_Resume_${matchedArchetype}.pdf`);
+      const fallbackResumePdf = existsSync(archetypePdfPath)
+        ? archetypePdfPath
+        : path.resolve('state/autoapply/resumes/Shivam_Mahajan_Resume_BACKEND.pdf');
       const freeMemLow = os.freemem() < 1.4 * 1024 * 1024 * 1024;
       let resumePdfPath = options.profile.documents?.resume || fallbackResumePdf;
 

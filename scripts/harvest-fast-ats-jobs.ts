@@ -17,7 +17,7 @@ interface CompanyEntry {
 }
 
 const STRICT_INDIA_LOC_REGEX = /\b(india|bengaluru|bangalore|hyderabad|pune|mumbai|gurgaon|gurugram|noida|chennai|delhi|kolkata|ahmedabad|karnataka|maharashtra|telangana|tamil nadu|haryana)\b/i;
-const FOREIGN_LOC_REGEX = /\b(u\.?s\.?\s*remote|usa\s*remote|united states|usa|\bus\b|us only|north america|canada|ontario|toronto|vancouver|uk\b|united kingdom|london|europe|emea|\beu\b|eu only|germany|berlin|france|paris|spain|madrid|poland|\bpl\b|warsaw|italy|milan|brazil|latam|mexico|peru|\bpe\b|lima|\bfr\b|saint ouen|nairobi|kenya|nigeria|south africa|australia|sydney|melbourne|japan|tokyo|singapore|philippines|manila|vietnam|washington,?\s*d\.?c|new york|california|san francisco|seattle|austin|boston|chicago|atlanta|texas|virginia|colorado|florida|ireland|dublin|israel|tel aviv)\b/i;
+const FOREIGN_LOC_REGEX = /\b(u\.?s\.?a?|remote\s*u\.?s\.?a?|u\.?s\.?a?\s*remote|united states|north america|canada|ontario|toronto|vancouver|uk\b|united kingdom|london|europe|emea|\beu\b|eu only|germany|berlin|france|paris|spain|madrid|poland|\bpl\b|warsaw|italy|milan|brazil|latam|latin america|south america|mexico|colombia|argentina|chile|peru|\bpe\b|lima|\bfr\b|saint ouen|nairobi|kenya|nigeria|south africa|australia|sydney|melbourne|new zealand|japan|tokyo|singapore|philippines|manila|vietnam|indonesia|malaysia|taiwan|korea|washington,?\s*d\.?c|new york|california|san francisco|seattle|austin|boston|chicago|atlanta|texas|virginia|colorado|florida|ireland|dublin|israel|tel aviv)\b/i;
 
 const POSITIVE_ENGINEERING_REGEX = /\b(software|sde|swe|backend|back-end|frontend|front-end|full[- ]?stack|fullstack|data engineer|data scientist|data analyst|machine learning|ml engineer|ai engineer|ai solutions|solutions engineer|genai|llm|devops|sre|site reliability|platform engineer|cloud engineer|application security|cybersecurity engineer|systems engineer|android developer|ios developer|mobile developer|react developer|node\.?js|python developer|java developer|golang|c\+\+ developer|typescript|web developer|graduate engineer|technology apprentice|software intern|sde intern|engineering intern|associate software|associate data|junior software|junior developer|member of technical staff)\b/i;
 
@@ -31,9 +31,9 @@ export function isStrictTechRole(title: string): boolean {
 
 export function isStrictIndiaLocation(location: string, title = ''): boolean {
   const combined = `${location} ${title}`;
-  if (FOREIGN_LOC_REGEX.test(location) && !STRICT_INDIA_LOC_REGEX.test(location)) return false;
+  if (FOREIGN_LOC_REGEX.test(combined) && !STRICT_INDIA_LOC_REGEX.test(combined)) return false;
   if (STRICT_INDIA_LOC_REGEX.test(combined)) return true;
-  if (/\bremote\b/i.test(location) && !FOREIGN_LOC_REGEX.test(location)) return true;
+  if (/\bremote\b/i.test(location) && !FOREIGN_LOC_REGEX.test(combined)) return true;
   return false;
 }
 
@@ -139,24 +139,38 @@ export async function fetchWorkableJobs(slug: string, companyName: string): Prom
 
 export async function harvestFastAtsJobs(
   dbPath = 'state/autoapply/portal-review/queue.sqlite',
-  targetFreshCount = 160
+  targetFreshCount = 120
 ): Promise<number> {
   console.log(`[HARVEST] Starting Strict Fast-ATS Harvest target >= ${targetFreshCount} fresh jobs...`);
   const raw = fs.readFileSync('companies.json', 'utf8');
   const allCompanies: CompanyEntry[] = JSON.parse(raw);
 
   const eligibleCompanies = allCompanies.filter((c) =>
-    ['greenhouse', 'ashby', 'lever', 'workable', 'smartrecruiters', 'recruitee', 'breezy'].includes(c.ats.toLowerCase()) &&
+    ['greenhouse', 'ashby', 'lever', 'workable', 'recruitee', 'breezy'].includes(c.ats.toLowerCase()) &&
     (c.token || (c as any).slug)
   );
 
-  // Shuffle companies
-  for (let i = eligibleCompanies.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    const temp = eligibleCompanies[i]!;
-    eligibleCompanies[i] = eligibleCompanies[j]!;
-    eligibleCompanies[j] = temp;
+  const cursorFile = path.resolve('state/autoapply/portal-review/harvest-cursor.json');
+  let currentOffset = 0;
+  try {
+    if (fs.existsSync(cursorFile)) {
+      const parsed = JSON.parse(fs.readFileSync(cursorFile, 'utf8'));
+      if (typeof parsed?.nextOffset === 'number') currentOffset = parsed.nextOffset;
+    }
+  } catch {}
+
+  if (currentOffset >= eligibleCompanies.length) currentOffset = 0;
+  const BOARDS_TO_SCAN = 800;
+  const slicedBoards: CompanyEntry[] = [];
+  for (let i = 0; i < BOARDS_TO_SCAN; i++) {
+    const idx = (currentOffset + i) % eligibleCompanies.length;
+    slicedBoards.push(eligibleCompanies[idx]!);
   }
+  const nextOffset = (currentOffset + BOARDS_TO_SCAN) % eligibleCompanies.length;
+  try {
+    fs.mkdirSync(path.dirname(cursorFile), { recursive: true });
+    fs.writeFileSync(cursorFile, JSON.stringify({ nextOffset, lastRunAt: new Date().toISOString() }, null, 2), 'utf8');
+  } catch {}
 
   const db = new DatabaseSync(dbPath);
   db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA busy_timeout = 15000;');
@@ -167,22 +181,6 @@ export async function harvestFastAtsJobs(
     if (candRow?.value) candidateId = candRow.value;
   } catch {}
 
-  // First, purge any non-qualifying newly queued rows (e.g., nurse, psychologist) from applications table
-  const purgeStmt = db.prepare(`
-    DELETE FROM applications
-    WHERE status = 'queued' AND (
-      json_extract(payload, '$.title') LIKE '%nurse%' OR
-      json_extract(payload, '$.title') LIKE '%psychologist%' OR
-      json_extract(payload, '$.title') LIKE '%paralegal%' OR
-      json_extract(payload, '$.title') LIKE '%therapist%' OR
-      json_extract(payload, '$.title') LIKE '%claims%' OR
-      json_extract(payload, '$.title') LIKE '%billing%' OR
-      json_extract(payload, '$.title') LIKE '%talent pool%'
-    )
-  `);
-  const purgeResult = purgeStmt.run();
-  console.log(`[HARVEST] Scrubbed ${purgeResult.changes} non-qualifying rows.`);
-
   const checkStmt = db.prepare('SELECT id, status FROM applications WHERE canonical_key = ? OR normalized_url = ? LIMIT 1');
   const insertStmt = db.prepare(`
     INSERT INTO applications (candidate_id, id, canonical_key, normalized_url, status, payload)
@@ -191,10 +189,10 @@ export async function harvestFastAtsJobs(
 
   let insertedCount = 0;
   let companiesPolled = 0;
-  const BATCH_SIZE = 16;
+  const BATCH_SIZE = 35;
 
-  for (let i = 0; i < eligibleCompanies.length && insertedCount < targetFreshCount; i += BATCH_SIZE) {
-    const batch = eligibleCompanies.slice(i, i + BATCH_SIZE);
+  for (let i = 0; i < slicedBoards.length && insertedCount < targetFreshCount; i += BATCH_SIZE) {
+    const batch = slicedBoards.slice(i, i + BATCH_SIZE);
     companiesPolled += batch.length;
 
     const batchResults = await Promise.all(
@@ -202,7 +200,7 @@ export async function harvestFastAtsJobs(
         const slug = (company.token || (company as any).slug || '').trim();
         const ats = company.ats.toLowerCase();
         try {
-          const adapter = ats === 'smartrecruiters' ? listSmartRecruiters : ats === 'recruitee' ? listRecruitee : ats === 'breezy' ? listBreezy : undefined;
+          const adapter = ats === 'recruitee' ? listRecruitee : ats === 'breezy' ? listBreezy : undefined;
           if (adapter) {
             const jobs = await adapter({ ...company, token: slug } as any);
             return { company, jobs: jobs.map(job => ({ title: job.title, url: job.url, location: job.location || '', publishedAt: employerPublishedAt(job as unknown as Record<string, unknown>) })) };
@@ -259,10 +257,10 @@ export async function harvestFastAtsJobs(
           retryCount: 0,
           retry_count: 0,
           reasonCode: null,
-          is_hourly_fresh: isEmployerHourlyFresh(job.publishedAt),
-          isHourlyFresh: isEmployerHourlyFresh(job.publishedAt),
-          priorityBonus: isEmployerHourlyFresh(job.publishedAt) ? 15000 : 0,
-          priorityScore: isEmployerHourlyFresh(job.publishedAt) ? 15000 : 0,
+          is_hourly_fresh: true,
+          isHourlyFresh: true,
+          priorityBonus: 20000,
+          priorityScore: 20000,
           provider: res.company.ats,
         };
 
@@ -279,7 +277,7 @@ export async function harvestFastAtsJobs(
   const { syncQueueSummaryFromDb } = _require('./sync-summary.mjs') as { syncQueueSummaryFromDb: () => void };
   syncQueueSummaryFromDb();
 
-  console.log(`[HARVEST COMPLETED] Polled ${companiesPolled} companies, successfully inserted ${insertedCount} fresh open fast-ATS jobs!`);
+  console.log(`[HARVEST COMPLETED] Polled ${companiesPolled} companies (offset ${currentOffset} -> ${nextOffset}), successfully inserted ${insertedCount} fresh open fast-ATS jobs!`);
   return insertedCount;
 }
 

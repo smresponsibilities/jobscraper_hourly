@@ -102,9 +102,22 @@ export function extractOtpOrLinkFromMime(decoded: string): { otpCode?: string; v
   const cleanDecoded = (decoded || '').replace(/&nbsp;/gi, ' ');
 
   // 1. Check for Workday / ATS Verification Link
-  const linkMatch = cleanDecoded.match(
+  let linkMatch = cleanDecoded.match(
     /https?:\/\/[^\s"'<>]+(?:myworkdayjobs\.com|myworkday\.com|smartrecruiters\.com|greenhouse\.io)[^\s"'<>]*(?:verify|confirm|activate|token|code)[^\s"'<>]*/i
   );
+
+  // Ticket GEN-525: If no explicit verify/confirm/activate path, extract any Workday link in an activation context
+  if (!linkMatch) {
+    const isActivationEmail = /verify|activate|welcome|account|confirm|sign[- ]?in/i.test(cleanDecoded);
+    if (isActivationEmail) {
+      const generalWdLink = cleanDecoded.match(
+        /https?:\/\/[^\s"'<>]+(?:myworkdayjobs\.com|myworkday\.com)\/[^\s"'<>]+/i
+      );
+      if (generalWdLink) {
+        linkMatch = generalWdLink;
+      }
+    }
+  }
 
   // Stage 1: Look for an isolated 6-to-8 char token inside HTML emphasis/table/heading tags
   const tagMatches = [...cleanDecoded.matchAll(/<(?:h1|h2|h3|h4|strong|b|code|td|p|div|span)[^>]*>\s*([A-Za-z0-9]{6,8})\s*<\/(?:h1|h2|h3|h4|strong|b|code|td|p|div|span)>/gi)];

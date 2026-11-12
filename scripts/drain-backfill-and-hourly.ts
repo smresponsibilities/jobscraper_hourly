@@ -544,6 +544,19 @@ async function main(): Promise<void> {
         continue;
       }
 
+      // Ticket GEN-524: Auto-refill fast-ATS pool if queued fast-ATS jobs are low
+      const queuedFastAtsCount = eligible.filter(j =>
+        /(?:greenhouse\.io|gh_jid=|ashbyhq\.com|lever\.co|workable\.com|recruitee\.com|breezy\.hr)/i.test(j.jobUrl)
+      ).length;
+      if (queuedFastAtsCount < 40) {
+        console.log(`[DRAIN] Queued fast-ATS count (${queuedFastAtsCount}) below 40. Auto-harvesting next 800 boards...`);
+        try {
+          await harvestFastAtsJobs(dbPath, 120);
+        } catch (err: any) {
+          console.warn(`[DRAIN] Auto-harvest warning: ${err?.message || err}`);
+        }
+      }
+
       // Ticket GEN-474: Filter out previously attempted jobs while treating SQLite status = 'queued' as authoritative
       const freshQueued = filterUnattemptedJobs(eligible);
       if (freshQueued.length === 0) {

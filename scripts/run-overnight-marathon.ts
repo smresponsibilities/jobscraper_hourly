@@ -145,6 +145,18 @@ export function selectDiversifiedMultiLaneChunk(
     // Rule 4: Exclude Stripe
     if (/stripe/i.test(job.company) || /stripe/i.test(job.jobUrl)) return false;
 
+    // Ticket GEN-524: Cap Workday to max 2 and SmartRecruiters to max 2 per batch when Fast-ATS jobs are present
+    const isWorkday = /myworkdayjobs\.com|myworkdaysite\.com/i.test(job.jobUrl);
+    const isSmartRecruiters = /smartrecruiters\.com|smartr\.me/i.test(job.jobUrl);
+    if (isWorkday) {
+      const currentWorkdayCount = selected.filter(j => /myworkdayjobs\.com|myworkdaysite\.com/i.test(j.jobUrl)).length;
+      if (currentWorkdayCount >= 2) return false;
+    }
+    if (isSmartRecruiters) {
+      const currentSrCount = selected.filter(j => /smartrecruiters\.com|smartr\.me/i.test(j.jobUrl)).length;
+      if (currentSrCount >= 2) return false;
+    }
+
     // Ticket GEN-175: Candidate precision fit check
     const fit = evaluateCandidateJobFit({
       company: job.company,
