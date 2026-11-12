@@ -304,14 +304,36 @@ async function main(): Promise<void> {
   const vault = new CredentialVault(path.join(stateDir, 'vault'));
 
   try {
+    const FAST_ATS_REGEX = /(?:greenhouse\.io|gh_jid=|ashbyhq\.com|lever\.co|workable\.com|recruitee\.com|breezy\.hr)/i;
+    const countFastAtsQueued = (): number => {
+      try {
+        const dbCheck = new DatabaseSync(dbPath);
+        const rows = dbCheck.prepare(`SELECT normalized_url, payload FROM applications WHERE status = 'queued'`).all() as Array<{ normalized_url: string; payload: string }>;
+        dbCheck.close();
+        let count = 0;
+        for (const r of rows) {
+          let prov = '';
+          try { prov = JSON.parse(r.payload)?.provider || ''; } catch {}
+          if (['greenhouse', 'ashby', 'lever', 'workable', 'recruitee', 'breezy'].includes(prov) || FAST_ATS_REGEX.test(r.normalized_url)) {
+            count++;
+          }
+        }
+        return count;
+      } catch {
+        return 0;
+      }
+    };
+
     let discoveryHasRun = false;
     const syncDiscovery = async () => {
       if (skipSync) return;
-      // Ingest fast-ATS jobs from companies.json
-      try {
-        await harvestFastAtsJobs(dbPath, 30);
-      } catch (err: any) {
-        console.warn(`[DRAIN] Fast-ATS harvest warning: ${err?.message || err}`);
+      // Ticket GEN-528: Ingest fast-ATS jobs from companies.json ONLY if depleted (< 30)
+      if (countFastAtsQueued() < 30) {
+        try {
+          await harvestFastAtsJobs(dbPath, 30);
+        } catch (err: any) {
+          console.warn(`[DRAIN] Fast-ATS harvest warning: ${err?.message || err}`);
+        }
       }
 
     // Phase A: Hourly Fresh Sync (fetch fresh postings from catalogue + YC/HN/LinkedIn)
@@ -539,7 +561,21 @@ async function main(): Promise<void> {
           break;
         }
 
-        await syncDiscovery();
+        // Ticket GEN-528: Start browser lanes immediately in 0.5s when >= 30 fast-ATS jobs already queued
+        const fastAtsQueuedCount = countFastAtsQueued();
+        if (fastAtsQueuedCount >= 30) {
+          console.log(`[DRAIN] Fast-ATS queued count (${fastAtsQueuedCount} >= 30). Skipping synchronous startup discovery to launch browser lanes immediately in 0.5s!`);
+        } else if (!skipSync) {
+          console.log(`[DRAIN] Fast-ATS queued count (${fastAtsQueuedCount} < 30). Running fast discovery (45s hard budget)...`);
+          try {
+            await Promise.race([
+              syncDiscovery(),
+              new Promise<void>(resolve => setTimeout(resolve, 45_000))
+            ]);
+          } catch (syncErr: any) {
+            console.warn(`[DRAIN] Discovery sync timed out or warning: ${syncErr?.message || syncErr}`);
+          }
+        }
         if (stopping()) break;
 
         try {
@@ -574,12 +610,12 @@ async function main(): Promise<void> {
           continue;
         }
 
-        // Ticket GEN-524: Auto-refill fast-ATS pool if queued fast-ATS jobs are low
+        // Ticket GEN-524 & GEN-528: Auto-refill fast-ATS pool if queued fast-ATS jobs are low (< 30)
         const queuedFastAtsCount = eligible.filter(j =>
           /(?:greenhouse\.io|gh_jid=|ashbyhq\.com|lever\.co|workable\.com|recruitee\.com|breezy\.hr)/i.test(j.jobUrl)
         ).length;
-        if (queuedFastAtsCount < 40 && !skipSync) {
-          console.log(`[DRAIN] Queued fast-ATS count (${queuedFastAtsCount}) below 40. Auto-harvesting next 800 boards...`);
+        if (queuedFastAtsCount < 30 && !skipSync) {
+          console.log(`[DRAIN] Queued fast-ATS count (${queuedFastAtsCount}) below 30. Auto-harvesting next 800 boards...`);
           try {
             await harvestFastAtsJobs(dbPath, 120);
           } catch (err: any) {
@@ -1047,6 +1083,19 @@ async function main(): Promise<void> {
       const freed = scrubBrowserProfileCaches(stateDir);
       if (freed > 0) {
         console.log(`[DRAIN] [RAM DIET] Scrubbed ${freed} cache directories across browser profiles.`);
+      }
+
+      // Ticket GEN-528: Run background discovery between 20-job batches with 45s hard cap
+      if (!stopping() && !skipSync && batchNumber < maxCycles) {
+        console.log(`[DRAIN] Running inter-cycle background discovery (45s hard cap)...`);
+        try {
+          await Promise.race([
+            syncDiscovery(),
+            new Promise<void>(resolve => setTimeout(resolve, 45_000))
+          ]);
+        } catch (discErr: any) {
+          console.warn(`[DRAIN] Inter-cycle discovery warning: ${discErr?.message || discErr}`);
+        }
       }
 
       // Hot-respawn check if out/dist/src/autoapply/runner.js was recompiled
