@@ -275,8 +275,13 @@ export async function harvestFastAtsJobs(
   }
 
   db.close();
-  const { syncQueueSummaryFromDb } = _require('./sync-summary.mjs') as { syncQueueSummaryFromDb: () => void };
-  syncQueueSummaryFromDb();
+  try {
+    const summaryPath = path.resolve('scripts/sync-summary.mjs');
+    if (fs.existsSync(summaryPath)) {
+      const { syncQueueSummaryFromDb } = _require(summaryPath);
+      syncQueueSummaryFromDb();
+    }
+  } catch {}
 
   console.log(`[HARVEST COMPLETED] Polled ${companiesPolled} companies (offset ${currentOffset} -> ${nextOffset}), successfully inserted ${insertedCount} fresh open fast-ATS jobs!`);
   return insertedCount;
