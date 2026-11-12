@@ -6,6 +6,8 @@ import { DatabaseSync } from 'node:sqlite';
 import { canonicalRequisition } from '../src/autoapply/identity.js';
 import { isStrictlyIsolatedTenant, isEligibleEngineeringRoleTitle } from '../src/autoapply/priority-scheduler.js';
 import { employerPublishedAt, isEmployerHourlyFresh } from '../src/sources/realtime-ats-delta-fetcher.js';
+import { filterAndDeduplicateDiscoveredJobs } from '../src/discovery/sync-github-discoveries.js';
+import { computeRoleDedupSignature } from '../src/autoapply/role-dedup-shield.js';
 
 export interface PillarSyncResult {
   fetched: boolean;
@@ -99,6 +101,7 @@ export async function syncGitHubActionsPillars(
   if (fs.existsSync(resolvedDbPath)) {
     try {
       const db = new DatabaseSync(resolvedDbPath);
+      try {
       const insertStmt = db.prepare(`
         INSERT OR IGNORE INTO applications (candidate_id, id, canonical_key, normalized_url, status, payload)
         VALUES (?, ?, ?, ?, ?, ?)
@@ -108,40 +111,66 @@ export async function syncGitHubActionsPillars(
       const firstRow = db.prepare('SELECT candidate_id FROM applications LIMIT 1').get() as any;
       const candidateId = firstRow?.candidate_id || 'default_candidate';
 
-      // Check for remote data/jobs or daily postings files if available
+      // Check for remote data/jobs or daily postings files if available (origin/data:jobs.json or origin/main:data/normalized-jobs.json)
       let remotePostingsRaw: string | null = null;
-      try {
-        remotePostingsRaw = execSync('git show origin/main:data/normalized-jobs.json', {
-          timeout: 10000,
-          stdio: ['ignore', 'pipe', 'ignore'],
-          encoding: 'utf8',
-        });
-      } catch {
-        remotePostingsRaw = null;
+      for (const gitRef of ['origin/data:jobs.json', 'origin/main:data/normalized-jobs.json']) {
+        try {
+          remotePostingsRaw = execSync(`git show ${gitRef}`, {
+            timeout: 30000,
+            maxBuffer: 50 * 1024 * 1024, // jobs.json can exceed 8 MB — default 1 MB causes ENOBUFS → silent 0-ingest
+            stdio: ['ignore', 'pipe', 'ignore'],
+            encoding: 'utf8',
+          });
+          if (remotePostingsRaw && remotePostingsRaw.trim()) break;
+        } catch {
+          remotePostingsRaw = null;
+        }
       }
 
       if (remotePostingsRaw) {
         try {
           const jobs = JSON.parse(remotePostingsRaw);
           if (Array.isArray(jobs)) {
-            for (const j of jobs) {
-              const url = j.url || j.jobUrl;
+            const applied = new Map<string, number>();
+            const appliedRows = db.prepare("SELECT payload FROM applications WHERE candidate_id=? AND status='applied'").all(candidateId) as Array<{ payload: string }>;
+            for (const row of appliedRows) {
+              const previous = JSON.parse(row.payload);
+              const signature = computeRoleDedupSignature(previous.company || '', previous.title || '');
+              if (!signature) continue;
+              const stamp = Date.parse(previous.appliedAt || previous.receipt?.verifiedAt || '');
+              const old = applied.get(signature);
+              applied.set(signature, old === undefined ? stamp : !Number.isFinite(old) || !Number.isFinite(stamp) ? NaN : Math.max(old, stamp));
+            }
+            const discovered = jobs.filter(j => j && typeof j === 'object').map(j => ({
+              url: j.url || j.jobUrl, company: j.company, title: j.title, location: j.location,
+              jdText: j.text || j.description,
+              publishedAt: employerPublishedAt({ publishedAt: j.publishedAt, postedAt: j.postedAt, first_published: j.first_published, published_at: j.published_at, published_on: j.published_on, published_date: j.published_date, releasedDate: j.releasedDate }),
+            }));
+            const publicationByUrl = new Map<string, string>();
+            for (const raw of discovered) {
+              if (typeof raw.url !== 'string' || !URL.canParse(raw.url) || !raw.publishedAt) continue;
+              const url = new URL(raw.url).href;
+              const previous = publicationByUrl.get(url);
+              if (!previous || Date.parse(raw.publishedAt) > Date.parse(previous)) publicationByUrl.set(url, raw.publishedAt);
+            }
+            for (const j of filterAndDeduplicateDiscoveredJobs(discovered, applied)) {
+              const url = j.url;
               const company = j.company || '';
               const title = j.title || '';
               if (!url || isStrictlyIsolatedTenant(company, url)) continue;
               if (!isEligibleEngineeringRoleTitle(title).eligible) continue;
 
-              const req = canonicalRequisition(url, j.externalJobId);
+              const req = canonicalRequisition(url);
               const canonicalKey = req ? req.key : url;
               const id = `hunt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
               const nowIso = new Date().toISOString();
-              const publishedAt = employerPublishedAt(j);
+              const publishedAt = publicationByUrl.get(url);
               const payloadObj = {
                 id,
                 title,
                 company,
                 jobUrl: url,
-                location: j.location || 'India',
+                location: j.location,
                 status: 'queued',
                 postedAt: publishedAt || '',
                 canonicalKey,
@@ -164,7 +193,7 @@ export async function syncGitHubActionsPillars(
           }
         } catch {}
       }
-      db.close();
+      } finally { db.close(); }
     } catch {}
   }
 
