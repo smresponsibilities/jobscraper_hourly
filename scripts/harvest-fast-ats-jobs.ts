@@ -17,7 +17,7 @@ interface CompanyEntry {
 }
 
 const STRICT_INDIA_LOC_REGEX = /\b(india|bengaluru|bangalore|hyderabad|pune|mumbai|gurgaon|gurugram|noida|chennai|delhi|kolkata|ahmedabad|karnataka|maharashtra|telangana|tamil nadu|haryana)\b/i;
-const FOREIGN_LOC_REGEX = /\b(u\.?s\.?a?|remote\s*u\.?s\.?a?|u\.?s\.?a?\s*remote|united states|north america|canada|ontario|toronto|vancouver|uk\b|united kingdom|london|europe|emea|\beu\b|eu only|germany|berlin|france|paris|spain|madrid|poland|\bpl\b|warsaw|italy|milan|brazil|latam|latin america|south america|mexico|colombia|argentina|chile|peru|\bpe\b|lima|\bfr\b|saint ouen|nairobi|kenya|nigeria|south africa|australia|sydney|melbourne|new zealand|japan|tokyo|singapore|philippines|manila|vietnam|indonesia|malaysia|taiwan|korea|washington,?\s*d\.?c|new york|california|san francisco|seattle|austin|boston|chicago|atlanta|texas|virginia|colorado|florida|ireland|dublin|israel|tel aviv)\b/i;
+const FOREIGN_LOC_REGEX = /\b(u\.?s\.?a?|remote\s*u\.?s\.?a?|u\.?s\.?a?\s*remote|united states|north america|canada|ontario|toronto|vancouver|uk\b|united kingdom|london|europe|emea|\beu\b|eu only|germany|berlin|france|paris|spain|madrid|poland|\bpl\b|warsaw|italy|milan|brazil|latam|latin america|south america|mexico|colombia|argentina|chile|peru|\bpe\b|lima|\bfr\b|saint ouen|nairobi|kenya|nigeria|south africa|australia|sydney|melbourne|new zealand|japan|tokyo|singapore|philippines|manila|vietnam|indonesia|malaysia|taiwan|korea|washington,?\s*d\.?c|nyc|new york|california|san francisco|sf bay|bay area|silicon valley|seattle|austin|boston|chicago|atlanta|texas|virginia|colorado|florida|ireland|dublin|israel|tel aviv)\b/i;
 
 const POSITIVE_ENGINEERING_REGEX = /\b(software|sde|swe|backend|back-end|frontend|front-end|full[- ]?stack|fullstack|data engineer|data scientist|data analyst|machine learning|ml engineer|ai engineer|ai solutions|solutions engineer|genai|llm|devops|sre|site reliability|platform engineer|cloud engineer|application security|cybersecurity engineer|systems engineer|android developer|ios developer|mobile developer|react developer|node\.?js|python developer|java developer|golang|c\+\+ developer|typescript|web developer|graduate engineer|technology apprentice|software intern|sde intern|engineering intern|associate software|associate data|junior software|junior developer|member of technical staff)\b/i;
 
@@ -33,7 +33,8 @@ export function isStrictIndiaLocation(location: string, title = ''): boolean {
   const combined = `${location} ${title}`;
   if (FOREIGN_LOC_REGEX.test(combined) && !STRICT_INDIA_LOC_REGEX.test(combined)) return false;
   if (STRICT_INDIA_LOC_REGEX.test(combined)) return true;
-  if (/\bremote\b/i.test(location) && !FOREIGN_LOC_REGEX.test(combined)) return true;
+  if (/\b(worldwide|global|anywhere)\b/i.test(location)) return true;
+  if (/^(remote|work from home|telecommute|virtual)$/i.test(location.trim())) return true;
   return false;
 }
 
