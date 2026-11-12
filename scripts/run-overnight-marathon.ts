@@ -197,10 +197,101 @@ export function selectDiversifiedMultiLaneChunk(
     return true;
   };
 
+  // Ticket GEN-532: Deficit Round Robin (DRR) Provider Scheduler
+  const inferProviderKey = (url: string, prov?: string): string => {
+    const u = (url || '').toLowerCase();
+    const p = (prov || '').toLowerCase();
+    if (u.includes('greenhouse.io') || u.includes('gh_jid=') || p === 'greenhouse') return 'greenhouse';
+    if (u.includes('ashbyhq.com') || p === 'ashby') return 'ashby';
+    if (u.includes('lever.co') || p === 'lever') return 'lever';
+    if (u.includes('workable.com') || p === 'workable') return 'workable';
+    if (u.includes('recruitee.com') || p === 'recruitee') return 'recruitee';
+    if (u.includes('breezy.hr') || p === 'breezy') return 'breezy';
+    if (u.includes('smartrecruiters.com') || u.includes('smartr.me') || p === 'smartrecruiters') return 'smartrecruiters';
+    if (u.includes('myworkdayjobs.com') || u.includes('myworkdaysite.com') || p === 'workday') return 'workday';
+    return 'other';
+  };
+
+  const quantumMap: Record<string, number> = {
+    greenhouse: 6,
+    ashby: 5,
+    lever: 5,
+    workable: 4,
+    recruitee: 4,
+    breezy: 4,
+    smartrecruiters: 2,
+    workday: 2,
+    other: 2,
+  };
+
+  const providerQueues: Record<string, AutoaplyJobItem[]> = {
+    greenhouse: [],
+    ashby: [],
+    lever: [],
+    workable: [],
+    recruitee: [],
+    breezy: [],
+    smartrecruiters: [],
+    workday: [],
+    other: [],
+  };
+
   for (const job of allSortedCandidates) {
     if (!job?.jobUrl || !isSupportedDirectAtsJobUrl(job.jobUrl)) continue;
-    takeCandidate(job);
-    if (selected.length >= chunkSize) break;
+    const pk = inferProviderKey(job.jobUrl, (job as any).provider);
+    providerQueues[pk]?.push(job);
+  }
+
+  const deficitMap: Record<string, number> = {
+    greenhouse: 0,
+    ashby: 0,
+    lever: 0,
+    workable: 0,
+    recruitee: 0,
+    breezy: 0,
+    smartrecruiters: 0,
+    workday: 0,
+    other: 0,
+  };
+
+  const providers = ['greenhouse', 'ashby', 'lever', 'workable', 'recruitee', 'breezy', 'smartrecruiters', 'workday', 'other'];
+
+  let hasItemsRemaining = true;
+  let rounds = 0;
+  while (selected.length < chunkSize && hasItemsRemaining && rounds < 25) {
+    rounds++;
+    let anyTakenInRound = false;
+
+    for (const p of providers) {
+      if (selected.length >= chunkSize) break;
+      const q = providerQueues[p]!;
+      if (q.length === 0) {
+        deficitMap[p] = 0;
+        continue;
+      }
+
+      deficitMap[p] = (deficitMap[p] ?? 0) + (quantumMap[p] ?? 1);
+
+      while (deficitMap[p]! >= 1 && q.length > 0 && selected.length < chunkSize) {
+        const candidate = q.shift()!;
+        if (takeCandidate(candidate)) {
+          deficitMap[p]! -= 1;
+          anyTakenInRound = true;
+        }
+      }
+    }
+
+    hasItemsRemaining = providers.some(p => providerQueues[p]!.length > 0);
+    if (!anyTakenInRound && !hasItemsRemaining) break;
+  }
+
+  // Fallback sweep if DRR rounds exhausted before reaching chunkSize
+  if (selected.length < chunkSize) {
+    for (const job of allSortedCandidates) {
+      if (!job?.jobUrl || !isSupportedDirectAtsJobUrl(job.jobUrl)) continue;
+      takeCandidate(job);
+      if (selected.length >= chunkSize) break;
+    }
   }
 
   return selected;

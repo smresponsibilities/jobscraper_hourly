@@ -1,3 +1,5 @@
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import {
   isPoisonPrefixEmail,
   verifyDomainMxRecords,
@@ -9,12 +11,71 @@ export type OutreachLeadTier =
   | 'TIER_B_MAILBOX_VERIFIED'
   | 'TIER_C_UNVERIFIED_GUESS';
 
-export interface MailboxVerificationResult {
-  deliverable: boolean;
-  tier: OutreachLeadTier;
-  reason?: string;
-  smtpVerified?: boolean;
-  score?: number;
+export class ZeroBounceBlockedError extends Error {
+  constructor(message: string, public readonly tier: OutreachLeadTier, public readonly reason: string) {
+    super(message);
+    this.name = 'ZeroBounceBlockedError';
+  }
+}
+
+export const DEFAULT_QUARANTINE_PATH = 'state/outreach/quarantined-guesses.json';
+
+export interface VerifiedOutreachPayload {
+  transporter: any;
+  mailOptions: any;
+  to: string;
+  provenanceTier: OutreachLeadTier;
+  evidenceUrl?: string;
+  mailboxStatus?: string;
+  isCatchAll?: boolean;
+  quarantinePath?: string;
+}
+
+export function quarantineUnverifiedGuess(leadInfo: any, quarantinePath = DEFAULT_QUARANTINE_PATH): void {
+  try {
+    const fullPath = path.resolve(quarantinePath);
+    fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+    let existing: any[] = [];
+    if (fs.existsSync(fullPath)) {
+      try {
+        existing = JSON.parse(fs.readFileSync(fullPath, 'utf8'));
+      } catch {}
+    }
+    existing.push({
+      ...leadInfo,
+      quarantinedAt: new Date().toISOString(),
+    });
+    fs.writeFileSync(fullPath, JSON.stringify(existing, null, 2), 'utf8');
+  } catch {}
+}
+
+/**
+ * Mandatory send gate for all outreach emails.
+ * Only allows TIER_A_VERBATIM_OBSERVED with evidenceUrl, or TIER_B_MAILBOX_VERIFIED with status VALID & non-catchall.
+ * Quarantines TIER_C_UNVERIFIED_GUESS and throws ZeroBounceBlockedError.
+ */
+export async function sendVerifiedOutreachEmail(payload: VerifiedOutreachPayload): Promise<any> {
+  const { transporter, mailOptions, to, provenanceTier, evidenceUrl, mailboxStatus, isCatchAll, quarantinePath } = payload;
+
+  if (provenanceTier === 'TIER_A_VERBATIM_OBSERVED') {
+    if (!evidenceUrl || !evidenceUrl.trim()) {
+      quarantineUnverifiedGuess({ to, provenanceTier, reason: 'TIER_A missing evidenceUrl' }, quarantinePath);
+      throw new ZeroBounceBlockedError(`ZeroBounceBlocked: TIER_A missing evidenceUrl for ${to}`, provenanceTier, 'missing_evidence_url');
+    }
+    return await transporter.sendMail(mailOptions);
+  }
+
+  if (provenanceTier === 'TIER_B_MAILBOX_VERIFIED') {
+    if (mailboxStatus !== 'VALID' || isCatchAll === true) {
+      quarantineUnverifiedGuess({ to, provenanceTier, mailboxStatus, isCatchAll, reason: 'TIER_B status not VALID or is catch-all' }, quarantinePath);
+      throw new ZeroBounceBlockedError(`ZeroBounceBlocked: TIER_B mailbox verification failed (${mailboxStatus}, catchAll=${isCatchAll}) for ${to}`, provenanceTier, 'mailbox_unverified_or_catchall');
+    }
+    return await transporter.sendMail(mailOptions);
+  }
+
+  // TIER_C or unknown tier
+  quarantineUnverifiedGuess({ to, provenanceTier, reason: 'TIER_C_UNVERIFIED_GUESS blocked' }, quarantinePath);
+  throw new ZeroBounceBlockedError(`ZeroBounceBlocked: TIER_C unverified guess rejected for ${to}`, 'TIER_C_UNVERIFIED_GUESS', 'tier_c_guess_quarantined');
 }
 
 export const INVENTED_ROLE_GUESS_REGEX =

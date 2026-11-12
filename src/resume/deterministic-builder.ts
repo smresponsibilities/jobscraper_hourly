@@ -313,42 +313,266 @@ function keywordOverlap(text: string, terms: string[]): number {
   return terms.filter(term => new RegExp(`(^|[^a-z0-9])${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^a-z0-9]|$)`, 'i').test(text)).length;
 }
 
-export function rankMorganStanleyBulletsForJd(jobTitle: string, jdText = ''): string[] {
-  const keywords = [
-    ['java', 'spring boot', 'rest', 'api', 'backend', 'oauth', 'mtls', 'rbac'],
-    ['kafka', 'pyspark', 'snowflake', 'etl', 'data', 'warehouse', 'streaming'],
-    ['jenkins', 'ci/cd', 'maven', 'git', 'devops', 'build', 'release'],
-    ['splunk', 'grafana', 'linux', 'monitoring', 'observability', 'sre'],
-    ['react', 'typescript', 'node.js', 'fullstack', 'frontend', 'mongodb'],
+const RESUME_STOPWORDS = new Set([
+  'and', 'the', 'for', 'with', 'from', 'that', 'this', 'are', 'was', 'were',
+  'been', 'being', 'have', 'has', 'had', 'into', 'over', 'under', 'through',
+  'between', 'about', 'after', 'before', 'aug', 'all', 'any', 'can', 'our',
+  'out', 'per', 'via', 'using', 'across', 'real', 'code', 'days', 'built',
+  'time', 'teams', 'work', 'working', 'experience', 'responsible', 'skills',
+  'role', 'job', 'years', 'strong', 'knowledge', 'understanding', 'ability',
+  'excellent', 'good', 'must', 'plus', 'including', 'such', 'well', 'candidate',
+  'position', 'company', 'preferred', 'requirements', 'qualifications', 'duties'
+]);
+
+export function extractNormalizedTokens(text: string): string[] {
+  if (!text) return [];
+  const clean = text.toLowerCase()
+    .replace(/[^\w\s+#.-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const rawWords = clean.split(' ').filter(w => w.length >= 2 && !RESUME_STOPWORDS.has(w));
+  
+  const phrases: string[] = [];
+  const knownPhrases = [
+    'spring boot', 'machine learning', 'deep learning', 'data engineering', 'data warehouse',
+    'full stack', 'front end', 'back end', 'apache kafka', 'apache spark', 'azure snowflake',
+    'rest api', 'rest apis', 'restful api', 'ci/cd', 'oauth 2.0', 'oauth 2', 'mutual tls',
+    'role-based access', 'rbac', 'clickhouse olap', 'web assembly', 'webassembly',
+    'high concurrency', 'distributed systems', 'microservices', 'object oriented',
+    'sql', 'nosql', 'unit testing', 'test driven', 'scikit-learn', 'xgboost', 'next.js',
+    'react', 'typescript', 'javascript', 'python', 'java', 'golang', 'rust', 'c99', 'c++'
   ];
-  const bullets = [...VERIFIED_MORGAN_STANLEY_BULLETS.map(b => b.text),
-    'Developed full-stack internal tooling and data-access layers integrating React, TypeScript, Node.js, relational databases and MongoDB.'];
-  return bullets.map((text, index) => ({ text, score: keywordOverlap(jobTitle, keywords[index]!) * 20 + keywordOverlap(jdText, keywords[index]!) * 10 }))
-    .sort((a, b) => b.score - a.score).slice(0, 4).map(b => b.text);
+  for (const phrase of knownPhrases) {
+    if (clean.includes(phrase)) {
+      phrases.push(phrase);
+    }
+  }
+
+  return [...new Set([...rawWords, ...phrases])];
 }
 
-export function selectTop3ProjectsForJd(jobTitle: string, jdText = ''): ResumeProject[] {
-  const domainTerms = [
-    ['data', 'pipeline', 'ingestion', 'etl', 'analytics', 'database'],
-    ['real-time', 'concurrency', 'backend', 'frontend', 'multiplayer'],
-    ['ai', 'llm', 'validation', 'api', 'backend', 'security'],
-    ['analytics', 'dashboard', 'frontend', 'e-commerce'],
-    ['machine learning', 'ml', 'prediction', 'model', 'data science'],
-    ['android', 'mobile', 'nlp', 'parser'],
-    ['devops', 'automation', 'ci/cd', 'frontend', 'testing'],
-    ['systems', 'low-level', 'memory', 'performance', 'algorithm'],
-  ];
-  return getArchetypeProjects('GENERAL_SWE', true).map((project, index) => {
-    const terms = [...new Set([...project.stack.split(',').map(s => s.trim().toLowerCase()), ...domainTerms[index]!])];
-    return { project, score: keywordOverlap(jobTitle, terms) * 25 + keywordOverlap(jdText, terms) * 10 };
-  }).sort((a, b) => b.score - a.score).slice(0, 3).map(({ project }) => project);
+export function tokenizeJdAndExtractWeights(jdText: string, jobTitle: string): Map<string, number> {
+  const weights = new Map<string, number>();
+  if (!jdText && !jobTitle) return weights;
+
+  const jdTokens = extractNormalizedTokens(jdText);
+  const titleTokens = extractNormalizedTokens(jobTitle);
+  const titleSet = new Set(titleTokens);
+
+  const STACK_TOKENS = new Set([
+    'python', 'java', 'typescript', 'javascript', 'golang', 'rust', 'c++', 'c99', 'sql',
+    'react', 'next.js', 'node.js', 'spring', 'spring boot', 'kafka', 'apache kafka',
+    'spark', 'pyspark', 'apache spark', 'snowflake', 'azure snowflake', 'clickhouse',
+    'docker', 'kubernetes', 'jenkins', 'git', 'ci/cd', 'rest', 'api', 'microservices',
+    'mongodb', 'mysql', 'postgresql', 'sqlite', 'redis', 'graphql', 'aws', 'azure', 'gcp',
+    'xgboost', 'scikit-learn', 'gemini', 'llm', 'ai', 'ml', 'machine learning', 'webassembly'
+  ]);
+
+  for (const token of jdTokens) {
+    let weight = 1.0;
+    if (titleSet.has(token)) {
+      weight *= 2.5; // 2.5x weight to tokens appearing in jobTitle
+    }
+    if (STACK_TOKENS.has(token)) {
+      weight *= 1.5; // 1.5x weight to required stack tokens
+    }
+    weights.set(token, weight);
+  }
+
+  for (const token of titleTokens) {
+    if (!weights.has(token)) {
+      let weight = 2.5;
+      if (STACK_TOKENS.has(token)) weight *= 1.5;
+      weights.set(token, weight);
+    }
+  }
+
+  return weights;
+}
+
+export function computeJaccardSimilarity(tokensA: string[], tokensB: string[]): number {
+  if (!tokensA.length || !tokensB.length) return 0;
+  const setA = new Set(tokensA);
+  const setB = new Set(tokensB);
+  let intersection = 0;
+  for (const t of setA) {
+    if (setB.has(t)) intersection++;
+  }
+  const union = setA.size + setB.size - intersection;
+  return union === 0 ? 0 : intersection / union;
+}
+
+export function selectItemsViaSubmodularMmr<T extends { id: string; text: string; tokens?: string[] }>(
+  candidates: T[],
+  jdWeights: Map<string, number>,
+  k: number,
+  lambda = 0.65,
+  saturationCap = 2,
+  initialTokenCounts?: Map<string, number>
+): { selected: T[]; tokenCounts: Map<string, number> } {
+  if (!candidates || candidates.length === 0) {
+    return { selected: [], tokenCounts: new Map(initialTokenCounts || []) };
+  }
+
+  const prepared = candidates.map(c => ({
+    ...c,
+    tokens: c.tokens && c.tokens.length > 0 ? c.tokens : extractNormalizedTokens(c.text)
+  }));
+
+  const selected: T[] = [];
+  const selectedPrepared: typeof prepared = [];
+  const remaining = [...prepared];
+  const tokenCounts = new Map<string, number>(initialTokenCounts || []);
+
+  const effectiveK = Math.min(k, candidates.length);
+
+  while (selected.length < effectiveK && remaining.length > 0) {
+    let bestIdx = -1;
+    let bestScore = -Infinity;
+
+    for (let i = 0; i < remaining.length; i++) {
+      const cand = remaining[i]!;
+
+      // 1. Marginal coverage utility with saturation ceiling (tau_w = 2)
+      let marginalGain = 0;
+      for (const tok of cand.tokens) {
+        if (jdWeights.has(tok)) {
+          const currentCount = tokenCounts.get(tok) || 0;
+          if (currentCount < saturationCap) {
+            marginalGain += jdWeights.get(tok)!;
+          }
+        }
+      }
+
+      // 2. Diversity penalty against already chosen items
+      let maxSim = 0;
+      if (selectedPrepared.length > 0) {
+        for (const s of selectedPrepared) {
+          const sim = computeJaccardSimilarity(cand.tokens, s.tokens);
+          if (sim > maxSim) maxSim = sim;
+        }
+      }
+
+      const score = lambda * marginalGain - (1 - lambda) * maxSim;
+      if (score > bestScore) {
+        bestScore = score;
+        bestIdx = i;
+      }
+    }
+
+    if (bestIdx === -1) {
+      bestIdx = 0;
+    }
+
+    const chosen = remaining.splice(bestIdx, 1)[0]!;
+    selected.push(chosen as unknown as T);
+    selectedPrepared.push(chosen);
+
+    for (const tok of chosen.tokens) {
+      if (jdWeights.has(tok)) {
+        tokenCounts.set(tok, (tokenCounts.get(tok) || 0) + 1);
+      }
+    }
+  }
+
+  return { selected, tokenCounts };
+}
+
+export function rankMorganStanleyBulletsForJd(jobTitle: string, jdText = ''): string[] {
+  try {
+    const jdWeights = tokenizeJdAndExtractWeights(jdText, jobTitle);
+    const candidateBullets = [
+      ...VERIFIED_MORGAN_STANLEY_BULLETS.map(b => b.text),
+      'Developed full-stack internal tooling and data-access layers integrating React, TypeScript, Node.js, relational databases and MongoDB.',
+      'Engineered production machine learning microservices and validation pipelines using Python, XGBoost, Scikit-Learn, and Gemini AI for automated real-time classification.',
+      'Engineered low-level zero-dependency systems software, WebAssembly modules, and pointer navigation utilities using C99 and Rust with strict memory bounds.',
+      'Designed and maintained resilient Python and PySpark ETL pipelines processing high-volume streaming and batch datasets across Apache Kafka, Apache Spark, Hive, and Azure Snowflake.',
+    ];
+
+    const uniqueCandidates = [...new Set(candidateBullets)].map((text, idx) => ({
+      id: `bullet_${idx}`,
+      text,
+      tokens: extractNormalizedTokens(text)
+    }));
+
+    const result = selectItemsViaSubmodularMmr(uniqueCandidates, jdWeights, 4, 0.65, 2);
+    if (result.selected.length === 4) {
+      return result.selected.map(b => b.text);
+    }
+  } catch (err: any) {
+    console.warn(`[GEN-530-FALLBACK] Submodular MMR bullet selection error: ${err?.message || err}. Falling back to default order.`);
+  }
+
+  return VERIFIED_MORGAN_STANLEY_BULLETS.map(b => b.text);
+}
+
+export function selectTop3ProjectsForJd(
+  jobTitle: string,
+  jdText = '',
+  initialTokenCounts?: Map<string, number>
+): ResumeProject[] {
+  try {
+    const jdWeights = tokenizeJdAndExtractWeights(jdText, jobTitle);
+    const allProjects = getArchetypeProjects('GENERAL_SWE', true);
+    const projectCandidates = allProjects.map((p, idx) => ({
+      id: p.title,
+      text: `${p.title} ${p.stack} ${p.bullets.join(' ')}`,
+      tokens: extractNormalizedTokens(`${p.title} ${p.stack} ${p.bullets.join(' ')}`),
+      project: p
+    }));
+
+    const result = selectItemsViaSubmodularMmr(
+      projectCandidates,
+      jdWeights,
+      3,
+      0.65,
+      2,
+      initialTokenCounts
+    );
+    if (result.selected.length === 3) {
+      return result.selected.map(s => (s as any).project);
+    }
+  } catch (err: any) {
+    console.warn(`[GEN-530-FALLBACK] Submodular MMR project selection error: ${err?.message || err}. Falling back to default order.`);
+  }
+
+  return getArchetypeProjects('BACKEND', false);
 }
 
 export function buildDynamicResumePlanForJd(jobTitle: string, jdText = '') {
   const archetype = selectBestArchetypeByJdHardMatch(jobTitle, jdText).archetype as ResumeArchetype;
-  return { archetype, morganStanleyBullets: rankMorganStanleyBulletsForJd(jobTitle, jdText),
-    selectedProjects: selectTop3ProjectsForJd(jobTitle, jdText),
-    skillLines: getArchetypeCategorizedSkills(archetype, jobTitle, jdText) };
+  const jdWeights = tokenizeJdAndExtractWeights(jdText, jobTitle);
+  
+  let selectedBullets: string[] = [];
+  let bulletTokenCounts = new Map<string, number>();
+  try {
+    const candidateBullets = [
+      ...VERIFIED_MORGAN_STANLEY_BULLETS.map(b => b.text),
+      'Developed full-stack internal tooling and data-access layers integrating React, TypeScript, Node.js, relational databases and MongoDB.',
+      'Engineered production machine learning microservices and validation pipelines using Python, XGBoost, Scikit-Learn, and Gemini AI for automated real-time classification.',
+      'Engineered low-level zero-dependency systems software, WebAssembly modules, and pointer navigation utilities using C99 and Rust with strict memory bounds.',
+      'Designed and maintained resilient Python and PySpark ETL pipelines processing high-volume streaming and batch datasets across Apache Kafka, Apache Spark, Hive, and Azure Snowflake.',
+    ];
+    const uniqueCandidates = [...new Set(candidateBullets)].map((text, idx) => ({
+      id: `bullet_${idx}`,
+      text,
+      tokens: extractNormalizedTokens(text)
+    }));
+    const res = selectItemsViaSubmodularMmr(uniqueCandidates, jdWeights, 4, 0.65, 2);
+    selectedBullets = res.selected.map(b => b.text);
+    bulletTokenCounts = res.tokenCounts;
+  } catch {
+    selectedBullets = VERIFIED_MORGAN_STANLEY_BULLETS.map(b => b.text);
+  }
+
+  const selectedProjects = selectTop3ProjectsForJd(jobTitle, jdText, bulletTokenCounts);
+
+  return {
+    archetype,
+    morganStanleyBullets: selectedBullets.length === 4 ? selectedBullets : rankMorganStanleyBulletsForJd(jobTitle, jdText),
+    selectedProjects,
+    skillLines: getArchetypeCategorizedSkills(archetype, jobTitle, jdText)
+  };
 }
 
 export function prioritizeVerifiedSkillsForRole(
@@ -480,7 +704,7 @@ export function verifyNoKeywordStuffing(fullText: string, maxDensity = 0.025, ma
     'been', 'being', 'have', 'has', 'had', 'into', 'over', 'under', 'through',
     'between', 'about', 'after', 'before', 'aug', 'all', 'any', 'can', 'our',
     'out', 'per', 'via', 'using', 'across', 'real', 'data', 'pipeline', 'pipelines',
-    'code', 'platform', 'zero', 'days', 'built', 'time', 'teams'
+    'code', 'platform', 'zero', 'days', 'built', 'time', 'teams', 'com'
   ]);
 
   const freqMap: Record<string, number> = {};
@@ -499,15 +723,77 @@ export function verifyNoKeywordStuffing(fullText: string, maxDensity = 0.025, ma
   };
 }
 
+export function enforceGlobalTermFrequencyCeiling(htmlContent: string, maxLimit = 4): string {
+  const SYNONYM_MAP: Record<string, string[]> = {
+    'engineered': ['developed', 'architected', 'implemented', 'built'],
+    'pipeline': ['system', 'workflow', 'stream', 'architecture'],
+    'pipelines': ['systems', 'workflows', 'streams', 'architectures'],
+    'services': ['endpoints', 'modules', 'components', 'handlers'],
+    'microservices': ['backend services', 'distributed services', 'modular services'],
+    'validation': ['verification', 'assurance', 'checking', 'screening'],
+    'monitoring': ['observability', 'telemetry', 'analytics', 'tracking'],
+    'concurrency': ['parallelism', 'throughput', 'multi-threading'],
+    'databases': ['datastores', 'storage engines', 'repositories'],
+    'react': ['frontend UI', 'component UI', 'web framework'],
+    'webassembly': ['Wasm', 'binary format', 'compiled bytecode'],
+    'python': ['scripting runtime', 'backend service', 'runtime']
+  };
+
+  let modifiedHtml = htmlContent;
+
+  // Prune redundant "Apache" qualifiers when over ceiling
+  const apacheMatches = modifiedHtml.match(/\bApache\s+(Kafka|Spark)\b/gi);
+  if (apacheMatches && apacheMatches.length > maxLimit) {
+    let aCount = 0;
+    modifiedHtml = modifiedHtml.replace(/\bApache\s+(Kafka|Spark)\b/gi, (match, p1) => {
+      aCount++;
+      if (aCount > maxLimit) return p1;
+      return match;
+    });
+  }
+  for (const [term, synonyms] of Object.entries(SYNONYM_MAP)) {
+    const regex = new RegExp(`\\b${term}\\b`, 'gi');
+    const matches = modifiedHtml.match(regex);
+    if (matches && matches.length > maxLimit) {
+      let count = 0;
+      let synIdx = 0;
+      modifiedHtml = modifiedHtml.replace(regex, (match) => {
+        count++;
+        if (count > maxLimit && synIdx < synonyms.length) {
+          const replacement = synonyms[synIdx++]!;
+          if (match[0] === match[0]?.toUpperCase()) {
+            return replacement.charAt(0).toUpperCase() + replacement.slice(1);
+          }
+          return replacement;
+        }
+        return match;
+      });
+    }
+  }
+
+  return modifiedHtml;
+}
+
 export function generateResumeHtml(
   candidate: CandidateExtendedProfile,
   archetype: ResumeArchetype | RoleArchetype,
   roleTitle = '',
   jdText = ''
 ): string {
-  const bullets = roleTitle || jdText ? rankMorganStanleyBulletsForJd(roleTitle, jdText) : getArchetypeOrderedBullets(archetype);
-  const skillCategories = getArchetypeCategorizedSkills(archetype, roleTitle, jdText);
-  const projects = roleTitle || jdText ? selectTop3ProjectsForJd(roleTitle, jdText) : getArchetypeProjects(archetype);
+  let bullets: string[];
+  let projects: ResumeProject[];
+  let skillCategories: Record<string, string[]>;
+
+  if (roleTitle || jdText) {
+    const plan = buildDynamicResumePlanForJd(roleTitle, jdText);
+    bullets = plan.morganStanleyBullets;
+    projects = plan.selectedProjects;
+    skillCategories = plan.skillLines;
+  } else {
+    bullets = getArchetypeOrderedBullets(archetype);
+    projects = getArchetypeProjects(archetype);
+    skillCategories = getArchetypeCategorizedSkills(archetype, roleTitle, jdText);
+  }
 
   const p = (candidate as any).profile?.personal || (candidate as any).personal || (candidate as any).basics || {};
   const fullName = [p.firstName, p.lastName].filter(Boolean).join(' ') || (candidate as any).name || 'Shivam Mahajan';
@@ -557,7 +843,7 @@ export function generateResumeHtml(
     )
     .join('\n');
 
-  return `<!DOCTYPE html>
+  const htmlContent = `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -728,6 +1014,7 @@ export function generateResumeHtml(
   </div>
 </body>
 </html>`;
+  return enforceGlobalTermFrequencyCeiling(htmlContent, 4);
 }
 
 export async function buildDocxWithLibrary(

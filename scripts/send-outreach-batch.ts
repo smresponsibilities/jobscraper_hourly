@@ -25,7 +25,11 @@ import {
   isDay5FollowUpEligible,
   buildDay5FollowUpDraft,
 } from '../src/outreach/follow-up-sequencer.js';
-import { verifyMailboxExistsBeforeSend } from '../src/outreach/zero-bounce-verifier.js';
+import {
+  verifyMailboxExistsBeforeSend,
+  sendVerifiedOutreachEmail,
+  ZeroBounceBlockedError,
+} from '../src/outreach/zero-bounce-verifier.js';
 
 // Load .env variables into process.env if present
 export function loadEnvFile(envPath = '.env'): void {
@@ -362,7 +366,7 @@ export async function runOutreachBatch(options: {
 
         console.log(`[OUTREACH_LIVE_FOLLOWUP] Sending Day-5 follow-up to ${email} (${company} - ${roleTitle})...`);
 
-        const info = await transporter.sendMail({
+        const mailOptions = {
           from: `Shivam Mahajan <${user}>`,
           to: email,
           subject: followUpDraft.subject,
@@ -376,6 +380,15 @@ export async function runOutreachBatch(options: {
                 },
               ]
             : [],
+        };
+
+        const info = await sendVerifiedOutreachEmail({
+          transporter,
+          mailOptions,
+          to: email,
+          provenanceTier: 'TIER_B_MAILBOX_VERIFIED',
+          mailboxStatus: 'VALID',
+          isCatchAll: false,
         });
 
         entry.followUpCount = (entry.followUpCount || 0) + 1;
@@ -674,7 +687,7 @@ export async function runOutreachBatch(options: {
 
       console.log(`[OUTREACH_LIVE] Sending cold outreach to ${email} (${company} - ${roleTitle})...`);
 
-      const info = await transporter.sendMail({
+      const mailOptions = {
         from: `Shivam Mahajan <${user}>`,
         to: email,
         subject: lead.subject,
@@ -686,6 +699,16 @@ export async function runOutreachBatch(options: {
             contentType: 'application/pdf',
           },
         ],
+      };
+
+      const info = await sendVerifiedOutreachEmail({
+        transporter,
+        mailOptions,
+        to: email,
+        provenanceTier: liveVerification.tier,
+        evidenceUrl: (lead as any).evidenceUrl || (lead as any).sourceUrl || (liveVerification.tier === 'TIER_A_VERBATIM_OBSERVED' ? (lead.discoveryStep || 'https://github.com') : undefined),
+        mailboxStatus: liveVerification.smtpVerified ? 'VALID' : 'UNKNOWN',
+        isCatchAll: false,
       });
 
       console.log(`[OUTREACH_LIVE] Sent successfully! Message ID: ${info.messageId}`);

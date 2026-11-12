@@ -9,7 +9,10 @@ export interface LearnedSemanticRule {
   resolvedValue: string;
   confidence: number;
   successCount: number;
+  failureCount: number;
   lastUsedAt: string;
+  lastVerifiedAt: string;
+  factKey: string;
 }
 
 export interface UnknownFieldEntry {
@@ -50,6 +53,198 @@ export function loadSemanticMemory(memoryPath = DEFAULT_MEMORY_PATH): Record<str
   return {};
 }
 
+export function computeUcb1RuleConfidence(
+  rule: LearnedSemanticRule,
+  totalTrials = 10,
+  hasValidationError = false
+): number {
+  const S = Math.max(0, rule.successCount || 0);
+  const F = Math.max(0, rule.failureCount || 0);
+  const N = S + F;
+  if (N === 0) return rule.confidence ?? 0.85;
+
+  const exploitation = S / N;
+  const exploration = 0.5 * Math.sqrt(Math.log(Math.max(2, totalTrials)) / N);
+  const penalty = hasValidationError ? 0.4 : 0;
+
+  const ucbScore = Math.max(0, Math.min(1.0, exploitation + exploration - penalty));
+  return Math.round(ucbScore * 100) / 100;
+}
+
+export function recordRuleOutcome(
+  questionText: string,
+  success: boolean,
+  factKey = '',
+  isValidationError = false,
+  memoryPath = DEFAULT_MEMORY_PATH
+): void {
+  const key = normalizeQuestionKey(questionText);
+  if (!key || key.length < 3) return;
+  const mem = loadSemanticMemory(memoryPath);
+  const existing = mem[key];
+
+  const now = new Date().toISOString();
+  const S = (existing?.successCount ?? 0) + (success ? 1 : 0);
+  const F = (existing?.failureCount ?? 0) + (!success || isValidationError ? 1 : 0);
+  const total = Object.values(mem).reduce((acc, r) => acc + (r.successCount || 0) + (r.failureCount || 0), 0) + 1;
+
+  const updated: LearnedSemanticRule = {
+    normalizedQuestion: key,
+    sampleRawQuestion: questionText.slice(0, 200),
+    linkedCategory: existing?.linkedCategory || 'custom',
+    resolvedValue: existing?.resolvedValue || '',
+    successCount: S,
+    failureCount: F,
+    lastUsedAt: now,
+    lastVerifiedAt: success ? now : (existing?.lastVerifiedAt || now),
+    factKey: factKey || existing?.factKey || 'inferred.custom',
+    confidence: 0.85,
+  };
+
+  updated.confidence = computeUcb1RuleConfidence(updated, total, isValidationError);
+
+  if (!success || isValidationError || updated.confidence < 0.50) {
+    updated.confidence = Math.min(0.49, updated.confidence);
+  }
+
+  mem[key] = updated;
+  fs.mkdirSync(path.dirname(memoryPath), { recursive: true });
+  fs.writeFileSync(memoryPath, JSON.stringify(mem, null, 2), 'utf8');
+}
+
+export function synthesizeNewDeterministicRule(
+  questionText: string,
+  profile?: any,
+  memoryPath = DEFAULT_MEMORY_PATH
+): LearnedSemanticRule | null {
+  const q = normalizeQuestionKey(questionText);
+  if (!q || q.length < 3) return null;
+
+  const now = new Date().toISOString();
+  let category = 'custom';
+  let value = '';
+  let factKey = '';
+
+  // 1. Notice Period
+  if (/\b(?:notice\s*period|availability|available to start|how soon can you start|start date|earliest start)\b/i.test(q)) {
+    category = 'notice_period';
+    value = 'Immediately (0 days notice)';
+    factKey = 'professional.noticePeriodDays';
+  }
+  // 2. Work Authorization / Citizenship
+  else if (/\b(?:authorized to work|work authorization|citizenship|legally authorized|eligible to work in india)\b/i.test(q)) {
+    category = 'work_auth';
+    value = 'Yes';
+    factKey = 'legal.authorizedInIndia';
+  }
+  // 3. Visa Sponsorship
+  else if (/\b(?:sponsorship|require visa|require sponsorship|future need sponsorship)\b/i.test(q)) {
+    category = 'sponsorship';
+    value = 'No';
+    factKey = 'legal.requiresSponsorship';
+  }
+  // 4. Non-Compete / Restrictive Covenants
+  else if (/\b(?:non[- ]compete|restrictive covenant|employment restriction|conflict of interest)\b/i.test(q)) {
+    category = 'non_compete';
+    value = 'No';
+    factKey = 'legal.nonCompeteRestricted';
+  }
+  // 5. Compensation / CTC
+  else if (/\b(?:compensation|expected ctc|expected salary|current salary|salary expectations|pay range)\b/i.test(q)) {
+    category = 'compensation';
+    value = '12,00,000 INR';
+    factKey = 'compensation.expectedSalaryInr';
+  }
+  // 6. Location / Relocation
+  else if (/\b(?:willing to relocate|current location|where are you located|present work location|based in bengaluru|bangalore|located in india|based in navi mumbai|based in mumbai)\b/i.test(q)) {
+    category = 'location';
+    value = 'Bengaluru, Karnataka, India';
+    factKey = 'personal.location';
+  }
+  // 7. Degree / Education
+  else if (/\b(?:highest degree|education level|degree completed|major|university)\b/i.test(q)) {
+    category = 'education';
+    value = 'Bachelor of Engineering in Computer Science';
+    factKey = 'education.degree';
+  }
+  // 8. EEO / Gender / Veteran / Disability
+  else if (/\b(?:gender|race|ethnicity|veteran status|disability|self[- ]identify)\b/i.test(q)) {
+    category = 'eeo';
+    value = 'Decline to self-identify';
+    factKey = 'eeo.defaults';
+  }
+  // 9. Relatives at Company / Conflict of Interest
+  else if (/\b(?:related to anyone|relatives|family members)\b/i.test(q)) {
+    category = 'relatives';
+    value = 'No';
+    factKey = 'declarations.relativesAtCompany';
+  }
+  // 10. Primary Programming Language / Tech Stack / Agency / BFSI Domain
+  else if (/\b(?:primary programming language|preferred tech stack|tech stack)\b/i.test(q)) {
+    category = 'tech_stack';
+    value = 'TypeScript, Node.js, Python, PostgreSQL, React, AWS, Docker';
+    factKey = 'skills';
+  }
+  else if (/\b(?:bfsi|banking|financial services)\b/i.test(q)) {
+    category = 'bfsi_experience';
+    value = 'Yes (Morgan Stanley Apprentice)';
+    factKey = 'experience.0.company';
+  }
+  else if (/\b(?:high agency|ownership|technical training|comfortable working from office)\b/i.test(q)) {
+    category = 'work_culture';
+    value = 'Yes';
+    factKey = 'professional.officeAttendance';
+  }
+  // 12. Consent / Data Transfer / Cards / Signature Date / CTC Expectation
+  else if (/\b(?:data transfer|acknowledge|confirm|consent|agree)\b/i.test(q)) {
+    category = 'consent';
+    value = 'Yes';
+    factKey = 'declarations.termsAndAccuracyConsent';
+  }
+  else if (/\b(?:first and last name|full name)\b/i.test(q)) {
+    category = 'full_name';
+    value = 'Shivam Mahajan';
+    factKey = 'personal.firstName';
+  }
+  else if (/\b(?:date|today|signature date)\b/i.test(q)) {
+    category = 'date';
+    value = new Date().toISOString().split('T')[0]!;
+    factKey = 'declarations.termsAndAccuracyConsent';
+  }
+  else if (/\b(?:ctc expectation|ctc)\b/i.test(q)) {
+    category = 'compensation';
+    value = '12,00,000 INR';
+    factKey = 'compensation.expectedSalaryInr';
+  }
+  else if (/^cards\[/i.test(q)) {
+    category = 'custom';
+    value = 'Yes';
+    factKey = 'declarations.termsAndAccuracyConsent';
+  } else {
+    return null;
+  }
+
+  const rule: LearnedSemanticRule = {
+    normalizedQuestion: q,
+    sampleRawQuestion: questionText.slice(0, 200),
+    linkedCategory: category,
+    resolvedValue: value,
+    confidence: 0.95,
+    successCount: 1,
+    failureCount: 0,
+    lastUsedAt: now,
+    lastVerifiedAt: now,
+    factKey,
+  };
+
+  const mem = loadSemanticMemory(memoryPath);
+  mem[q] = rule;
+  fs.mkdirSync(path.dirname(memoryPath), { recursive: true });
+  fs.writeFileSync(memoryPath, JSON.stringify(mem, null, 2), 'utf8');
+
+  return rule;
+}
+
 export function recordLearnedSuccess(
   questionText: string,
   linkedCategory: string,
@@ -68,7 +263,10 @@ export function recordLearnedSuccess(
     resolvedValue,
     confidence: Math.min(1.0, (existing?.confidence ?? confidence) + 0.05),
     successCount: (existing?.successCount ?? 0) + 1,
+    failureCount: existing?.failureCount ?? 0,
     lastUsedAt: new Date().toISOString(),
+    lastVerifiedAt: new Date().toISOString(),
+    factKey: existing?.factKey || 'inferred.success',
   };
   fs.mkdirSync(path.dirname(memoryPath), { recursive: true });
   fs.writeFileSync(memoryPath, JSON.stringify(mem, null, 2), 'utf8');

@@ -640,8 +640,151 @@ export function comboboxSelection(element: Element): { values: string[]; multipl
   return { values: selected, multiple };
 }
 
+export function generateMinimumJerkTrajectory(
+  x0: number,
+  y0: number,
+  xf: number,
+  yf: number,
+  steps = 15
+): Array<{ x: number; y: number }> {
+  const points: Array<{ x: number; y: number }> = [];
+  const safeSteps = Math.max(2, steps);
+  for (let i = 0; i <= safeSteps; i++) {
+    const tau = i / safeSteps;
+    // Minimum-jerk polynomial (Flash & Hogan 1985): s(tau) = 10*tau^3 - 15*tau^4 + 6*tau^5
+    const s = 10 * Math.pow(tau, 3) - 15 * Math.pow(tau, 4) + 6 * Math.pow(tau, 5);
+    const x = Math.round(x0 + (xf - x0) * s);
+    const y = Math.round(y0 + (yf - y0) * s);
+    points.push({ x, y });
+  }
+  return points;
+}
+
+export async function batchFillStandardTextInputs(
+  frame: Frame | Page,
+  patches: Array<{ selector: string; value: string; fieldId: string }>
+): Promise<{ filledIds: string[]; failedIds: string[] }> {
+  if (!patches || patches.length === 0) {
+    return { filledIds: [], failedIds: [] };
+  }
+
+  try {
+    const result = await frame.evaluate((patchList) => {
+      const filled: string[] = [];
+      const failed: string[] = [];
+
+      for (const patch of patchList) {
+        try {
+          const el = document.querySelector(patch.selector) as HTMLElement | null;
+          if (!el) {
+            failed.push(patch.fieldId);
+            continue;
+          }
+
+          // 1. Exclude React-Select .select__input
+          if (el.classList.contains('select__input') || el.closest('.select__input')) {
+            failed.push(patch.fieldId);
+            continue;
+          }
+          // 2. Exclude Combobox role
+          if (el.getAttribute('role') === 'combobox') {
+            failed.push(patch.fieldId);
+            continue;
+          }
+          // 3. Exclude File inputs
+          if (el instanceof HTMLInputElement && el.type === 'file') {
+            failed.push(patch.fieldId);
+            continue;
+          }
+          // 4. Exclude Workday spinbuttons
+          if (el.getAttribute('role') === 'spinbutton' || el.getAttribute('data-automation-id')?.includes('spinbutton')) {
+            failed.push(patch.fieldId);
+            continue;
+          }
+          // 5. Exclude OTP / security inputs
+          if (el.id?.startsWith('security-input-') || el.getAttribute('maxlength') === '1') {
+            failed.push(patch.fieldId);
+            continue;
+          }
+
+          const isStandardInput =
+            el instanceof HTMLInputElement &&
+            ['text', 'email', 'tel', 'url', 'number', 'password', ''].includes(el.type.toLowerCase());
+          const isTextarea = el instanceof HTMLTextAreaElement;
+
+          if (!isStandardInput && !isTextarea) {
+            failed.push(patch.fieldId);
+            continue;
+          }
+
+          const targetInput = el as HTMLInputElement | HTMLTextAreaElement;
+          const proto = isTextarea ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+          const descriptor = Object.getOwnPropertyDescriptor(proto, 'value');
+
+          if (descriptor && descriptor.set) {
+            descriptor.set.call(targetInput, patch.value);
+          } else {
+            targetInput.value = patch.value;
+          }
+
+          // React 16+ _valueTracker update
+          const tracker = (targetInput as any)._valueTracker;
+          if (tracker && typeof tracker.setValue === 'function') {
+            tracker.setValue('');
+          }
+
+          targetInput.dispatchEvent(new Event('focus', { bubbles: true }));
+          targetInput.dispatchEvent(new Event('input', { bubbles: true }));
+          targetInput.dispatchEvent(new Event('change', { bubbles: true }));
+          targetInput.dispatchEvent(new Event('blur', { bubbles: true }));
+
+          if (targetInput.value === patch.value) {
+            filled.push(patch.fieldId);
+          } else {
+            failed.push(patch.fieldId);
+          }
+        } catch {
+          failed.push(patch.fieldId);
+        }
+      }
+
+      return { filledIds: filled, failedIds: failed };
+    }, patches);
+
+    return result;
+  } catch {
+    return { filledIds: [], failedIds: patches.map(p => p.fieldId) };
+  }
+}
+
 export async function stealthClick(locator: Locator, timeout = 4000): Promise<void> {
-  await locator.scrollIntoViewIfNeeded({ timeout: 2000 }).catch(() => {});
+  try {
+    await locator.scrollIntoViewIfNeeded({ timeout: 2000 }).catch(() => {});
+    const page = locator.page?.();
+    const box = await locator.boundingBox().catch(() => null);
+
+    if (page && box && box.width > 0 && box.height > 0) {
+      const targetX = box.x + box.width / 2 + (Math.random() * 4 - 2);
+      const targetY = box.y + box.height / 2 + (Math.random() * 4 - 2);
+
+      const startX = targetX + (Math.random() > 0.5 ? 1 : -1) * (30 + Math.random() * 60);
+      const startY = targetY + (Math.random() > 0.5 ? 1 : -1) * (20 + Math.random() * 40);
+
+      const distance = Math.hypot(targetX - startX, targetY - startY);
+      const fittsDurationMs = Math.round(60 + 50 * Math.log2(1 + distance / Math.max(box.width, 10)));
+      const steps = Math.min(20, Math.max(6, Math.round(fittsDurationMs / 15)));
+
+      const trajectory = generateMinimumJerkTrajectory(startX, startY, targetX, targetY, steps);
+      for (const pt of trajectory) {
+        await page.mouse.move(pt.x, pt.y).catch(() => {});
+      }
+
+      await new Promise(r => setTimeout(r, 40 + Math.floor(Math.random() * 45)));
+      await page.mouse.click(targetX, targetY).catch(() => locator.click({ timeout }));
+      return;
+    }
+  } catch {}
+
   await locator.hover({ timeout: 2000 }).catch(() => {});
   await new Promise(r => setTimeout(r, 65 + Math.floor(Math.random() * 85)));
   await locator.click({ timeout });

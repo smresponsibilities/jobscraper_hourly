@@ -51,6 +51,7 @@ export const CLASSIFICATION_RULES: FieldRuleDef[] = [
     strongPatterns: [
       /\bfull[_\-\s]?name\b/i,
       /\bcandidate[._\-\s]?name\b/i,
+      /\bfirst\s+(?:and|&)\s+last\s+name\b/i,
       /^name$/i,
       /\byour[_\-\s]?name\b/i,
     ],
@@ -191,7 +192,7 @@ export const CLASSIFICATION_RULES: FieldRuleDef[] = [
   {
     category: 'linkedin',
     strongPatterns: [
-      /\blinkedin[_\-\s]?(?:profile|url|link)?\b/i,
+      /\blinked[li]n[_\-\s]?(?:profile|url|link)?\b/i,
       /linkedin\.com/i,
     ],
     mediumPatterns: [
@@ -509,7 +510,9 @@ export const CLASSIFICATION_RULES: FieldRuleDef[] = [
       /\bpreviously[_\-\s]?(?:been[_\-\s]?)?(?:employed|worked)\b/i,
       /\bformer[_\-\s]?employee\b/i,
       /\bhave[_\-\s]?you[_\-\s]?(?:ever)?[_\-\s]?worked[_\-\s]?(?:for|at)\b/i,
+      /\bhave[_\-\s]?you[_\-\s]?(?:previously)?[_\-\s]?applied\b/i,
       /\bworked\s+(?:for|at)\s+.*\bin the past\b/i,
+      /\binterviewed\s+(?:by|with)\b/i,
     ],
     mediumPatterns: [
       /past[_\-\s]?employee/i,

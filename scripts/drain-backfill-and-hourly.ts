@@ -44,6 +44,9 @@ import { syncInboxLifecycleEvents } from '../src/autoapply/inbox-lifecycle-track
 import { selectDiversifiedMultiLaneChunk } from './run-overnight-marathon.js';
 import { harvestFastAtsJobs } from './harvest-fast-ats-jobs.js';
 
+// Ticket GEN-532: Module-scoped singleton for asynchronous non-blocking background harvester
+let backgroundHarvestPromise: Promise<void> | null = null;
+
 const STOP_FLAG_PATH = path.resolve('state/autoapply/portal-review/STOP_AUTOAPPLY.flag');
 
 // Global crash shields: Never allow a stray Playwright/network promise rejection to kill the infinite daemon!
@@ -656,7 +659,25 @@ async function main(): Promise<void> {
       const sortedEligible = scoredCandidates.map((s) => s.job);
 
       const hostHealthPath = path.join(stateDir, 'host-health.json');
-      // Ticket GEN-513, GEN-520 & GEN-524: Multi-lane chunk selection capping Workday <= 2 and SR <= 2
+
+      // Ticket GEN-532: Asynchronous background harvest when fast-ATS pool < 80 (low-watermark)
+      const currentFastAtsPool = freshQueued.filter(j =>
+        /(?:greenhouse\.io|gh_jid=|ashbyhq\.com|lever\.co|workable\.com|recruitee\.com|breezy\.hr)/i.test(j.jobUrl)
+      ).length;
+      if (currentFastAtsPool < 80 && backgroundHarvestPromise === null && !skipSync) {
+        console.log(`[ASYNC-HARVEST] Triggered low-watermark replenish (${currentFastAtsPool} < 80) in background without blocking browser lanes.`);
+        backgroundHarvestPromise = (async () => {
+          try {
+            await harvestFastAtsJobs(dbPath, 120);
+          } catch (err: any) {
+            console.warn(`[ASYNC-HARVEST] Background harvest warning: ${err?.message || err}`);
+          } finally {
+            backgroundHarvestPromise = null;
+          }
+        })();
+      }
+
+      // Ticket GEN-513, GEN-520, GEN-524 & GEN-532: Multi-lane DRR chunk selection capping Workday <= 2 and SR <= 2
       const chunkCandidates = selectDiversifiedMultiLaneChunk(
         sortedEligible,
         targetChunkSize * 2,
@@ -915,7 +936,21 @@ async function main(): Promise<void> {
         } catch {}
       } else if (report.status === 'paused_for_review') {
         queue.pauseForReview(job.id, report.reason);
-        if (job.retryCount) {
+        // Ticket GEN-533: 1-Pass Fast-ATS Auto-Retry after Rule Synthesis
+        const isFastAts = /(?:greenhouse\.io|gh_jid=|ashbyhq\.com|lever\.co|workable\.com|recruitee\.com|breezy\.hr)/i.test(job.jobUrl);
+        const retryCount = (job as any).retryCount || 0;
+        if (isFastAts && retryCount < 1) {
+          try {
+            const synthesizedRule = synthesizeNewDeterministicRule(report.reason || job.title, profile);
+            if (synthesizedRule) {
+              console.log(`[GEN-533] Synthesized rule '${synthesizedRule.normalizedQuestion}' -> '${synthesizedRule.resolvedValue}' (factKey: ${synthesizedRule.factKey}). Requeueing job for 1-pass retry.`);
+              (job as any).retryCount = retryCount + 1;
+              queue.requeue(job.id);
+            }
+          } catch (ruleErr: any) {
+            console.warn(`[GEN-533] Rule synthesis failed: ${ruleErr?.message || ruleErr}`);
+          }
+        } else if (job.retryCount) {
           const pausedItem = (queue as any).queue?.get(job.id);
           if (pausedItem) {
             pausedItem.retryCount = job.retryCount;

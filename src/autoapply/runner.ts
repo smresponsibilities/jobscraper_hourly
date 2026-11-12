@@ -839,6 +839,52 @@ export async function ensureSmartRecruitersApplicationStarted(
   return await waitForOneClickInputs(15000);
 }
 
+const SCHEMA_PREFETCH_CACHE = new Map<string, any>();
+
+export async function prefetchAtsQuestionSchema(jobUrl: string): Promise<any | null> {
+  if (!jobUrl) return null;
+  if (SCHEMA_PREFETCH_CACHE.has(jobUrl)) return SCHEMA_PREFETCH_CACHE.get(jobUrl);
+
+  try {
+    const u = new URL(jobUrl);
+    if (u.hostname.includes('greenhouse.io')) {
+      const match = u.pathname.match(/\/jobs\/(\d+)/i) || u.search.match(/gh_jid=(\d+)/i);
+      const hostParts = u.hostname.split('.');
+      const slug = hostParts[0] === 'job-boards' || hostParts[0] === 'boards' ? hostParts[1] : hostParts[0];
+      const jobId = match ? match[1] : null;
+      if (slug && jobId) {
+        const apiUrl = `https://boards-api.greenhouse.io/v1/boards/${slug}/jobs/${jobId}?questions=true`;
+        const res = await fetch(apiUrl, { signal: AbortSignal.timeout(6000) }).catch(() => null);
+        if (res?.ok) {
+          const data = await res.json().catch(() => null);
+          if (data) {
+            SCHEMA_PREFETCH_CACHE.set(jobUrl, data);
+            return data;
+          }
+        }
+      }
+    }
+
+    if (u.hostname.includes('ashbyhq.com')) {
+      const pathParts = u.pathname.split('/').filter(Boolean);
+      const slug = pathParts[0];
+      if (slug) {
+        const apiUrl = `https://api.ashbyhq.com/posting-api/job-board/${slug}/application-form`;
+        const res = await fetch(apiUrl, { signal: AbortSignal.timeout(6000) }).catch(() => null);
+        if (res?.ok) {
+          const data = await res.json().catch(() => null);
+          if (data) {
+            SCHEMA_PREFETCH_CACHE.set(jobUrl, data);
+            return data;
+          }
+        }
+      }
+    }
+  } catch {}
+
+  return null;
+}
+
 export class AutoApplyRunner {
   private activeAts?: string;
   private browser: Browser | null = null;
@@ -4273,7 +4319,10 @@ export class AutoApplyRunner {
       }
       if (!options.resume || this.page!.url() === 'about:blank') {
         try {
-          await this.page!.goto(target, { waitUntil: 'domcontentloaded', timeout: 45000 });
+          await Promise.all([
+            this.page!.goto(target, { waitUntil: 'domcontentloaded', timeout: 45000 }),
+            prefetchAtsQuestionSchema(target).catch(() => null),
+          ]);
         } catch (gotoErr: any) {
           if (isOfflineDinoPage(gotoErr?.message || '')) {
             this.log('Wi-Fi / DNS drop detected during page navigation. Pausing for internet recovery...');
