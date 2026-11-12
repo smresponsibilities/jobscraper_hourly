@@ -415,7 +415,7 @@ export async function selectHarvestedOption(
   let targetOption = option;
   let allLabels = await matchOptions.allInnerTexts().catch(() => []);
   if (allLabels.some((t) => ASYNC_LOADING_PLACEHOLDER_REGEX.test(t.trim()))) {
-    await frame.page().waitForTimeout(450);
+    await waitForReactiveQuiescence(frame, { quietWindowMs: 75, maxWaitMs: 650 });
     allLabels = await matchOptions.allInnerTexts().catch(() => []);
   }
 
@@ -1087,6 +1087,80 @@ export async function fillPhoneInputSmart(
     return tenDigitNational;
   }
   return e164;
+}
+
+/**
+ * Ticket GEN-535: Reactive DOM & Network Quiescence Barrier.
+ * Attaches a temporary MutationObserver on document.body, resolving as soon as:
+ * performance.now() - lastMutationTs >= quietWindowMs OR elapsed >= maxWaitMs.
+ */
+export async function waitForReactiveQuiescence(
+  pageOrFrame: Page | Frame,
+  options: { quietWindowMs?: number; maxWaitMs?: number } = {}
+): Promise<{ elapsedMs: number; mutationsObserved: number }> {
+  const quietWindowMs = options.quietWindowMs ?? 75;
+  const maxWaitMs = options.maxWaitMs ?? 650;
+
+  try {
+    const rawFn = `(function(args) {
+      return new Promise(function(resolve) {
+        var startTs = performance.now();
+        var lastMutationTs = startTs;
+        var mutationsObserved = 0;
+        var timer = null;
+        var observer = null;
+
+        function finish() {
+          if (observer) {
+            try { observer.disconnect(); } catch (e) {}
+          }
+          if (timer) clearTimeout(timer);
+          var elapsed = Math.round(performance.now() - startTs);
+          resolve({ elapsedMs: elapsed, mutationsObserved: mutationsObserved });
+        }
+
+        function checkQuiescence() {
+          var now = performance.now();
+          if (now - lastMutationTs >= args.quietWindowMs || now - startTs >= args.maxWaitMs) {
+            finish();
+          } else {
+            var remainingQuiet = args.quietWindowMs - (now - lastMutationTs);
+            var remainingMax = args.maxWaitMs - (now - startTs);
+            timer = setTimeout(checkQuiescence, Math.max(10, Math.min(remainingQuiet, remainingMax)));
+          }
+        }
+
+        try {
+          var root = document.body || document.documentElement;
+          if (!root) {
+            finish();
+            return;
+          }
+          observer = new MutationObserver(function(mutations) {
+            mutationsObserved += mutations.length;
+            lastMutationTs = performance.now();
+          });
+          observer.observe(root, {
+            childList: true,
+            subtree: true,
+            attributes: true
+          });
+        } catch (e) {
+          finish();
+          return;
+        }
+
+        timer = setTimeout(checkQuiescence, args.quietWindowMs);
+      });
+    })({ quietWindowMs: ${quietWindowMs}, maxWaitMs: ${maxWaitMs} })`;
+
+    const result = await pageOrFrame.evaluate(rawFn);
+    return result as { elapsedMs: number; mutationsObserved: number };
+  } catch (err) {
+    // Frame detachment / navigation fallback
+    await new Promise((r) => setTimeout(r, 250));
+    return { elapsedMs: 250, mutationsObserved: 0 };
+  }
 }
 
 /**

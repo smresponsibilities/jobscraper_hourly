@@ -43,6 +43,7 @@ import { ContinuousRamAndHealthWatchdog, check30MinZeroFillDroughtAndAutoHeal, A
 import { syncInboxLifecycleEvents } from '../src/autoapply/inbox-lifecycle-tracker.js';
 import { selectDiversifiedMultiLaneChunk } from './run-overnight-marathon.js';
 import { harvestFastAtsJobs } from './harvest-fast-ats-jobs.js';
+import { synthesizeNewDeterministicRule } from '../src/autoapply/self-learning.js';
 
 // Ticket GEN-532: Module-scoped singleton for asynchronous non-blocking background harvester
 let backgroundHarvestPromise: Promise<void> | null = null;
@@ -945,7 +946,12 @@ async function main(): Promise<void> {
             if (synthesizedRule) {
               console.log(`[GEN-533] Synthesized rule '${synthesizedRule.normalizedQuestion}' -> '${synthesizedRule.resolvedValue}' (factKey: ${synthesizedRule.factKey}). Requeueing job for 1-pass retry.`);
               (job as any).retryCount = retryCount + 1;
-              queue.requeue(job.id);
+              const pausedItem = (queue as any).queue?.get(job.id);
+              if (pausedItem) {
+                pausedItem.status = 'queued';
+                pausedItem.retryCount = retryCount + 1;
+                (queue as any).persist(pausedItem);
+              }
             }
           } catch (ruleErr: any) {
             console.warn(`[GEN-533] Rule synthesis failed: ${ruleErr?.message || ruleErr}`);

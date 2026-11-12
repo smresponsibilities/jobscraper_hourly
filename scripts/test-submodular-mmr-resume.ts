@@ -93,12 +93,17 @@ async function run() {
       `Keyword frequency check failed on ${job.title}: maxFreq=${stuffingCheck.maxFreq}`
     );
 
-    // 4. Test PDF compilation on first 3 jobs to verify /Type /Page === 1
+    // 4. Test PDF compilation on first 3 jobs to verify /Type /Page === 1 and verifyPdfVisualGeometry
     if (i < 3) {
       const pdfPath = path.join(testTempDir, `test_resume_${i}.pdf`);
       const pdfBuf = await buildResumePdf(html, pdfPath);
       const pages = inspectPdfPageCount(pdfBuf);
       assert.equal(pages, 1, `Compiled PDF for ${job.title} must be exactly 1 page, got ${pages}`);
+
+      const { verifyPdfVisualGeometry } = await import('../src/resume/deterministic-builder.js');
+      const geo = verifyPdfVisualGeometry(pdfBuf);
+      assert.equal(geo.validSinglePage, true, 'Must be valid single page');
+      assert.equal(geo.hasOverflowWarning, false, 'Must not have overflow warning');
     }
 
     testedCount++;

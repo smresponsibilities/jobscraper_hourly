@@ -21,7 +21,7 @@ import { captureEvidence, sanitizedDocument } from './evidence.js';
 import { authenticateApplication, hasEmailAuthenticationGate } from './authentication.js';
 import type { CredentialVault } from './vault.js';
 import { attemptAutonomousCaptchaSolve } from './captcha.js';
-import { comboboxSelection, isVisibleApplicationControl, harvestControlOptions, stealthClick, fillAsyncLocationCombobox, fillSmartRecruitersCountryCombobox, selectAshbyYesNoOrCheckboxGroup, selectHarvestedOption, translateCanonicalAnswerToOption, fillLeverLocationInput, fillPhoneInputSmart, getActiveFormFrame } from './widgets.js';
+import { comboboxSelection, isVisibleApplicationControl, harvestControlOptions, stealthClick, fillAsyncLocationCombobox, fillSmartRecruitersCountryCombobox, selectAshbyYesNoOrCheckboxGroup, selectHarvestedOption, translateCanonicalAnswerToOption, fillLeverLocationInput, fillPhoneInputSmart, getActiveFormFrame, waitForReactiveQuiescence } from './widgets.js';
 import { unwrapDirectAtsApplicationUrl, isOfflineDinoPage, waitForInternetRecoveryIfOffline } from './url-unwrapper.js';
 import { installRamDietRouteFilter, enforceHumanSubmissionPacingFloor } from './ram-and-pacing.js';
 export { stealthClick, getActiveFormFrame } from './widgets.js';
@@ -616,7 +616,7 @@ export async function ensureStepReadyBeforeNext(frame: Frame, resumePath?: strin
   await frame.evaluate(() => {
     window.scrollTo({ top: document.body.scrollHeight, behavior: 'instant' as ScrollBehavior });
   }).catch(() => {});
-  await frame.waitForTimeout(400);
+  await waitForReactiveQuiescence(frame, { quietWindowMs: 75, maxWaitMs: 650 });
 
   // 3. Ensure file upload completed or attach if missing
   const resolvedResume = resumePath;
@@ -685,7 +685,7 @@ export async function ensureStepReadyBeforeNext(frame: Frame, resumePath?: strin
   const saveCount = await inlineSaves.count().catch(() => 0);
   for (let i = 0; i < saveCount; i++) {
     await inlineSaves.nth(i).click({ timeout: 2000 }).catch(() => {});
-    await frame.waitForTimeout(400);
+    await waitForReactiveQuiescence(frame, { quietWindowMs: 75, maxWaitMs: 650 });
   }
 }
 

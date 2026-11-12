@@ -1574,6 +1574,56 @@ export function inspectPdfPageCount(pdfBuffer: Buffer): number {
   return 1;
 }
 
+/**
+ * Ticket GEN-538: PDF Visual Bounding-Box & Margin Overflow Inspector.
+ * Verifies exact 1-page count, minimum buffer size, and checks text-positioning streams
+ * to ensure content does not breach the bottom margin (y < 18pt).
+ */
+export function verifyPdfVisualGeometry(pdfBuffer: Buffer): {
+  pageCount: number;
+  validSinglePage: boolean;
+  byteSize: number;
+  hasOverflowWarning: boolean;
+} {
+  const pageCount = inspectPdfPageCount(pdfBuffer);
+  const byteSize = pdfBuffer.length;
+  let hasOverflowWarning = false;
+
+  // 1. Hard check: page count must be 1 and size > 5000 bytes
+  if (pageCount !== 1 || byteSize < 5000) {
+    return {
+      pageCount,
+      validSinglePage: false,
+      byteSize,
+      hasOverflowWarning: true,
+    };
+  }
+
+  // 2. Scan raw or uncompressed PDF text-positioning streams
+  try {
+    const rawLatin = pdfBuffer.toString('latin1');
+    // Look for Tm matrix or Td positioning operators with negative y-offsets below bottom threshold
+    // Formats: [a b c d e f] Tm where f is y-position, or tx ty Td
+    const tmRegex = /(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+Tm/g;
+    let match: RegExpExecArray | null;
+    while ((match = tmRegex.exec(rawLatin)) !== null) {
+      const yVal = parseFloat(match[2] || '0');
+      // In A4 PDF (842pt height), 0 is bottom edge. Anything y < 18pt is in the margin overflow zone
+      if (yVal > 0 && yVal < 18) {
+        hasOverflowWarning = true;
+        break;
+      }
+    }
+  } catch {}
+
+  return {
+    pageCount,
+    validSinglePage: pageCount === 1,
+    byteSize,
+    hasOverflowWarning,
+  };
+}
+
 export function detectRoleArchetype(jobTitle: string, jd = ''): RoleArchetype {
   const combined = `${jobTitle} ${jd}`.toLowerCase();
   if (/\b(data|spark|kafka|pyspark|pipeline|etl|snowflake|clickhouse|warehouse)\b/i.test(combined)) {
@@ -1730,7 +1780,9 @@ export async function compileRuntimeTailoredResumeForJob(input: {
         for (const size of [10, 9.5, 9, 8.5]) {
           if (size !== 10) await renderPage.evaluate(size => document.documentElement.style.setProperty('--base-font-size', `${size}pt`), size);
           const bytes = await renderPage.pdf({ format: 'A4', printBackground: true });
-          if (inspectPdfPageCount(bytes) === 1) return bytes;
+          const geo = verifyPdfVisualGeometry(bytes);
+          if (geo.validSinglePage && !geo.hasOverflowWarning) return bytes;
+          if (geo.validSinglePage && size === 8.5) return bytes;
         }
         throw new Error('Runtime resume exceeds one page');
       })(),

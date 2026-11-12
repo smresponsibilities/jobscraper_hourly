@@ -11,6 +11,14 @@ export type OutreachLeadTier =
   | 'TIER_B_MAILBOX_VERIFIED'
   | 'TIER_C_UNVERIFIED_GUESS';
 
+export interface MailboxVerificationResult {
+  deliverable: boolean;
+  tier: OutreachLeadTier;
+  reason?: string;
+  smtpVerified?: boolean;
+  score?: number;
+}
+
 export class ZeroBounceBlockedError extends Error {
   constructor(message: string, public readonly tier: OutreachLeadTier, public readonly reason: string) {
     super(message);

@@ -190,10 +190,10 @@ export function synthesizeNewDeterministicRule(
     value = 'Yes (Morgan Stanley Apprentice)';
     factKey = 'experience.0.company';
   }
-  else if (/\b(?:high agency|ownership|technical training|comfortable working from office)\b/i.test(q)) {
+  else if (/\b(?:high agency|ownership|technical training|comfortable working from office|collaborating with colleagues in english|interviews.*in english)\b/i.test(q)) {
     category = 'work_culture';
     value = 'Yes';
-    factKey = 'professional.officeAttendance';
+    factKey = 'applicationPreferences.spokenLanguages';
   }
   // 12. Consent / Data Transfer / Cards / Signature Date / CTC Expectation
   else if (/\b(?:data transfer|acknowledge|confirm|consent|agree)\b/i.test(q)) {
