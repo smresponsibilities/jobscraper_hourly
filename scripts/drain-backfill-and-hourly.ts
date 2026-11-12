@@ -1,10 +1,11 @@
-import { stopFlagPath, waitForDaemonWake, hasObservedApplicationReceipt } from '../src/autoapply/daemon-control.js';
+import { stopFlagPath, isStopRequested, waitForDaemonWake, hasObservedApplicationReceipt } from '../src/autoapply/daemon-control.js';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createHash } from 'node:crypto';
 import { execSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 import { AutoaplyQueueManager } from '../src/autoapply/autoaply.js';
+import { BatchBoundaryHotReloadDetector } from '../src/autoapply/hot-reload-detector.js';
 import { AutoApplyRunner, type AutoApplyOptions } from '../src/autoapply/runner.js';
 import { CatalogueIntake, HOURLY_CATALOGUE_URL } from '../src/autoapply/intake.js';
 import { preflightJob, isAtsRootUrl, isSupportedDirectAtsJobUrl } from '../src/autoapply/preflight.js';
@@ -17,6 +18,7 @@ import { fetchYcHiringCompanies, fetchHnWhoIsHiringLeads, probeStartupAts } from
 import { fetchLinkedInLastHourJobs, matchLinkedInJobToCompany, getCompanyAtsUrl, appendCompanyRegistry, enrichLinkedInGuestJobDetail } from '../src/sources/linkedin-guest.js';
 import { resolveEmployerDomain, findFreeCompanyLeads, generateColdOutreachDraft, recordOutreachLead } from '../src/leads/free-email-finder.js';
 import { isHostReadyForRequest, markHostOutcome, interleaveJobsByProvider, getRateLimitKey } from '../src/autoapply/session-pool.js';
+import { reserveTenantRequest, recordTenantHttpOutcome } from '../src/autoapply/tenant-rate-limiter.js';
 import { fastApiPreflightCheck } from '../src/autoapply/tiered-fetcher.js';
 import { getProviderTimeoutConfig } from '../src/autoapply/watchdog-timer.js';
 import { generateParkIssuesScoreboard } from '../src/autoapply/park-telemetry.js';
@@ -43,7 +45,6 @@ import { ContinuousRamAndHealthWatchdog, check30MinZeroFillDroughtAndAutoHeal, A
 import { syncInboxLifecycleEvents } from '../src/autoapply/inbox-lifecycle-tracker.js';
 import { selectDiversifiedMultiLaneChunk } from './run-overnight-marathon.js';
 import { harvestFastAtsJobs } from './harvest-fast-ats-jobs.js';
-import { synthesizeNewDeterministicRule } from '../src/autoapply/self-learning.js';
 
 // Ticket GEN-532: Module-scoped singleton for asynchronous non-blocking background harvester
 let backgroundHarvestPromise: Promise<void> | null = null;
@@ -248,7 +249,7 @@ async function main(): Promise<void> {
   if (!Number.isInteger(maxJobs) || maxJobs < 1 || !Number.isFinite(timeBudgetMinutes) || timeBudgetMinutes <= 0) {
     throw new Error('Job count and time budget must be positive numbers');
   }
-  if (fs.existsSync(stopFlagPath(stateDir))) return;
+  if (isStopRequested(stateDir)) return;
   const lockPath = path.join(stateDir, 'worker.lock');
   if (!acquireLock(lockPath)) return;
   process.once('exit', () => releaseLock(lockPath));
@@ -257,15 +258,14 @@ async function main(): Promise<void> {
   const dashboard = startDashboardServer(4321);
   (dashboard as any)?.unref?.();
   let stopRequested = false;
-  const stopping = () => stopRequested || fs.existsSync(stopFlagPath(stateDir));
+  const stopping = () => stopRequested || isStopRequested(stateDir);
   const requestStop = () => { stopRequested = true; };
-  const onHangup = () => { if (fs.existsSync(stopFlagPath(stateDir))) requestStop(); };
+  const onHangup = () => { if (isStopRequested(stateDir)) requestStop(); };
   process.on('SIGINT', requestStop);
   process.on('SIGTERM', requestStop);
   process.on('SIGHUP', onHangup);
 
-  const runnerDistPath = path.resolve('out/dist/src/autoapply/runner.js');
-  const bootTimeMs = fs.existsSync(runnerDistPath) ? fs.statSync(runnerDistPath).mtimeMs : Date.now();
+  const hotReload = new BatchBoundaryHotReloadDetector();
 
   if (process.platform === 'win32') {
     const dTemp = path.resolve('out/test-temp');
@@ -540,19 +540,34 @@ async function main(): Promise<void> {
     // Ticket GEN-506 & GEN-526: Continuous runner runs indefinitely unless STOP_AUTOAPPLY.flag is present
     const isContinuousSubmit = shouldSubmit;
     let batchNumber = 0;
+    let pendingDiscovery: Promise<void> | null = null;
 
     while (!stopping() && batchNumber < maxCycles) {
+      if (batchNumber > 0) {
+        const changed = hotReload.hasBuildChangedOnDisk();
+        if (changed.changed) {
+          const pending = [backgroundHarvestPromise, pendingDiscovery].filter((promise): promise is Promise<void> => !!promise);
+          await Promise.allSettled(pending);
+          const checkpointDb = new DatabaseSync(dbPath);
+          try {
+            checkpointDb.exec('PRAGMA busy_timeout = 5000');
+            const checkpoint = checkpointDb.prepare('PRAGMA wal_checkpoint(FULL)').get() as { busy: number; log: number; checkpointed: number } | undefined;
+            if (!checkpoint || checkpoint.busy !== 0 || (checkpoint.log >= 0 && checkpoint.log !== checkpoint.checkpointed)) {
+              console.warn('[DRAIN] Build changed; WAL checkpoint is incomplete. Retrying before starting more jobs.');
+              await waitForDaemonWake(stateDir, 5000, stopping);
+              continue;
+            }
+          } finally { checkpointDb.close(); }
+          console.log(`[DRAIN] Build changed (${changed.changedFile}); exiting at batch boundary for supervisor restart.`);
+          break;
+        }
+      }
       batchNumber++;
       const cycleStartMs = Date.now();
       const cycleBudgetMs = Math.min(timeBudgetMinutes * 60 * 1000, 25 * 60 * 1000);
       const cycleDeadline = cycleStartMs + cycleBudgetMs;
       const targetChunkSize = Math.min(maxJobs, 20);
       const idleWaitMs = maxCycles < Infinity ? 200 : 30_000;
-      let processedCount = 0;
-      let startedJobs = 0;
-      let appliedCount = 0;
-      let runningLanes = 0;
-      const loggedDeferredHosts = new Set<string>();
 
       console.log(`\n================================================================`);
       console.log(`[INFINITE-DAEMON] 🚀 STARTING CYCLE #${batchNumber} at ${new Date(cycleStartMs).toISOString()}`);
@@ -725,11 +740,11 @@ async function main(): Promise<void> {
 
     const startTime = Date.now();
     const maxDurationMs = timeBudgetMinutes * 60 * 1000;
-    let processedCount = 0;
-    let startedJobs = 0;
-    let runningLanes = 0;
-    let appliedCount = 0;
-    const loggedDeferredHosts = new Set<string>();
+    // Reset per-cycle counters (declared at cycle scope above)
+    processedCount = 0; startedJobs = 0; appliedCount = 0; runningLanes = 0;
+    loggedDeferredHosts.clear();
+    // Hoist applied-list snapshot once per cycle (not per job) — O(N) SQLite scan amortized
+    const cycleAppliedList = queue.list('applied');
 
     const processSingleJob = async (
       job: AutoaplyJobItem,
@@ -739,15 +754,14 @@ async function main(): Promise<void> {
     ): Promise<void> => {
       if (stopping() || startedJobs >= maxJobs || Date.now() - startTime >= maxDurationMs) return;
 
-      // GEN-470: 30-Day Duplicate Role Dedup Guard (0ms check)
-      const appliedList = queue.list('applied');
-      if (isAlreadyAppliedSameCompanyRoleWithin30Days(job.company, job.title, appliedList)) {
+      // GEN-470: 30-Day Duplicate Role Dedup Guard (0ms check, using cycle-snapshot)
+      if (isAlreadyAppliedSameCompanyRoleWithin30Days(job.company, job.title, cycleAppliedList)) {
         queue.skip(job.id, 'already_applied_same_company_role_30d');
         console.log(`[DRAIN] Dedup guard 0ms skipped ${job.company} - ${job.title}: already applied in last 30 days.`);
         return;
       }
 
-      // Host cooldown check (GEN-28: 45s cooldown per host, 15-60m backoff on rate limit/challenge)
+      // Reserve before asynchronous preflight so sibling lanes cannot race.
       if (!isHostReadyForRequest(job.jobUrl, 45000, hostHealthPath)) {
         const hostKey = getRateLimitKey(job.jobUrl);
         if (!loggedDeferredHosts.has(hostKey)) {
@@ -756,6 +770,14 @@ async function main(): Promise<void> {
         }
         return;
       }
+      const rateLimitKey = getRateLimitKey(job.jobUrl);
+      try {
+        if (rateLimitKey === 'unknown' || !reserveTenantRequest(rateLimitKey)) return;
+      } catch {
+        console.warn('[DRAIN] Tenant rate-limit state unavailable; deferring job.');
+        return;
+      }
+      markHostOutcome(job.jobUrl, 'request', hostHealthPath);
 
       // Fast JSON API Preflight Check (GEN-29: Greenhouse / Lever fast check before browser launch)
       const fastApi = await fastApiPreflightCheck(job.jobUrl).catch(() => ({ status: 'eligible' as const }));
@@ -764,8 +786,6 @@ async function main(): Promise<void> {
         console.log(`[DRAIN] Fast API preflight skipped ${job.company}: ${fastApi.reason}`);
         return;
       }
-
-      markHostOutcome(job.jobUrl, 'request', hostHealthPath);
 
       // Preflight validation
       const preflight = await preflightJob(
@@ -784,8 +804,6 @@ async function main(): Promise<void> {
         queue.skip(job.id, preflight.reason || 'preflight_ineligible');
         return;
       }
-
-      startedJobs++;
 
       const sessionDir = path.join(
         stateDir,
@@ -841,8 +859,10 @@ async function main(): Promise<void> {
         headless,
         submit: shouldSubmit,
         resume: true,
-        retryReviewed: true,
+        retryReviewed: false,
+        safeCrashRecovery: true,
         preserveReviewedValues: false,
+        onPhase: (phase, step) => queue.recordEvent(job.id, phase, step),
         keepOpen: false,
         sessionDir,
         browserProfileDir: laneProfileDir,
@@ -856,6 +876,9 @@ async function main(): Promise<void> {
         timeoutMs: timeoutConfig.maxTotalMs,
       };
 
+      // Claim before opening the application; a failed claim must not navigate the employer site.
+      if (!queue.markApplying(job.id)) { await childRunner.close().catch(() => {}); return; }
+      startedJobs++;
       const jobStartedAt = new Date().toISOString();
       const jobStartMs = Date.now();
       let report: BotRunReport | undefined;
@@ -879,15 +902,14 @@ async function main(): Promise<void> {
           fieldsFilled: 0,
           unmappedFields: 0,
           stepsTraversed: 0,
-          status: isNetDrop ? 'queued' : 'failed',
-          reason: isNetDrop ? 'wifi_drop_requeued' : (err?.message || 'Execution failed'),
+          status: 'paused_for_review',
+          reason: isNetDrop ? 'Network failure after browser start; verify the employer receipt before retrying' : 'Runner interrupted; verify the employer receipt before retrying',
+          reviewKind: 'receipt',
+          humanInterventionRequired: true,
           actions: [],
           logs: [],
         };
-        if (isNetDrop) {
-          console.log(`[DRAIN] Wi-Fi / DNS drop detected during ${job.company}; kept queued for retry.`);
-          await waitUntilNetworkOnline();
-        }
+        if (isNetDrop) console.log(`[DRAIN] Network failure during ${job.company}; parked for receipt review.`);
       } finally {
         await childRunner.close().catch(() => {});
         if (/timed out/i.test(report?.reason || '') || /runner closed/i.test(report?.reason || '')) {
@@ -902,8 +924,15 @@ async function main(): Promise<void> {
       const durationMs = report.durationMs || (Date.now() - jobStartMs);
 
       processedCount++;
-      const isRateLimited = report.logs.some(l => /rate[- ]limit|429/i.test(l)) || /rate[- ]limit|too many requests/i.test(report.reason || '');
+      const isRateLimited = report.logs.some(l => /rate[- ]limit|\b(?:429|503)\b/i.test(l)) || /rate[- ]limit|too many requests|\b(?:429|503)\b/i.test(report.reason || '');
       const isChallenge = report.logs.some(l => /challenge|captcha|cloudflare/i.test(l)) || /challenge|captcha/i.test(report.reason || '') || report.reason === 'captcha_deferred';
+
+      try {
+        if (isRateLimited) recordTenantHttpOutcome(rateLimitKey, /\b503\b/.test(`${report.reason || ''} ${report.logs.join(' ')}`) ? 503 : 429);
+        else if (report.status === 'submitted') recordTenantHttpOutcome(rateLimitKey, 200);
+      } catch {
+        console.warn('[DRAIN] Could not persist tenant rate-limit outcome.');
+      }
 
       if (isRateLimited) {
         markHostOutcome(job.jobUrl, 'rate_limited', hostHealthPath);
@@ -917,6 +946,10 @@ async function main(): Promise<void> {
         markHostOutcome(job.jobUrl, 'success', hostHealthPath);
       }
 
+      if (report.status === 'queued') {
+        report.status = 'paused_for_review';
+        report.reason ||= 'Browser run interrupted; review before retrying';
+      }
       const isConfirmedApplied = hasObservedApplicationReceipt(report);
       if ((report.status === 'submitted' || (report.status as string) === 'applied') && !isConfirmedApplied) {
         report.status = 'paused_for_review';
@@ -937,32 +970,6 @@ async function main(): Promise<void> {
         } catch {}
       } else if (report.status === 'paused_for_review') {
         queue.pauseForReview(job.id, report.reason);
-        // Ticket GEN-533: 1-Pass Fast-ATS Auto-Retry after Rule Synthesis
-        const isFastAts = /(?:greenhouse\.io|gh_jid=|ashbyhq\.com|lever\.co|workable\.com|recruitee\.com|breezy\.hr)/i.test(job.jobUrl);
-        const retryCount = (job as any).retryCount || 0;
-        if (isFastAts && retryCount < 1) {
-          try {
-            const synthesizedRule = synthesizeNewDeterministicRule(report.reason || job.title, profile);
-            if (synthesizedRule) {
-              console.log(`[GEN-533] Synthesized rule '${synthesizedRule.normalizedQuestion}' -> '${synthesizedRule.resolvedValue}' (factKey: ${synthesizedRule.factKey}). Requeueing job for 1-pass retry.`);
-              (job as any).retryCount = retryCount + 1;
-              const pausedItem = (queue as any).queue?.get(job.id);
-              if (pausedItem) {
-                pausedItem.status = 'queued';
-                pausedItem.retryCount = retryCount + 1;
-                (queue as any).persist(pausedItem);
-              }
-            }
-          } catch (ruleErr: any) {
-            console.warn(`[GEN-533] Rule synthesis failed: ${ruleErr?.message || ruleErr}`);
-          }
-        } else if (job.retryCount) {
-          const pausedItem = (queue as any).queue?.get(job.id);
-          if (pausedItem) {
-            pausedItem.retryCount = job.retryCount;
-            (queue as any).persist(pausedItem);
-          }
-        }
       } else if (report.status === 'skipped') {
         queue.skip(job.id, report.reason);
       } else if (report.status === 'queued' || report.reason === 'service_temporarily_unavailable' || report.reason === 'wifi_drop_requeued') {
@@ -985,7 +992,8 @@ async function main(): Promise<void> {
       const finalStatus = statusMap[report.status] || 'failed';
       const provider = (job as any).provider || canonicalRequisition(job.jobUrl, job.externalJobId)?.provider || report.ats || 'ats';
 
-      if (!report.endTime || report.endTime === jobStartedAt) {
+      // Always write run-history; appendJobRunHistory has its own 5s dedup guard
+      {
         appendJobRunHistory({
           jobId: job.id,
           company: job.company,
@@ -1097,7 +1105,7 @@ async function main(): Promise<void> {
     };
 
     // Stagger lane launches by 3.5s to prevent concurrent browser initialization spikes
-    await Promise.all(
+    const laneResults = await Promise.allSettled(
       activeLanes.map(async (k, idx) => {
         if (idx > 0) {
           await new Promise(r => setTimeout(r, idx * 3500));
@@ -1105,10 +1113,14 @@ async function main(): Promise<void> {
         return runLane(k);
       })
     );
+    const failedLane = laneResults.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+    if (failedLane) throw failedLane.reason;
 
     console.log(`[DRAIN] [Batch #${batchNumber}] Completed batch execution (${processedCount} processed, ${appliedCount} applied).`);
       } catch (cycleErr: any) {
         console.error(`[INFINITE-DAEMON] ⚠️ Cycle #${batchNumber} error (recovering in 8s): ${cycleErr?.message || cycleErr}`);
+        await new Promise(r => setTimeout(r, 8000)); // actual recovery pause promised in the log
+      }
       }
 
       if (stopping() || batchNumber >= maxCycles) {
@@ -1127,34 +1139,17 @@ async function main(): Promise<void> {
       }
 
       // Ticket GEN-528: Run background discovery between 20-job batches with 45s hard cap
-      if (!stopping() && !skipSync && batchNumber < maxCycles) {
+      if (!stopping() && !skipSync && !pendingDiscovery && batchNumber < maxCycles) {
         console.log(`[DRAIN] Running inter-cycle background discovery (45s hard cap)...`);
         try {
+          const discovery = syncDiscovery().finally(() => { if (pendingDiscovery === discovery) pendingDiscovery = null; });
+          pendingDiscovery = discovery;
           await Promise.race([
-            syncDiscovery(),
+            discovery,
             new Promise<void>(resolve => setTimeout(resolve, 45_000))
           ]);
         } catch (discErr: any) {
           console.warn(`[DRAIN] Inter-cycle discovery warning: ${discErr?.message || discErr}`);
-        }
-      }
-
-      // Hot-respawn check if out/dist/src/autoapply/runner.js was recompiled
-      if (fs.existsSync(runnerDistPath)) {
-        const currentMtime = fs.statSync(runnerDistPath).mtimeMs;
-        if (currentMtime > bootTimeMs) {
-          console.log(`[DRAIN] Recompiled runner.js detected (${new Date(currentMtime).toISOString()} > ${new Date(bootTimeMs).toISOString()}). Hot-respawning continuous daemon...`);
-          ramWatchdog.stop();
-          await mailbox?.close().catch(() => {});
-          queue.close();
-          releaseLock(lockPath);
-          const { spawn } = await import('node:child_process');
-          const child = spawn(process.execPath, process.argv.slice(1), {
-            detached: true,
-            stdio: 'ignore',
-          });
-          (child as any)?.unref?.();
-          process.exit(0);
         }
       }
 
