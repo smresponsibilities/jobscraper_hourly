@@ -577,8 +577,8 @@ async function main(): Promise<void> {
     const sortedEligible = scoredCandidates.map((s) => s.job);
 
     const hostHealthPath = path.join(stateDir, 'host-health.json');
-    // Ticket GEN-513: Preflight-verify candidates during selection so closed/exceeds_exp jobs do not consume batch slots
-    const targetChunkSize = Math.min(maxJobs, 25);
+    // Ticket GEN-513 & GEN-520: Preflight-verify candidates during selection and cap chunk size to 20
+    const targetChunkSize = Math.min(maxJobs, 20);
     const verifiedChunkJobs: AutoaplyJobItem[] = [];
 
     for (const cand of sortedEligible) {

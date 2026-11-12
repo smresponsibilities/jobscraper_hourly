@@ -1546,7 +1546,7 @@ export class AutoApplyRunner {
         if (respUrl.includes('/api/non-user-graphql')) {
           const reqUrl = req.url();
           const reqBody = req.postData() || '';
-          const isSubmitMutation = /op=ApiSubmit/i.test(reqUrl) || /Submit(?:Single)?ApplicationForm|submitApplication|SubmitJobApplication/i.test(reqBody);
+          const isSubmitMutation = /op=ApiSubmit/i.test(reqUrl) || /Submit(?:Single|Multiple)?ApplicationForm|submitMultipleFormsAction|submitApplication|SubmitJobApplication/i.test(reqBody);
           if (!isSubmitMutation) return;
         }
         // For GraphQL (Ashby), ensure response JSON doesn't contain errors
@@ -1566,7 +1566,7 @@ export class AutoApplyRunner {
             this.log(`Submit endpoint returned error: ${bodyText.slice(0, 2000)}`);
             try {
               const parsed = JSON.parse(bodyText);
-              const appData = parsed?.data?.submitApplicationFormAction || parsed?.data?.submitSingleApplicationFormAction || parsed?.data?.submitJobApplication || parsed?.data;
+              const appData = parsed?.data?.submitApplicationFormAction || parsed?.data?.submitMultipleFormsAction || parsed?.data?.submitSingleApplicationFormAction || parsed?.data?.submitJobApplication || parsed?.data;
               const formErrors = appData?.formErrors || parsed?.errors || parsed?.errorMessages || [];
               if (Array.isArray(formErrors) && formErrors.length > 0) {
                 this.lastNetworkValidationErrors = formErrors.map((e: any) => ({
@@ -2879,10 +2879,12 @@ export class AutoApplyRunner {
 
   private async checkpoint(options: AutoApplyOptions, report: BotRunReport) {
     if (!options.sessionDir || options.dryRun) return;
+    if (this.isClosing || !this.page || this.page.isClosed()) return;
     mkdirSync(options.sessionDir, { recursive: true });
     const target = path.join(options.sessionDir, 'checkpoint.json');
     const temporary = `${target}.${randomUUID()}.tmp`;
-    writeFileSync(temporary, JSON.stringify({ applicationUrl: options.url, currentUrl: this.page!.url(), report }, null, 2), { mode: 0o600 });
+    const curUrl = this.page?.url?.() || options.url || '';
+    writeFileSync(temporary, JSON.stringify({ applicationUrl: options.url, currentUrl: curUrl, report }, null, 2), { mode: 0o600 });
     renameSync(temporary, target);
   }
 
@@ -2920,6 +2922,7 @@ export class AutoApplyRunner {
   }
 
   private async fillFrame(frame: Frame, options: AutoApplyOptions, report: BotRunReport) {
+    if (this.isClosing || !this.page || this.page.isClosed()) return;
     await this.repeatedSections(frame, options.profile, !!options.dryRun);
     await frame.evaluate(() => {
       // GEN-124: Discover Ashby / modern React <button type="button">Yes</button><button type="button">No</button> toggle groups
@@ -4176,7 +4179,8 @@ export class AutoApplyRunner {
         }
       };
       this.activeWatchdog = watchdog;
-      const maxSteps = options.maxSteps ?? (options.url.toLowerCase().includes('myworkdayjobs.com') ? 14 : options.url.toLowerCase().includes('smartrecruiters.com') ? 6 : 12);
+      const isSinglePageAts = /(?:greenhouse\.io|ashbyhq\.com|lever\.co|workable\.com|recruitee\.com|breezy\.hr)/i.test(options.url);
+      const maxSteps = options.maxSteps ?? (options.url.toLowerCase().includes('myworkdayjobs.com') ? 14 : options.url.toLowerCase().includes('smartrecruiters.com') ? 6 : isSinglePageAts ? 2 : 12);
       if (!Number.isInteger(maxSteps) || maxSteps < 1) throw new Error('maxSteps must be a positive integer');
       if (!['http:', 'https:', 'file:'].includes(new URL(options.url).protocol)) throw new Error('Unsupported application URL');
       if (!this.page || this.page.isClosed()) {
@@ -4477,7 +4481,7 @@ export class AutoApplyRunner {
         'Software Engineer';
 
       const fallbackResumePdf = path.resolve('state/autoapply/resumes/Shivam_Mahajan_Resume_BACKEND.pdf');
-      const freeMemLow = os.freemem() < 1.2 * 1024 * 1024 * 1024;
+      const freeMemLow = os.freemem() < 1.4 * 1024 * 1024 * 1024;
       let resumePdfPath = options.profile.documents?.resume || fallbackResumePdf;
 
       if (!freeMemLow && liveJd.trim()) {
@@ -4496,6 +4500,8 @@ export class AutoApplyRunner {
         } catch {
           resumePdfPath = options.profile.documents?.resume || fallbackResumePdf;
         }
+      } else {
+        resumePdfPath = options.profile.documents?.resume || fallbackResumePdf;
       }
 
       options = {
