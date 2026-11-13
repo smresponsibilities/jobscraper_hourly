@@ -148,6 +148,7 @@ export function selectDiversifiedMultiLaneChunk(
     // Ticket GEN-524: Cap Workday to max 2 and SmartRecruiters to max 2 per batch when Fast-ATS jobs are present
     const isWorkday = /myworkdayjobs\.com|myworkdaysite\.com/i.test(job.jobUrl);
     const isSmartRecruiters = /smartrecruiters\.com|smartr\.me/i.test(job.jobUrl);
+    if (isSmartRecruiters && process.env.ENABLE_SMARTRECRUITERS !== '1') return false;
     if (isWorkday) {
       const currentWorkdayCount = selected.filter(j => /myworkdayjobs\.com|myworkdaysite\.com/i.test(j.jobUrl)).length;
       if (currentWorkdayCount >= 2) return false;
@@ -219,7 +220,7 @@ export function selectDiversifiedMultiLaneChunk(
     workable: 4,
     recruitee: 4,
     breezy: 4,
-    smartrecruiters: 2,
+    smartrecruiters: process.env.ENABLE_SMARTRECRUITERS === '1' ? 2 : 0,
     workday: 2,
     other: 2,
   };

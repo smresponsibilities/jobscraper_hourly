@@ -66,9 +66,12 @@ async function readCaptchaWidget(page: Page): Promise<CaptchaWidgetInfo> {
       '.cf-turnstile, [data-turnstile-sitekey], iframe[src*="challenges.cloudflare.com"]'
     );
     const siteKeyEl = document.querySelector<HTMLElement>('[data-sitekey], [data-turnstile-sitekey], .cf-turnstile');
+    const iframeSrc = document.querySelector<HTMLIFrameElement>('iframe[src*="challenges.cloudflare.com"]')?.src;
+    const iframeUrl = iframeSrc ? new URL(iframeSrc, location.href) : null;
     const siteKey =
       siteKeyEl?.getAttribute('data-sitekey') ||
       siteKeyEl?.getAttribute('data-turnstile-sitekey') ||
+      iframeUrl?.searchParams.get('sitekey') || iframeUrl?.searchParams.get('k') ||
       null;
     return {
       siteKey,
@@ -115,6 +118,7 @@ async function injectCaptchaToken(page: Page, token: string, callback?: string):
  * no site key, or the solve fails.
  */
 async function solveViaTokenApi(page: Page, apiKey: string): Promise<{ token: string; turnstile: boolean } | null> {
+  const signal = AbortSignal.timeout(5000);
   const widget = await readCaptchaWidget(page);
   if (!widget.siteKey) return null;
 
@@ -133,6 +137,7 @@ async function solveViaTokenApi(page: Page, apiKey: string): Promise<{ token: st
   const createRes = await fetch('https://api.capsolver.com/createTask', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    signal,
     body: JSON.stringify({ clientKey: apiKey, task }),
   })
     .then(r => r.json() as Promise<{ taskId?: string; errorDescription?: string }>)
@@ -140,12 +145,14 @@ async function solveViaTokenApi(page: Page, apiKey: string): Promise<{ token: st
 
   if (!createRes.taskId) return null;
 
-  for (let poll = 0; poll < 15; poll++) {
-    await page.waitForTimeout(2000);
+  for (let poll = 0; poll < 4 && !signal.aborted; poll++) {
+    await page.waitForTimeout(1000);
+    if (signal.aborted) break;
     type TaskResult = { status?: string; solution?: { token?: string; gRecaptchaResponse?: string } };
     const res: TaskResult = await fetch('https://api.capsolver.com/getTaskResult', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      signal,
       body: JSON.stringify({ clientKey: apiKey, taskId: createRes.taskId }),
     })
       .then(r => r.json() as Promise<TaskResult>)
@@ -185,8 +192,10 @@ function pickSolverToken(payload: unknown): string | undefined {
 
 export async function solveViaLocalSolver(
   page: Page,
-  baseUrl: string
+  baseUrl: string,
+  timeoutMs = 6_000,
 ): Promise<{ token: string; turnstile: boolean } | null> {
+  const signal = AbortSignal.timeout(timeoutMs);
   try {
     const endpoint = new URL(baseUrl);
     if (!['http:', 'https:'].includes(endpoint.protocol) || endpoint.username || endpoint.password || !['127.0.0.1', 'localhost', '[::1]'].includes(endpoint.hostname)) return null;
@@ -200,7 +209,8 @@ export async function solveViaLocalSolver(
 
   for (const route of ['/turnstile', '/solve']) {
     try {
-      const response = await fetch(`${base}${route}?${params.toString()}`, { signal: AbortSignal.timeout(30_000) });
+      if (signal.aborted) return null;
+      const response = await fetch(`${base}${route}?${params.toString()}`, { signal });
       if (!response.ok) continue;
       const created = (await response.json().catch(() => null)) as Record<string, any> | null;
       const immediate = pickSolverToken(created);
@@ -210,9 +220,10 @@ export async function solveViaLocalSolver(
       // odell0111 answers in place. Support both without guessing.
       const taskId = created?.task_id || created?.taskId || created?.id;
       if (typeof taskId !== 'string' || !taskId) continue;
-      for (let attempt = 0; attempt < 45; attempt++) {
+      for (let attempt = 0; attempt < 45 && !signal.aborted; attempt++) {
         await new Promise(resolve => setTimeout(resolve, 1000));
-        const poll = await fetch(`${base}/result?id=${encodeURIComponent(taskId)}`, { signal: AbortSignal.timeout(15_000) });
+        if (signal.aborted) return null;
+        const poll = await fetch(`${base}/result?id=${encodeURIComponent(taskId)}`, { signal });
         if (!poll.ok) continue;
         const payload = (await poll.json().catch(() => null)) as Record<string, any> | null;
         const token = pickSolverToken(payload);
@@ -223,14 +234,14 @@ export async function solveViaLocalSolver(
   }
   // The local helper accepts a JSON body on GET /solve and a secret header.
   const secret = localSolverSecret();
-  if (secret) {
+  if (secret && !signal.aborted) {
     try {
       const endpoint = new URL('/solve', baseUrl);
       const transport = endpoint.protocol === 'https:' ? await import('node:https') : await import('node:http');
       const userAgent = await page.evaluate(() => navigator.userAgent).catch(() => undefined);
       const body = JSON.stringify({ site_url: page.url(), site_key: widget.siteKey, action: widget.action, cdata: widget.cdata, user_agent: userAgent });
       const payload = await new Promise<unknown>((resolve, reject) => {
-        const req = transport.request(endpoint, { method: 'GET', headers: { secret, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }, timeout: 60_000 }, res => {
+        const req = transport.request(endpoint, { method: 'GET', headers: { secret, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }, signal }, res => {
           let data = '';
           res.setEncoding('utf8');
           res.on('data', chunk => { data += chunk; if (data.length > 65_536) req.destroy(new Error('Solver response too large')); });
@@ -270,25 +281,26 @@ export async function attemptAutonomousCaptchaSolve(page: Page): Promise<Captcha
   }
 
   // Layer 2: Autonomous Humanized Checkbox Click inside Challenge Iframe
-  for (const frame of captchaFrames) {
+  for (const frame of captchaFrames.slice(0, 1)) {
     const checkbox = frame.locator('#checkbox, [role="checkbox"], .recaptcha-checkbox-border, input[type="checkbox"]').first();
     if (await checkbox.isVisible().catch(() => false)) {
-      const isChecked = await checkbox.getAttribute('aria-checked').catch(() => 'false');
-      if (isChecked === 'true') {
-        return { detected: true, solved: true, method: 'checkbox_click' };
-      }
-      const box = await checkbox.boundingBox().catch(() => null);
+      const box = await checkbox.boundingBox({ timeout: 1000 }).catch(() => null);
       if (box) {
         await humanizedClickBox(page, box);
-        await page.waitForTimeout(3500);
+        await page.waitForTimeout(1500);
         if (await hasPopulatedCaptchaToken(page)) {
           return { detected: true, solved: true, method: 'checkbox_click' };
         }
-        const nowChecked = await checkbox.getAttribute('aria-checked').catch(() => 'false');
-        if (nowChecked === 'true') {
-          return { detected: true, solved: true, method: 'checkbox_click' };
-        }
       }
+    }
+  }
+
+  const turnstile = page.locator('iframe[src*="challenges.cloudflare.com"], #cf_turnstile div, #cf-turnstile div, .turnstile>div>div, .cf-turnstile').first();
+  if (await turnstile.isVisible().catch(() => false)) {
+    const box = await turnstile.boundingBox({ timeout: 1000 }).catch(() => null);
+    if (box && box.width >= 27 && box.height > 0) {
+      await page.mouse.click(box.x + 27, box.y + Math.min(26, Math.floor(box.height / 2)), { delay: 140 }).catch(() => {});
+      if (await hasPopulatedCaptchaToken(page)) return { detected: true, solved: true, method: 'checkbox_click' };
     }
   }
 
@@ -303,6 +315,16 @@ export async function attemptAutonomousCaptchaSolve(page: Page): Promise<Captcha
       if (await hasPopulatedCaptchaToken(page)) {
         return { detected: true, solved: true, method: 'api_solver' };
       }
+    }
+  }
+
+  const paidKey = process.env.CAPTCHA_API_KEY || process.env.CAPSOLVER_API_KEY;
+  if (paidKey) {
+    const solved = await solveViaTokenApi(page, paidKey);
+    if (solved) {
+      const widget = await readCaptchaWidget(page);
+      await injectCaptchaToken(page, solved.token, widget.callback);
+      if (await hasPopulatedCaptchaToken(page)) return { detected: true, solved: true, method: 'api_solver' };
     }
   }
 

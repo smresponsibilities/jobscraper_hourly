@@ -2,9 +2,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { classifyAtsField } from '../src/autoapply/classifier.js';
-import { normalizeQuestion, resolveCandidateAnswer } from '../src/autoapply/answers.js';
+import { employerKey, hasScopedAnswerMismatch, normalizeQuestion, profileFactValue, resolveByOptionPolicy, resolveCandidateAnswer } from '../src/autoapply/answers.js';
+import { translateCanonicalAnswerToOption } from '../src/autoapply/widgets.js';
 import { loadProfile } from '../src/autoapply/profile.js';
 import { lookupPortfolioProjectFact } from '../src/autoapply/narrative-composer.js';
+import { resolveHistoricalLedgerEntryGrounded } from '../src/autoapply/self-learning.js';
 import type { CandidateExtendedProfile } from '../src/autoapply/types.js';
 
 export interface ReplaySummary {
@@ -36,11 +38,7 @@ function presentFact(profile: CandidateExtendedProfile, key: string): boolean {
     const name = profile.personal.fullName || [profile.personal.firstName, profile.personal.lastName].filter(Boolean).join(' ');
     return /^shivam\s+mahajan$/i.test(name.trim()) && !!lookupPortfolioProjectFact(key);
   }
-  let value: unknown = profile;
-  for (const part of key.split('.')) {
-    if (!value || typeof value !== 'object' || !(part in value)) return false;
-    value = (value as Record<string, unknown>)[part];
-  }
+  const value = profileFactValue(profile, key);
   return value !== undefined && value !== null && value !== '' && (!Array.isArray(value) || value.length > 0);
 }
 
@@ -50,6 +48,7 @@ export function replayHistoricalQuestions(entries: unknown[], profile: Candidate
   for (const entry of entries) {
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) { summary.malformed++; summary.unresolved++; continue; }
     const item = entry as Record<string, unknown>;
+    if (item.excludedByOwner === true) { summary.excluded++; continue; }
     const question = [item.questionText, item.label, item.name].find(value => typeof value === 'string' && value.trim()) as string | undefined;
     if (!question || (item.options != null && (!Array.isArray(item.options) || item.options.some(option => typeof option !== 'string')))) {
       summary.malformed++; summary.unresolved++; continue;
@@ -66,17 +65,31 @@ export function replayHistoricalQuestions(entries: unknown[], profile: Candidate
     const recordedWidget = typeof item.widgetKind === 'string' ? item.widgetKind : '';
     const fieldType = typeof item.type === 'string' ? item.type : /^(?:text|number|textarea|checkbox|radio|select|file)$/i.test(recordedWidget) ? recordedWidget.toLowerCase() : 'text';
     const urls = Array.isArray(item.sampleUrls) ? [...new Set(item.sampleUrls.filter((url): url is string => typeof url === 'string' && URL.canParse(url)))] : [];
-    const url = urls.length === 1 ? urls[0]! : 'https://neutral.invalid';
+    const employers = new Set(urls.map(employerKey).filter(Boolean));
+    const url = urls.length > 0 && employers.size === 1 && urls.every(item => employerKey(item) === [...employers][0]) ? urls[0]! : 'https://neutral.invalid';
+    const companies = Array.isArray(item.sampleCompanies) ? [...new Set(item.sampleCompanies.filter((name): name is string => typeof name === 'string' && !!name.trim()))] : [];
+    const company = url !== 'https://neutral.invalid' && companies.length === 1 ? companies[0] : undefined;
     try {
       const classification = classifyAtsField({ label: question, name: question, type: fieldType, widgetKind: recordedWidget || undefined, options });
-      const answer = resolveCandidateAnswer(classification.category, profile, { url, question, options, fieldType });
+      let answer = resolveCandidateAnswer(classification.category, profile, { url, question, options, fieldType, company });
+      const scopedMismatch = hasScopedAnswerMismatch(profile, { url, question, options, fieldType, company }, [normalizeQuestion(question)]);
+      if ((answer.value === undefined || answer.value === '') && urls.length <= 1 && !scopedMismatch && !company) {
+        const recovered = resolveHistoricalLedgerEntryGrounded({ questionText: question, fieldType, options, isRequired: item.isRequired === true }, profile);
+        if (recovered.status === 'resolved' && recovered.factKey && recovered.value !== undefined) answer = { ...answer, value: recovered.value, sourceFactKeys: [recovered.factKey] };
+      }
       if (answer.value === undefined || answer.value === null || answer.value === '') { summary.unresolved++; continue; }
       if (!answer.sourceFactKeys.length || !answer.sourceFactKeys.every(key => presentFact(profile, key))) {
         summary.missingFactReferences++; summary.unresolved++; continue;
       }
       if (options.length) {
         const acceptable = typeof answer.value === 'boolean' ? answer.value ? ['yes', 'true'] : ['no', 'false'] : [String(answer.value).trim().toLowerCase()];
-        if (!options.some(option => acceptable.includes(option.trim().toLowerCase()))) { summary.unresolved++; continue; }
+        if (!options.some(option => acceptable.includes(option.trim().toLowerCase()))) {
+          const translated = /^(?:city|gender)$/.test(classification.category) ? translateCanonicalAnswerToOption(String(answer.value), question, options) : null;
+          const policy = resolveByOptionPolicy(question, options, profile);
+          if (translated) answer = { ...answer, value: translated };
+          else if (policy?.value !== undefined && policy.sourceFactKeys.length && policy.sourceFactKeys.every(key => presentFact(profile, key)) && options.includes(String(policy.value))) answer = policy;
+          else { summary.unresolved++; continue; }
+        }
       }
       if (item.reviewedByOwner === true) {
         if (!['string', 'number', 'boolean'].includes(typeof item.verifiedExpectedValue)
@@ -109,7 +122,7 @@ function main(): void {
       process.exitCode = 1;
       return;
     }
-    console.log(`[TEST-GEN-550 PASS] ${summary.resolved} answers have present fact references; ${summary.skipped} optional questions were skipped and ${summary.excluded} malformed entries excluded by request; ${summary.independentlyVerified} match owner-reviewed values.`);
+    console.log(`[TEST-GEN-550 PASS] ${summary.resolved} answers have present fact references; ${summary.skipped} optional questions were skipped and ${summary.excluded} entries excluded by owner request; ${summary.independentlyVerified} match owner-reviewed values.`);
   } catch {
     console.error('[TEST-GEN-550 FAIL] Candidate profile or historical ledger is unavailable or invalid.');
     process.exitCode = 1;

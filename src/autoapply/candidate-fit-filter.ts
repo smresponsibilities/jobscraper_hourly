@@ -58,6 +58,7 @@ const INDIA_LOCATION_REGEX =
   /\b(?:india|bengaluru|bangalore|karnataka|hyderabad|telangana|pune|mumbai|maharashtra|chennai|tamil\s+nadu|gurugram|gurgaon|haryana|noida|delhi|\bncr\b|kolkata|ahmedabad|kochi|kerala|coimbatore|indore|jaipur|chandigarh|mohali|trivandrum|thiruvananthapuram)\b/i;
 
 const BENGALURU_REGEX = /\b(?:bengaluru|bangalore|karnataka)\b/i;
+const FOREIGN_REMOTE_GEO_LOCK_REGEX = /\b(?:(?:US|U\.S\.|USA|United\s+States|UK|Canada|EU|EMEA|LATAM|North\s+America)\s*(?:only|citizens?\s+only|residents?\s+only)|must\s+(?:reside|live|be\s+located|be\s+based)\s+in\s+(?:the\s+)?(?:US|U\.S\.|United\s+States|UK|Canada|Europe|EU)|remote\s*[-–—:(,\s]+(?:US|U\.S\.|USA|United\s+States|UK|Canada|EU|EMEA|LATAM|North\s+America))\b/i;
 
 const FOREIGN_ONLY_LOCATION_REGEX =
   /\b(?:united\s+states|\busa\b|u\.s\.a\.|new\s+york|\bnyc\b|san\s+francisco|bay\s+area|seattle|austin|boston|chicago|los\s+angeles|atlanta|denver|washington\s*d\.?c\.?|california|texas|united\s+kingdom|\buk\b|london|manchester|edinburgh|germany|berlin|munich|frankfurt|france|paris|netherlands|amsterdam|spain|madrid|barcelona|italy|milan|poland|warsaw|krakow|ireland|dublin|sweden|stockholm|switzerland|zurich|canada|toronto|vancouver|montreal|brazil|sao\s+paulo|mexico|mexico\s+city|argentina|colombia|chile|australia|sydney|melbourne|new\s+zealand|japan|tokyo|south\s+korea|seoul|china|beijing|shanghai|hong\s+kong|taiwan|taipei|israel|tel\s+aviv|uae|dubai|saudi\s+arabia|riyadh)\b/i;
@@ -117,6 +118,10 @@ export function evaluateCandidateJobFit(input: CandidateFitInput): CandidateFitR
   const isIndia = isBengaluru || INDIA_LOCATION_REGEX.test(location) || INDIA_LOCATION_REGEX.test(title);
   const isForeignListed = FOREIGN_ONLY_LOCATION_REGEX.test(location);
   const isGlobalRemote = /\b(?:remote\s*-\s*global|global\s*remote|worldwide|anywhere)\b/i.test(location);
+
+  if (FOREIGN_REMOTE_GEO_LOCK_REGEX.test(`${location} ${input.description || ''}`)) {
+    return { allowed: false, eligible: false, score: -5000, reasons: ['foreign_geo_locked_remote'], reason: 'foreign_geo_locked_remote', priorityBonus: 0, isBengaluru, isIndia };
+  }
 
   if (location && isForeignListed && !isIndia && !isGlobalRemote) {
     const msg = `foreign_location_filtered: ${location.slice(0, 80)}`;

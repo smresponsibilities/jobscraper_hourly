@@ -18,23 +18,21 @@ export interface HealedServerValidationResult {
 export async function auditEmptyRequiredFieldsInDom(pageOrFrame: Page | Frame, throwOnError = false): Promise<Array<{
   selector: string; tagName: string; inputType: string; label: string;
 }>> {
-  return pageOrFrame.evaluate(() => {
-    const result: Array<{ selector: string; tagName: string; inputType: string; label: string }> = [];
+  // A source string keeps nested browser functions self-contained under tsx/esbuild.
+  return pageOrFrame.evaluate<Array<{ selector: string; tagName: string; inputType: string; label: string }>>(String.raw`(() => {
+    const result = [];
     let visited = 0;
-    const walk = (root: Document | ShadowRoot, depth: number) => {
-      for (const el of Array.from(root.querySelectorAll('*'))) {
+    const walk = (root, depth) => {
+      for (const el of root.querySelectorAll('*')) {
         if (++visited > 10000) return;
-        const shadow = (el as HTMLElement).shadowRoot;
-        if (shadow && depth < 5) walk(shadow, depth + 1);
+        if (el.shadowRoot && depth < 5) walk(el.shadowRoot, depth + 1);
         if (!(el instanceof HTMLInputElement || el instanceof HTMLSelectElement || el instanceof HTMLTextAreaElement)) continue;
         if (!(el.required || el.getAttribute('aria-required') === 'true') || el.disabled || !el.getClientRects().length) continue;
-        // react-select's unnamed `…-requiredInput` only carries HTML validation;
-        // the visible control is the combobox, which this audit does not own.
         if (el instanceof HTMLInputElement && /\brequiredInput\b/.test(el.className || '') && !el.name && !el.id) continue;
         if (el instanceof HTMLInputElement && (el.type === 'hidden' || el.maxLength === 1 || el.autocomplete === 'one-time-code' || /^security-input-/i.test(el.id))) continue;
         if (el instanceof HTMLInputElement && el.type === 'radio' && el.name) {
-          const group = root.querySelectorAll(`input[type="radio"][name="${CSS.escape(el.name)}"]`);
-          if (Array.from(group).some(radio => (radio as HTMLInputElement).checked)) continue;
+          const group = root.querySelectorAll('input[type="radio"][name="' + CSS.escape(el.name) + '"]');
+          if (Array.from(group).some(radio => radio.checked)) continue;
         } else if (el instanceof HTMLInputElement && (el.type === 'checkbox' || el.type === 'radio')) {
           if (el.checked) continue;
         } else if (el instanceof HTMLInputElement && el.type === 'file') {
@@ -42,23 +40,23 @@ export async function auditEmptyRequiredFieldsInDom(pageOrFrame: Page | Frame, t
         } else if (el.value.trim()) continue;
         const select = el.closest('.select__control, [class*="select__control"], [class*="select-container"], [class*="selectContainer"]');
         if (select?.querySelector('.select__single-value, .select__multi-value, [class*="singleValue"], [class*="multiValue"]')) continue;
-        const parts: string[] = [];
-        let current: Element | null = el;
+        const parts = [];
+        let current = el;
         while (current) {
-          const parent: Element | null = current.parentElement;
+          const parent = current.parentElement;
           const index = parent ? Array.from(parent.children).indexOf(current) + 1 : 1;
-          parts.unshift(`${current.tagName.toLowerCase()}:nth-child(${index})`);
+          parts.unshift(current.tagName.toLowerCase() + ':nth-child(' + index + ')');
           current = parent;
         }
         const label = Array.from(el.labels || []).map(item => item.textContent?.trim() || '').filter(Boolean).join(' ') ||
-          (el.getAttribute('aria-labelledby') || '').split(/\s+/).filter(Boolean).map(id => root.querySelector(`#${CSS.escape(id)}`)?.textContent?.trim() || '').filter(Boolean).join(' ') ||
+          (el.getAttribute('aria-labelledby') || '').split(/\s+/).filter(Boolean).map(id => root.querySelector('#' + CSS.escape(id))?.textContent?.trim() || '').filter(Boolean).join(' ') ||
           el.getAttribute('aria-label') || el.getAttribute('name') || '';
-        result.push({ selector: el.id ? `#${CSS.escape(el.id)}` : parts.join(' > '), tagName: el.tagName.toLowerCase(), inputType: el instanceof HTMLInputElement ? el.type : '', label });
+        result.push({ selector: el.id ? '#' + CSS.escape(el.id) : parts.join(' > '), tagName: el.tagName.toLowerCase(), inputType: el instanceof HTMLInputElement ? el.type : '', label });
       }
     };
     walk(document, 0);
     return result;
-  }).catch(error => {
+  })()`).catch(error => {
     if (throwOnError) throw error;
     return [];
   });

@@ -710,6 +710,14 @@ export function classifyAtsField(descriptor: {
   const category = autocomplete && !booleanWidget ? standard[autocomplete] : undefined;
   if (autocomplete === 'one-time-code') return { category: 'unknown', confidence: 0, matchedKeyword: autocomplete, source: 'autocomplete' };
   const context = [descriptor.name, descriptor.id, descriptor.label, descriptor.ariaLabel, descriptor.placeholder].filter(Boolean).join(' ');
+  // Whole-question semantics take precedence over incidental nouns in labels.
+  if (/\b(?:relatives?|family\s+members?)\b/i.test(context)) return { category: 'unknown', confidence: 0, source: 'label' };
+  if (/\blegally\s+(?:able|authori[sz]ed|eligible)\s+to\s+work\b/i.test(context)) return { category: 'work_authorization', confidence: 0.98, source: 'label' };
+  if (/\b(?:consent|privacy\s+notice|recruitment\s+notice|data\s+privacy)\b/i.test(context)) return { category: 'unknown', confidence: 0, source: 'label' };
+  if (/\bphone\s+country\b|\b(?:phone|dial(?:ing)?)\s+(?:country\s+)?code\b/i.test(context)) return { category: 'phone_country_code', confidence: 0.98, source: 'label' };
+  if (/\b(?:knowledge|experience|familiar(?:ity)?)\s+(?:of|with)\b/i.test(context) && /\bgithub\b/i.test(context)) return { category: 'unknown', confidence: 0, source: 'label' };
+  if (/\b(?:post.employment\s+restrictions?|non.?compete|restrictive\s+covenants?)\b/i.test(context)) return { category: 'non_compete', confidence: 0.98, source: 'label' };
+  if (/\b(?:resigned\s+from|last\s+working\s+date|\blwd\b)\b/i.test(context)) return { category: 'unknown', confidence: 0, source: 'label' };
   const rule = category ? CLASSIFICATION_RULES.find(entry => entry.category === category) : undefined;
   if (category && category !== 'current_title' && /\b(?:referrer|referral|manager|supervisor|reference|emergency contact)\b/i.test(context)) return { category: 'unknown', confidence: 0, source: 'autocomplete' };
   if (category && !rule?.negativePatterns?.some(pattern => pattern.test(context))) return { category, confidence: 1, matchedKeyword: autocomplete, source: 'autocomplete' };

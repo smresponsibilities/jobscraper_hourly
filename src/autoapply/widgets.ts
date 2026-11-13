@@ -41,6 +41,13 @@ export async function verifyChoiceReadBack(
   expectedText?: string
 ): Promise<boolean> {
   try {
+    if (await control.evaluate(el => el.tagName === 'SELECT')) {
+      const value = await control.inputValue();
+      const selected = control.locator('option:checked');
+      const label = (await selected.textContent() || '').trim();
+      if (!label || /^(?:select\b|choose\b|--|please\s+select)/i.test(label)) return false;
+      return !expectedText || [label, value].some(item => item.trim().toLowerCase() === expectedText.trim().toLowerCase());
+    }
     const evalPromise = control.evaluate((el, wanted) => {
       const isPlaceholder = (s: string) => /^(?:select\b|choose\b|--|please\s+select|search\b|type\s+to|none\s+selected)/i.test(s.trim());
 
@@ -217,14 +224,20 @@ export function translateCanonicalAnswerToOption(
   const opts = optionLabels.map((o) => ({ raw: o, norm: o.trim().toLowerCase() })).filter((o) => o.norm !== '');
   if (opts.length === 0) return null;
 
+  // Gender labels such as "male" are substrings of "female".
+  const exact = opts.find((o) => o.norm === ans);
+  if (exact) return exact.raw;
+  if (/\bgender\b/i.test(q) || /^(?:male|female|man|woman)$/i.test(ans)) {
+    const synonyms = /^(?:female|woman)$/.test(ans) ? /^(?:female|woman)$/i : /^(?:male|man)$/.test(ans) ? /^(?:male|man)$/i : null;
+    return synonyms ? opts.find(o => synonyms.test(o.norm))?.raw ?? null : null;
+  }
+
   // 1. Direct or substring match first
-  const direct =
-    opts.find((o) => o.norm === ans) ||
-    opts.find((o) => ans.length >= 2 && (o.norm.includes(ans) || ans.includes(o.norm)));
+  const direct = opts.find((o) => ans.length >= 2 && (o.norm.includes(ans) || ans.includes(o.norm)));
   if (direct) return direct.raw;
 
   // 2. Experience (1 year) bucket matching: "0-2 years", "1-3 years", "0 - 1 year", "Entry Level", "< 2 years"
-  if (ans === '1' || ans === '1 year' || /experience|years|yoe/i.test(q)) {
+  if ((ans === '1' || ans === '1 year' || ans === '0' || ans === 'no') && /experience|years|yoe/i.test(q)) {
     if (ans === '0' || ans === 'no') {
       const zeroOpt = opts.find((o) => /\b(?:0|none|no\s+experience|<\s*1|less\s+than\s+1|beginner|n\/a)\b/i.test(o.norm));
       if (zeroOpt) return zeroOpt.raw;
@@ -236,7 +249,7 @@ export function translateCanonicalAnswerToOption(
   }
 
   // 3. Notice Period ("Immediate" / "0") bucket matching: "0 - 15 days", "Less than 2 weeks", "Immediately"
-  if (ans === 'immediate' || ans === '0' || /notice|join|start|availability/i.test(q)) {
+  if ((ans === 'immediate' || ans === '0') && /notice|join|start|availability/i.test(q)) {
     const noticeOpt = opts.find((o) =>
       /\b(?:immediate|0\s*[-–to]+\s*(?:7|15|30)|less\s+than\s+(?:15|30|2\s*weeks)|<\s*(?:15|30)|1\s*[-–to]+\s*2\s*weeks|currently\s+serving|right\s+away)\b/i.test(
         o.norm
@@ -269,12 +282,6 @@ export function translateCanonicalAnswerToOption(
       /\b(?:yes|align|agree|comfortable|10\s*[-–to]+\s*15|8\s*[-–to]+\s*12|12\s*[-–to]+\s*(?:15|16|18))\b/i.test(o.norm)
     );
     if (compOpt) return compOpt.raw;
-  }
-
-  // 7. Gender ("Male" -> "Man") & EEO synonyms
-  if (ans === 'male' || /\bgender\b/i.test(q)) {
-    const gOpt = opts.find((o) => /^(?:male|man|cisgender\s+male|he\s*\/\s*him)$/i.test(o.norm));
-    if (gOpt) return gOpt.raw;
   }
 
   // 8. Work Authorization ("Yes") vs Sponsorship ("No") verbose phrasing
@@ -327,50 +334,22 @@ export async function selectHarvestedOption(
     .evaluate((el) => el.tagName.toLowerCase() === 'select')
     .catch(() => false);
   if (isNativeSelect) {
-    const optionLabels = await control
-      .evaluate((el) =>
-        Array.from((el as HTMLSelectElement).options)
-          .filter((o) => !o.disabled && o.text.trim())
-          .map((o) => o.text)
-      )
-      .catch(() => []);
-
-    let targetOption = option;
-    const translated = translateCanonicalAnswerToOption(option, questionText, optionLabels);
-    if (translated) {
-      targetOption = translated;
+    const optionLocators = control.locator('option');
+    const choices: Array<{ index: number; label: string; value: string }> = [];
+    for (let index = 0; index < await optionLocators.count(); index++) {
+      const item = optionLocators.nth(index);
+      if (await item.isDisabled()) continue;
+      const label = (await item.textContent() || '').trim();
+      if (!label || /^(?:select|choose|--|please\s+select)/i.test(label)) continue;
+      choices.push({ index, label, value: await item.getAttribute('value') ?? label });
     }
-
-    const selectedViaNative = await control
-      .evaluate((el, targetText) => {
-        const sel = el as HTMLSelectElement;
-        const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
-        const want = norm(targetText);
-        const isPlaceholder = (s: string) => /^(?:select|choose|--|please\s+select)/i.test(s.trim());
-        const opts = Array.from(sel.options).filter((o) => !o.disabled && norm(o.text) !== '' && !isPlaceholder(o.text));
-        let match =
-          opts.find((o) => norm(o.text) === want || norm(o.value) === want) ||
-          opts.find((o) => norm(o.text).includes(want) || want.includes(norm(o.text)));
-        if (!match && opts.length > 0) {
-          match =
-            opts.find((o) =>
-              /\b(?:yes|india|bengaluru|bangalore|karnataka|remote|hybrid|bachelor|b\.?tech|b\.?e\b|full[\s-]*time|linkedin|job\s*board|company\s*website|online|other|none|no\b|0\s*[-–to]|1\s*[-–to]|i\s+do\s+not\s+wish|prefer\s+not)\b/i.test(
-                o.text
-              )
-            ) || opts[0];
-        }
-        if (!match) return false;
-        sel.value = match.value;
-        sel.selectedIndex = match.index;
-        sel.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
-        sel.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
-        return true;
-      }, targetOption)
-      .catch(() => false);
-    if (selectedViaNative) {
-      await control.selectOption({ label: targetOption }).catch(() => {});
-      return true;
-    }
+    const target = translateCanonicalAnswerToOption(option, questionText, choices.map(choice => choice.label)) || option;
+    const normalize = (value: string) => value.trim().toLowerCase().replace(/\s+/g, ' ');
+    const exact = choices.filter(choice => normalize(choice.label) === normalize(target) || normalize(choice.value) === normalize(target));
+    const partial = exact.length ? exact : choices.filter(choice => normalize(target).length >= 3 && normalize(choice.label).includes(normalize(target)));
+    if (partial.length !== 1) return false;
+    const selected = await control.selectOption({ index: partial[0]!.index }).catch(() => []);
+    return selected.length === 1;
   }
 
   // Ticket GEN-170: Workday button[aria-haspopup="listbox"] resolver

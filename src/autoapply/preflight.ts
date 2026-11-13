@@ -142,6 +142,8 @@ export async function preflightJob(job: IntakeJob, profile: CandidateExtendedPro
   const url = job.url || job.jobUrl;
   const checkedAt = new Date().toISOString();
   if (!url || !URL.canParse(url) || !['https:', 'http:'].includes(new URL(url).protocol)) return { status: 'skipped', reason: 'invalid_application_url', checkedAt };
+  const host = new URL(url).hostname.toLowerCase();
+  if (process.env.ENABLE_SMARTRECRUITERS !== '1' && (host === 'smartrecruiters.com' || host.endsWith('.smartrecruiters.com') || host === 'smartr.me')) return { status: 'skipped', reason: 'smartrecruiters_login_wall_deferred', checkedAt };
   if (isAtsRootUrl(url)) {
     return { status: 'skipped', reason: 'board_root_not_requisition', checkedAt };
   }

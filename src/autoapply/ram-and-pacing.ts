@@ -11,7 +11,7 @@ const PROTECTED_ATS_AND_SECURITY_DOMAINS =
   /(?:greenhouse\.io|ashbyhq\.com|lever\.co|myworkdayjobs\.com|workday\.com|smartrecruiters\.com|hcaptcha\.com|cloudflare\.com|recaptcha\.net|gstatic\.com|arkoselabs\.com)/i;
 
 /**
- * 1. Blocks heavy video streams, decorative fonts, and 3rd-party marketing trackers
+ * 1. Blocks heavy video streams and 3rd-party marketing trackers
  * while strictly allowing all ATS scripts, styles, and CAPTCHA/security challenges.
  */
 export async function installRamDietRouteFilter(context: BrowserContext): Promise<void> {
@@ -25,8 +25,8 @@ export async function installRamDietRouteFilter(context: BrowserContext): Promis
       return route.continue();
     }
 
-    // Block heavy video/audio streams, custom fonts, and 3rd-party marketing spyware
-    if (type === 'media' || type === 'font' || BLOCKED_TRACKER_DOMAINS.test(url)) {
+    // Preserve fonts used by page rendering and challenge widgets.
+    if (type === 'media' || BLOCKED_TRACKER_DOMAINS.test(url)) {
       return route.abort();
     }
 

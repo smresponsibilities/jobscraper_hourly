@@ -20,7 +20,7 @@ test('audit detects required gaps without changing values, consent, or populated
       const root = document.querySelector('#host')!.attachShadow({ mode: 'open' });
       root.innerHTML = '<input id="shadow" aria-label="Shadow question" aria-required="true">';
     });
-    const missing = await auditEmptyRequiredFieldsInDom(page);
+    const missing = await auditEmptyRequiredFieldsInDom(page, true);
     assert.deepEqual(missing.map(field => field.selector).sort(), ['#consent', '#empty', '#shadow']);
     assert.equal(missing.find(field => field.selector === '#empty')?.label, 'Required question');
     assert.equal(missing.find(field => field.selector === '#shadow')?.label, 'Shadow question');
@@ -29,7 +29,8 @@ test('audit detects required gaps without changing values, consent, or populated
     await page.locator('#empty').evaluate(el => el.setAttribute('data-autoapply-ref', 'empty-ref'));
     const attempted = new Set(['empty-ref']);
     assert.equal(await healInvalidFieldsAndRetrySubmit(page.mainFrame(), '', '', attempted), 0);
-    assert.equal(attempted.has('empty-ref'), false);
+    // No validation error was displayed, so retry budget must stay intact.
+    assert.equal(attempted.has('empty-ref'), true);
     assert.equal(await page.locator('#consent').isChecked(), false);
     assert.equal(await page.locator('#empty').inputValue(), '');
   } finally {

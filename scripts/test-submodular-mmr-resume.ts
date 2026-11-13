@@ -103,7 +103,10 @@ async function run() {
       const { verifyPdfVisualGeometry } = await import('../src/resume/deterministic-builder.js');
       const geo = verifyPdfVisualGeometry(pdfBuf);
       assert.equal(geo.validSinglePage, true, 'Must be valid single page');
-      assert.equal(geo.hasOverflowWarning, false, 'Must not have overflow warning');
+      // The builder checks printable DOM bounds before rendering. Raw PDF bytes
+      // cannot independently establish text geometry, so retain the warning.
+      assert.equal(geo.geometryVerified, false, 'Raw PDF geometry must remain unverified');
+      assert.equal(geo.hasOverflowWarning, true, 'Unverified PDF geometry must retain its warning');
     }
 
     testedCount++;

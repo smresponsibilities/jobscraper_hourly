@@ -1,10 +1,11 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { classifyAtsField } from './classifier.js';
-import { resolveCandidateAnswer } from './answers.js';
+import { profileFactValue, resolveCandidateAnswer } from './answers.js';
 import type { CandidateExtendedProfile } from './types.js';
 import { loadProfile } from './profile.js';
+import { submissionConfirmation, terminalProvider, type SubmissionExchange } from './network-proof.js';
 
 function hasChallenge(value: unknown, seen = new Set<object>()): boolean {
   if (!value || typeof value !== 'object') return false;
@@ -18,11 +19,7 @@ function hasChallenge(value: unknown, seen = new Set<object>()): boolean {
 }
 
 function factExists(profile: CandidateExtendedProfile, key: string): boolean {
-  let current: unknown = profile;
-  for (const part of key.split('.')) {
-    if (!current || typeof current !== 'object' || !(part in current)) return false;
-    current = (current as Record<string, unknown>)[part];
-  }
+  const current = profileFactValue(profile, key);
   return current !== undefined && current !== null && current !== '';
 }
 
@@ -79,4 +76,20 @@ export function buildMultipartFormPayload(fields: Record<string, string>, resume
   }
   chunks.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="resume"; filename="Shivam_Mahajan_Resume.pdf"\r\nContent-Type: application/pdf\r\n\r\n`), pdf, Buffer.from(`\r\n--${boundary}--\r\n`));
   return { body: Buffer.concat(chunks), contentTypeHeader: `multipart/form-data; boundary=${boundary}` };
+}
+
+/** The returned exchange contains candidate data and must remain in protected storage. */
+export async function executeDirectHttpSubmission(params: { url: string; fields: Record<string, string>; resumePdfPath: string; fetcher?: typeof fetch }): Promise<{ confirmed: boolean; provider?: string; applicationId?: string; exchange: SubmissionExchange }> {
+  const url = new URL(params.url);
+  if (url.protocol !== 'https:' || url.username || url.password || url.port || !terminalProvider(params.url) || /(?:^|[./_-])(?:stripe|avoca|ssctech|paypal)(?:[./_?-]|$)/i.test(url.hostname + url.pathname)) throw new Error('Unverified or isolated submission endpoint');
+  const { body, contentTypeHeader } = buildMultipartFormPayload(params.fields, params.resumePdfPath);
+  const response = await (params.fetcher ?? fetch)(params.url, { method: 'POST', headers: { 'Content-Type': contentTypeHeader, Accept: 'application/json' }, body: new Uint8Array(body), redirect: 'manual', signal: AbortSignal.timeout(15_000) });
+  const headers: Record<string, string> = {};
+  response.headers.forEach((value, key) => { headers[key.toLowerCase()] = value; });
+  const exchange: SubmissionExchange = {
+    request: { url: params.url, method: 'POST', payloadHash: createHash('sha256').update(body).digest('hex'), payloadBase64: body.toString('base64') },
+    response: { url: response.url || params.url, status: response.status, headers, bodyBase64: Buffer.from(await response.arrayBuffer()).toString('base64'), bodyAvailable: true },
+  };
+  const confirmation = submissionConfirmation(exchange);
+  return { confirmed: Boolean(confirmation), provider: confirmation?.provider, applicationId: confirmation?.applicationId, exchange };
 }

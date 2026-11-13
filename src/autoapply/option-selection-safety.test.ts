@@ -6,6 +6,8 @@ import { selectHarvestedOption, translateCanonicalAnswerToOption, verifyChoiceRe
 test('option translation uses only grounded unique matches', () => {
   assert.equal(translateCanonicalAnswerToOption('No', 'Sponsorship', ['Yes', 'No']), 'No');
   assert.equal(translateCanonicalAnswerToOption('Female', 'Gender', ['Male', 'Prefer not to say']), null);
+  assert.equal(translateCanonicalAnswerToOption('Male', 'Gender', ['Female', 'Prefer not to say']), null);
+  assert.equal(translateCanonicalAnswerToOption('Woman', 'Gender', ['Man', 'Prefer not to say']), null);
   assert.equal(translateCanonicalAnswerToOption('30', 'Notice period days', ['Immediate', '0-15 days']), null);
   assert.equal(translateCanonicalAnswerToOption('Bengaluru', 'City', ['Bangalore', 'Delhi']), 'Bangalore');
   assert.equal(translateCanonicalAnswerToOption('1', 'Years of experience', ['0-2 years', '3-5 years']), '0-2 years');

@@ -29,3 +29,12 @@ test('Greenhouse and Lever redirects need an actual confirmation target', () => 
   assert.equal(submissionConfirmation(exchange(source, { error: 'invalid input' }, 200)), undefined);
 });
 
+test('Ashby confirms explicit form success but not consent or partial failures', () => {
+  const url = 'https://jobs.ashbyhq.com/api/non-user-graphql?op=submitMultipleFormsAction';
+  for (const result of [{ __typename: 'FormSubmitSuccess' }, { results: [{ __typename: 'FormSubmitSuccess' }] }]) {
+    assert(submissionConfirmation(exchange(url, { data: { submitMultipleForms: result } })));
+  }
+  assert.equal(submissionConfirmation(exchange(url, { data: { submitMultipleForms: { results: [{ __typename: 'FormSubmitSuccess' }, { __typename: 'FormSubmitError' }] } } })), undefined);
+  assert.equal(submissionConfirmation(exchange('https://jobs.ashbyhq.com/api/non-user-graphql?op=submitCandidateTextingConsent', { data: { submitMultipleForms: { __typename: 'FormSubmitSuccess' } } })), undefined);
+});
+

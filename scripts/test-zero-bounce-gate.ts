@@ -116,15 +116,20 @@ async function runTests() {
 }
 
 const originalDirectory = process.cwd();
+const originalOutreachSetting = process.env.ENABLE_OUTREACH_EMAIL;
 const fixtureDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'zero-bounce-test-'));
 const originalResolveMx = dns.promises.resolveMx;
 process.chdir(fixtureDirectory);
 dns.promises.resolveMx = async () => [{ exchange: 'mail.fixture.test', priority: 10 }];
+// Only the in-memory mock transporter is used by this fixture.
+process.env.ENABLE_OUTREACH_EMAIL = 'true';
 
 runTests().catch(err => {
   console.error('[TEST-GEN-534 FAIL]', err);
   process.exitCode = 1;
 }).finally(() => {
+  if (originalOutreachSetting === undefined) delete process.env.ENABLE_OUTREACH_EMAIL;
+  else process.env.ENABLE_OUTREACH_EMAIL = originalOutreachSetting;
   dns.promises.resolveMx = originalResolveMx;
   process.chdir(originalDirectory);
   for (const file of ['test-quarantined-guesses.json', 'domain-mx-cache.json']) {

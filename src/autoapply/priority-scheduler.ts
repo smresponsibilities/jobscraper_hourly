@@ -82,10 +82,11 @@ export function hasConfirmedOffice(company: string): boolean {
   return false;
 }
 
-export const FILLABLE_ATS_REGEX = /greenhouse\.io|gh_jid=|ashbyhq\.com|lever\.co|myworkdayjobs\.com|smartrecruiters\.com|workable\.com/i;
+export const FILLABLE_ATS_REGEX = /greenhouse\.io|gh_jid=|ashbyhq\.com|lever\.co|myworkdayjobs\.com|workable\.com/i;
 
 export function isFillableAtsUrl(url?: string): boolean {
   if (!url) return false;
+  if (/(?:^|\.)smartrecruiters\.com$/i.test(URL.canParse(url) ? new URL(url).hostname : '')) return false;
   return isSupportedDirectAtsJobUrl(url);
 }
 

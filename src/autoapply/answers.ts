@@ -1,5 +1,5 @@
 import { canonicalRequisition, canonicalEmployerKey } from './identity.js';
-import { resolveExtendedProfileValue } from './classifier.js';
+import { classifyAtsField, resolveExtendedProfileValue } from './classifier.js';
 import type { CandidateExtendedProfile, ExtendedFieldCategory, ScopedAnswer } from './types.js';
 import { matchBestOption } from './aihawk.js';
 import { composeGroundedNarrative, composePortfolioProjectNarrative } from './narrative-composer.js';
@@ -32,6 +32,37 @@ export interface ResolvedAnswer {
 }
 
 export const normalizeQuestion = (text: string): string => (text || '').replace(/[✱*]/g, '').normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}+#]+/gu, ' ').trim().replace(/\s+/g, ' ');
+
+/** Fact names may themselves contain dots, as in skillYears.Node.js. */
+export function profileFactValue(profile: CandidateExtendedProfile, key: string): unknown {
+  let current: unknown = profile;
+  const parts = key.split('.');
+  for (let i = 0; i < parts.length; i++) {
+    if (!current || typeof current !== 'object') return undefined;
+    const record = current as Record<string, unknown>;
+    const remainder = parts.slice(i).join('.');
+    if (Object.hasOwn(record, remainder)) return record[remainder];
+    current = record[parts[i]!];
+  }
+  return current;
+}
+
+/** Select only an option backed by an actual profile fact and an existing resolver. */
+export function selectGroundedOptionFromDropdown(questionLabel: string, options: Array<{ label: string; value: string }>, profile?: CandidateExtendedProfile): { label: string; value: string; factKey: string } | null {
+  if (!profile || !questionLabel.trim()) return null;
+  const valid = options.filter(option => option.label?.trim() && option.value?.trim() && !/^(?:select\b|choose\b|--|please\s+select|none\s+selected|loading|searching|type\s+to)/i.test(option.label.trim()));
+  const classification = classifyAtsField({ label: questionLabel, name: questionLabel, type: 'select', options: valid.map(option => option.label) });
+  const answer = resolveCandidateAnswer(classification.category, profile, { url: 'https://neutral.invalid', question: questionLabel, fieldType: 'select', options: valid.map(option => option.label) });
+  if (answer.value === undefined || answer.value === '' || !answer.sourceFactKeys.length) return null;
+  const factKey = answer.sourceFactKeys.find(key => {
+    const value = profileFactValue(profile, key);
+    return value !== undefined && value !== null && value !== '' && (!Array.isArray(value) || value.length > 0);
+  });
+  if (!factKey) return null;
+  const expected = typeof answer.value === 'boolean' ? (answer.value ? 'yes' : 'no') : normalizeQuestion(String(answer.value));
+  const hit = valid.find(option => normalizeQuestion(option.label) === expected || normalizeQuestion(option.value) === expected);
+  return hit ? { ...hit, factKey } : null;
+}
 
 /** The owner authorized affirmative agreement and consent checkboxes. */
 export function isAuthorizedConsentCheckbox(question: string, option = ''): boolean {
@@ -407,9 +438,12 @@ export function resolveCandidateAnswer(category: ExtendedFieldCategory, profile:
   }
 
   // Current or previous employer / title queries
-  if (category === 'current_company' || /\b(?:current|most\s*recent|previous)\s*(?:employer|company)\b/i.test(q) || /\b(?:where\s+have\s+you\s+(?:most\s+recently\s+)?worked|most\s*recently\s*worked)\b/i.test(q)) {
-    const comp = profile.professional?.currentCompany || profile.experience?.[0]?.company;
-    if (comp) return result(comp, 'explicit_employment_history', ['professional.currentCompany', 'experience.0.company'], 'previous_company');
+  if (/\b(?:current|most\s*recent|previous)\s*(?:employer|company)\b/i.test(q) || /\b(?:where\s+have\s+you\s+(?:most\s+recently\s+)?worked|most\s*recently\s*worked)\b/i.test(q) || (category === 'current_company' && /^(?:employer|company|employer name|company name)$/.test(q))) {
+    const unemployed = (profile.answers || []).findIndex(a => a.scope === 'GLOBAL_FACT' && normalizeQuestion(a.question) === 'what is your current employment status' && normalizeQuestion(String(a.value)) === 'unemployed');
+    if (/\bcurrent\b/.test(q) && !/\b(?:previous|recent)\b/.test(q) && unemployed >= 0) return result('Unemployed', 'confirmed_employment_status', [`answers.${unemployed}.value`], 'current_company');
+    const current = profile.professional?.currentCompany;
+    const comp = current || profile.experience?.[0]?.company;
+    if (comp) return result(comp, 'explicit_employment_history', [current ? 'professional.currentCompany' : 'experience.0.company'], 'previous_company');
   }
   if (/\b(?:current|most\s*recent|previous)\s*(?:job\s*title|title|position)\b/i.test(q)) {
     if (profile.experience?.length) return result(profile.experience[0]!.title, 'explicit_employment_history', ['experience.0.title'], 'previous_title');

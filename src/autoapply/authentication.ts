@@ -7,7 +7,7 @@ import { completeEmailVerification, type BrowserInteractions } from './verificat
 import { findVerification, type ApplicationMailbox, type VerificationRequest } from './mailbox.js';
 import { isAuthorizedConsentCheckbox } from './answers.js';
 import { reserveStateAction } from './state-guard.js';
-import { resolveEnvPortalCredentials } from './env-credentials.js';
+import { resolveEnvPortalCredentials, ensureWorkdayCompliantPassword } from './env-credentials.js';
 export { ensureWorkdayCompliantPassword } from './env-credentials.js';
 import { findAdaptiveLocator } from './adaptive-relocator.js';
 import { saveHostSessionState } from './session-pool.js';
@@ -191,6 +191,10 @@ export async function authenticateApplication(page: Page, options: { vault?: Cre
   }
   const errors = (await page.locator('[role=alert],.error,.error-message,[data-automation-id=errorMessage]').allTextContents()).join(' ');
   if (/account already exists|email.*already (?:registered|in use)/i.test(errors)) {
+    if (saved && !options.submittedCredentials?.has('signin')) {
+      const signIn = page.getByRole('link', { name: /^sign in$/i }).or(page.getByRole('button', { name: /^sign in$/i })).filter({ visible: true });
+      if (await signIn.count() === 1) { await click(signIn); return 'progress'; }
+    }
     if (!options.mailbox) return 'review';
     const forgot = page.getByRole('link', { name: /^forgot (?:your )?password\??$|^reset password$/i }).or(page.getByRole('button', { name: /^forgot (?:your )?password\??$|^reset password$/i })).filter({ visible: true });
     if (await forgot.count() !== 1) return 'review';
@@ -373,6 +377,17 @@ export async function authenticateApplication(page: Page, options: { vault?: Cre
 }
 
 export const WORKDAY_ACCOUNTS_FILE = path.resolve('state/autoapply/portal-review/workday-accounts.json');
+
+/** Candidates only; callers must not automatically retry passwords against an account. */
+export function resolveCandidatePortalPasswordChain(hostOrTenant: string, targetEmail: string, vault?: CredentialVault): string[] {
+  const legacy = readLegacyWorkdayAccount(hostOrTenant);
+  const saved = vault?.get(hostOrTenant);
+  const env = resolveEnvPortalCredentials(targetEmail);
+  const candidates = [legacy, saved, env].filter(item => item && isDeliverableAlias(item.email, targetEmail)).map(item => item!.password).filter(Boolean);
+  const base = candidates[0];
+  if (base) candidates.push(ensureWorkdayCompliantPassword(base));
+  return [...new Set(candidates)];
+}
 
 /**
  * `name+tag@domain` delivers to `name@domain`, so a per-employer account created

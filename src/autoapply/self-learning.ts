@@ -2,8 +2,30 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { CandidateExtendedProfile } from './types.js';
 import { classifyAtsField } from './classifier.js';
-import { resolveCandidateAnswer } from './answers.js';
+import { normalizeQuestion, profileFactValue, resolveCandidateAnswer, selectGroundedOptionFromDropdown } from './answers.js';
 import { randomUUID } from 'node:crypto';
+
+/** Read-only resolution; unknown facts remain unresolved. */
+export function resolveHistoricalLedgerEntryGrounded(entry: { questionText?: string; label?: string; fieldType?: string; options?: string[]; isRequired?: boolean }, profile: CandidateExtendedProfile): { status: 'resolved' | 'excluded_malformed_or_noise' | 'skipped_optional_blank' | 'unresolved'; value?: string | boolean; factKey?: string; reason?: string } {
+  const question = (entry.questionText || entry.label || '').trim();
+  if (!question || question.length < 2 || /^(?:field|unknown|input|select|text|button|search|option|value|\d+|\W+)$/i.test(question) || /^[0-9a-f-]{16,}$/i.test(question)) return { status: 'excluded_malformed_or_noise', reason: 'non_question_ui_or_malformed' };
+  if (entry.isRequired === false && profile.applicationPreferences?.skipOptionalQuestions?.some(value => normalizeQuestion(value) === normalizeQuestion(question))) return { status: 'skipped_optional_blank' };
+  const options = entry.options || [];
+  if (options.length) {
+    const choice = selectGroundedOptionFromDropdown(question, options.map(option => ({ label: option, value: option })), profile);
+    if (choice) return { status: 'resolved', value: choice.label, factKey: choice.factKey };
+    return { status: 'unresolved' };
+  }
+  const fieldType = entry.fieldType || 'text';
+  const classification = classifyAtsField({ label: question, name: question, type: fieldType });
+  const answer = resolveCandidateAnswer(classification.category, profile, { url: 'https://neutral.invalid', question, fieldType });
+  if (answer.value === undefined || answer.value === '') return { status: 'unresolved' };
+  const factKey = answer.sourceFactKeys.find(key => {
+    const value = profileFactValue(profile, key);
+    return value !== undefined && value !== null && value !== '' && (!Array.isArray(value) || value.length > 0);
+  });
+  return factKey ? { status: 'resolved', value: typeof answer.value === 'boolean' ? answer.value : String(answer.value), factKey } : { status: 'unresolved', reason: 'missing_fact' };
+}
 
 export interface LearnedSemanticRule {
   normalizedQuestion: string;

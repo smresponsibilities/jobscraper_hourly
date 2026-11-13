@@ -8,8 +8,19 @@ import { historicalLedgerEntries, historicalReplayMeetsGate, replayHistoricalQue
 import { synthesizeNewDeterministicRule } from './self-learning.js';
 import { verifyStoredEvidenceMerkleLedger } from './evidence-auditor.js';
 import type { CandidateExtendedProfile } from './types.js';
+import { profileFactValue, resolveCandidateAnswer } from './answers.js';
 
 const profile = { personal: { firstName: 'Fixture', lastName: 'Candidate', email: 'fixture@example.test', phone: '0000000000', country: 'India' }, education: [], experience: [], professional: { totalYearsExperience: 1, noticePeriodDays: 0 } } as unknown as CandidateExtendedProfile;
+
+test('fact paths preserve skill names with dots and current employment is distinguished from past employment', () => {
+  const candidate = { ...profile, skillYears: { 'Node.js': 1 }, experience: [{ company: 'Previous employer', title: 'Apprentice' }], answers: [{ question: 'What is your current employment status?', value: 'Unemployed', scope: 'GLOBAL_FACT' }] } as unknown as CandidateExtendedProfile;
+  assert.equal(profileFactValue(candidate, 'skillYears.Node.js'), 1);
+  const current = resolveCandidateAnswer('current_company', candidate, { url: 'https://neutral.invalid', question: 'Current employer' });
+  assert.equal(current.value, 'Unemployed');
+  const previous = resolveCandidateAnswer('current_company', candidate, { url: 'https://neutral.invalid', question: 'Previous employer' });
+  assert.equal(previous.value, 'Previous employer');
+  assert.deepEqual(previous.sourceFactKeys, ['experience.0.company']);
+});
 
 test('historical ledger metadata is not replayed as a question', () => {
   const item = { questionText: 'First name', widgetKind: 'TEXT_INPUT' };
@@ -34,6 +45,13 @@ test('replay counts missing questions and refuses unsupported answers without wr
 test('excludes only context-free Yes records by owner instruction', () => {
   const summary = replayHistoricalQuestions([{ questionText: 'Yes', sectionHeading: '', options: ['Yes', 'No'] }, { questionText: 'Yes', sectionHeading: 'Question context' }], profile);
   assert.equal(summary.excluded, 1);
+  assert.equal(summary.unresolved, 1);
+});
+
+test('owner exclusions are counted without resolving or fabricating an answer', () => {
+  const summary = replayHistoricalQuestions([{ label: 'What is your security clearance?', excludedByOwner: true }, { label: 'What is your security clearance?' }], profile);
+  assert.equal(summary.excluded, 1);
+  assert.equal(summary.resolved, 0);
   assert.equal(summary.unresolved, 1);
 });
 

@@ -10,7 +10,7 @@ import { prefetchPublicPosting } from './public-posting-preflight.js';
 import { isStrictlyIsolatedTenant } from './priority-scheduler.js';
 import { toPlainText } from '../fetchers/util.js';
 import { matchBestOption } from './aihawk.js';
-import { normalizeQuestion, resolveCandidateAnswer, hasScopedAnswerMismatch, resolveByOptionPolicy, isAuthorizedConsentCheckbox } from './answers.js';
+import { normalizeQuestion, resolveCandidateAnswer, hasScopedAnswerMismatch, resolveByOptionPolicy, selectGroundedOptionFromDropdown, isAuthorizedConsentCheckbox } from './answers.js';
 import { identifyApplicationAts, ATS_STRATEGIES } from './wizard.js';
 import { validateProfile } from './profile.js';
 import { getHumanKeyDelay, generateBezierCurve } from './stealth.js';
@@ -173,6 +173,30 @@ export const LOW_RAM_CHROMIUM_ARGS = [
   '--no-first-run',
   '--aggressive-cache-discard',
 ];
+
+export async function ensureGreenhouseFormHydrated(frame: Page | Frame, timeoutMs = 15_000): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  try {
+    if (typeof frame.locator === 'function' && await frame.locator('input:not([type="hidden"]), select, textarea').count()) return true;
+    await frame.waitForSelector('[data-testid="application-form"], #application-form, #application_form, form[action*="applications"], input#first_name, input[name="first_name"], input[autocomplete="given-name"]', { state: 'attached', timeout: timeoutMs });
+    const remaining = deadline - Date.now();
+    if (remaining > 0) await frame.waitForFunction(() => document.querySelectorAll('input:not([type="hidden"]), select, textarea, [role="combobox"]').length >= 3, undefined, { timeout: Math.min(8000, remaining) }).catch(() => {});
+    return true;
+  } catch { return false; }
+}
+
+export async function ensureAshbyFormHydrated(page: Page, timeoutMs = 12_000): Promise<boolean> {
+  for (const selector of ['button:has-text("Accept all")', 'button:has-text("Accept cookies")', 'button:has-text("Allow all")', '#onetrust-accept-btn-handler']) {
+    const button = page.locator(selector).first();
+    if (await button.isVisible().catch(() => false)) { await button.click({ timeout: 1500 }).catch(() => {}); break; }
+  }
+  try {
+    const controls = page.locator('input:not([type="hidden"]), select, textarea');
+    if (typeof controls.count === 'function' && await controls.count()) return true;
+    await page.waitForFunction(() => Boolean((window as any).__appData?.posting || document.querySelector('input[name="_systemfield_name"], input#_systemfield_name, [class*="ashby-application-form"]')), undefined, { timeout: timeoutMs });
+    return true;
+  } catch { return false; }
+}
 
 export async function populateGreenhouseSecurityCode(
   frameOrPage: Frame | Page,
@@ -3290,40 +3314,12 @@ export class AutoApplyRunner {
               report.fieldsFilled++;
               continue;
             }
-            const choices = await input.locator('option').evaluateAll(options => options.map(o => ({ value: (o as HTMLOptionElement).value, label: o.textContent || '' })));
+            const choices = await input.locator('option').evaluateAll(options => options.filter(o => !(o as HTMLOptionElement).disabled).map(o => ({ value: (o as HTMLOptionElement).value, label: o.textContent || '' })));
             let best = matchChoices(choices);
             if (!best && choices.length > 0) {
-              // 2. resolveByOptionPolicy
-              if (!best) {
-                const optLabels = choices.map(c => c.label.trim()).filter(Boolean);
-                const policyRes = resolveByOptionPolicy(action.question, optLabels, candidate, options.company);
-                if (policyRes?.value) {
-                  best = choices.find(c => c.label.trim().toLowerCase() === String(policyRes.value).trim().toLowerCase() || c.value === String(policyRes.value)) || null;
-                }
-              }
-              // 3. resolveUniversalPermissiveFallback
-              if (!best) {
-                const fallbackChoice = resolveUniversalPermissiveFallback({
-                  questionText: action.question,
-                  widgetKind: 'SINGLE_SELECT',
-                  options: choices.map(c => c.label).filter(Boolean),
-                  placeholder: info.placeholder,
-                  profileEmail: options.profile.personal.email,
-                });
-                if (fallbackChoice) {
-                  best = choices.find(c => c.label === fallbackChoice || c.value === fallbackChoice) || null;
-                  if (!best) {
-                    const fallbackStem = fallbackChoice.trim().toLowerCase().slice(0, 5);
-                    if (fallbackStem.length >= 3) {
-                      best = choices.find(c => c.label.trim().toLowerCase().startsWith(fallbackStem)) || null;
-                    }
-                  }
-                }
-              }
-              // 4. Fallback to first non-placeholder option
-              if (!best) {
-                best = choices.find(c => c.value && !/^(?:select|choose|--|none|placeholder)/i.test(c.value) && !/^(?:select|choose|--)/i.test(c.label.trim())) || choices.find(c => c.value) || choices[0] || null;
-              }
+              const grounded = selectGroundedOptionFromDropdown(action.question, choices, candidate);
+              best = grounded ? choices.find(choice => choice.value === grounded.value && choice.label === grounded.label) || null : null;
+              if (!best) best = choices.find(choice => choice.value.trim() && !/^(?:select\b|choose\b|--|please\s+select|loading|searching)/i.test(choice.label.trim())) || null;
             }
             if (!best) {
               if (info.required) {
@@ -3460,38 +3456,9 @@ export class AutoApplyRunner {
               const liveChoices = await choices.evaluateAll(items => items.map((o, i) => ({ value: `option-${i}`, label: (o.textContent || '').trim() }))).catch(() => []);
               const candidateChoices = liveChoices.length > 0 ? liveChoices : (harvested?.options || []).map((label, i) => ({ value: `option-${i}`, label }));
               if (candidateChoices.length > 0) {
-                // 1. Stem match against value (e.g. Immediate <-> Immediately)
-                if (value) {
-                  const targetStem = String(value).trim().toLowerCase().slice(0, 5);
-                  if (targetStem.length >= 3) {
-                    best = candidateChoices.find(c => c.label.toLowerCase().startsWith(targetStem) || c.label.toLowerCase().slice(0, 5) === targetStem) || null;
-                  }
-                }
-                // 2. resolveByOptionPolicy
-                if (!best) {
-                  const optLabels = candidateChoices.map(c => c.label).filter(Boolean);
-                  const policyRes = resolveByOptionPolicy(action.question, optLabels, candidate, options.company);
-                  if (policyRes?.value) {
-                    best = candidateChoices.find(c => c.label.toLowerCase() === String(policyRes.value).toLowerCase() || c.value === String(policyRes.value)) || null;
-                  }
-                }
-                // 3. resolveUniversalPermissiveFallback
-                if (!best) {
-                  const fallbackChoice = resolveUniversalPermissiveFallback({
-                    questionText: action.question,
-                    widgetKind: 'SINGLE_SELECT',
-                    options: candidateChoices.map(c => c.label).filter(Boolean),
-                    placeholder: info.placeholder,
-                    profileEmail: options.profile.personal.email,
-                  });
-                  if (fallbackChoice) {
-                    best = candidateChoices.find(c => c.label === fallbackChoice || c.label.toLowerCase().includes(fallbackChoice.toLowerCase())) || null;
-                  }
-                }
-                // 4. Fallback to first non-placeholder choice
-                if (!best) {
-                  best = candidateChoices.find(c => c.label && !/^(?:select|choose|--|none)/i.test(c.label)) || candidateChoices[0] || null;
-                }
+                const grounded = selectGroundedOptionFromDropdown(action.question, candidateChoices, candidate);
+                best = grounded ? candidateChoices.find(choice => choice.value === grounded.value && choice.label === grounded.label) || null : null;
+                if (!best) best = candidateChoices.find(choice => choice.label.trim() && !/^(?:select\b|choose\b|--|please\s+select|loading|searching|no options)/i.test(choice.label.trim())) || null;
               }
             }
             if (!best && !selectedBySearch) {
@@ -4602,6 +4569,7 @@ export class AutoApplyRunner {
           }
         }
 
+        if (step === 1 && report.ats === 'ashby') await ensureAshbyFormHydrated(this.page!);
         // Multi-Frame (page.frames()) Prioritization: Order frames so the frame with highest number of distilled/interactive controls is processed first
         const allCandidateFrames = this.page!.frames();
         const frameScores: { frame: Frame; count: number }[] = [];
@@ -4615,6 +4583,7 @@ export class AutoApplyRunner {
         const sortedFrames = frameScores.map((fs) => fs.frame);
 
         for (const frame of sortedFrames) {
+          if (step === 1 && /(?:^|\.)greenhouse\.io$/i.test(URL.canParse(frame.url()) ? new URL(frame.url()).hostname : '')) await ensureGreenhouseFormHydrated(frame);
           // Ticket GEN-65: Run Workday step fast-pass accelerator
           if (report.ats === 'workday' || frame.url().toLowerCase().includes('myworkdayjobs.com')) {
             await runWorkdayStepFastPass(frame, options.profile.documents?.resume).catch(() => {});

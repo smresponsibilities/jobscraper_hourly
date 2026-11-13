@@ -72,7 +72,7 @@ async function verifyNorthStar() {
       console.error('✖ FAILURE INVARIANT 2: Replay did not pass cleanly:\n', replayOutput);
       process.exit(2);
     }
-    console.log('✔ Invariant 2 PASS: Current questions are grounded or explicitly skipped when optional; any reviewed values match. Attribution alone does not independently prove correctness.\n');
+    console.log('✔ Invariant 2 PASS: Evaluated questions are grounded, skipped, or explicitly excluded by the owner; attribution alone does not independently prove correctness.\n');
   } catch (err: any) {
     console.error('✖ FAILURE INVARIANT 2:', err?.message || err);
     process.exit(2);
@@ -80,7 +80,7 @@ async function verifyNorthStar() {
 
   try {
     const canaryOutput = execSync('npx tsx scripts/verify-canary-100.ts', { encoding: 'utf8' });
-    if (!canaryOutput.includes('[CANARY-100] 100 / 100 SOTA SCENARIOS PASSED (100.0%)')) throw new Error('Canary gate did not pass all scenarios');
+    if (!canaryOutput.includes('[CANARY-100] 100 / 100 smoke scenarios passed; live integration remains unverified.')) throw new Error('Canary gate did not pass all scenarios');
   } catch {
     console.error('✖ FAILURE: 100-scenario canary gate did not pass');
     process.exit(2);
@@ -118,7 +118,7 @@ async function verifyNorthStar() {
     console.error('✖ FAILURE INVARIANT 4: MMR Resume test failed:\n', mmrOutput);
     process.exit(4);
   }
-  console.log('✔ Invariant 4 PASS: Pairwise Jaccard <= 0.18, max term freq <= 4, /Type /Page === 1 verified.\n');
+  console.log('✔ Invariant 4 PASS: Resume checks and one-page output passed; PDF byte inspection does not independently verify geometry.\n');
 
   // -------------------------------------------------------------------------
   // INVARIANT 5: Zero-Bounce & Zero-PII Shield
