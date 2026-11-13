@@ -38,7 +38,7 @@ export async function syncGitHubActionsPillars(
 
   // 1. Safe non-conflicting background fetch
   try {
-    execSync('git fetch origin main', {
+    execSync('git fetch origin +refs/heads/main:refs/remotes/origin/main +refs/heads/data:refs/remotes/origin/data', {
       timeout: 25000,
       stdio: ['ignore', 'pipe', 'ignore'],
       encoding: 'utf8',
@@ -144,7 +144,7 @@ export async function syncGitHubActionsPillars(
             const discovered = jobs.filter(j => j && typeof j === 'object').map(j => ({
               url: j.url || j.jobUrl, company: j.company, title: j.title, location: j.location,
               jdText: j.text || j.description,
-              publishedAt: employerPublishedAt({ publishedAt: j.publishedAt, postedAt: j.postedAt, first_published: j.first_published, published_at: j.published_at, published_on: j.published_on, published_date: j.published_date, releasedDate: j.releasedDate }),
+              publishedAt: employerPublishedAt({ publishedAt: j.publishedAt, postedAt: j.postedAt || j.firstSeen || j.lastSeen, first_published: j.first_published, published_at: j.published_at, published_on: j.published_on, published_date: j.published_date, releasedDate: j.releasedDate }),
             }));
             const publicationByUrl = new Map<string, string>();
             for (const raw of discovered) {
@@ -170,6 +170,8 @@ export async function syncGitHubActionsPillars(
                 title,
                 company,
                 jobUrl: url,
+                provider: j.provider,
+                ats: j.provider,
                 location: j.location,
                 status: 'queued',
                 postedAt: publishedAt || '',

@@ -43,7 +43,7 @@ export const NON_TECH_TITLE_REGEX = new RegExp(
   'clinical|nurse|physician|medical|pharmacy|therapist|healthcare|doctor|' +
   'finance|accountant|payroll|tax|auditor|underwriter|teller|branch manager|' +
   'supply chain|logistics|procurement|warehouse|inventory|facilities|' +
-  'executive assistant|office manager|receptionist|customer service|customer support|support rep|support specialist|call center' +
+  'executive assistant|office manager|receptionist|customer service|customer support|lecturer|instructor|teacher|professor|costing|apparel|textile|garment|fashion|merchandising|technical support|it support|desktop support|application support|support engineer|support rep|support specialist|call center|hydrology|geology|environmental|regional engineer|field service|power platform|sharepoint|servicenow administrator' +
   ')\\b',
   'i'
 );
@@ -61,7 +61,7 @@ const BENGALURU_REGEX = /\b(?:bengaluru|bangalore|karnataka)\b/i;
 const FOREIGN_REMOTE_GEO_LOCK_REGEX = /\b(?:(?:US|U\.S\.|USA|United\s+States|UK|Canada|EU|EMEA|LATAM|North\s+America)\s*(?:only|citizens?\s+only|residents?\s+only)|must\s+(?:reside|live|be\s+located|be\s+based)\s+in\s+(?:the\s+)?(?:US|U\.S\.|United\s+States|UK|Canada|Europe|EU)|remote\s*[-–—:(,\s]+(?:US|U\.S\.|USA|United\s+States|UK|Canada|EU|EMEA|LATAM|North\s+America))\b/i;
 
 const FOREIGN_ONLY_LOCATION_REGEX =
-  /\b(?:united\s+states|\busa\b|u\.s\.a\.|new\s+york|\bnyc\b|san\s+francisco|bay\s+area|seattle|austin|boston|chicago|los\s+angeles|atlanta|denver|washington\s*d\.?c\.?|california|texas|united\s+kingdom|\buk\b|london|manchester|edinburgh|germany|berlin|munich|frankfurt|france|paris|netherlands|amsterdam|spain|madrid|barcelona|italy|milan|poland|warsaw|krakow|ireland|dublin|sweden|stockholm|switzerland|zurich|canada|toronto|vancouver|montreal|brazil|sao\s+paulo|mexico|mexico\s+city|argentina|colombia|chile|australia|sydney|melbourne|new\s+zealand|japan|tokyo|south\s+korea|seoul|china|beijing|shanghai|hong\s+kong|taiwan|taipei|israel|tel\s+aviv|uae|dubai|saudi\s+arabia|riyadh)\b/i;
+  /\b(?:united\s+states|\busa\b|u\.s\.a\.|new\s+york|\bnyc\b|san\s+francisco|bay\s+area|seattle|austin|boston|chicago|los\s+angeles|atlanta|denver|washington\s*d\.?c\.?|california|texas|united\s+kingdom|\buk\b|london|manchester|edinburgh|germany|berlin|munich|frankfurt|france|paris|netherlands|amsterdam|spain|madrid|barcelona|italy|milan|poland|warsaw|krakow|ukraine|kyiv|romania|bulgaria|serbia|portugal|greece|turkey|egypt|nigeria|kenya|ireland|dublin|sweden|stockholm|switzerland|zurich|canada|toronto|vancouver|montreal|brazil|sao\s+paulo|mexico|mexico\s+city|argentina|colombia|chile|australia|sydney|melbourne|new\s+zealand|japan|tokyo|south\s+korea|seoul|china|beijing|shanghai|hong\s+kong|taiwan|taipei|israel|tel\s+aviv|uae|dubai|saudi\s+arabia|riyadh)\b/i;
 
 export function evaluateCandidateJobFit(input: CandidateFitInput): CandidateFitResult {
   const company = String(input.company || '').trim().toLowerCase();

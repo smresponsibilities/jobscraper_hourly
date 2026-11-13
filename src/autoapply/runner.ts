@@ -1888,7 +1888,7 @@ export class AutoApplyRunner {
     const tag = (await input.evaluate(el => el.tagName.toLowerCase()).catch(() => 'input')) || 'input';
     if (text.length > 35) {
       // Ticket GEN-452 / GEN-104: Fast-chunk strings with text.length > 35 (typing 4 chars then .fill(text) in 150ms)
-      await input.pressSequentially(text.slice(0, 4), { delay: 15 }).catch(() => {});
+      await input.pressSequentially(text.slice(0, 4), { delay: 65 + Math.floor(Math.random() * 45) }).catch(() => {});
       await input.fill(text, { timeout: 2500 }).catch(() => {});
       await this.page?.waitForTimeout?.(150).catch(() => {});
       await input
@@ -1946,7 +1946,7 @@ export class AutoApplyRunner {
     }
     if (text.length > 2) {
       // Ticket GEN-104.2 / GEN-115 / GEN-159 / GEN-196: Fast-chunk text with React _valueTracker reset & timeout
-      await input.pressSequentially(text.slice(0, 2), { delay: 15 }).catch(() => {});
+      await input.pressSequentially(text.slice(0, 2), { delay: 65 + Math.floor(Math.random() * 45) }).catch(() => {});
       await input.fill(text, { timeout: 2500 }).catch(() => {});
       await input
         .evaluate((el, val) => {
@@ -3319,7 +3319,7 @@ export class AutoApplyRunner {
             if (!best && choices.length > 0) {
               const grounded = selectGroundedOptionFromDropdown(action.question, choices, candidate);
               best = grounded ? choices.find(choice => choice.value === grounded.value && choice.label === grounded.label) || null : null;
-              if (!best) best = choices.find(choice => choice.value.trim() && !/^(?:select\b|choose\b|--|please\s+select|loading|searching)/i.test(choice.label.trim())) || null;
+              // Grounded-only: do not blindly select choices[0] when unbacked
             }
             if (!best) {
               if (info.required) {
@@ -3458,7 +3458,7 @@ export class AutoApplyRunner {
               if (candidateChoices.length > 0) {
                 const grounded = selectGroundedOptionFromDropdown(action.question, candidateChoices, candidate);
                 best = grounded ? candidateChoices.find(choice => choice.value === grounded.value && choice.label === grounded.label) || null : null;
-                if (!best) best = candidateChoices.find(choice => choice.label.trim() && !/^(?:select\b|choose\b|--|please\s+select|loading|searching|no options)/i.test(choice.label.trim())) || null;
+                // Grounded-only: do not blindly select candidateChoices[0] when unbacked
               }
             }
             if (!best && !selectedBySearch) {

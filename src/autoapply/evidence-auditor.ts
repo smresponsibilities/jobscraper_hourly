@@ -73,6 +73,23 @@ export function buildAndVerifyEvidenceMerkleLedger(
   try { rows = db.prepare('SELECT id, normalized_url, payload FROM applications WHERE status = ? ORDER BY id ASC').all('applied') as typeof rows; }
   finally { db.close(); }
 
+  // Keep the stored order: an older application may be imported after newer
+  // entries were recorded. Sorting the whole queue again would rewrite history.
+  if (fs.existsSync(ledgerPath)) {
+    const prior: unknown = JSON.parse(fs.readFileSync(ledgerPath, 'utf8'));
+    if (!Array.isArray(prior) || (prior.length > 0 && !verifyStoredEvidenceMerkleLedger(ledgerPath))) throw new Error('Existing evidence ledger cannot be rewritten');
+    const rowsById = new Map(rows.map(row => [row.id, row]));
+    if (rowsById.size !== rows.length || new Set(prior.map(entry => entry.jobId)).size !== prior.length) throw new Error('Existing evidence ledger cannot be rewritten');
+    const ordered: typeof rows = [];
+    for (const entry of prior) {
+      const row = rowsById.get(entry.jobId);
+      if (!row) throw new Error('Existing evidence ledger cannot be rewritten');
+      ordered.push(row);
+      rowsById.delete(entry.jobId);
+    }
+    rows = [...ordered, ...rowsById.values()];
+  }
+
   const entries: MerkleLedgerEntry[] = [];
   let prevHash = 'GENESIS_BLOCK_00000000000000000000000000000000000000000000000000000000';
 

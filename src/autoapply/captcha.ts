@@ -20,9 +20,12 @@ export interface CaptchaResolutionResult {
 export async function humanizedClickBox(page: Page, box: { x: number; y: number; width: number; height: number }): Promise<void> {
   const targetX = box.x + box.width * (0.38 + Math.random() * 0.24);
   const targetY = box.y + box.height * (0.38 + Math.random() * 0.24);
-  await page.mouse.move(targetX * 0.5, targetY * 0.5, { steps: 8 });
-  await page.waitForTimeout(40 + Math.floor(Math.random() * 50));
-  await page.mouse.move(targetX, targetY, { steps: 14 });
+  // Meyer et al. (1988) SOS Model: Phase 1 primary ballistic submovement (~91% distance with lateral arc), Phase 2 closed-loop micro-correction
+  const primaryX = targetX * 0.91 + (Math.random() * 14 - 7);
+  const primaryY = targetY * 0.91 + (Math.random() * 12 - 6);
+  await page.mouse.move(primaryX, primaryY, { steps: 12 });
+  await page.waitForTimeout(35 + Math.floor(Math.random() * 35));
+  await page.mouse.move(targetX, targetY, { steps: 5 });
   await page.waitForTimeout(50 + Math.floor(Math.random() * 70));
   await page.mouse.down();
   await page.waitForTimeout(65 + Math.floor(Math.random() * 65));
@@ -300,7 +303,10 @@ export async function attemptAutonomousCaptchaSolve(page: Page): Promise<Captcha
     const box = await turnstile.boundingBox({ timeout: 1000 }).catch(() => null);
     if (box && box.width >= 27 && box.height > 0) {
       await page.mouse.click(box.x + 27, box.y + Math.min(26, Math.floor(box.height / 2)), { delay: 140 }).catch(() => {});
-      if (await hasPopulatedCaptchaToken(page)) return { detected: true, solved: true, method: 'checkbox_click' };
+      for (let poll = 0; poll < 6; poll++) {
+        if (await hasPopulatedCaptchaToken(page)) return { detected: true, solved: true, method: 'checkbox_click' };
+        await page.waitForTimeout(450).catch(() => {});
+      }
     }
   }
 

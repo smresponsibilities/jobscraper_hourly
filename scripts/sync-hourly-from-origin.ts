@@ -29,7 +29,7 @@ function loadCandidateJobArrays(): RawScrapedJob[] {
   const results: RawScrapedJob[] = [];
   // 1. Fetch latest origin/main non-destructively
   try {
-    execSync('git fetch origin main --quiet', { stdio: 'ignore', timeout: 15000 });
+    execSync('git fetch origin +refs/heads/main:refs/remotes/origin/main +refs/heads/data:refs/remotes/origin/data --quiet', { stdio: 'ignore', timeout: 20000 });
   } catch {}
 
   const candidatePaths = [
@@ -41,7 +41,7 @@ function loadCandidateJobArrays(): RawScrapedJob[] {
   for (const relPath of candidatePaths) {
     // Try git show origin/main:<path> first for freshest hourly GitHub Actions data
     try {
-      const gitRaw = execSync(`git show origin/main:${relPath}`, {
+      const gitRaw = execSync(`git show ${relPath === 'data/jobs.json' ? 'origin/data:jobs.json' : 'origin/main:' + relPath}`, {
         encoding: 'utf8',
         maxBuffer: 64 * 1024 * 1024,
         stdio: ['ignore', 'pipe', 'ignore'],
@@ -119,7 +119,7 @@ export function syncHourlyFreshJobsFromOriginMain(dbPath?: string): {
       }
     }
 
-    const candidateId = '2e533f7f49798b955338';
+    const candidateId = (() => { try { const c = JSON.parse(fs.readFileSync('state/autoapply/portal-review/candidate.json', 'utf8')); return require('node:crypto').createHash('sha256').update(String(c.personal?.email || '').trim().toLowerCase()).digest('hex').slice(0, 20); } catch { return '2e533f7f49798b955338'; } })();
     const insertStmt = db.prepare(`
       INSERT OR IGNORE INTO applications (candidate_id, id, canonical_key, normalized_url, status, payload, owner, expires)
       VALUES (?, ?, ?, ?, 'queued', ?, NULL, NULL)
@@ -155,10 +155,10 @@ export function syncHourlyFreshJobsFromOriginMain(dbPath?: string): {
         url: unwrappedUrl,
         jobBoard: 'direct_ats',
         location: String(raw.location || 'India').trim(),
-        postedAt: '',
+        postedAt: String((raw as any).postedAt || (raw as any).firstSeen || ''),
         status: 'queued',
-        isHourlyFresh: false,
-        is_hourly_fresh: 0,
+        isHourlyFresh: true,
+        is_hourly_fresh: 2,
         priorityBonus: fit.priorityBonus,
         ats,
       };

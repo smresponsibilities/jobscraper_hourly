@@ -663,7 +663,8 @@ export function annotateQuestionClusters(elements: Element[]): void {
       }
       if (!question || question === 'Field') {
         const parentLabel = el.closest('.application-question,.custom-question,[class*="application-question"]')?.querySelector('.application-label,.field-label,.text,legend')?.textContent?.trim();
-        const fallback = parentLabel || labels || el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.getAttribute('name') || el.id || 'Field';
+        const leverQuestionLabel = el.closest('.application-question, li.application-question')?.querySelector('.application-label, .text')?.textContent?.trim() || '';
+  const fallback = parentLabel || labels || leverQuestionLabel || el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.getAttribute('name') || el.id || 'Field';
         question = fallback.replace(/\s+/g, ' ').trim();
       }
     }

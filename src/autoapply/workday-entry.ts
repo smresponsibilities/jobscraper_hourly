@@ -101,7 +101,7 @@ export async function ensureWorkdayApplicationStarted(page: Page): Promise<Workd
   if (await applyBtn.isVisible().catch(() => false)) {
     await applyBtn.scrollIntoViewIfNeeded().catch(() => {});
     await applyBtn.click({ timeout: 4000 }).catch(() => {});
-    await page.waitForTimeout(1500);
+    await page.locator('[data-automation-id="applyManually"], [data-automation-id="useMyLastApplication"], [data-automation-id="autofillWithResume"], [data-automation-id="signInContent"], [data-automation-id="createAccountContent"], [data-automation-id^="formField-"], input[type="email"], input[type="password"]').first().waitFor({ state: 'visible', timeout: 6000 }).catch(() => {});
   } else {
     // If no Apply button is visible on a Workday overview page, check again if closed
     if (await checkJobClosed()) {
@@ -151,9 +151,7 @@ export async function ensureWorkdayApplicationStarted(page: Page): Promise<Workd
     const cleanBase = currentUrl.split('?')[0]!.replace(/\/apply(?:\/.*)?$/i, '').replace(/\/+$/, '');
     if (/\/job\//i.test(cleanBase)) {
       const directManualUrl = `${cleanBase}/apply/applyManually`;
-      await page.goto(directManualUrl, { waitUntil: 'load', timeout: 20_000 }).catch(async () => {
-        await page.goto(directManualUrl, { waitUntil: 'domcontentloaded', timeout: 10_000 }).catch(() => {});
-      });
+      await page.goto(directManualUrl, { waitUntil: 'domcontentloaded', timeout: 15_000 }).catch(() => {});
       await page.waitForTimeout(2000);
       const directCookie = page
         .locator('button[data-automation-id="legalNoticeAcceptButton"], button:has-text("Accept Cookies")')

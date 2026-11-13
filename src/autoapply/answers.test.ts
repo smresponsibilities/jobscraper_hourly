@@ -10,6 +10,24 @@ import type { CandidateExtendedProfile } from './types.js';
 const profile = { personal: { firstName: 'Synthetic', email: 'fixture@example.test', country: 'India' }, professional: { totalYearsExperience: 2, expectedSalary: 1500000, salaryCurrency: 'INR', noticePeriodDays: 14 }, education: [], experience: [], workAuthorization: { authorizedInCountry: true, requiresSponsorshipNowOrFuture: false, formerEmployee: false }, eeo: {}, skillYears: { Java: 1, JavaScript: 2, 'C++': 0.5 } } as unknown as CandidateExtendedProfile;
 const context = { url: 'https://jobs.ashbyhq.com/company-x/job-a/application', country: 'India', question: '' };
 
+test('owner-confirmed currency and shift facts are used only when present', () => {
+  const candidate = { ...profile, confirmedFacts: { expectedAnnualUSD: 50000, expectedHourlyUSD: 25, lastMonthlyPayINR: 87000, lastAnnualPayINR: 1044000, shiftFlexibility: true, lastWorkingDate: '2026-08-10' } };
+  const answer = (question: string) => resolveCandidateAnswer('unknown', candidate, { ...context, question });
+  assert.equal(answer('What are your pay expectations in USD?').value, 50000);
+  assert.equal(answer('What hourly rate are you requesting in USD?').value, 25);
+  assert.equal(answer('What was your previous monthly salary?').value, 87000);
+  assert.equal(answer('Are you willing to work US night shifts?').value, true);
+  assert.equal(answer('What is your last working date?').value, '2026-08-10');
+  assert.equal(resolveCandidateAnswer('unknown', profile, { ...context, question: 'What is your last working date?' }).value, undefined);
+});
+
+test('option lists alone do not prove unrelated facts or consent', () => {
+  const candidate = { ...profile, recruitmentPrivacyConsent: true };
+  const answer = (question: string, options: string[]) => resolveCandidateAnswer('unknown', candidate, { ...context, question, options }).value;
+  assert.equal(answer('Have you been convicted?', ['Yes']), undefined);
+  assert.equal(answer('Do you have OMS experience?', ['No OMS Experience']), undefined);
+});
+
 test('standard autocomplete identifies candidate fields without using verification codes', () => {
   assert.equal(classifyAtsField({ autocomplete: 'section-contact shipping given-name', label: 'Name' }).category, 'first_name');
   assert.equal(classifyAtsField({ autocomplete: 'email', label: 'Email' }).source, 'autocomplete');

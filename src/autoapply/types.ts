@@ -88,6 +88,14 @@ export interface ScopedAnswer {
 }
 
 export interface CandidateExtendedProfile {
+  confirmedFacts?: {
+    lastMonthlyPayINR?: number; lastAnnualPayINR?: number; lastVariablePayINR?: number;
+    expectedAnnualUSD?: number; expectedHourlyUSD?: number; acceptsCrypto?: boolean;
+    tenthPercent?: number; twelfthPercent?: number; graduationPercent?: number; highSchoolMathAndLanguage?: string;
+    codeforcesRating?: string; codechefRating?: string; jeeMains?: string; jeeAdvanced?: string;
+    allIndianOfficeCities?: boolean; shiftFlexibility?: boolean; aiToolUsage?: string;
+    equityOmsExperience?: boolean; certificationsListed?: boolean; lastWorkingDate?: string;
+  };
   applicationPreferences?: {
     workCountries?: string[]; relocationCountries?: string[]; citizenship?: string;
     spokenLanguages?: string[]; languageProficiencyLevelsProvided?: boolean;

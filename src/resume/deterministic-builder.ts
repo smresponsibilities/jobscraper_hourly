@@ -923,7 +923,7 @@ export function generateResumeHtml(
     margin: 0.45in 0.5in 0.45in 0.5in;
   }
   * {
-    box-sizing: border-box;
+    box-sizing: border-box; font-variant-ligatures: none; font-feature-settings: "liga" 0, "clig" 0;
     margin: 0;
     padding: 0;
   }

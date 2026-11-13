@@ -300,10 +300,41 @@ export function resolveCandidateAnswer(category: ExtendedFieldCategory, profile:
   if (hasScopedMismatch && category === 'former_employee') {
     return result(undefined, 'scope_mismatch');
   }
+  const confirmed = profile.confirmedFacts;
+  if (confirmed) {
+    if (/\b(?:currently\s+(?:living|residing|based|located)\s+in\s+(?:bengaluru|bangalore)|planning\s+on\s+moving\s+to\s+(?:bengaluru|bangalore))\b/i.test(q)) {
+      return result(true, 'owner_confirmed', ['personal.city'], 'willing_to_relocate');
+    }
+    if (/\b(?:expected|desired|target|requesting|looking for|pay expectations|minimum annual base)\b/.test(q) && /\b(?:usd|u s dollars?)\b/.test(q)) {
+      const hourly = /\b(?:hour|hourly)\b/.test(q);
+      const value = hourly ? confirmed.expectedHourlyUSD : confirmed.expectedAnnualUSD;
+      if (value !== undefined) return result(value, 'owner_confirmed', [hourly ? 'confirmedFacts.expectedHourlyUSD' : 'confirmedFacts.expectedAnnualUSD'], 'expected_salary');
+    }
+    if (/\b(?:current|present|existing|last drawn|previous|most recent|cctc)\b/.test(q) && /\b(?:pay|salary|stipend|compensation|ctc)\b/.test(q) && !/\b(?:expected|desired|target|ectc)\b/.test(q)) {
+      const monthly = /\b(?:monthly|per month)\b/.test(q);
+      const variable = /\b(?:variable|bonus|stock)\b/.test(q);
+      const key = variable ? 'lastVariablePayINR' : monthly ? 'lastMonthlyPayINR' : 'lastAnnualPayINR';
+      const amount = confirmed[key];
+      if (amount !== undefined) return result(!monthly && !variable && /\b(?:lpa|lakh)\b/.test(q) ? amount / 100000 : amount, 'owner_confirmed', [`confirmedFacts.${key}`], 'previous_salary');
+    }
+    if (/\b(?:last working date|lwd)\b/.test(q) && confirmed.lastWorkingDate) return result(confirmed.lastWorkingDate, 'owner_confirmed', ['confirmedFacts.lastWorkingDate'], 'last_working_date');
+    if (/\b(?:ssc|10th|tenth)\b/.test(q) && !/\b(?:hsc|12th|twelfth)\b/.test(q) && /\b(?:score|marks|percentage|percent)\b/.test(q) && confirmed.tenthPercent !== undefined) return result(confirmed.tenthPercent, 'owner_confirmed', ['confirmedFacts.tenthPercent'], 'education_score');
+    if (/\b(?:hsc|12th|twelfth)\b/.test(q) && !/\b(?:ssc|10th|tenth)\b/.test(q) && /\b(?:score|marks|percentage|percent)\b/.test(q) && confirmed.twelfthPercent !== undefined) return result(confirmed.twelfthPercent, 'owner_confirmed', ['confirmedFacts.twelfthPercent'], 'education_score');
+    if (/\bssc\b/.test(q) && /\bhsc\b/.test(q) && /\bgraduation\b/.test(q) && confirmed.tenthPercent !== undefined && confirmed.twelfthPercent !== undefined && confirmed.graduationPercent !== undefined && profile.education?.[0]?.gpa) {
+      return result(`10th (SSC): ${confirmed.tenthPercent}% | 12th (HSC): ${confirmed.twelfthPercent}% | Graduation: ${profile.education[0].gpa} CGPA (${confirmed.graduationPercent}%)`, 'owner_confirmed', ['confirmedFacts.tenthPercent', 'confirmedFacts.twelfthPercent', 'confirmedFacts.graduationPercent', 'education.0.gpa'], 'academic_scores');
+    }
+    if (/\bcodeforces\b/.test(q) && /\b(?:rating|ranking)\b/.test(q) && confirmed.codeforcesRating) return result(confirmed.codeforcesRating, 'owner_confirmed', ['confirmedFacts.codeforcesRating']);
+    if (/\bcodechef\b/.test(q) && /\b(?:rating|ranking)\b/.test(q) && confirmed.codechefRating) return result(confirmed.codechefRating, 'owner_confirmed', ['confirmedFacts.codechefRating']);
+    if (/\bjee mains?\b/.test(q) && confirmed.jeeMains) return result(confirmed.jeeMains, 'owner_confirmed', ['confirmedFacts.jeeMains']);
+    if (/\bjee advanced\b/.test(q) && confirmed.jeeAdvanced) return result(confirmed.jeeAdvanced, 'owner_confirmed', ['confirmedFacts.jeeAdvanced']);
+    if (/\b(?:crypto|cryptocurrency)\b/.test(q) && /\b(?:payment|paid|pay)\b/.test(q) && confirmed.acceptsCrypto !== undefined) return result(confirmed.acceptsCrypto, 'owner_confirmed', ['confirmedFacts.acceptsCrypto']);
+    if (/\b(?:shifts?|time ?zone|est|pst|emea)\b/.test(q) && /\b(?:willing|comfortable|available|open|work)\b/.test(q) && confirmed.shiftFlexibility !== undefined && !/\b(?:not|unable|unwilling)\b/.test(q)) return result(confirmed.shiftFlexibility, 'owner_confirmed', ['confirmedFacts.shiftFlexibility']);
+  }
   if (/\bexperience with snowflake\b/.test(q) && Number(profile.skillYears?.Snowflake) > 0) {
     const experienceIndex = (profile.experience || []).findIndex(entry => /\bsnowflake\b/i.test(JSON.stringify(entry)));
     const option = context.options?.find(value => /^professional-level experience$/i.test(value.trim()));
     if (experienceIndex >= 0 && option) return result(option, 'confirmed_professional_experience', ['skillYears.Snowflake', `experience.${experienceIndex}`], 'snowflake_experience');
+    if (context.options?.length) return result(undefined, 'professional_experience_not_confirmed');
   }
   const prefs = profile.applicationPreferences;
   if (prefs) {
@@ -359,9 +390,7 @@ export function resolveCandidateAnswer(category: ExtendedFieldCategory, profile:
       if (/\b(?:support|assistance|package)\b/i.test(q)) return result(false, 'confirmed_preference', ['professional.willingToRelocate'], 'relocation_support');
       const destination = normalizeQuestion(context.location || '');
       if (india || (/\b(?:india|bengaluru|bangalore|mumbai|pune|hyderabad|chennai|delhi|noida|gurgaon|gurugram)\b/.test(destination) && !/\b(?:united states|usa|london|canada|germany|australia|singapore)\b/.test(destination))) return result(true, 'confirmed_preference', ['applicationPreferences.relocationCountries'], 'relocate');
-      // If no foreign or conflicting location is specified, candidate is willing to relocate within India
-      const opt = optionFor([/^(?:yes|true|willing)\b/i]);
-      return result(context.options?.length ? opt : true, 'confirmed_preference', ['professional.willingToRelocate', 'applicationPreferences.relocationCountries'], 'relocate');
+      return result(undefined, 'relocation_destination_not_confirmed');
     }
     if (/\b(?:unpaid|without pay|no pay)\b/.test(q) && !/\b(?:not|decline|reject|refuse)\b/.test(q) && prefs.paidRolesOnly === true && /\b(?:role|work|internship|position)\b/.test(q)) return result(false, 'confirmed_preference', ['applicationPreferences.paidRolesOnly'], 'employment_type');
     if (/\bpaid\b/.test(q) && !/\b(?:not|unpaid|decline|reject|refuse)\b/.test(q) && /\b(?:open|accept|willing|available|interest)\w*\b/.test(q)) {
@@ -438,14 +467,14 @@ export function resolveCandidateAnswer(category: ExtendedFieldCategory, profile:
   }
 
   // Current or previous employer / title queries
-  if (/\b(?:current|most\s*recent|previous)\s*(?:employer|company)\b/i.test(q) || /\b(?:where\s+have\s+you\s+(?:most\s+recently\s+)?worked|most\s*recently\s*worked)\b/i.test(q) || (category === 'current_company' && /^(?:employer|company|employer name|company name)$/.test(q))) {
+  if (!/\bcurrent or previous\b/.test(q) && (/\b(?:current|most\s*recent|previous)\s*(?:employer|company)\b/i.test(q) || /\b(?:where\s+have\s+you\s+(?:most\s+recently\s+)?worked|most\s*recently\s*worked)\b/i.test(q) || (category === 'current_company' && /^(?:employer|company|employer name|company name)$/.test(q)))) {
     const unemployed = (profile.answers || []).findIndex(a => a.scope === 'GLOBAL_FACT' && normalizeQuestion(a.question) === 'what is your current employment status' && normalizeQuestion(String(a.value)) === 'unemployed');
     if (/\bcurrent\b/.test(q) && !/\b(?:previous|recent)\b/.test(q) && unemployed >= 0) return result('Unemployed', 'confirmed_employment_status', [`answers.${unemployed}.value`], 'current_company');
     const current = profile.professional?.currentCompany;
     const comp = current || profile.experience?.[0]?.company;
     if (comp) return result(comp, 'explicit_employment_history', [current ? 'professional.currentCompany' : 'experience.0.company'], 'previous_company');
   }
-  if (/\b(?:current|most\s*recent|previous)\s*(?:job\s*title|title|position)\b/i.test(q)) {
+  if (!/\bcurrent or previous\b/.test(q) && /\b(?:current|most\s*recent|previous)\s*(?:job\s*title|title|position)\b/i.test(q)) {
     if (profile.experience?.length) return result(profile.experience[0]!.title, 'explicit_employment_history', ['experience.0.title'], 'previous_title');
   }
 
@@ -460,7 +489,7 @@ export function resolveCandidateAnswer(category: ExtendedFieldCategory, profile:
     // 1. Overall / Total years of experience
     if (/\b(?:total|overall|full\s*time|fulltime|industry|professional)\s*(?:work\s*)?experience\b/i.test(q) && !/\b(?:ruby|node|python|snowflake|ai|ml|k8s|kubernetes|aws|java)\b/i.test(q)) {
       if (profile.professional?.totalYearsExperience === undefined) return result(undefined, 'total_experience_not_provided');
-      if (/\bin\s*months\b/i.test(q)) return result(12, 'explicit_profile', ['professional.totalYearsExperience'], 'total_experience_months');
+      if (/\bin\s*months\b/i.test(q)) return result(profile.professional.totalYearsExperience * 12, 'explicit_profile', ['professional.totalYearsExperience'], 'total_experience_months');
       if (context.options?.length) {
         const opt = context.options.find(o => /\b(?:1|1\s*[-–to]+\s*[23]|0\s*[-–to]+\s*[12]|entry|junior|< ?2)\b/i.test(o));
         if (opt) return result(opt, 'explicit_profile', ['professional.totalYearsExperience'], 'total_experience');
@@ -470,18 +499,23 @@ export function resolveCandidateAnswer(category: ExtendedFieldCategory, profile:
 
     // 2. Verified skills check
     const skills = Object.entries(profile.skillYears || {}).filter(([skill]) => ` ${q} `.includes(` ${normalizeQuestion(skill)} `));
+    if (skills.length && /\b(?:and|or)\b/.test(q) && /\b(?:java|javascript|python|rust|ruby|golang|kubernetes|snowflake)\b/.test(q)) {
+      const mentioned = q.match(/\b(?:javascript|java|python|rust|ruby|golang|kubernetes|snowflake)\b/g) || [];
+      if (new Set(mentioned).size > 1) return result(undefined, 'multiple_skill_experience_requires_review');
+    }
     if (skills.length === 1) {
       if (context.options?.length) {
         const val = skills[0]![1];
         const opt = context.options.find(o => new RegExp(`\\b${val}\\b`).test(o) || /practical|intermediate/i.test(o));
         if (opt) return result(opt, 'explicit_profile', [`skillYears.${skills[0]![0]}`], 'skill_experience');
+        return result(undefined, 'skill_option_not_confirmed');
       }
       return result(skills[0]![1], 'explicit_profile', [`skillYears.${skills[0]![0]}`], 'skill_experience');
     }
 
     // 3. Unlisted skills default: truthful 0 / No / Less than 1 year (or adjacent-stack narrative for TEXTAREA)
     const isKnownTech = /\b(?:python|sql|spark|kafka|typescript|node\.?js|node|fastapi|docker|git|aws|linux)\b/i.test(q);
-    if (!isKnownTech && (profile.unlistedSkillYears !== undefined || profile.professional?.totalYearsExperience !== undefined)) {
+    if (!isKnownTech && skills.length === 0 && profile.unlistedSkillYears !== undefined && !/\bsoftware engineering\b/i.test(q)) {
       if (context.fieldType === 'textarea' || (category as string) === 'cover_letter') {
         const project = composePortfolioProjectNarrative(context.question, profile);
         if (project) return result(project.text, 'verified_project_catalog', [project.factKey]);
@@ -495,6 +529,7 @@ export function resolveCandidateAnswer(category: ExtendedFieldCategory, profile:
       if (context.fieldType === 'number') return result(0, 'explicit_profile', ['unlistedSkillYears'], 'unlisted_skill_experience');
       return result(0, 'explicit_profile', ['unlistedSkillYears'], 'unlisted_skill_experience');
     }
+    if (category === 'total_experience') return result(undefined, 'skill_experience_not_confirmed');
   }
   if (['expected_salary', 'current_salary'].includes(category)) {
     const key = category === 'expected_salary' ? 'expectedSalary' : 'currentSalary';
@@ -539,7 +574,7 @@ export function resolveCandidateAnswer(category: ExtendedFieldCategory, profile:
     }
     return result(profile.professional.willingToRelocate, 'explicit_profile', ['professional.willingToRelocate'], 'willing_to_relocate');
   }
-  if (['gender', 'race', 'hispanic_latino', 'veteran', 'disability'].includes(category) && !home) return result(undefined, 'jurisdiction_not_confirmed');
+  if (['gender', 'race', 'hispanic_latino', 'veteran', 'disability'].includes(category) && !profile.eeo) return result(undefined, 'underlying_fact_missing');
   if ((context.fieldType?.toLowerCase() === 'file' || context.fieldType === 'FILE_UPLOAD' || /resume|\bcv\b/i.test(q)) && /resume|\bcv\b/i.test(q)) {
     return result(profile.documents?.resume, 'explicit_profile', ['documents.resume']);
   }
@@ -575,21 +610,26 @@ export function resolveByOptionPolicy(question: string, options: string[], profi
     if (foreignCity) {
       return undefined;
     }
-    const cities = `${q} ${normalizeQuestion(location)}`.match(/\b(?:bangalore|bengaluru|mumbai|delhi|hyderabad|pune|chennai|london|austin)\b/g) || [];
+    const cities = `${q} ${normalizeQuestion(location)}`.match(/\b(?:navi mumbai|bangalore|bengaluru|mumbai|powai|vashi|delhi|noida|gurgaon|gurugram|hyderabad|pune|chennai|ahmedabad|kolkata|london|austin)\b/g) || [];
     const sameCity = (city: string) => normalizeQuestion(city).replace('bangalore', 'bengaluru') === normalizeQuestion(office.city).replace('bangalore', 'bengaluru');
     const days = /\b([1-7])\s*days?\b/.exec(q)?.[1] || (/\bfive days\b/.test(q) ? '5' : undefined);
-    const cityOk = cities.length === 0 || cities.every(sameCity);
+    const cityOk = cities.length === 0 || cities.every(city => sameCity(city) || (profile.confirmedFacts?.allIndianOfficeCities === true && /^(?:navi mumbai|bangalore|bengaluru|mumbai|powai|vashi|delhi|noida|gurgaon|gurugram|hyderabad|pune|chennai|ahmedabad|kolkata)$/.test(city)));
     if (cityOk && (!days || Number(days) <= office.maxDaysPerWeek) && !/\b(?:not|unable|unwilling|outside|other than)\b/.test(q)) {
-      if (!options.length) return result(true, 'professional.officeAttendance');
+      const officeFact = cities.some(city => !sameCity(city)) ? 'confirmedFacts.allIndianOfficeCities' : 'professional.officeAttendance';
+      if (!options.length) return result(true, officeFact);
       const preferred = options.find(
         option =>
           /\b(yes|comfortable|willing|bengaluru|bangalore|karnataka|india|hybrid|onsite|on-site|in-office|in-person|[345]\s*days)\b/i.test(option.trim()) &&
           !/\b(no\b|not willing|cannot|unable|remote only)\b/i.test(option.trim())
       );
-      if (preferred) return result(preferred, 'professional.officeAttendance');
+      if (preferred) return result(preferred, officeFact);
     }
   }
   if (!options.length) return;
+  const normOpts = options.map(o => o.trim());
+  if (normOpts.length === 1 && profile.recruitmentPrivacyConsent === true && isRecruitmentPrivacyAcknowledgement(question) && /^(?:i agree|acknowledge|acknowledge\/confirm|confirmed|yes)$/i.test(normOpts[0]!)) {
+    return result(normOpts[0]!, 'recruitmentPrivacyConsent');
+  }
   let value: string | number | undefined;
   let fact = '';
   if (/\bnotice\b/.test(q)) {

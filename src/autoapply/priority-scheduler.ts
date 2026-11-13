@@ -144,6 +144,7 @@ export function computeJobPriorityScore(job: QueuedJobCandidate, nowMs = Date.no
     location: loc,
     url: job.url,
   });
+  if (!fit.eligible || !isEligibleEngineeringRoleTitle(job.title || '').eligible) return -999999;
   if (fit.priorityBonus > 0) {
     score += fit.priorityBonus;
   }
@@ -175,13 +176,35 @@ export function computeJobPriorityScore(job: QueuedJobCandidate, nowMs = Date.no
     score += 1500;
   }
 
-  // Priority Boost for GitHub Actions Hunt Catalog jobs (hunt.yml / github_hunt)
+  // Fast Zero-Login ATS Conversion Multiplier (Pandey & Olston WWW 2005)
+  if (['greenhouse', 'ashby', 'breezy', 'recruitee', 'workable'].includes(provider)) {
+    score += 15000;
+  } else if (provider === 'lever') {
+    score += 6000;
+  }
+
+  // Time-Decayed Hunt Freshness Boost (Cox 1972 & Cho-Garcia-Molina TODS 2003):
   const isHunt = job.id?.startsWith('hunt_') ||
     job.payload?.hourlySource === 'github_hunt' ||
     job.payload?.source === 'github_hunt' ||
-    Boolean(job.isHourlyFresh);
-  if (isHunt) {
-    score += 50000;
+    Boolean(job.isHourlyFresh) ||
+    Boolean(job.payload?.is_hourly_fresh);
+  const tsInfo = extractJobTimestampMs(job);
+  const ageHours = tsInfo.timestampMs > 0 && tsInfo.source !== 'job_id_epoch' && tsInfo.source !== 'discoveredAt'
+    ? (nowMs - tsInfo.timestampMs) / 3_600_000
+    : 999;
+  if (ageHours >= 0 && ageHours <= 2) {
+    score += 55000;
+  } else if (ageHours > 2 && ageHours <= 6) {
+    score += 45000;
+  } else if (ageHours > 6 && ageHours <= 12) {
+    score += 35000;
+  } else if (ageHours > 12 && ageHours <= 24) {
+    score += 25000;
+  } else if (isHunt && ageHours > 24 && ageHours <= 36) {
+    score += 5000;
+  } else if (ageHours > 168) {
+    score -= 20000; // Penalize stale >7d postings so fresh jobs always win
   }
 
   return score;

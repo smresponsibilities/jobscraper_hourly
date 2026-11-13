@@ -616,7 +616,7 @@ export async function runHourly100JobsHarvester(): Promise<{
           }
         }
 
-        const candidateId = '2e533f7f49798b955338';
+        const candidateId = (() => { try { const c = JSON.parse(fs.readFileSync('state/autoapply/portal-review/candidate.json', 'utf8')); return require('node:crypto').createHash('sha256').update(String(c.personal?.email || '').trim().toLowerCase()).digest('hex').slice(0, 20); } catch { return '2e533f7f49798b955338'; } })();
         const insertStmt = db.prepare(`
           INSERT OR IGNORE INTO applications (candidate_id, id, canonical_key, normalized_url, status, payload, owner, expires)
           VALUES (?, ?, ?, ?, 'queued', ?, 'hourly_harvester', ?)

@@ -638,7 +638,12 @@ async function main(): Promise<void> {
         // Ticket GEN-528: Start browser lanes immediately in 0.5s when >= 30 fast-ATS jobs already queued
         const fastAtsQueuedCount = countFastAtsQueued();
         if (fastAtsQueuedCount >= 30) {
-          console.log(`[DRAIN] Fast-ATS queued count (${fastAtsQueuedCount} >= 30). Skipping synchronous startup discovery to launch browser lanes immediately in 0.5s!`);
+          console.log(`[DRAIN] Fast-ATS queued count (${fastAtsQueuedCount} >= 30). Launching browser lanes immediately & triggering background hunt.yml pillar sync!`);
+          if (!skipSync) {
+            syncGitHubActionsPillars(dbPath).then(ps => {
+              if (ps.newJobsIngested > 0) console.log(`[BG-PILLAR-SYNC] Ingested ${ps.newJobsIngested} fresh hunt.yml jobs!`);
+            }).catch(() => {});
+          }
         } else if (!skipSync) {
           console.log(`[DRAIN] Fast-ATS queued count (${fastAtsQueuedCount} < 30). Running fast discovery (45s hard budget)...`);
           try {
