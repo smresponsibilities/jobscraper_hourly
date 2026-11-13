@@ -1,13 +1,16 @@
 import { chromium, type Browser, type BrowserContext, type Page, type Locator, type Frame, type Request } from 'patchright';
 import { mkdirSync, readFileSync, writeFileSync, renameSync, existsSync, unlinkSync, utimesSync, appendFileSync } from 'node:fs';
-import * as os from 'node:os';
+import { assessSystemMemoryPressure } from './memory-guard.js';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { execSync } from 'node:child_process';
 import type { BotRunReport, CandidateExtendedProfile, RunnerMode } from './types.js';
-import { classifyAtsField } from './classifier.js';
+import { classifyAtsField, classifyFileUploadSlot } from './classifier.js';
+import { prefetchPublicPosting } from './public-posting-preflight.js';
+import { isStrictlyIsolatedTenant } from './priority-scheduler.js';
+import { toPlainText } from '../fetchers/util.js';
 import { matchBestOption } from './aihawk.js';
-import { normalizeQuestion, resolveCandidateAnswer, hasScopedAnswerMismatch, resolveByOptionPolicy } from './answers.js';
+import { normalizeQuestion, resolveCandidateAnswer, hasScopedAnswerMismatch, resolveByOptionPolicy, isAuthorizedConsentCheckbox } from './answers.js';
 import { identifyApplicationAts, ATS_STRATEGIES } from './wizard.js';
 import { validateProfile } from './profile.js';
 import { getHumanKeyDelay, generateBezierCurve } from './stealth.js';
@@ -21,7 +24,7 @@ import { captureEvidence, sanitizedDocument } from './evidence.js';
 import { authenticateApplication, hasEmailAuthenticationGate } from './authentication.js';
 import type { CredentialVault } from './vault.js';
 import { attemptAutonomousCaptchaSolve } from './captcha.js';
-import { comboboxSelection, isVisibleApplicationControl, harvestControlOptions, stealthClick, fillAsyncLocationCombobox, fillSmartRecruitersCountryCombobox, selectAshbyYesNoOrCheckboxGroup, selectHarvestedOption, translateCanonicalAnswerToOption, fillLeverLocationInput, fillPhoneInputSmart, getActiveFormFrame, waitForReactiveQuiescence } from './widgets.js';
+import { comboboxSelection, isVisibleApplicationControl, harvestControlOptions, stealthClick, fillAsyncLocationCombobox, fillSmartRecruitersCountryCombobox, selectAshbyYesNoOrCheckboxGroup, selectHarvestedOption, translateCanonicalAnswerToOption, fillLeverLocationInput, fillPhoneInputSmart, getActiveFormFrame, waitForReactiveQuiescence, uploadFileWithCdpFallback } from './widgets.js';
 import { unwrapDirectAtsApplicationUrl, isOfflineDinoPage, waitForInternetRecoveryIfOffline } from './url-unwrapper.js';
 import { installRamDietRouteFilter, enforceHumanSubmissionPacingFloor } from './ram-and-pacing.js';
 export { stealthClick, getActiveFormFrame } from './widgets.js';
@@ -253,274 +256,33 @@ export async function populateGreenhouseSecurityCode(
 
 export async function healInvalidFieldsAndRetrySubmit(
   frame: Frame,
-  profileEmail: string,
-  profilePhone?: string,
+  _profileEmail: string,
+  _profilePhone?: string,
   attemptedFieldRefs?: Set<string>
 ): Promise<number> {
-  const phone = profilePhone || process.env.AUTOAPPLY_PHONE || '9000000000';
-  const result = await frame.evaluate(([email, ph]) => {
-    // Ticket GEN-130 & GEN-473: Abort healer immediately if OTP / security code inputs are visible!
-    const hasOtp = !!document.querySelector(
-      'input[id^="security-input-"], input[id^="security-code"], #security-code, #security_code, .security-code-input input, input[name*="security_code" i], input[name*="security-code" i], input[aria-label*="security code" i], input[aria-label*="verification code" i], input[maxlength="1"], input[autocomplete="one-time-code"], [class*="security-code"], [id*="security_code"], [id*="security-code"]'
+  // Revisit rejected controls through the normal grounded-answer path. Never
+  // invent values or alter required constraints to bypass validation.
+  const refs = await frame.evaluate(() => {
+    const refs: string[] = [];
+    const errors = document.querySelectorAll<HTMLElement>(
+      `[id$="-error"], [role="alert"], .field-error, .error-message, [data-automation-id="errorMessage"]`
     );
-    if (hasOtp) return { fixed: 0, refsToUnlock: [] };
-
-    const isOtpInput = (el: Element): boolean => {
-      if (el instanceof HTMLInputElement && el.maxLength === 1) return true;
-      const id = (el.id || '').toLowerCase();
-      const name = (el.getAttribute('name') || '').toLowerCase();
-      const auto = (el.getAttribute('autocomplete') || '').toLowerCase();
-      if (id.includes('security') || name.includes('security') || (name.includes('code') && !/postal|zip|country|dial|area|currency|phone/i.test(name)) || auto === 'one-time-code') return true;
-      if (el.closest('[class*="security-code"], [id*="security_code"], [class*="security_code"], [id*="security-code"]')) return true;
-      return false;
-    };
-
-    let fixed = 0;
-    // GEN-191: Tag controls inside error-flagged field wrappers ([id$="-error"], [role="alert"], _fieldEntry_, .field-error)
-    const refsToUnlock: string[] = [];
-    const errorNodes = Array.from(
-      document.querySelectorAll<HTMLElement>(
-        '[id$="-error"], [role="alert"], .field-error, .error-message, .card-field-error, [class*="_error" i], [class*="errorMessage" i], [data-automation-id="errorMessage"]'
-      )
-    );
-    for (const errEl of errorNodes) {
-      if (errEl.offsetParent === null || !(errEl.textContent || '').trim()) continue;
-      const wrapper = errEl.closest(
-        '.field, [class*="_fieldEntry_"], .application-question, [data-automation-id^="formField-"], fieldset, [class*="form-field" i], [class*="FormField" i]'
-      );
+    for (const error of errors) {
+      if (!error.textContent?.trim() || !error.getClientRects().length) continue;
+      const wrapper = error.closest(`.field, .application-question, [data-automation-id^="formField-"], fieldset, [class*="fieldEntry" i], [class*="form-field" i]`);
       if (!wrapper) continue;
-      const errText = (errEl.textContent || '').toLowerCase();
-      const controls = Array.from(
-        wrapper.querySelectorAll<HTMLElement>(
-          'input:not([type="hidden"]), select, textarea, [role="combobox"], button[data-autoapply-btngroup-option], [data-autoapply-ref]'
-        )
-      );
-      for (const ctrl of controls) {
-        if (isOtpInput(ctrl)) continue;
-        ctrl.setAttribute('aria-invalid', 'true');
-        const ref = ctrl.getAttribute('data-autoapply-ref');
-        if (ref) refsToUnlock.push(ref);
-
-        if (ctrl instanceof HTMLInputElement || ctrl instanceof HTMLTextAreaElement) {
-          const oldVal = (ctrl.value || '').trim();
-          const setter = Object.getOwnPropertyDescriptor(
-            ctrl instanceof HTMLTextAreaElement
-              ? window.HTMLTextAreaElement.prototype
-              : window.HTMLInputElement.prototype,
-            'value'
-          )?.set;
-          const setMutated = (newVal: string) => {
-            try {
-              (ctrl as unknown as { _valueTracker?: { setValue: (v: string) => void } })._valueTracker?.setValue('');
-            } catch {}
-            if (setter) setter.call(ctrl, newVal);
-            else ctrl.value = newVal;
-            ctrl.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
-            ctrl.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
-          };
-
-          if (/number|numeric|integer|digits\s+only/i.test(errText) && !/^\d+$/.test(oldVal)) {
-            const extracted = oldVal.match(/\d+/)?.[0] || '1';
-            setMutated(extracted === '0' ? '1' : extracted);
-          } else if (
-            (oldVal === '0' || oldVal === '') &&
-            /greater\s+than|at\s+least\s+1|minimum|positive|between\s+1/i.test(errText)
-          ) {
-            setMutated('1');
-          } else if (/url|http|website|valid\s+link/i.test(errText) && !/^https?:\/\//i.test(oldVal)) {
-            setMutated('https://shivammahajan.com');
-          } else if (oldVal) {
-            // Clear rejected value so GEN-167 existingVal check does not skip re-filling on Pass 2!
-            setMutated('');
-          }
-        }
+      for (const control of wrapper.querySelectorAll<HTMLElement>(`input:not([type="hidden"]), select, textarea, [role="combobox"]`)) {
+        if (control.matches(`input[autocomplete="one-time-code"], input[maxlength="1"], input[name*="security_code" i], input[id^="security-input-"]`)) continue;
+        control.setAttribute("aria-invalid", "true");
+        const ref = control.getAttribute("data-autoapply-ref");
+        if (ref) refs.push(ref);
       }
     }
-
-    const setNativeValue = (el: HTMLInputElement | HTMLTextAreaElement, val: string) => {
-      const proto = el instanceof HTMLTextAreaElement ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
-      const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
-      if (setter) setter.call(el, val);
-      else el.value = val;
-      el.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
-      el.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
-      el.dispatchEvent(new FocusEvent('blur', { bubbles: true, composed: true }));
-    };
-
-    const collectAllAcrossShadow = (root: Document | ShadowRoot | Element): Element[] => {
-      const results: Element[] = [];
-      const all = root.querySelectorAll('*');
-      for (const node of Array.from(all)) {
-        results.push(node);
-        const sr = (node as HTMLElement).shadowRoot;
-        if (sr) results.push(...collectAllAcrossShadow(sr));
-      }
-      return results;
-    };
-
-    // 1. Heal any empty required or :invalid text / number / url / email / textarea inputs across Light and Shadow DOM
-    const allDomNodes = collectAllAcrossShadow(document);
-    const badInputs = allDomNodes.filter(
-      (n): n is HTMLInputElement | HTMLTextAreaElement =>
-        (n instanceof HTMLInputElement || n instanceof HTMLTextAreaElement) &&
-        !isOtpInput(n) &&
-        (n.matches('input:invalid, textarea:invalid, input[aria-invalid="true"], textarea[aria-invalid="true"], input[required], textarea[required], input[aria-required="true"], textarea[aria-required="true"]') ||
-          n.hasAttribute('invalid') ||
-          n.getAttribute('aria-invalid') === 'true' ||
-          !!n.closest('.ashby-application-form-field-entry, [class*="form-group" i], [class*="field-entry" i]')?.querySelector('*[class*="required" i], *[aria-label*="required" i], span[class*="_required_"]'))
-    );
-    for (const inp of badInputs) {
-      if (inp.type === 'hidden' || inp.type === 'file' || inp.disabled || inp.readOnly || isOtpInput(inp)) continue;
-      // Skip React-Select inner search inputs when a single-value pill already exists!
-      if (inp.classList.contains('select__input')) {
-        const hasPill = inp.closest('.select__control')?.querySelector('.select__single-value, .select__multi-value');
-        if (hasPill) continue;
-      }
-      if (inp.value && inp.value.trim().length > 0 && inp.checkValidity()) continue;
-
-      const labelTxt = (
-        inp.closest('.field, .select-shell, .ashby-application-form-field-entry, .application-question, div')?.textContent ||
-        inp.placeholder ||
-        inp.name ||
-        ''
-      ).toLowerCase();
-
-      if (inp.type === 'email' || /email/i.test(labelTxt)) setNativeValue(inp, email || '');
-      else if (inp.type === 'url' || /url|website|portfolio|github|linkedin/i.test(labelTxt)) setNativeValue(inp, 'https://shivammahajan.com/projects/');
-      else if (inp.type === 'tel' || /phone|mobile/i.test(labelTxt)) setNativeValue(inp, ph || '');
-      else if (inp.type === 'number' || /years|how many|numeric/i.test(labelTxt)) setNativeValue(inp, '1');
-      else if (/city|location/i.test(labelTxt)) setNativeValue(inp, 'Bengaluru, Karnataka, India');
-      else setNativeValue(inp, 'Yes — 1 year experience at Morgan Stanley (Bengaluru), available immediately.');
-      fixed++;
-    }
-
-    // 2. Heal any unanswered Ashby Yes/No button groups (.ashby-application-form-field-entry)
-    const ashbyEntries = Array.from(document.querySelectorAll('.ashby-application-form-field-entry'));
-    for (const entry of ashbyEntries) {
-      const btns = Array.from(entry.querySelectorAll<HTMLButtonElement>('button.ashby-application-form-input-yesno-option, button[class*="yesno-option"]'));
-      if (btns.length === 2) {
-        const anyActive = btns.some(b => b.className.includes('_active_') || b.getAttribute('aria-pressed') === 'true');
-        if (!anyActive) {
-          const qText = (entry.textContent || '').toLowerCase();
-          const wantNo = /\b(sponsor|visa|restrict|non-compete|covenant|former|previously worked)\b/i.test(qText);
-          const targetBtn = btns.find(b => (wantNo ? /^no$/i : /^yes$/i).test((b.innerText || '').trim())) || btns[0]!;
-          targetBtn.click();
-          fixed++;
-        }
-      }
-    }
-
-    // 3. Heal any unchecked required checkboxes or radio groups (GEN-509: group checkboxes by name, e.g. question_*[])
-    const allCheckboxes = Array.from(document.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'));
-    const checkboxGroups = new Map<string, HTMLInputElement[]>();
-    for (const cb of allCheckboxes) {
-      const name = cb.name || '';
-      if (name) {
-        const list = checkboxGroups.get(name) || [];
-        list.push(cb);
-        checkboxGroups.set(name, list);
-      }
-    }
-    for (const [name, group] of checkboxGroups) {
-      if (group.some(cb => cb.checked)) continue;
-      const isRequiredGroup = group.some(cb => !cb.checkValidity() || cb.required || cb.hasAttribute('required') || cb.getAttribute('aria-required') === 'true' || cb.closest('[aria-required="true"], fieldset[required], .field-required, [class*="required"]'));
-      if (isRequiredGroup && group.length > 0) {
-        // Find best affirmative or safe option
-        const affirmative = group.find(cb => {
-          const lbl = cb.closest('label')?.textContent || document.querySelector(`label[for="${cb.id}"]`)?.textContent || cb.value || '';
-          return /\b(yes|i agree|consent|acknowledge|bengaluru|india|none|other)\b/i.test(lbl);
-        }) || group[0];
-        if (affirmative) {
-          const parentLabel = affirmative.closest('label');
-          if (parentLabel) parentLabel.click();
-          else affirmative.click();
-          if (!affirmative.checked) {
-            affirmative.checked = true;
-            affirmative.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
-            affirmative.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
-          }
-          // Clear required constraint on sibling checkboxes in this group so entire group is valid
-          for (const sibling of group) {
-            sibling.required = false;
-            sibling.removeAttribute('required');
-            sibling.removeAttribute('aria-required');
-            sibling.setAttribute('aria-invalid', 'false');
-          }
-          fixed++;
-        }
-      }
-    }
-
-    const reqCheckboxes = allCheckboxes.filter(cb => !cb.checked && (!cb.checkValidity() || cb.required || cb.hasAttribute('required') || cb.getAttribute('aria-required') === 'true'));
-    for (const cb of reqCheckboxes) {
-      if (cb.name && checkboxGroups.has(cb.name)) continue; // already handled
-      const parentLabel = cb.closest('label');
-      if (parentLabel) parentLabel.click();
-      else cb.click();
-      if (!cb.checked) {
-        cb.checked = true;
-        cb.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
-        cb.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
-      }
-      fixed++;
-    }
-
-    // 4. Ticket GEN-184: Heal any required or aria-invalid <select> that still has no value across Light + Shadow DOM
-    for (const el of allDomNodes) {
-      if (el instanceof HTMLSelectElement) {
-        const sel = el as HTMLSelectElement;
-        if (sel.value && sel.getAttribute('aria-invalid') !== 'true') continue;
-        const validOpt = Array.from(sel.options).find(
-          (o) => !o.disabled && o.value.trim() !== '' && !/^(?:select|choose|--|none)/i.test(o.text.trim())
-        );
-        if (validOpt) {
-          sel.value = validOpt.value;
-          sel.selectedIndex = validOpt.index;
-          sel.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
-          sel.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
-          fixed++;
-        }
-      }
-    }
-
-    // 5. Ticket GEN-184: Heal any unchecked required radio group across Light + Shadow DOM
-    const radios = allDomNodes.filter((n): n is HTMLInputElement => n instanceof HTMLInputElement && n.type === 'radio');
-    const groups = new Map<string, HTMLInputElement[]>();
-    for (const r of radios) {
-      if (!r.name) continue;
-      const list = groups.get(r.name) || [];
-      list.push(r);
-      groups.set(r.name, list);
-    }
-    for (const [, group] of groups) {
-      if (group.some((r) => r.checked)) continue;
-      const isGroupInvalidOrReq = group.some(
-        (r) =>
-          r.required ||
-          r.getAttribute('aria-invalid') === 'true' ||
-          r.closest('[aria-invalid="true"], .field-error, [class*="error" i]')
-      );
-      if (isGroupInvalidOrReq && group.length > 0) {
-        const preferred =
-          group.find((r) => /^(?:yes|no|i do not wish|prefer not)/i.test((r.closest('label')?.textContent || r.value || '').trim())) ||
-          group[0];
-        if (preferred) {
-          preferred.click();
-          fixed++;
-        }
-      }
-    }
-
-    return { fixed, refsToUnlock };
-  }, [profileEmail, phone]).catch(() => ({ fixed: 0, refsToUnlock: [] as string[] }));
-
-  for (const ref of result.refsToUnlock) {
-    attemptedFieldRefs?.delete?.(ref);
-  }
-
-  return result.fixed;
+    return refs;
+  }).catch(() => [] as string[]);
+  for (const ref of refs) attemptedFieldRefs?.delete(ref);
+  return 0;
 }
-
 
 export interface AutoApplyOptions {
   url: string;
@@ -541,6 +303,7 @@ export interface AutoApplyOptions {
   reuseCompanyApplication?: boolean;
   advanceReviewedStep?: boolean;
   retryReviewed?: boolean;
+  safeCrashRecovery?: boolean;
   timeoutMs?: number;
   onBeforeSubmit?: () => void;
   reserveSubmission?: () => boolean | 'ok' | 'daily' | 'tenant';
@@ -609,7 +372,19 @@ function retainedText(actual: string, expected: string, type?: string): boolean 
   return false;
 }
 
-const RESUME_INPUTS = 'input[type="file"][name*="resume" i], input[type="file"][id*="resume" i], input[type="file"][name="cv" i], input[type="file"][id="cv" i], input[type="file"][aria-label*="resume" i], label:has-text("Resume") input[type="file"], label:has-text("CV") input[type="file"]';
+export async function selectIdentifiedResumeInput(pageOrFrame: Page | Frame): Promise<Locator | undefined> {
+  const matches: Locator[] = [];
+  for (const input of await pageOrFrame.locator('input[type="file"]').all()) {
+    const label = await input.evaluate(el => {
+      const control = el as HTMLInputElement;
+      const root = el.getRootNode() as Document | ShadowRoot;
+      const referenced = (el.getAttribute('aria-labelledby') || '').split(/\s+/).filter(Boolean).map(id => root.getElementById(id)?.textContent || '').join(' ');
+      return [el.id, el.getAttribute('name'), el.getAttribute('aria-label'), referenced, ...Array.from(control.labels || []).map(item => item.textContent || '')].filter(Boolean).join(' ');
+    }).catch(() => '');
+    if (classifyFileUploadSlot(label) === 'resume') matches.push(input);
+  }
+  return matches.length === 1 ? matches[0] : undefined;
+}
 
 export async function ensureStepReadyBeforeNext(frame: Frame, resumePath?: string, jobTitle?: string, jdText?: string): Promise<void> {
   // 1. Scroll to bottom and back to trigger lazy-mounted Workday/SmartRecruiters fields
@@ -623,9 +398,8 @@ export async function ensureStepReadyBeforeNext(frame: Frame, resumePath?: strin
   if (resolvedResume && !existsSync(resolvedResume)) throw new Error('Compiled resume is unavailable');
 
   if (resolvedResume && existsSync(resolvedResume)) {
-    const emptyFileInput = frame.locator(RESUME_INPUTS);
-    if ((await emptyFileInput.count().catch(() => 0)) > 0) {
-      const firstInput = emptyFileInput.first();
+    const firstInput = await selectIdentifiedResumeInput(frame);
+    if (firstInput) {
       {
         let uploadFile = resolvedResume;
         const accept = (await firstInput.getAttribute('accept').catch(() => '')) || '';
@@ -656,15 +430,13 @@ export async function ensureStepReadyBeforeNext(frame: Frame, resumePath?: strin
             } catch {}
           };
           frame.page().on('response', uploadListener);
-          await firstInput.setInputFiles(uploadFile).catch(() => {});
+          await uploadFileWithCdpFallback(frame.page(), firstInput, uploadFile).catch(() => {});
           await frame.waitForTimeout(600);
           frame.page().off('response', uploadListener);
 
           const hashAfter = await selectedHash();
           const pillOrSuccess = await frame.locator('.file-preview, .uploaded-file, [data-test*="file"], [class*="upload-success"], [class*="file-item"], [class*="resume-card"], .file-name, [aria-label*="remove"], button:has-text("Remove"), button:has-text("Delete"), [class*="c-file-upload"]').filter({ visible: true }).count().catch(() => 0);
-          const inputReplacedOrHidden = (await firstInput.count().catch(() => 0)) === 0;
-
-          if (hashAfter !== expectedHash && !uploadNetworkOk && pillOrSuccess === 0 && !inputReplacedOrHidden) {
+          if (hashAfter !== expectedHash && !uploadNetworkOk && pillOrSuccess === 0) {
             throw new Error('Resume upload cannot be verified before advancing');
           }
         }
@@ -842,19 +614,23 @@ export async function ensureSmartRecruitersApplicationStarted(
 const SCHEMA_PREFETCH_CACHE = new Map<string, any>();
 
 export async function prefetchAtsQuestionSchema(jobUrl: string): Promise<any | null> {
-  if (!jobUrl) return null;
+  if (!jobUrl || isStrictlyIsolatedTenant('', jobUrl)) return null;
   if (SCHEMA_PREFETCH_CACHE.has(jobUrl)) return SCHEMA_PREFETCH_CACHE.get(jobUrl);
 
   try {
+    const publicPosting = await prefetchPublicPosting(jobUrl);
+    if (publicPosting) return publicPosting;
     const u = new URL(jobUrl);
-    if (u.hostname.includes('greenhouse.io')) {
+    if (u.protocol !== 'https:' || u.username || u.password || u.port) return null;
+    const host = u.hostname.toLowerCase();
+    if (['boards.greenhouse.io', 'job-boards.greenhouse.io'].includes(host)) {
       const match = u.pathname.match(/\/jobs\/(\d+)/i) || u.search.match(/gh_jid=(\d+)/i);
-      const hostParts = u.hostname.split('.');
-      const slug = hostParts[0] === 'job-boards' || hostParts[0] === 'boards' ? hostParts[1] : hostParts[0];
+      const firstPath = u.pathname.split('/').filter(Boolean)[0] || '';
+      const slug = firstPath.toLowerCase() === 'embed' ? u.searchParams.get('for') : firstPath;
       const jobId = match ? match[1] : null;
-      if (slug && jobId) {
+      if (slug && /^[a-z0-9_-]+$/i.test(slug) && jobId) {
         const apiUrl = `https://boards-api.greenhouse.io/v1/boards/${slug}/jobs/${jobId}?questions=true`;
-        const res = await fetch(apiUrl, { signal: AbortSignal.timeout(6000) }).catch(() => null);
+        const res = await fetch(apiUrl, { signal: AbortSignal.timeout(6000), redirect: 'error' }).catch(() => null);
         if (res?.ok) {
           const data = await res.json().catch(() => null);
           if (data) {
@@ -865,12 +641,12 @@ export async function prefetchAtsQuestionSchema(jobUrl: string): Promise<any | n
       }
     }
 
-    if (u.hostname.includes('ashbyhq.com')) {
+    if (host === 'jobs.ashbyhq.com') {
       const pathParts = u.pathname.split('/').filter(Boolean);
       const slug = pathParts[0];
-      if (slug) {
+      if (slug && /^[a-z0-9_-]+$/i.test(slug)) {
         const apiUrl = `https://api.ashbyhq.com/posting-api/job-board/${slug}/application-form`;
-        const res = await fetch(apiUrl, { signal: AbortSignal.timeout(6000) }).catch(() => null);
+        const res = await fetch(apiUrl, { signal: AbortSignal.timeout(6000), redirect: 'error' }).catch(() => null);
         if (res?.ok) {
           const data = await res.json().catch(() => null);
           if (data) {
@@ -1086,7 +862,17 @@ export class AutoApplyRunner {
    */
   private async dismissCookieConsentAndHydrateForm(page: Page, fallbackUrl?: string): Promise<void> {
     const url = page.url();
-    const isAshby = /ashbyhq\.com/i.test(url);
+    // Branded Ashby boards can live on /portal/ paths or employer domains; the
+    // React form is still the same, so detect the widget rather than the host.
+    let isAshby = /ashbyhq\.com/i.test(url);
+    if (!isAshby) {
+      isAshby = await page
+        .evaluate(() =>
+          Boolean((window as any).__appData?.posting) ||
+          Boolean(document.querySelector('.ashby-application-form-container, .ashby-job-posting-description, [class*="ashby-"]'))
+        )
+        .catch(() => false);
+    }
     const maxPollMs = isAshby ? 6500 : 2500;
     const pollIntervalMs = 350;
     const deadline = Date.now() + maxPollMs;
@@ -1095,7 +881,7 @@ export class AutoApplyRunner {
     // Fast check: native click on Ashby / OneTrust cookie banner buttons
     const fastCookie = page
       .locator(
-        'button:has-text("Accept All"), [role="dialog"] button:has-text("Necessary Only"), #onetrust-accept-btn-handler, button:has-text("Accept Cookies"), [data-automation-id="legalNoticeAcceptButton"], button[data-ui="cookie-consent-accept"]'
+        'button:has-text("Accept All"), button:has-text("Accept all"), button:has-text("Allow all"), button:has-text("I Accept"), [role="dialog"] button:has-text("Necessary Only"), #onetrust-accept-btn-handler, button:has-text("Accept Cookies"), [data-automation-id="legalNoticeAcceptButton"], button[data-ui="cookie-consent-accept"], [data-testid*="cookie" i] button, [class*="cookie" i] button:has-text("Accept")'
       )
       .first();
     if (await fastCookie.isVisible().catch(() => false)) {
@@ -1122,7 +908,7 @@ export class AutoApplyRunner {
           // 1. Check Ashby React Cookie Dialog (<div role="dialog" aria-label="Cookie consent">) and global cookie banners
           const dialogs = Array.from(
             document.querySelectorAll(
-              '[role="dialog"][aria-label*="cookie" i], [role="dialog"][aria-label*="consent" i], [id*="cookie" i], [class*="cookie-banner" i], #onetrust-banner-sdk'
+              '[role="dialog"][aria-label*="cookie" i], [role="dialog"][aria-label*="consent" i], [id*="cookie" i], [class*="cookie-banner" i], [class*="cookie-consent" i], [class*="consent-banner" i], [class*="gdpr" i], #onetrust-banner-sdk'
             )
           );
 
@@ -1131,7 +917,7 @@ export class AutoApplyRunner {
             const targetBtn =
               buttons.find((b) => /^accept all$/i.test((b.textContent || '').trim())) ||
               buttons.find((b) => /^necessary only$/i.test((b.textContent || '').trim())) ||
-              buttons.find((b) => /^(accept|allow all|i agree|got it)$/i.test((b.textContent || '').trim()));
+              buttons.find((b) => /^(?:accept|accept all|accept cookies|allow all|allow cookies|i accept|i agree|agree|got it|ok)$/i.test((b.textContent || '').trim()));
             if (targetBtn && (targetBtn as HTMLElement).offsetParent !== null) {
               (targetBtn as HTMLElement).click();
               return { clicked: true, controlCount: countInteractiveControls(document) };
@@ -1141,7 +927,8 @@ export class AutoApplyRunner {
           // 2. Fallback: Check any visible button with exact text "Accept All" or "Necessary Only" on page
           const allButtons = Array.from(document.querySelectorAll('button, [role="button"]'));
           const topCookieBtn =
-            allButtons.find((b) => /^accept all$/i.test((b.textContent || '').trim())) ||
+            allButtons.find((b) => /^accept(?: all)?$/i.test((b.textContent || '').trim())) ||
+            allButtons.find((b) => /^(?:allow all|i accept|i agree)$/i.test((b.textContent || '').trim())) ||
             allButtons.find((b) => /^necessary only$/i.test((b.textContent || '').trim())) ||
             allButtons.find((b) => b.id === 'onetrust-accept-btn-handler');
           if (topCookieBtn && (topCookieBtn as HTMLElement).offsetParent !== null) {
@@ -1232,6 +1019,30 @@ export class AutoApplyRunner {
         }
       }
     } else if (/greenhouse\.io/i.test(page.url()) || ghMatch) {
+      // Modern Greenhouse Remix hydrates its form after the delayed
+      // window.__remixContext payload. Distilling before the container exists
+      // reads zero fields and burns the whole watchdog budget on the wait, so
+      // block until the form (or the Apply control that reveals it) is mounted.
+      if (/greenhouse\.io/i.test(page.url())) {
+        const formReady = await page
+          .waitForFunction(() => {
+            const form = document.querySelector(
+              '[data-testid="application-form"], #application-form, #application_form, [data-testid="applicationForm"], form[action*="job_app"]'
+            );
+            if (form) return true;
+            const inputs = document.querySelectorAll(
+              '#application-form input:not([type="hidden"]), #first_name, #email, input[name="first_name"], input[name="email"]'
+            ).length;
+            if (inputs >= 2) return true;
+            return Array.from(document.querySelectorAll('button, a')).some((el) =>
+              /^(?:apply|apply now|apply for this job)$/i.test((el.textContent || '').trim())
+            );
+          }, { timeout: 15000 })
+          .then(() => true)
+          .catch(() => false);
+        if (!formReady) this.log('Greenhouse form container did not mount within 15s; continuing with DOM sweep');
+      }
+
       await page
         .evaluate(() => {
           const formEl = document.querySelector('#application-form, #application_form, #app');
@@ -1357,8 +1168,8 @@ export class AutoApplyRunner {
     if (!resumePath || !existsSync(resumePath)) throw new Error('Compiled resume is unavailable');
     const docxPath = resumePath.replace(/\.pdf$/i, '.docx');
     const knownHashes = [resumePath, ...(existsSync(docxPath) ? [docxPath] : [])].map(file => sha256(readFileSync(file)));
-    const input = page.locator(RESUME_INPUTS).first();
-    if (!await input.count()) {
+    const input = await selectIdentifiedResumeInput(page);
+    if (!input) {
       if (knownHashes.some(hash => uploadedHashes.includes(hash))) return;
       throw new Error('Resume upload cannot be verified before submission');
     }
@@ -1386,15 +1197,13 @@ export class AutoApplyRunner {
       } catch {}
     };
     input.page().on('response', uploadListener);
-    await input.setInputFiles(uploadPath, { timeout: 4000 }).catch(() => {});
+    await uploadFileWithCdpFallback(input.page(), input, uploadPath).catch(() => {});
     await input.page().waitForTimeout(600);
     input.page().off('response', uploadListener);
 
     const hashAfter = await selectedHash();
     const pillOrSuccess = await input.page().locator('.file-preview, .uploaded-file, [data-test*="file"], [class*="upload-success"], [class*="file-item"], [class*="resume-card"], .file-name, [aria-label*="remove"], button:has-text("Remove"), button:has-text("Delete"), [class*="c-file-upload"]').filter({ visible: true }).count().catch(() => 0);
-    const inputReplacedOrHidden = (await input.count().catch(() => 0)) === 0;
-
-    if (hashAfter !== expectedHash && !uploadNetworkOk && pillOrSuccess === 0 && !inputReplacedOrHidden) {
+    if (hashAfter !== expectedHash && !uploadNetworkOk && pillOrSuccess === 0) {
       throw new Error('Resume upload cannot be verified before submission');
     }
   }
@@ -1428,97 +1237,31 @@ export class AutoApplyRunner {
   /**
    * Ticket GEN-153 & GEN-154: Strict numeric input unit stripper and URL input validator guard.
    */
-  private async sanitizeValueForInputType(
-    control: Locator,
-    rawValue: string,
-    questionText: string
-  ): Promise<string> {
-    const val = String(rawValue ?? '').trim();
-    if (!val) return val;
-    const meta = await control
-      .evaluate((el) => {
-        const inp = el as HTMLInputElement;
-        return {
-          type: (inp.getAttribute('type') || inp.type || '').toLowerCase(),
-          role: (inp.getAttribute('role') || '').toLowerCase(),
-          inputMode: (inp.getAttribute('inputmode') || '').toLowerCase(),
-          placeholder: (inp.getAttribute('placeholder') || '').toLowerCase(),
-          min: inp.getAttribute('min') || '',
-          max: inp.getAttribute('max') || '',
-          maxLength: inp.maxLength > 0 ? inp.maxLength : (Number(inp.getAttribute('maxlength')) || 0),
-        };
-      })
-      .catch(() => ({ type: '', role: '', inputMode: '', placeholder: '', min: '', max: '', maxLength: 0 }));
-
-    // GEN-153 & GEN-184: Strict numeric input sanitizer with min/max clamping
-    if (meta.type === 'number' || meta.role === 'spinbutton' || meta.inputMode === 'numeric') {
-      const clampNumeric = (numStr: string): string => {
-        let n = Number(numStr);
-        if (!Number.isFinite(n)) n = 1;
-        if (meta.min !== '' && Number.isFinite(Number(meta.min)) && n < Number(meta.min)) {
-          n = Number(meta.min);
-        }
-        if (meta.max !== '' && Number.isFinite(Number(meta.max)) && n > Number(meta.max)) {
-          n = Number(meta.max);
-        }
-        return String(n);
-      };
-
-      if (/^(?:immediate|immediately|now|none|no|n\/a|false)$/i.test(val)) {
-        return clampNumeric('0');
-      }
-      if (/lpa|lakh/i.test(val)) {
-        const asksInLakhs = /\bin\s+(?:lpa|lakhs?)\b|\(lpa\)/i.test(questionText);
-        return clampNumeric(asksInLakhs ? '12' : '1200000');
-      }
-      const numMatch = val.match(/-?\d+(?:\.\d+)?/);
-      if (numMatch) {
-        return clampNumeric(numMatch[0]);
-      }
-      return clampNumeric('1');
+  private async sanitizeValueForInputType(control: Locator, rawValue: string, _questionText: string): Promise<string> {
+    const value = String(rawValue ?? "").trim();
+    if (!value) return value;
+    const meta = await control.evaluate(el => {
+      const input = el as HTMLInputElement;
+      return { type: (input.getAttribute("type") || input.type || "").toLowerCase(), role: input.getAttribute("role") || "", inputMode: input.getAttribute("inputmode") || "", min: input.getAttribute("min"), max: input.getAttribute("max"), maxLength: input.maxLength };
+    });
+    if (meta.type === "number" || meta.role === "spinbutton" || meta.inputMode === "numeric") {
+      const numeric = value.replace(/,/g, "");
+      if (!/^-?\d+(?:\.\d+)?$/.test(numeric)) throw new Error("Numeric value requires review");
+      const n = Number(numeric);
+      if (!Number.isFinite(n) || (meta.min && n < Number(meta.min)) || (meta.max && n > Number(meta.max))) throw new Error("Numeric value outside allowed range");
+      return String(n);
     }
-
-    // GEN-154: Strict URL input sanitizer
-    const isUrlField =
-      meta.type === 'url' ||
-      /^https?:\/\//i.test(meta.placeholder) ||
-      /\b(?:url|website|portfolio\s+link|github\s+link|linkedin\s+link|profile\s+link)\b/i.test(questionText);
-    if (isUrlField) {
-      if (/^(?:n\/a|none|no|na|-)$/i.test(val) || !/^https?:\/\//i.test(val)) {
-        if (/linkedin/i.test(questionText)) return 'https://www.linkedin.com/in/mahajanshivam';
-        if (/github/i.test(questionText)) return 'https://github.com/smresponsibilities';
-        if (/^[a-z0-9.-]+\.[a-z]{2,}(?:\/.*)?$/i.test(val)) return `https://${val}`;
-        return 'https://shivammahajan.com';
-      }
+    if (meta.type === "url") {
+      const candidate = /^[a-z0-9.-]+\.[a-z]{2,}(?:\/.*)?$/i.test(value) ? `https://${value}` : value;
+      let parsed: URL;
+      try { parsed = new URL(candidate); } catch { throw new Error("URL requires review"); }
+      if (!["http:", "https:"].includes(parsed.protocol)) throw new Error("URL requires review");
+      return candidate;
     }
-    // Ticket GEN-340: HTML5 Month and Date Sanitizer
-    if (meta.type === 'month') {
-      if (/graduat|degree|education|college|university|completion/i.test(questionText)) {
-        return '2026-08';
-      }
-      return '2025-08';
-    }
-    if (meta.type === 'date') {
-      if (/^\d{4}-\d{2}-\d{2}$/.test(val)) return val;
-      if (/^\d{2}\/\d{2}\/\d{4}$/.test(val)) {
-        const [mm, dd, yyyy] = val.split('/');
-        return `${yyyy}-${mm}-${dd}`;
-      }
-      if (/graduat|degree|education|completion|attend/i.test(questionText)) {
-        return '2026-08-01';
-      }
-      if (/start|from|begin/i.test(questionText)) {
-        return '2025-08-01';
-      }
-      return new Date().toISOString().slice(0, 10);
-    }
-
-    // Ticket GEN-206: Truncate single-line inputs cleanly to maxLength (Artefact)
-    if (meta.maxLength > 0 && val.length > meta.maxLength) {
-      return val.slice(0, meta.maxLength).trim();
-    }
-
-    return val;
+    if (meta.type === "month" && !/^\d{4}-(?:0[1-9]|1[0-2])$/.test(value)) throw new Error("Month requires review");
+    if (meta.type === "date" && !/^\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])$/.test(value)) throw new Error("Date requires review");
+    if (meta.maxLength > 0 && value.length > meta.maxLength) throw new Error("Value exceeds field length");
+    return value;
   }
 
   /**
@@ -1547,14 +1290,26 @@ export class AutoApplyRunner {
             try {
               const bodyText400 = await response.text().catch(() => '');
               const parsed400 = JSON.parse(bodyText400);
-              const rawErrors: any[] =
-                parsed400?.validationErrors ||
-                parsed400?.errors ||
-                parsed400?.errorMessages ||
-                parsed400?.fieldErrors ||
+              const rawErrors: any =
+                parsed400?.validationErrors ??
+                parsed400?.errors ??
+                parsed400?.errorMessages ??
+                parsed400?.fieldErrors ??
                 [];
-              if (rawErrors.length > 0) {
-                this.lastNetworkValidationErrors = rawErrors.map((e: any) => ({
+              // Greenhouse returns either an array of {field,message} or a map of
+              // field name to message/message list; normalize both before healing.
+              const normalizedErrors: any[] = Array.isArray(rawErrors)
+                ? rawErrors
+                : rawErrors && typeof rawErrors === 'object'
+                  ? Object.entries(rawErrors).map(([field, value]: [string, any]) => ({
+                      field,
+                      message: Array.isArray(value)
+                        ? String((value[0] as any)?.message ?? value[0] ?? '')
+                        : String((value as any)?.message ?? value ?? ''),
+                    }))
+                  : [];
+              if (normalizedErrors.length > 0) {
+                this.lastNetworkValidationErrors = normalizedErrors.map((e: any) => ({
                   field: e.fieldId || e.field || e.fieldName || undefined,
                   message: String(e.message || e.error || e.detail || JSON.stringify(e)).slice(0, 200),
                 }));
@@ -1640,40 +1395,11 @@ export class AutoApplyRunner {
    * Ticket GEN-125: Auto-check mandatory privacy/terms consent checkboxes across light and open shadow DOM.
    */
   private async ensurePrivacyConsentCheckboxesChecked(page: Page): Promise<void> {
-    await page
-      .evaluate(() => {
-        const collectCheckboxes = (root: Document | ShadowRoot | Element): HTMLInputElement[] => {
-          const out = Array.from(root.querySelectorAll('input[type="checkbox"]')) as HTMLInputElement[];
-          for (const el of Array.from(root.querySelectorAll('*'))) {
-            const sr = (el as HTMLElement).shadowRoot;
-            if (sr) out.push(...collectCheckboxes(sr));
-          }
-          return out;
-        };
-        const boxes = collectCheckboxes(document);
-        for (const box of boxes) {
-          if (box.checked) continue;
-          const host = (box.getRootNode?.() as ShadowRoot)?.host as HTMLElement | undefined;
-          const contextText = (
-            (box.closest('label, [class*="checkbox" i], [class*="consent" i]')?.textContent || '') +
-            ' ' +
-            (host?.textContent || '') +
-            ' ' +
-            (host?.getAttribute?.('label') || '')
-          ).toLowerCase();
-          if (
-            /privacy|terms|consent|acknowledge|agree|gdpr|data\s+protection|authorize|proceed|continue/i.test(contextText) ||
-            boxes.length === 1
-          ) {
-            box.click();
-            if (!box.checked) {
-              box.checked = true;
-              box.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
-            }
-          }
-        }
-      })
-      .catch(() => {});
+    for (const box of await page.locator('input[type="checkbox"]').all()) {
+      if (!await box.isVisible().catch(() => false) || await box.isChecked().catch(() => true)) continue;
+      const label = await box.evaluate(el => Array.from((el as HTMLInputElement).labels || []).map(item => item.textContent || '').join(' ') || el.getAttribute('aria-label') || '').catch(() => '');
+      if (isAuthorizedConsentCheckbox(label)) await box.check().catch(() => {});
+    }
   }
 
   private async coverLetter(options: AutoApplyOptions): Promise<string | undefined> {
@@ -1710,7 +1436,11 @@ export class AutoApplyRunner {
   }
 
   private async authenticationStep(options: AutoApplyOptions, report: BotRunReport, submittedCredentials?: Set<'signup' | 'signin'>): Promise<'progress' | 'review'> {
-    return authenticateApplication(this.page!, { vault: options.vault, tenant: options.requisition ? canonicalEmployerKey(options.url, options.requisition.key) : new URL(options.url).hostname, email: options.profile.personal.email, recruitmentPrivacyConsent: options.profile.recruitmentPrivacyConsent, candidateNames: [options.profile.personal.firstName, options.profile.personal.lastName || ''], mailbox: options.mailbox, interaction: this.interactions(options), submittedCredentials, beforeCredentialSubmit: submittedCredentials ? async () => { report.credentialAttempts = [...submittedCredentials]; await this.checkpoint(options, report); } : undefined, since: new Date(report.startTime), onDiagnostic: code => report.logs.push(`workday_reconcile:auth_${code}`), verification: { provider: options.requisition?.provider || report.ats, recipient: options.profile.personal.email, since: new Date(report.startTime), applicationUrl: options.url, company: options.company, claim: options.claimMail } }).catch(() => { report.logs.push('workday_reconcile:auth_exception'); return 'review' as const; });
+    return authenticateApplication(this.page!, { vault: options.vault, tenant: options.requisition ? canonicalEmployerKey(options.url, options.requisition.key) : new URL(options.url).hostname, email: options.profile.personal.email, recruitmentPrivacyConsent: options.profile.recruitmentPrivacyConsent, candidateNames: [options.profile.personal.firstName, options.profile.personal.lastName || ''], mailbox: options.mailbox, interaction: this.interactions(options), submittedCredentials, beforeCredentialSubmit: submittedCredentials ? async () => { report.credentialAttempts = [...submittedCredentials]; await this.checkpoint(options, report); } : undefined, since: new Date(report.startTime), onDiagnostic: code => report.logs.push(`workday_reconcile:auth_${code}`), verification: { provider: options.requisition?.provider || report.ats, recipient: options.profile.personal.email, since: new Date(report.startTime), applicationUrl: options.url, company: options.company, claim: options.claimMail }     }).catch((error: unknown) => {
+      const detail = error instanceof Error ? error.message : String(error);
+      report.logs.push(`workday_reconcile:auth_exception:${detail.slice(0, 120)}`);
+      return 'review' as const;
+    });
   }
 
   private async reconcileWorkday(options: AutoApplyOptions, report: BotRunReport): Promise<BotRunReport['receipt'] | undefined> {
@@ -2932,6 +2662,33 @@ export class AutoApplyRunner {
     const curUrl = this.page?.url?.() || options.url || '';
     writeFileSync(temporary, JSON.stringify({ applicationUrl: options.url, currentUrl: curUrl, report }, null, 2), { mode: 0o600 });
     renameSync(temporary, target);
+    // A hard timeout cancels nothing, and the page is closed before the runner
+    // can finish, so keep the last known fill progress on disk for the drain to
+    // read instead of reporting synthetic zeros.
+    const partialTarget = path.join(options.sessionDir, 'partial-report.json');
+    const partialTemporary = `${partialTarget}.${randomUUID()}.tmp`;
+    writeFileSync(
+      partialTemporary,
+      JSON.stringify(
+        {
+          jobId: options.jobId,
+          applicationUrl: options.url,
+          currentUrl: curUrl,
+          updatedAt: new Date().toISOString(),
+          fieldsFound: report.fieldsFound,
+          fieldsFilled: report.fieldsFilled,
+          unmappedFields: report.unmappedFields,
+          stepsTraversed: report.stepsTraversed,
+          ats: report.ats,
+          actions: report.actions,
+          logs: report.logs.slice(-40),
+        },
+        null,
+        2
+      ),
+      { mode: 0o600 }
+    );
+    renameSync(partialTemporary, partialTarget);
   }
 
   private async repeatedSections(frame: Frame, profile: CandidateExtendedProfile, dryRun: boolean) {
@@ -3201,6 +2958,7 @@ export class AutoApplyRunner {
         if (info.tag === 'select' || info.combobox) (report.choiceFields ||= []).push({ options: harvested?.options || [] });
         const answerContext = { url: options.url, country: options.applicationCountry, company: options.company, question: info.questionTitle || info.label || info.ariaLabel, aliases: [info.label, info.name, info.id, info.fieldPath, info.ariaLabel, ...optionAlias], fieldType: info.tag === 'textarea' ? 'textarea' : info.type, options: harvested?.options, employerKey: options.requisition ? canonicalEmployerKey(options.url, options.requisition.key) : undefined, requisitionKey: options.requisition?.key, isRequired: info.required, attemptNumber: (attempts.get(fieldKey) || 0) + 1 };
         let dynamic = resolveCandidateAnswer(classification.category, candidate, { ...answerContext, location: options.applicationLocation });
+        if (dynamic.reason === 'owner_requested_blank') continue;
         // Strong label/ARIA matches are deterministic facts too. An unavailable
         // model must not erase them merely because the input has no name or ID.
         if (options.model && !info.datePart && dynamic.reason !== 'qa_bank_match' && (dynamic.value === undefined || classification.source === 'fuzzy') && !['file', 'password'].includes(info.type)) {
@@ -3208,6 +2966,7 @@ export class AutoApplyRunner {
           dynamic = await options.model.resolve(candidate, answerContext, choices) || { ...dynamic, value: undefined, confidence: 0, reason: 'grounded_model_unavailable' };
         }
         let value = dynamic.value;
+        if (info.type === 'checkbox' && isAuthorizedConsentCheckbox(answerContext.question, info.optionLabel)) value = true;
 
         // Step 318 (GEN-318): Post-Harvest Option-First Re-Resolution
         if (harvested && harvested.options && harvested.options.length > 0) {
@@ -3343,8 +3102,9 @@ export class AutoApplyRunner {
           const parts = typeof date === 'string' ? /^(\d{4})(?:-(0[1-9]|1[0-2]))?(?:-(?:0[1-9]|[12]\d|3[01]))?$/.exec(date) : undefined;
           value = parts ? info.datePart === 'month' ? parts[2] : parts[1] : undefined;
         }
-        let document = info.type === 'file' ? (/cover.?letter/i.test(descriptor) ? candidate.documents?.coverLetter : /resume|\bcv\b/i.test(descriptor) ? candidate.documents?.resume : undefined) : undefined;
-        if (info.type === 'file' && /resume|\bcv\b/i.test(descriptor)) {
+        const uploadSlot = info.type === 'file' ? classifyFileUploadSlot(descriptor) : 'other_optional';
+        let document = uploadSlot === 'cover_letter' ? candidate.documents?.coverLetter : uploadSlot === 'resume' ? candidate.documents?.resume : undefined;
+        if (uploadSlot === 'resume') {
           const resumePath = candidate.documents?.resume;
           const prefersDocx = /docx|msword|wordprocessingml/i.test(info.accept || '') && !/pdf/i.test(info.accept || '');
           document = prefersDocx && resumePath ? resumePath.replace(/\.pdf$/i, '.docx') : resumePath;
@@ -3417,14 +3177,14 @@ export class AutoApplyRunner {
           if (info.type === 'file' && document) {
             let docToUpload = document;
             // Ticket GEN-461: Single-Page PDF Cover Letter Generator for Required Cover Letter * File Uploads
-            const fileLabel = (
-              info.questionTitle ||
-              info.label ||
-              info.name ||
-              info.id ||
-              ''
-            ).toLowerCase();
-            const isCoverLetter = /cover[-_ ]?letter/i.test(fileLabel);
+            const isCoverLetter = uploadSlot === 'cover_letter';
+            // Never present resume bytes as a cover letter; an optional cover
+            // letter slot stays empty until a cover letter artifact exists.
+            if (isCoverLetter && !candidate.documents?.coverLetter) {
+              action.status = 'skipped';
+              action.error = 'No cover letter artifact is compiled';
+              continue;
+            }
             // Ticket GEN-238: Check accept attribute for .docx-only file inputs
             const acceptAttr = (await input.getAttribute('accept').catch(() => '')) || '';
             if (/\.docx?|msword|wordprocessingml/i.test(acceptAttr) && !/\.pdf|application\/pdf|\*/i.test(acceptAttr)) {
@@ -3434,6 +3194,7 @@ export class AutoApplyRunner {
               }
             }
             const bytes = readFileSync(docToUpload);
+            if (/\.pdf$/i.test(docToUpload) ? bytes.subarray(0, 5).toString() !== '%PDF-' : /\.docx$/i.test(docToUpload) ? bytes.subarray(0, 2).toString() !== 'PK' : true) throw new Error('Unsupported or invalid upload document');
             let uploadName = isCoverLetter ? 'Shivam_Mahajan_Cover_Letter.pdf' : 'Shivam_Mahajan_Resume.pdf';
             if (/\.docx$/i.test(docToUpload)) {
               uploadName = isCoverLetter ? 'Shivam_Mahajan_Cover_Letter.docx' : 'Shivam_Mahajan_Resume.docx';
@@ -3462,12 +3223,42 @@ export class AutoApplyRunner {
                 throw new Error('Uploaded file did not remain selected');
               }
             }
-            const selectedBytes = await input.evaluate(async el => {
+            const expectedHash = sha256(bytes);
+            let selectedBytes = await input.evaluate(async el => {
               const file = (el as HTMLInputElement).files?.[0];
               return file ? Array.from(new Uint8Array(await file.arrayBuffer())) : null;
             }).catch(() => null);
-            if (!selectedBytes || sha256(Buffer.from(selectedBytes)) !== sha256(bytes)) throw new Error('Uploaded file bytes could not be verified');
-            action.documentHash = sha256(bytes);
+            if (!selectedBytes) {
+              // Greenhouse's Remix uploader re-renders after accepting the file
+              // and detaches the original node, so the stale handle has no files.
+              // Read whichever file input now holds our exact filename.
+              selectedBytes = await frame.evaluate(async (name) => {
+                for (const candidateInput of Array.from(window.document.querySelectorAll<HTMLInputElement>('input[type="file"]'))) {
+                  const file = candidateInput.files?.[0];
+                  if (file && file.name === name) return Array.from(new Uint8Array(await file.arrayBuffer()));
+                }
+                return null;
+              }, uploadName).catch(() => null);
+            }
+            let uploadVerified = Boolean(selectedBytes) && sha256(Buffer.from(selectedBytes!)) === expectedHash;
+            if (!uploadVerified) {
+              // Greenhouse's Remix uploader removes the file input from the DOM
+              // and confirms asynchronously by rendering the filename, so wait
+              // for that acknowledgement instead of reading bytes back.
+              uploadVerified = await frame
+                .waitForFunction(
+                  (name) => (window.document.body?.innerText || '').includes(name),
+                  uploadName,
+                  { timeout: 8000 }
+                )
+                .then(() => true)
+                .catch(() => false);
+              if (uploadVerified) {
+                this.log(`Upload verified by visible filename acknowledgement (${uploadName}); uploaded bytes were not readable back`);
+              }
+            }
+            if (!uploadVerified) throw new Error('Uploaded file bytes could not be verified');
+            action.documentHash = expectedHash;
             if (/lever\.co/i.test(frame.url())) {
               // Wait up to 5000ms for Lever's async resume parser (.resume-upload-working / .resume-upload-success) to settle
               const leverParseDeadline = Date.now() + 5000;
@@ -4194,13 +3985,14 @@ export class AutoApplyRunner {
         logs: ['fast_gate:unsupported_non_direct_ats_url'],
       };
     }
-    const report: BotRunReport = { mode: options.mode || 'copilot', url: options.url, ats: 'unknown', startTime: new Date().toISOString(), fieldsFound: 0, fieldsFilled: 0, unmappedFields: 0, stepsTraversed: 0, status: 'paused_for_review', humanInterventionRequired: !!(options.advanceReviewedStep || (options.mode === 'copilot' && options.retryReviewed) || options.preserveReviewedValues === true), actions: [], logs: this.logs };
+    const report: BotRunReport = { mode: options.mode || 'copilot', url: options.url, ats: 'unknown', startTime: new Date().toISOString(), fieldsFound: 0, fieldsFilled: 0, unmappedFields: 0, stepsTraversed: 0, status: 'paused_for_review', submissionAttempted: false, credentialAttempts: [], recoveryGuardVersion: options.safeCrashRecovery && options.onPhase ? 1 : undefined, humanInterventionRequired: !!(options.advanceReviewedStep || (options.mode === 'copilot' && options.retryReviewed) || options.preserveReviewedValues === true), actions: [], logs: this.logs };
     const submittedCredentials = new Set<'signup' | 'signin'>();
     if (this.submissionObservation && this.submissionObservation.url !== options.url) { this.submissionObservation.observer.close(); this.submissionObservation = undefined; }
     let observer = this.submissionObservation?.observer;
     const semanticLearnedThisRun: Array<{ questionText: string; category: string; value: string }> = [];
     let selfHealAttempted = false;
     let preserveExistingCheckpoint = false;
+    let prefetchedJd = '';
     try {
       const apiCheck = await fastApiPreflightCheck(options.url).catch(() => ({ status: 'eligible' as const }));
       if (apiCheck.status === 'skipped') {
@@ -4244,29 +4036,23 @@ export class AutoApplyRunner {
       let target = options.url;
       const checkpoint = options.sessionDir && path.join(options.sessionDir, 'checkpoint.json');
       if (checkpoint && existsSync(checkpoint)) {
-        if (options.retryReviewed || options.submit) {
-          try { unlinkSync(checkpoint); } catch {}
-        }
-      }
-      if (checkpoint && existsSync(checkpoint)) {
         let saved: any = null;
-        try { saved = JSON.parse(readFileSync(checkpoint, 'utf8')); } catch {}
+        try { saved = JSON.parse(readFileSync(checkpoint, 'utf8')); }
+        catch { preserveExistingCheckpoint = true; report.status = 'paused_for_review'; report.reviewKind = 'receipt'; report.reason = 'Existing checkpoint cannot be read; review before retrying'; return report; }
+        if (!saved || typeof saved !== 'object' || !saved.report || typeof saved.report !== 'object') {
+          preserveExistingCheckpoint = true; report.status = 'paused_for_review'; report.reviewKind = 'receipt'; report.reason = 'Existing checkpoint is invalid; review before retrying'; return report;
+        }
         const matchesJob = saved && ((options.jobId && saved.jobId === options.jobId) || saved.applicationUrl === options.url);
         const previousAttempt = saved?.report?.submissionAttempted || ['clicked', 'dispatched', 'confirmed'].includes(saved?.report?.submission?.phase);
-        if (saved && !matchesJob && previousAttempt) {
+        const previousCredentialAttempt = (Array.isArray(saved.report.credentialAttempts) && saved.report.credentialAttempts.length > 0) || (Array.isArray(saved.report.logs) && saved.report.logs.some((line: unknown) => typeof line === 'string' && /workday_reconcile:auth_(?:signup|signin)_submitted/.test(line)));
+        if (saved && !matchesJob && (previousAttempt || previousCredentialAttempt)) {
           preserveExistingCheckpoint = true;
           report.status = 'paused_for_review';
           report.reviewKind = 'receipt';
           report.reason = 'Session contains an unresolved submission for another application';
           return report;
         }
-        if ((!options.resume && !previousAttempt) || (saved && !matchesJob)) {
-          try { unlinkSync(checkpoint); } catch {}
-          saved = null;
-        } else if (saved && saved.applicationUrl !== options.url && !previousAttempt) {
-          try { unlinkSync(checkpoint); } catch {}
-          saved = null;
-        }
+        if ((!options.resume && !previousAttempt && !previousCredentialAttempt) || (saved && !matchesJob)) saved = null;
         if (saved) {
           const isSavedConfirmation =
             typeof saved.currentUrl === 'string' &&
@@ -4319,10 +4105,13 @@ export class AutoApplyRunner {
       }
       if (!options.resume || this.page!.url() === 'about:blank') {
         try {
-          await Promise.all([
+          const [, schema] = await Promise.all([
             this.page!.goto(target, { waitUntil: 'domcontentloaded', timeout: 45000 }),
             prefetchAtsQuestionSchema(target).catch(() => null),
           ]);
+          if (!options.resume && schema?.isClosed === true) { report.status = 'skipped'; report.reason = 'job_closed'; return report; }
+          if (typeof schema?.jdText === 'string') prefetchedJd = toPlainText(schema.jdText).trim();
+          if (!options.resume && prefetchedJd && exceedsExperienceGate(prefetchedJd, options.applicationBrief?.title || '')) { report.status = 'skipped'; report.reason = 'ineligible_jd_experience'; return report; }
         } catch (gotoErr: any) {
           if (isOfflineDinoPage(gotoErr?.message || '')) {
             this.log('Wi-Fi / DNS drop detected during page navigation. Pausing for internet recovery...');
@@ -4427,6 +4216,15 @@ export class AutoApplyRunner {
         }
       }
       await this.dismissCookieConsentAndHydrateForm(this.page!, target || options.url);
+      // Branded (/portal/) Ashby boards finish hydration later than
+      // jobs.ashbyhq.com and expose the posting schema only once __appData lands.
+      if (/ashbyhq\.com/i.test(options.url) || /ashbyhq\.com/i.test(this.page!.url())) {
+        const schemaReady = await this.page!
+          .waitForFunction(() => Boolean((window as any).__appData?.posting), { timeout: 12000 })
+          .then(() => true)
+          .catch(() => false);
+        if (!schemaReady) this.log('Ashby __appData did not hydrate within 12s; continuing with DOM fields');
+      }
       const immediateReceipt = await this.receipt();
       if (immediateReceipt) {
         report.receipt = immediateReceipt;
@@ -4524,6 +4322,7 @@ export class AutoApplyRunner {
       if (!this.context) throw new Error('Runtime resume requires active browser context');
       const liveJd = descriptions.join('\n').trim() ||
         options.applicationBrief?.text ||
+        prefetchedJd ||
         (await this.page!.evaluate(() => (window as any).__appData?.posting?.descriptionPlainText).catch(() => '')) ||
         titleCandidate ||
         options.company ||
@@ -4534,7 +4333,7 @@ export class AutoApplyRunner {
       const fallbackResumePdf = existsSync(archetypePdfPath)
         ? archetypePdfPath
         : path.resolve('state/autoapply/resumes/Shivam_Mahajan_Resume_BACKEND.pdf');
-      const freeMemLow = os.freemem() < 1.4 * 1024 * 1024 * 1024;
+      const freeMemLow = assessSystemMemoryPressure().shouldUseZeroMsPdfFallback;
       let resumePdfPath = options.profile.documents?.resume || fallbackResumePdf;
 
       if (!freeMemLow && liveJd.trim()) {
@@ -4636,16 +4435,6 @@ export class AutoApplyRunner {
           .count()
           .catch(() => 0);
         if (remainingPwCount > 0) {
-          // Ticket GEN-100: If password input remains visible on Workday, attempt Create Account / Sign In with Gmail alias before parking
-          if (report.ats === 'workday' || this.page!.url().toLowerCase().includes('myworkdayjobs.com')) {
-            const envPw = process.env.AUTOAPPLY_WORKDAY_PASSWORD || process.env.AUTOAPPLY_PASSWORD || 'Wk#2026!Rp9';
-            const aliasEmail = makeGmailTenantAlias(options.profile.personal.email, this.page!.url());
-            const authRetry = await authenticateWorkdayPortal(this.page!, aliasEmail, envPw);
-            if (authRetry.authenticated) {
-              await this.page!.waitForTimeout(1000);
-              continue;
-            }
-          }
           report.status = 'paused_for_review';
           report.reason = 'Login needs browser review';
           report.reviewKind = 'authentication';
@@ -4918,9 +4707,24 @@ export class AutoApplyRunner {
         let invalid = false;
         for (const frame of this.page!.frames()) {
           for (const control of await frame.locator('input:invalid,select:invalid,textarea:invalid,[aria-invalid="true"]').all()) {
+            // react-select's unnamed `…-requiredInput` shadow input is invalid by
+            // design until its combobox has a value; the visible combobox (or the
+            // select fallback) owns that field, so do not report the shadow.
+            const shadowSelectInput = await control.evaluate((el: Element) =>
+              el.tagName === 'INPUT' && ((el as HTMLInputElement).type === 'hidden' ||
+                el.getAttribute('aria-hidden') === 'true' ||
+                /\brequiredInput\b/.test(el.className || ''))
+            ).catch(() => false);
+            if (shadowSelectInput) continue;
             if (await control.isVisible()) {
               invalid = true;
-              const ctrlDesc = await control.evaluate((el: Element) => `${el.tagName}#${el.id}[name="${el.getAttribute('name')}"][type="${el.getAttribute('type')}"]: ${(el as HTMLInputElement).validationMessage || el.getAttribute('aria-invalid')}`).catch(() => 'unknown');
+              const ctrlDesc = await control.evaluate((el: Element) => {
+                const name = el.getAttribute('name') || '';
+                const label = (el.closest('label')?.textContent || el.getAttribute('aria-label') || el.getAttribute('placeholder') || '').trim().slice(0, 60);
+                const native = (el as HTMLInputElement).validationMessage;
+                const message = native || (el.getAttribute('aria-invalid') === 'true' ? 'marked invalid by the page' : 'invalid');
+                return `${el.tagName}${el.id ? `#${el.id}` : ''}${name ? `[name="${name}"]` : ''}${label ? ` "${label}"` : ''}: ${message}`;
+              }).catch(() => 'unknown');
               this.log(`Invalid visible control: ${ctrlDesc}`);
               // Ticket GEN-462 & GEN-509: Check if invalid control is a React-Select dropdown (.select__input or role="combobox")
               const isReactSelectCombobox = await control.evaluate((el: Element) => {
@@ -5568,86 +5372,10 @@ export class AutoApplyRunner {
               }
             }
           }
-          // GEN-439: Closed-loop HTTP 400/422 network field healer — parse rejected fields and auto-retry submit once
-          if (!report.receipt && this.lastNetworkValidationErrors.length > 0 && !this.page!.isClosed()) {
-            const networkErrors = this.lastNetworkValidationErrors;
+          if (!report.receipt && this.lastNetworkValidationErrors.length > 0) {
+            this.log(`[GEN-439] ${this.lastNetworkValidationErrors.length} server validation error(s) require review before retrying`);
             this.lastNetworkValidationErrors = [];
-            this.log(`[GEN-439] Healing ${networkErrors.length} network-rejected fields before retry submit`);
-            for (const frame of this.getPrioritizedFormFrames()) {
-              // Mark each rejected field as aria-invalid so healInvalidFieldsAndRetrySubmit picks it up
-              await frame.evaluate((errors: Array<{ field?: string; message: string }>) => {
-                for (const err of errors) {
-                  if (!err.field) continue;
-                  const rawField = String(err.field);
-                  const fieldUuid = rawField.includes('_') ? rawField.split('_').pop()! : rawField;
-                  const selectors = [
-                    `[name="${CSS.escape(rawField)}"]`,
-                    `[id="${CSS.escape(rawField)}"]`,
-                    `[data-field-id="${CSS.escape(rawField)}"]`,
-                    `[data-automation-id="${CSS.escape(rawField)}"]`,
-                    `[id*="${CSS.escape(fieldUuid)}"]`,
-                    `[name*="${CSS.escape(fieldUuid)}"]`,
-                    `[data-field-id*="${CSS.escape(fieldUuid)}"]`,
-                    `[data-fieldentry-id*="${CSS.escape(fieldUuid)}"]`,
-                  ];
-                  for (const sel of selectors) {
-                    try {
-                      const el = document.querySelector<HTMLElement>(sel);
-                      if (el) { el.setAttribute('aria-invalid', 'true'); break; }
-                    } catch {}
-                  }
-                  // If matching .ashby-application-form-field-entry
-                  const ashbyEntry = document.querySelector(`.ashby-application-form-field-entry[data-fieldentry-id*="${fieldUuid}"]`) ||
-                    document.querySelector(`[data-fieldentry-id*="${fieldUuid}"]`);
-                  if (ashbyEntry) {
-                    const ctrl = ashbyEntry.querySelector<HTMLElement>('input, textarea, select, [role="combobox"]');
-                    if (ctrl) ctrl.setAttribute('aria-invalid', 'true');
-                  }
-                }
-              }, networkErrors).catch(() => {});
-              await healInvalidFieldsAndRetrySubmit(frame, options.profile.personal.email, options.profile.personal.phone, this.attemptedFieldRefs).catch(() => 0);
-            }
-            const retrySubmitBtn = await this.button(SUBMIT, ATS_STRATEGIES[report.ats]?.submit, 'flow_submit_button');
-            if (retrySubmitBtn && await retrySubmitBtn.isVisible().catch(() => false)) {
-              if (options.mode === 'stealth') await this.pacedClick(retrySubmitBtn);
-              else await retrySubmitBtn.click().catch(() => {});
-              await this.page!.waitForTimeout(3500);
-              report.receipt ||= await this.receipt();
-            }
-          }
-          if (validationBounce && !selfHealAttempted) {            selfHealAttempted = true;
-            const healed = await this.selfHealValidationErrors(options, report);
-            if (healed) {
-              const retrySubmit = await this.button(SUBMIT, ATS_STRATEGIES[report.ats]?.submit, 'flow_submit_button');
-              if (retrySubmit && await retrySubmit.isVisible().catch(() => false)) {
-                await this.performHumanPreSubmitTelemetry(this.page!, retrySubmit);
-                if (options.mode === 'stealth') await this.pacedClick(retrySubmit);
-                else await retrySubmit.click();
-                await this.page!.waitForTimeout(3000);
-                report.receipt ||= await this.receipt();
-
-                // Ticket GEN-302 & GEN-480: Check for in-page email OTP / verification prompt after self-healed retry submit
-                if (!report.receipt && !this.page!.isClosed()) {
-                  for (const f of this.getPrioritizedFormFrames()) {
-                    const verified = await completeInPageEmailVerificationIfPrompted(
-                      this.page!,
-                      f,
-                      () => this.activeWatchdog?.heartbeat('inpage_otp'),
-                      {
-                        sinceMs: submitClickedTime - 10_000,
-                        companyHint: options.company || (options.requisition as any)?.company,
-                        email: options.profile.personal.email,
-                      }
-                    ).catch(() => false);
-                    if (verified) {
-                      await this.page!.waitForTimeout(3000);
-                      report.receipt ||= await this.receipt();
-                      if (report.receipt) break;
-                    }
-                  }
-                }
-              }
-            }
+            validationBounce = true;
           }
           if (report.receipt) {
             report.status = 'submitted';
@@ -5689,8 +5417,10 @@ export class AutoApplyRunner {
       report.reason ||= 'Step limit reached; review before continuing';
     } catch (error) {
       if (error instanceof Error && isOfflineDinoPage(error.message)) {
-        report.status = 'skipped';
-        report.reason = 'wifi_drop_requeued';
+        report.status = 'paused_for_review';
+        report.reviewKind = 'receipt';
+        report.humanInterventionRequired = true;
+        report.reason = 'Network failure during application; verify the employer receipt before retrying';
         return report;
       }
       if (this.isClosing || (error instanceof Error && error.message.includes('Target page, context or browser has been closed'))) {

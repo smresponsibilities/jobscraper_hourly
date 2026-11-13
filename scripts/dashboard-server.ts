@@ -3,6 +3,10 @@ import * as http from 'node:http';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { isTrustedDashboardRequest } from '../src/autoapply/dashboard-access.js';
+import { buildLiveDashboardTelemetrySnapshot } from '../src/autoapply/dashboard-telemetry-snapshot.js';
+import { ingestHumanCorrectionFromExtension, resolveDomFieldsForExtensionBrain } from '../src/autoapply/extension-brain-adapter.js';
+import { loadProfile } from '../src/autoapply/profile.js';
 import { exec, execSync, spawn } from 'node:child_process';
 import { readJobRunHistory, type JobRunHistoryEntry } from '../src/autoapply/run-history.js';
 import { syncGitHubActionsPillars } from './sync-github-actions-pillars.js';
@@ -23,6 +27,13 @@ const OVERNIGHT_REPORT_PATH = path.resolve('state/autoapply/portal-review/overni
 const IN_FLIGHT_PATH = path.resolve('state/autoapply/portal-review/in-flight-checkpoint.json');
 const HOURLY_DISCOVERIES_PATH = path.resolve('state/autoapply/portal-review/hourly-discoveries.jsonl');
 const LAST_SYNC_PATH = path.resolve('state/autoapply/portal-review/last-discovery-sync.json');
+// Phase A and the GitHub pillar sync publish separate markers so neither can
+// reset the other's timestamp; report the newest discovery activity.
+const SYNC_MARKER_PATHS = [
+  path.resolve('state/autoapply/portal-review/last-phase-a-sync.json'),
+  LAST_SYNC_PATH,
+  path.resolve('state/autoapply/portal-review/last-pillar-sync.json'),
+];
 const SQLITE_DB_PATH = path.resolve('state/autoapply/portal-review/queue.sqlite');
 
 let cachedErrorsData: any = null;
@@ -100,13 +111,16 @@ export function getHourlyJobsData() {
   const oneHourAgo = now - 3600_000;
   const oneDayAgo = now - 86400_000;
 
-  let lastSyncAt = new Date().toISOString();
-  if (fs.existsSync(LAST_SYNC_PATH)) {
+  let lastSyncAt = '';
+  for (const markerPath of SYNC_MARKER_PATHS) {
+    if (!fs.existsSync(markerPath)) continue;
     try {
-      const syncInfo = JSON.parse(fs.readFileSync(LAST_SYNC_PATH, 'utf8'));
-      if (syncInfo.lastSyncAt) lastSyncAt = syncInfo.lastSyncAt;
+      const syncInfo = JSON.parse(fs.readFileSync(markerPath, 'utf8'));
+      const candidate = typeof syncInfo?.lastSyncAt === 'string' ? syncInfo.lastSyncAt : '';
+      if (candidate && Date.parse(candidate) > (Date.parse(lastSyncAt) || 0)) lastSyncAt = candidate;
     } catch {}
   }
+  if (!lastSyncAt) lastSyncAt = new Date().toISOString();
 
   const hourlyItems: any[] = [];
   if (fs.existsSync(HOURLY_DISCOVERIES_PATH)) {
@@ -242,20 +256,22 @@ export function getAppliedJobsData() {
              u.includes('smartrecruiters.com') ? 'smartrecruiters' : 'ats');
 
           const receipt = p.receipt || {};
-          const receiptText = receipt.text || (typeof receipt === 'string' ? receipt : 'Application submitted & verified receipt in database');
+          const receiptText = typeof receipt.text === 'string' ? receipt.text : '';
+          const receiptObserved = receipt.existing !== true && !!receiptText.trim() && typeof receipt.url === 'string' && Number.isFinite(Date.parse(receipt.verifiedAt || ''));
 
           appliedJobs.push({
             id: r.id,
-            company: p.company || 'Company',
-            title: p.title || 'Software Engineer',
+            company: p.company || '',
+            title: p.title || '',
             url: rawUrl,
             provider: prov,
             location: p.location || '',
-            appliedAt: p.appliedAt || receipt.verifiedAt || new Date().toISOString(),
+            appliedAt: p.appliedAt || receipt.verifiedAt || '',
             durationMs: p.durationMs || 0,
             durationSec: p.durationMs ? (p.durationMs / 1000).toFixed(1) + 's' : '--',
             receiptText,
-            receiptUrl: receipt.url || rawUrl,
+            receiptObserved,
+            receiptUrl: receipt.url || '',
             receiptPath: receipt.screenshotPath || receipt.receiptPath || '',
             screenshotPath: receipt.screenshotPath || '',
             fieldsFilled: p.fieldsFilled || 0,
@@ -280,16 +296,17 @@ export function getAppliedJobsData() {
         seenKeys.add(key);
         appliedJobs.push({
           id: h.jobId || key,
-          company: h.company || 'Company',
-          title: h.title || 'Software Engineer',
+          company: h.company || '',
+          title: h.title || '',
           url: h.url,
           provider: h.provider || 'ats',
           location: '',
-          appliedAt: h.finishedAt || new Date().toISOString(),
+          appliedAt: h.finishedAt || '',
           durationMs: h.durationMs || 0,
           durationSec: h.durationMs ? (h.durationMs / 1000).toFixed(1) + 's' : '--',
-          receiptText: h.receiptVerified ? 'Receipt Verified' : (h.reason || 'Applied successfully'),
-          receiptUrl: h.url,
+          receiptText: h.receiptVerified ? 'Receipt recorded; evidence requires review' : '',
+          receiptObserved: false,
+          receiptUrl: '',
           receiptPath: '',
           screenshotPath: '',
           fieldsFilled: h.fieldsFilled || 0,
@@ -320,7 +337,7 @@ export function getAppliedJobsData() {
 
   const result = {
     total: appliedJobs.length,
-    verifiedReceipts: appliedJobs.length,
+    observedReceipts: appliedJobs.filter(job => job.receiptObserved).length,
     providerCounts,
     jobs: appliedJobs,
   };
@@ -344,11 +361,11 @@ export function getDashboardTelemetry() {
   const history: JobRunHistoryEntry[] = readJobRunHistory(200);
 
   let queueTotals: Record<string, number> = {
-    applied: 48,
-    failed: 15,
-    paused_for_review: 10,
-    queued: 7960,
-    skipped: 11400,
+    applied: 0,
+    failed: 0,
+    paused_for_review: 0,
+    queued: 0,
+    skipped: 0,
   };
 
   if (fs.existsSync(QUEUE_SUMMARY_PATH)) {
@@ -405,7 +422,7 @@ export function getDashboardTelemetry() {
       };
 
       queueTotals.queued = total;
-      queueTotals.applied = Math.max(queueTotals.applied || 0, totalAppliedInDb);
+      queueTotals.applied = totalAppliedInDb;
     } catch {} finally {
       try { db?.close(); } catch {}
     }
@@ -555,15 +572,14 @@ export function getDashboardTelemetry() {
   }
 
   const activeLanes = ['greenhouse', 'ashby', 'workday', 'smartrecruiters', 'lever'];
-  const historyVerifiedCount = history.filter(h => h.receiptVerified || h.status === 'applied').length;
-  const verifiedReceipts = Math.max(queueTotals['applied'] || 0, historyVerifiedCount);
+  const observedReceipts = getAppliedJobsData().observedReceipts;
 
   const telemetry = {
     now: new Date().toISOString(),
     workerPid,
     inFlightJob,
     activeLanes,
-    verifiedReceipts,
+    observedReceipts,
     outreachLeads: outreachLeadsCount,
     queueTotals,
     queuedBreakdown,
@@ -575,7 +591,7 @@ export function getDashboardTelemetry() {
     scoreboard,
     logLines,
     doctorStatus: getDoctorStatus(),
-    sentinelStopped: fs.existsSync(path.resolve('state/autoapply/portal-review/STOP_AUTOAPPLY.flag')),
+    sentinelStopped: fs.existsSync(path.resolve('STOP_AUTOAPPLY.flag')) || fs.existsSync(path.resolve('state/autoapply/portal-review/STOP_AUTOAPPLY.flag')),
   };
   cachedTelemetry = telemetry;
   lastTelemetryMs = now;
@@ -808,11 +824,11 @@ function renderDashboardHtml(initialTelemetry?: any, initialErrors?: any, initia
     <!-- VERIFIED RECEIPTS -->
     <div class="card">
       <div class="card-title">
-        <span>🏆 Verified Receipts</span>
+        <span>🏆 Recorded Applications</span>
         <span class="badge badge-success">Disk Proof</span>
       </div>
       <div class="kpi-row">
-        <div id="kpi-top-applied" class="kpi-main" style="color: var(--success);">48</div>
+        <div id="kpi-top-applied" class="kpi-main" style="color: var(--success);">—</div>
         <div class="kpi-sub">Applications Confirmed</div>
       </div>
       <div class="kpi-pill-group">
@@ -878,7 +894,7 @@ function renderDashboardHtml(initialTelemetry?: any, initialErrors?: any, initia
 
   <!-- NAVIGATION TABS -->
   <div class="nav-tabs">
-    <button class="nav-tab active" data-tab="tab-applied">🏆 Verified Applied Jobs (<span id="tab-applied-count">48</span>)</button>
+    <button class="nav-tab active" data-tab="tab-applied">🏆 Recorded Applications (<span id="tab-applied-count">—</span>)</button>
     <button class="nav-tab" data-tab="tab-hourly">⚡ Hourly Fresh Jobs (Priority #1)</button>
     <button class="nav-tab" data-tab="tab-overview">📊 All Jobs & Backfill Overview</button>
     <button class="nav-tab" data-tab="tab-diagnostics">🛠️ Live Diagnostics & Unmapped Questions</button>
@@ -892,20 +908,20 @@ function renderDashboardHtml(initialTelemetry?: any, initialErrors?: any, initia
         <div style="display: flex; align-items: center; gap: 10px;">
           <span style="font-size: 20px;">🏆</span>
           <div>
-            <strong style="color: var(--success); font-size: 15px;">Verified Applications:</strong>
-            <span style="color: var(--text-muted); margin-left: 6px;">Applications confirmed submitted with real receipt text and verified submission state in database.</span>
+            <strong style="color: var(--success); font-size: 15px;">Recorded Applications:</strong>
+            <span style="color: var(--text-muted); margin-left: 6px;">Recorded application states and observed receipt fields require independent review.</span>
           </div>
         </div>
         <div class="badge badge-success" style="font-size: 13px; padding: 4px 10px;">
-          <span id="applied-verified-pill">48</span> Receipts Verified
+          <span id="applied-verified-pill">—</span> Receipts Observed
         </div>
       </div>
     </div>
 
     <div class="card">
       <div class="card-title">
-        <span>🏆 Verified Applied Applications Feed</span>
-        <span id="applied-table-count" class="mono">48 jobs</span>
+        <span>🏆 Recorded Applications Feed</span>
+        <span id="applied-table-count" class="mono">— jobs</span>
       </div>
       <div class="filter-bar">
         <button class="filter-btn active" data-applied-filter="all">All Providers</button>
@@ -929,7 +945,7 @@ function renderDashboardHtml(initialTelemetry?: any, initialErrors?: any, initia
             </tr>
           </thead>
           <tbody id="applied-tbody">
-            <tr><td colspan="7" style="text-align: center; color: var(--text-muted)">Loading verified applied jobs...</td></tr>
+            <tr><td colspan="7" style="text-align: center; color: var(--text-muted)">Loading recorded applications...</td></tr>
           </tbody>
         </table>
       </div>
@@ -1285,7 +1301,7 @@ function getStatusBadge(status) {
   if (status === 'paused_for_review') return '<span class="badge badge-warning">Paused</span>';
   if (status === 'queued') return '<span class="badge badge-accent">Queued</span>';
   if (status === 'skipped') return '<span class="badge badge-muted">Skipped</span>';
-  return '<span class="badge badge-muted">' + (status || 'unknown') + '</span>';
+  return '<span class="badge badge-muted">' + escapeHtml(status || 'unknown') + '</span>';
 }
 
 // Tab Switching
@@ -1308,7 +1324,7 @@ function updateAppliedJobsUi(data) {
   if (countBadge) countBadge.textContent = data.total || 0;
 
   const pill = document.getElementById('applied-verified-pill');
-  if (pill) pill.textContent = data.total || 0;
+  if (pill) pill.textContent = data.observedReceipts || 0;
 
   const topApplied = document.getElementById('kpi-top-applied');
   if (topApplied) topApplied.textContent = data.total || 0;
@@ -1320,6 +1336,19 @@ function updateAppliedJobsUi(data) {
   const otEl = document.getElementById('kpi-top-other'); if (otEl) otEl.textContent = (pCounts.other || 0) + (pCounts.lever || 0) + (pCounts.smartrecruiters || 0);
 
   renderAppliedTable();
+}
+
+function escapeHtml(value) {
+  const element = document.createElement('span');
+  element.textContent = String(value ?? '');
+  return element.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function safeHttpUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' || url.protocol === 'https:' ? escapeHtml(url.href) : '#';
+  } catch { return '#'; }
 }
 
 function renderAppliedTable() {
@@ -1347,7 +1376,7 @@ function renderAppliedTable() {
   });
 
   const countEl = document.getElementById('applied-table-count');
-  if (countEl) countEl.textContent = filtered.length + ' verified applications';
+  if (countEl) countEl.textContent = filtered.length + ' recorded applications';
 
   const wrap = document.querySelector('#tab-applied .table-wrap');
   const prevScroll = wrap ? wrap.scrollTop : 0;
@@ -1355,21 +1384,21 @@ function renderAppliedTable() {
   if (!tbody) return;
 
   if (filtered.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--text-muted)">No verified applications matching filter.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--text-muted)">No recorded applications matching filter.</td></tr>';
     return;
   }
 
   tbody.innerHTML = filtered.map(j => {
-    const url = j.url || j.receiptUrl || '#';
+    const url = safeHttpUrl(j.url || j.receiptUrl);
     return '<tr>' +
-      '<td class="mono">' + timeAgo(j.appliedAt) + '</td>' +
-      '<td><strong>' + (j.company || 'Company') + '</strong>' + (j.location ? '<br><span style="font-size: 11px; color: var(--text-muted);">' + j.location + '</span>' : '') + '</td>' +
-      '<td>' + (j.title || 'Software Engineer') + '</td>' +
-      '<td><span class="badge badge-muted">' + (j.provider || 'ats').toUpperCase() + '</span></td>' +
-      '<td class="mono">' + (j.durationSec || formatDuration(j.durationMs)) + '</td>' +
-      '<td style="max-width: 380px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="' + (j.receiptText || '') + '">' +
-        '<span class="badge badge-success" style="font-size: 10px; margin-right: 4px;">Verified</span> ' +
-        (j.receiptText || 'Application received & verified') +
+      '<td class="mono">' + escapeHtml(timeAgo(j.appliedAt)) + '</td>' +
+      '<td><strong>' + escapeHtml(j.company || 'Company') + '</strong>' + (j.location ? '<br><span style="font-size: 11px; color: var(--text-muted);">' + escapeHtml(j.location) + '</span>' : '') + '</td>' +
+      '<td>' + escapeHtml(j.title || 'Software Engineer') + '</td>' +
+      '<td><span class="badge badge-muted">' + escapeHtml((j.provider || 'ats').toUpperCase()) + '</span></td>' +
+      '<td class="mono">' + escapeHtml(j.durationSec || formatDuration(j.durationMs)) + '</td>' +
+      '<td style="max-width: 380px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="' + escapeHtml(j.receiptText || '') + '">' +
+        (j.receiptObserved ? '<span class="badge badge-success" style="font-size: 10px; margin-right: 4px;">Observed</span> ' : '') +
+        escapeHtml(j.receiptText || 'Receipt unavailable') +
       '</td>' +
       '<td><a href="' + url + '" target="_blank" rel="noopener noreferrer" style="color: var(--accent); text-decoration: none; font-size: 11.5px; font-weight: 600;">View Posting &rarr;</a></td>' +
     '</tr>';
@@ -1434,9 +1463,9 @@ function updateTelemetryUi(data) {
   const ifEl = document.getElementById('inflight-box');
   if (ifEl) {
     if (data.inFlightJob) {
-      ifEl.innerHTML = '<div style="color: #fff; font-weight: 600; margin-bottom: 4px;">' + (data.inFlightJob.company || 'Company') + ' (' + (data.inFlightJob.lane || 'workday') + ')</div>' +
-        '<div class="mono" style="font-size: 11px; color: var(--accent);">' + (data.inFlightJob.jobId || '') + '</div>' +
-        '<div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">Started: ' + timeAgo(data.inFlightJob.startedAt) + '</div>';
+      ifEl.innerHTML = '<div style="color: #fff; font-weight: 600; margin-bottom: 4px;">' + escapeHtml(data.inFlightJob.company || 'Company') + ' (' + escapeHtml(data.inFlightJob.lane || 'workday') + ')</div>' +
+        '<div class="mono" style="font-size: 11px; color: var(--accent);">' + escapeHtml(data.inFlightJob.jobId || '') + '</div>' +
+        '<div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">Started: ' + escapeHtml(timeAgo(data.inFlightJob.startedAt)) + '</div>';
     } else {
       ifEl.innerHTML = '<span style="color: var(--text-muted);">Idle (Waiting for next cycle)</span>';
     }
@@ -1451,13 +1480,13 @@ function updateTelemetryUi(data) {
       pbody.innerHTML = provKeys.map(k => {
         const p = data.providerStats[k];
         return '<tr>' +
-          '<td><strong>' + k.toUpperCase() + '</strong></td>' +
-          '<td class="mono">' + p.runs + '</td>' +
-          '<td class="mono" style="color: var(--success)">' + p.applied + '</td>' +
-          '<td class="mono">' + p.avgSec + 's</td>' +
-          '<td class="mono" style="color: var(--accent)">' + p.fastestSec + 's</td>' +
-          '<td class="mono">' + p.slowestSec + 's</td>' +
-          '<td class="mono">' + p.p95Sec + 's</td>' +
+          '<td><strong>' + escapeHtml(k.toUpperCase()) + '</strong></td>' +
+          '<td class="mono">' + escapeHtml(p.runs) + '</td>' +
+          '<td class="mono" style="color: var(--success)">' + escapeHtml(p.applied) + '</td>' +
+          '<td class="mono">' + escapeHtml(p.avgSec) + 's</td>' +
+          '<td class="mono" style="color: var(--accent)">' + escapeHtml(p.fastestSec) + 's</td>' +
+          '<td class="mono">' + escapeHtml(p.slowestSec) + 's</td>' +
+          '<td class="mono">' + escapeHtml(p.p95Sec) + 's</td>' +
         '</tr>';
       }).join('');
     }
@@ -1472,8 +1501,8 @@ function updateTelemetryUi(data) {
     } else {
       sbEl.innerHTML = issues.slice(0, 5).map(iss => {
         return '<div style="margin-bottom: 6px; padding: 4px 0; border-bottom: 1px solid var(--border)">' +
-          '<div style="font-weight: 600; color: #fff;">' + (iss.error || iss.reason || 'Issue') + '</div>' +
-          '<div style="font-size: 11px; color: var(--text-muted)">Count: ' + (iss.count || 0) + ' | Pct: ' + (iss.percentage || '0%') + '</div>' +
+          '<div style="font-weight: 600; color: #fff;">' + escapeHtml(iss.error || iss.reason || 'Issue') + '</div>' +
+          '<div style="font-size: 11px; color: var(--text-muted)">Count: ' + escapeHtml(iss.count || 0) + ' | Pct: ' + escapeHtml(iss.percentage || '0%') + '</div>' +
         '</div>';
       }).join('');
     }
@@ -1499,7 +1528,7 @@ function updateHourlyJobsUi(data) {
   if (pillsEl) {
     const srcMap = data.bySource || {};
     pillsEl.innerHTML = Object.keys(srcMap).map(k => {
-      return '<span class="kpi-pill"><strong>' + k.replace(/_/g, ' ').toUpperCase() + '</strong>: <span style="color: var(--accent)">' + srcMap[k] + '</span></span>';
+      return '<span class="kpi-pill"><strong>' + escapeHtml(k.replace(/_/g, ' ').toUpperCase()) + '</strong>: <span style="color: var(--accent)">' + escapeHtml(srcMap[k]) + '</span></span>';
     }).join('') || '<span class="kpi-pill">No discovery events yet</span>';
   }
 
@@ -1542,15 +1571,15 @@ function renderHourlyTable() {
 
   tbody.innerHTML = filtered.map(j => {
     return '<tr>' +
-      '<td class="mono">' + timeAgo(j.discoveredAt) + '</td>' +
-      '<td><strong>' + (j.company || 'Company') + '</strong></td>' +
-      '<td>' + (j.title || 'Software Engineer') + '</td>' +
-      '<td><span class="badge badge-muted">' + (j.provider || 'ats') + '</span></td>' +
-      '<td><span class="badge badge-accent">' + (j.hourlySource || 'github_hunt') + '</span></td>' +
-      '<td class="mono">' + formatDuration(j.durationMs) + '</td>' +
+      '<td class="mono">' + escapeHtml(timeAgo(j.discoveredAt)) + '</td>' +
+      '<td><strong>' + escapeHtml(j.company || 'Company') + '</strong></td>' +
+      '<td>' + escapeHtml(j.title || 'Software Engineer') + '</td>' +
+      '<td><span class="badge badge-muted">' + escapeHtml(j.provider || 'ats') + '</span></td>' +
+      '<td><span class="badge badge-accent">' + escapeHtml(j.hourlySource || 'github_hunt') + '</span></td>' +
+      '<td class="mono">' + escapeHtml(formatDuration(j.durationMs)) + '</td>' +
       '<td>' + getStatusBadge(j.status) + '</td>' +
-      '<td style="max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="' + (j.reason || '') + '">' +
-        (j.reason || '--') +
+      '<td style="max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="' + escapeHtml(j.reason || '') + '">' +
+        escapeHtml(j.reason || '--') +
       '</td>' +
     '</tr>';
   }).join('');
@@ -1595,21 +1624,21 @@ function renderRunsTable() {
 
   tbody.innerHTML = filtered.map(r => {
     let proofTag = '';
-    if (r.receiptVerified || r.status === 'applied') {
-      proofTag = '<span class="badge badge-success" style="font-size: 10px; margin-right: 4px;">Proof: Verified</span> ';
+    if (r.receiptVerified) {
+      proofTag = '<span class="badge badge-success" style="font-size: 10px; margin-right: 4px;">Receipt recorded</span> ';
     }
 
     return '<tr>' +
-      '<td class="mono">' + timeAgo(r.finishedAt) + '</td>' +
-      '<td><strong>' + (r.company || 'Unknown') + '</strong></td>' +
-      '<td>' + (r.title || 'Software Engineer') + '</td>' +
-      '<td><span class="badge badge-muted">' + (r.provider || 'ats') + '</span></td>' +
-      '<td class="mono">' + (r.lane || 'default') + '</td>' +
-      '<td class="mono">' + formatDuration(r.durationMs) + '</td>' +
-      '<td class="mono">' + (r.fieldsFilled || 0) + '</td>' +
+      '<td class="mono">' + escapeHtml(timeAgo(r.finishedAt)) + '</td>' +
+      '<td><strong>' + escapeHtml(r.company || 'Unknown') + '</strong></td>' +
+      '<td>' + escapeHtml(r.title || 'Software Engineer') + '</td>' +
+      '<td><span class="badge badge-muted">' + escapeHtml(r.provider || 'ats') + '</span></td>' +
+      '<td class="mono">' + escapeHtml(r.lane || 'default') + '</td>' +
+      '<td class="mono">' + escapeHtml(formatDuration(r.durationMs)) + '</td>' +
+      '<td class="mono">' + escapeHtml(r.fieldsFilled || 0) + '</td>' +
       '<td>' + getStatusBadge(r.status) + '</td>' +
-      '<td style="max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="' + (r.reason || '') + '">' +
-        proofTag + (r.reason || '--') +
+      '<td style="max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="' + escapeHtml(r.reason || '') + '">' +
+        proofTag + escapeHtml(r.reason || '--') +
       '</td>' +
     '</tr>';
   }).join('');
@@ -1642,7 +1671,7 @@ function renderLogs() {
     else if (l.includes('fail') || l.includes('error') || l.includes('timed out')) cls = 'log-line-error';
     else if (l.includes('warn') || l.includes('cooldown') || l.includes('deferring')) cls = 'log-line-warn';
     else if (l.includes('[drain') || l.includes('started')) cls = 'log-line-info';
-    return '<span class="' + cls + '">' + String(line).replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</span>';
+    return '<span class="' + cls + '">' + escapeHtml(line) + '</span>';
   }).join(String.fromCharCode(10));
 
   const autoScroll = document.getElementById('log-autoscroll');
@@ -1888,7 +1917,7 @@ function updateOvernightErrorsUi(data) {
       pillsEl.innerHTML = '<span class="kpi-pill" style="color: var(--success)">0 Overnight Failures Logged</span>';
     } else {
       pillsEl.innerHTML = data.topFailureCategories.map(function(c) {
-        return '<span class="kpi-pill"><strong>' + c.category + '</strong>: <span style="color: var(--danger)">' + c.count + '</span> (' + c.percentage + ')</span>';
+        return '<span class="kpi-pill"><strong>' + escapeHtml(c.category) + '</strong>: <span style="color: var(--danger)">' + escapeHtml(c.count) + '</span> (' + escapeHtml(c.percentage) + ')</span>';
       }).join('');
     }
   }
@@ -1900,7 +1929,7 @@ function updateOvernightErrorsUi(data) {
     } else {
       qTbody.innerHTML = data.topUnknownQuestions.slice(0, 15).map(function(q) {
         var optStr = q.options && q.options.length ? q.options.slice(0, 3).join(', ') : '-';
-        return '<tr><td>' + q.rank + '</td><td style="font-weight: 600;">' + q.questionText + '</td><td><span class="badge badge-accent">' + q.widgetKind + '</span></td><td class="mono" style="font-weight: 700;">' + q.count + '</td><td style="color: var(--text-muted); font-size: 11px;">' + optStr + '</td></tr>';
+        return '<tr><td>' + escapeHtml(q.rank) + '</td><td style="font-weight: 600;">' + escapeHtml(q.questionText) + '</td><td><span class="badge badge-accent">' + escapeHtml(q.widgetKind) + '</span></td><td class="mono" style="font-weight: 700;">' + escapeHtml(q.count) + '</td><td style="color: var(--text-muted); font-size: 11px;">' + escapeHtml(optStr) + '</td></tr>';
       }).join('');
     }
   }
@@ -1913,9 +1942,9 @@ function updateOvernightErrorsUi(data) {
       bTbody.innerHTML = data.missedButtonStalls.slice(0, 10).map(function(s) {
         var valBanner = s.validationErrors && s.validationErrors.length ? s.validationErrors[0] : s.errorMessage;
         var btns = s.visibleButtons && s.visibleButtons.length ? s.visibleButtons.slice(0, 2).map(function(b) {
-          return '&lt;' + (b.tag || 'btn') + '&gt; "' + (b.text || '') + '" [' + (b.dataAutomationId || (typeof b.className === 'string' ? b.className.slice(0, 15) : 'btn')) + ']';
+          return '&lt;' + escapeHtml(b.tag || 'btn') + '&gt; "' + escapeHtml(b.text || '') + '" [' + escapeHtml(b.dataAutomationId || (typeof b.className === 'string' ? b.className.slice(0, 15) : 'btn')) + ']';
         }).join('<br>') : '-';
-        return '<tr><td><strong>' + s.company + '</strong><br><span style="font-size: 10.5px; color: var(--text-muted);">' + s.provider + '</span></td><td>Step ' + s.stepNumber + ': ' + (s.stepHeading || 'Form') + '</td><td style="color: var(--warning); font-size: 11px;">' + valBanner + '</td><td class="mono" style="font-size: 10.5px;">' + btns + '</td></tr>';
+        return '<tr><td><strong>' + escapeHtml(s.company) + '</strong><br><span style="font-size: 10.5px; color: var(--text-muted);">' + escapeHtml(s.provider) + '</span></td><td>Step ' + escapeHtml(s.stepNumber) + ': ' + escapeHtml(s.stepHeading || 'Form') + '</td><td style="color: var(--warning); font-size: 11px;">' + escapeHtml(valBanner) + '</td><td class="mono" style="font-size: 10.5px;">' + btns + '</td></tr>';
       }).join('');
     }
   }
@@ -1966,24 +1995,30 @@ function updateOutreachLeadsUi(leads) {
   }
 
   tbody.innerHTML = leads.map(function(lead, idx) {
-    const escapedSubject = (lead.subject || '').replace(/"/g, '&quot;');
+    const escapedSubject = escapeHtml(lead.subject || '');
     const escapedBody = encodeURIComponent(lead.body || '');
     const mailto = 'mailto:' + encodeURIComponent(lead.targetEmail || '') + '?subject=' + encodeURIComponent(lead.subject || '') + '&body=' + escapedBody;
     const mxBadge = lead.mxVerified
-      ? '<span class="badge badge-success">' + (lead.mxProvider || 'MX OK') + '</span>'
-      : '<span class="badge badge-warning">' + (lead.mxProvider || 'Unverified') + '</span>';
+      ? '<span class="badge badge-success">' + escapeHtml(lead.mxProvider || 'MX OK') + '</span>'
+      : '<span class="badge badge-warning">' + escapeHtml(lead.mxProvider || 'Unverified') + '</span>';
     return '<tr style="border-bottom:1px solid var(--border);">' +
-      '<td style="padding:8px;"><strong>' + lead.company + '</strong><br><span style="font-size:10px;color:var(--text-muted);">' + (lead.archetype || '') + '</span></td>' +
-      '<td style="padding:8px;">' + lead.roleTitle + '</td>' +
-      '<td style="padding:8px;" class="mono">' + lead.targetEmail + '</td>' +
+      '<td style="padding:8px;"><strong>' + escapeHtml(lead.company) + '</strong><br><span style="font-size:10px;color:var(--text-muted);">' + escapeHtml(lead.archetype || '') + '</span></td>' +
+      '<td style="padding:8px;">' + escapeHtml(lead.roleTitle) + '</td>' +
+      '<td style="padding:8px;" class="mono">' + escapeHtml(lead.targetEmail) + '</td>' +
       '<td style="padding:8px;">' + mxBadge + '</td>' +
-      '<td style="padding:8px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + escapedSubject + '">' + lead.subject + '</td>' +
+      '<td style="padding:8px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + escapedSubject + '">' + escapedSubject + '</td>' +
       '<td style="padding:8px;white-space:nowrap;">' +
-        '<button class="btn btn-sm btn-outline" onclick="navigator.clipboard.writeText(decodeURIComponent(\'' + escapedBody + '\')).then(function(){alert(\'Copied email body!\')})" style="padding:3px 8px;font-size:11px;margin-right:4px;">Copy Body</button>' +
-        '<a href="' + mailto + '" target="_blank" class="btn btn-sm" style="display:inline-block;padding:3px 8px;font-size:11px;background:var(--accent);color:#fff;text-decoration:none;border-radius:4px;">Open Mailto</a>' +
+        '<button class="btn btn-sm btn-outline copy-outreach-body" data-index="' + idx + '" style="padding:3px 8px;font-size:11px;margin-right:4px;">Copy Body</button>' +
+        '<a href="' + escapeHtml(mailto) + '" target="_blank" rel="noopener noreferrer" class="btn btn-sm" style="display:inline-block;padding:3px 8px;font-size:11px;background:var(--accent);color:#fff;text-decoration:none;border-radius:4px;">Open Mailto</a>' +
       '</td>' +
     '</tr>';
   }).join('');
+  tbody.querySelectorAll('.copy-outreach-body').forEach(function(button) {
+    button.addEventListener('click', function() {
+      const lead = currentOutreachLeads[Number(button.dataset.index)];
+      if (lead) navigator.clipboard.writeText(lead.body || '').then(function() { alert('Copied email body!'); });
+    });
+  });
 }
 
 async function pollOutreachLeads() {
@@ -2040,7 +2075,7 @@ function updateInboxLifecycleUi(events) {
     if (pillsContainer) {
       pillsContainer.innerHTML = urgentEvents.slice(0, 4).map(function(e) {
         const tag = e.stage === 'INTERVIEW_OR_OA_INVITE' ? '🎯 OA/Interview' : '💬 Recruiter Reply';
-        return '<span class="badge badge-success" style="font-size: 11px; padding: 4px 8px;" title="' + (e.snippet || '').replace(/"/g, '&quot;') + '">' + tag + ': ' + (e.fromDomain || e.company || e.fromAddress) + '</span>';
+        return '<span class="badge badge-success" style="font-size: 11px; padding: 4px 8px;" title="' + escapeHtml(e.snippet || '') + '">' + tag + ': ' + escapeHtml(e.fromDomain || e.company || e.fromAddress) + '</span>';
       }).join('');
     }
   } else {
@@ -2093,7 +2128,12 @@ export function startDashboardServer(port = PORT): http.Server {
   cacheTimer.unref();
 
   const server = http.createServer((req, res) => {
-    const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+    const url = new URL(req.url || '/', 'http://localhost');
+    if (!isTrustedDashboardRequest({ remoteAddress: req.socket.remoteAddress, host: req.headers.host, origin: req.headers.origin, authorization: req.headers.authorization, method: req.method, path: url.pathname })) {
+      res.writeHead(403, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      res.end(JSON.stringify({ error: 'Dashboard access denied' }));
+      return;
+    }
 
     // POST /api/action
     if (url.pathname === '/api/action' && req.method === 'POST') {
@@ -2145,6 +2185,11 @@ export function startDashboardServer(port = PORT): http.Server {
             res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*' });
             res.end(JSON.stringify({ ok: true, action, message: 'Explicit stop flag set; daemon stopped' }));
           } else if (action === 'resume-sticky') {
+            if (fs.existsSync(path.resolve('STOP_AUTOAPPLY.flag'))) {
+              res.writeHead(409, { 'Content-Type': 'application/json; charset=utf-8' });
+              res.end(JSON.stringify({ ok: false, error: 'Root stop flag remains present' }));
+              return;
+            }
             const flagPath = path.resolve('state/autoapply/portal-review/STOP_AUTOAPPLY.flag');
             if (fs.existsSync(flagPath)) {
               try { fs.unlinkSync(flagPath); } catch {}
@@ -2298,6 +2343,19 @@ export function startDashboardServer(port = PORT): http.Server {
       return;
     }
 
+    if (url.pathname === '/api/telemetry/events' && req.method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive' });
+      const send = () => {
+        try { res.write(`data: ${JSON.stringify(buildLiveDashboardTelemetrySnapshot())}\n\n`); }
+        catch { res.write(`event: unavailable\ndata: {}\n\n`); }
+      };
+      send();
+      const timer = setInterval(send, 5000);
+      timer.unref();
+      req.on('close', () => clearInterval(timer));
+      return;
+    }
+
     if (url.pathname === '/api/telemetry') {
       try {
         const telemetry = cachedTelemetry || getDashboardTelemetry();
@@ -2332,7 +2390,8 @@ export function startDashboardServer(port = PORT): http.Server {
 
     // Ticket GEN-462: Shared Semantic Brain Endpoint for extension/ & web UI
     if (url.pathname === '/api/extension-brain') {
-      res.setHeader('Access-Control-Allow-Origin', '*');
+      if (req.headers.origin) res.setHeader('Access-Control-Allow-Origin', req.headers.origin);
+      res.setHeader('Vary', 'Origin');
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
       res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
@@ -2359,32 +2418,28 @@ export function startDashboardServer(port = PORT): http.Server {
 
       if (req.method === 'POST') {
         let body = '';
-        req.on('data', chunk => { body += chunk; });
+        req.on('data', chunk => { body += chunk; if (body.length > 100_000) req.destroy(); });
         req.on('end', () => {
           try {
             const payload = body ? JSON.parse(body) : {};
-            const memoryPath = path.resolve('state/autoapply/portal-review/semantic-memory.json');
-            if (payload.questionText && payload.resolvedValue) {
-              recordLearnedSuccess(
-                payload.questionText,
-                payload.linkedCategory || 'extension_sync',
-                payload.resolvedValue,
-                payload.confidence || 0.85,
-                memoryPath
-              );
-              res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-              res.end(JSON.stringify({ ok: true, action: 'learned', questionText: payload.questionText }));
-            } else if (payload.penalizeQuestion) {
-              const penalty = penalizeLearnedRuleOnValidationFailure(payload.penalizeQuestion, memoryPath);
-              res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-              res.end(JSON.stringify({ ok: true, ...penalty }));
+            if (Array.isArray(payload.fields) && payload.fields.length <= 200 && typeof payload.jobUrl === 'string') {
+              const jobUrl = new URL(payload.jobUrl);
+              if (!['http:', 'https:'].includes(jobUrl.protocol) || jobUrl.username || jobUrl.password || payload.fields.some((field: any) => !field || typeof field.label !== 'string' || field.label.length > 1000 || (field.options !== undefined && (!Array.isArray(field.options) || field.options.length > 100 || field.options.some((option: unknown) => typeof option !== 'string' || option.length > 1000))))) throw new Error('Invalid fields or job URL');
+              const profile = loadProfile(path.resolve('state/autoapply/portal-review/candidate.json'));
+              const answers = resolveDomFieldsForExtensionBrain(payload.fields, '', { profile, jobUrl: jobUrl.href });
+              res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+              res.end(JSON.stringify({ answers }));
+            } else if (typeof payload.questionText === 'string' && typeof payload.resolvedValue === 'string' && typeof payload.factKey === 'string' && payload.factKey.trim()) {
+              const result = ingestHumanCorrectionFromExtension({ questionLabel: payload.questionText, humanValue: payload.resolvedValue, factKey: payload.factKey });
+              res.writeHead(result.recorded ? 200 : 503, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+              res.end(JSON.stringify(result));
             } else {
-              res.writeHead(400, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ error: 'Missing questionText and resolvedValue or penalizeQuestion in payload' }));
+              res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+              res.end(JSON.stringify({ error: 'Provide fields and jobUrl, or a correction with factKey' }));
             }
-          } catch (err: any) {
-            res.writeHead(500, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ error: err?.message || 'Error updating extension brain' }));
+          } catch {
+            res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+            res.end(JSON.stringify({ error: 'Invalid request or unavailable candidate profile' }));
           }
         });
         return;
@@ -2444,7 +2499,7 @@ export function startDashboardServer(port = PORT): http.Server {
     }
   });
 
-  server.listen(port, '0.0.0.0', () => {
+  server.listen(port, '127.0.0.1', () => {
     console.log(`[DASHBOARD] Auto-Apply Operations Dashboard listening on http://localhost:${port} and http://127.0.0.1:${port}`);
   });
 

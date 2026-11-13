@@ -840,3 +840,19 @@ export async function findAdaptiveLocator(
 
   return primaryLoc;
 }
+
+export function generateResilientSelectorBundle(fp: { tag: string; id?: string; name?: string; ariaLabel?: string; dataAutomationId?: string; placeholder?: string; text?: string; parentTag?: string }): { cssCandidates: string[]; xpathCandidates: string[] } {
+  if (!/^[a-z][a-z0-9-]*$/i.test(fp.tag)) return { cssCandidates: [], xpathCandidates: [] };
+  const tag = fp.tag.toLowerCase();
+  const cssValue = (s: string) => s.replace(/[\x00-\x1f\x7f"\\]/g, ch => `\\${ch.codePointAt(0)!.toString(16)} `);
+  const xpathValue = (s: string) => !s.includes("'") ? `'${s}'` : !s.includes('"') ? `"${s}"` : `concat(${s.split("'").map((part, i) => `${i ? `,"'",` : ''}'${part}'`).join('')})`;
+  const cssCandidates: string[] = [], xpathCandidates: string[] = [];
+  for (const [attribute, value] of [['data-automation-id', fp.dataAutomationId], ['name', fp.name], ['aria-label', fp.ariaLabel], ['placeholder', fp.placeholder]] as const) {
+    if (!value) continue;
+    cssCandidates.push(`${attribute === 'data-automation-id' ? '' : tag}[${attribute}="${cssValue(value)}"]`);
+    if (attribute !== 'placeholder') xpathCandidates.push(attribute === 'aria-label' ? `//${tag}[contains(normalize-space(@aria-label), ${xpathValue(value)})]` : `//${tag}[@${attribute}=${xpathValue(value)}]`);
+  }
+  if (fp.id && !/:r[0-9a-z]+:|^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(fp.id)) cssCandidates.push(`${tag}[id="${cssValue(fp.id)}"]`);
+  if (fp.text) xpathCandidates.push(`//${tag}[contains(normalize-space(.), ${xpathValue(fp.text)})]`);
+  return { cssCandidates, xpathCandidates };
+}

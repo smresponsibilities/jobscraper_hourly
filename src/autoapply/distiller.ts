@@ -1064,3 +1064,9 @@ export async function distillFormStep(frame: Frame): Promise<DistilledField[]> {
 
   return fields.map(field => ({ ...field, refKey: createHash('sha256').update(`${frame.url()}|${field.refKey}`).digest('hex') }));
 }
+
+
+export function foldAndCleanAccessibilityLabel(raw: string, maxLength = 300): string {
+  if (!Number.isInteger(maxLength) || maxLength < 0) throw new Error('Invalid maximum label length');
+  return raw.replace(/[\u200b-\u200d\ufeff\u00ad\ue000-\uf8ff✱*]/g, '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().slice(0, maxLength).trimEnd();
+}

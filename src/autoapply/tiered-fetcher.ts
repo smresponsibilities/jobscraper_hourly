@@ -390,3 +390,12 @@ export async function fastApiPreflightCheck(
     return { status: 'eligible', reason: 'api_fetch_failed' };
   }
 }
+
+
+export function buildContextAwareStealthHeaders(mode: 'document_navigate' | 'cors_json_api' | 'same_origin_post', refererUrl?: string): Record<string, string> {
+  const headers: Record<string, string> = { 'sec-ch-ua': CHROME_CLIENT_HINTS_HEADERS['sec-ch-ua']!, 'sec-ch-ua-mobile': '?0', 'sec-ch-ua-platform': '"Windows"', 'accept-language': 'en-IN,en-GB;q=0.9,en-US;q=0.8,en;q=0.7' };
+  if (mode === 'document_navigate') Object.assign(headers, { 'sec-fetch-dest': 'document', 'sec-fetch-mode': 'navigate', 'sec-fetch-site': refererUrl ? 'cross-site' : 'none', 'sec-fetch-user': '?1', 'upgrade-insecure-requests': '1', accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8' });
+  else Object.assign(headers, { 'sec-fetch-dest': 'empty', 'sec-fetch-mode': 'cors', 'sec-fetch-site': mode === 'same_origin_post' ? 'same-origin' : 'cross-site', accept: mode === 'same_origin_post' ? 'application/json' : 'application/json, text/plain, */*' });
+  if (refererUrl) headers.referer = refererUrl;
+  return headers;
+}

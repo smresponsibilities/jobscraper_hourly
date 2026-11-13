@@ -1,8 +1,8 @@
 # 100-JOB REAL BROWSER DRY-RUN & DIAGNOSTICS EVIDENCE REPORT (`GEN-305`)
-**Generated:** 2026-11-10T19:20:54.350Z  
+**Generated:** 2026-11-13T10:15:55.600Z  
 **Target:** 100 Real Live Queued Distinct-Company Postings Across 5 ATS Providers  
 **Execution Mode:** 6 Concurrent Headless Chromium Workers, 45s Hard Timeout per Job  
-**Overall Result:** **71/100 READY_TO_SUBMIT (71.0% Pass Rate)** | Average Duration: **72.8s**
+**Overall Result:** **5/100 READY_TO_SUBMIT (5.0% Pass Rate)** | Average Duration: **67.0s**
 
 ---
 
@@ -10,12 +10,12 @@
 
 | ATS Provider | Total Jobs Tested | READY_TO_SUBMIT | Pass Rate % | Avg Duration (s) | Status |
 | :--- | :---: | :---: | :---: | :---: | :---: |
-| **GREENHOUSE** | 28 | 25 | **89.3%** | 99.3s | 🟢 Strong |
-| **ASHBY** | 26 | 26 | **100.0%** | 62.4s | 🟢 Strong |
-| **LEVER** | 20 | 20 | **100.0%** | 67.3s | 🟢 Strong |
-| **SMARTRECRUITERS** | 12 | 0 | **0.0%** | 74.1s | 🔴 Action Required |
-| **WORKDAY** | 14 | 0 | **0.0%** | 46.2s | 🔴 Action Required |
-| **TOTAL** | **100** | **71** | **71.0%** | **72.8s** | **🔴 NEEDS FIX LOOP** |
+| **GREENHOUSE** | 13 | 3 | **23.1%** | 85.3s | 🔴 Action Required |
+| **ASHBY** | 2 | 2 | **100.0%** | 43.4s | 🟢 Strong |
+| **LEVER** | 0 | 0 | **0%** | 0s | 🔴 Action Required |
+| **SMARTRECRUITERS** | 42 | 0 | **0.0%** | 73.3s | 🔴 Action Required |
+| **WORKDAY** | 43 | 0 | **0.0%** | 56.5s | 🔴 Action Required |
+| **TOTAL** | **100** | **5** | **5.0%** | **67.0s** | **🔴 NEEDS FIX LOOP** |
 
 ---
 
@@ -23,11 +23,10 @@
 
 | Failure Bucket | Count | Description / Root Cause |
 | :--- | :---: | :--- |
-| `FAILED_0_FIELDS` | **15** | Form inputs failed to mount / custom apply click or iframe unwrap needed |
-| `FAILED_TIMEOUT` | **9** | Exceeded 45,000ms browser operation timeout |
-| `FAILED_UNFILLED_FIELDS` | **3** | Required question missing from question bank or widget commit failed |
-| `FAILED_NO_SUBMIT_BTN` | **1** | Submit / Next button selector missing from strategy |
-| `FAILED_AUTH_WALL` | **1** | Employer portal enforced login credentials before application form |
+| `FAILED_0_FIELDS` | **55** | Form inputs failed to mount / custom apply click or iframe unwrap needed |
+| `FAILED_TIMEOUT` | **29** | Exceeded 45,000ms browser operation timeout |
+| `FAILED_UNFILLED_FIELDS` | **6** | Required question missing from question bank or widget commit failed |
+| `FAILED_AUTH_WALL` | **5** | Employer portal enforced login credentials before application form |
 
 ---
 
@@ -35,11 +34,21 @@
 
 | Question Prompt | Failures | ATS Providers | Recommended Healer |
 | :--- | :---: | :--- | :--- |
-| "In what city and state do you currently reside?*" | **1** | greenhouse | Add to answers.ts conceptRules / portal-question-bank-1000.ts |
-| "Start date month*" | **1** | greenhouse | Add to answers.ts conceptRules / portal-question-bank-1000.ts |
-| "Are you Hispanic/Latino?" | **1** | greenhouse | Add to answers.ts conceptRules / portal-question-bank-1000.ts |
-| "Password*" | **1** | workday | Add to answers.ts conceptRules / portal-question-bank-1000.ts |
-| "Verify New Password*" | **1** | workday | Add to answers.ts conceptRules / portal-question-bank-1000.ts |
+| "When are you available to start working on a full-time basis?*" | **1** | greenhouse | Add to answers.ts conceptRules / portal-question-bank-1000.ts |
+| "What is your current total annual compensation? * 4,00,000 to 6,00,000 per year" | **1** | greenhouse | Add to answers.ts conceptRules / portal-question-bank-1000.ts |
+| "What is your current total annual compensation? * 7,00,000 to 10,00,000 per year" | **1** | greenhouse | Add to answers.ts conceptRules / portal-question-bank-1000.ts |
+| "What is your current total annual compensation? * 11,00,000 to 15,00,000 per year" | **1** | greenhouse | Add to answers.ts conceptRules / portal-question-bank-1000.ts |
+| "What is your current total annual compensation? * 16,00,000 to 20,00,000 per year" | **1** | greenhouse | Add to answers.ts conceptRules / portal-question-bank-1000.ts |
+| "What is your current total annual compensation? * 21,00,000 to 25,00,000 per year" | **1** | greenhouse | Add to answers.ts conceptRules / portal-question-bank-1000.ts |
+| "What is your current total annual compensation? * 26,00,000 or more per year" | **1** | greenhouse | Add to answers.ts conceptRules / portal-question-bank-1000.ts |
+| "What is your last working date?*" | **1** | greenhouse | Add to answers.ts conceptRules / portal-question-bank-1000.ts |
+| "Personal Data - Required * I accept and agree to Artefact's privacy policy." | **1** | greenhouse | Add to answers.ts conceptRules / portal-question-bank-1000.ts |
+| "Personalised Question * Male" | **1** | greenhouse | Add to answers.ts conceptRules / portal-question-bank-1000.ts |
+| "Personalised Question * Female" | **1** | greenhouse | Add to answers.ts conceptRules / portal-question-bank-1000.ts |
+| "Personalised Question * Prefer not to say" | **1** | greenhouse | Add to answers.ts conceptRules / portal-question-bank-1000.ts |
+| "Key achievements which you would like to highlight*" | **1** | greenhouse | Add to answers.ts conceptRules / portal-question-bank-1000.ts |
+| "What is your CCTC in LPA ?*" | **1** | greenhouse | Add to answers.ts conceptRules / portal-question-bank-1000.ts |
+| "What is your ECTC in LPA ?*" | **1** | greenhouse | Add to answers.ts conceptRules / portal-question-bank-1000.ts |
 
 ---
 
@@ -47,106 +56,106 @@
 
 | # | Company | ATS | Fields Distilled | Fields Filled | Submit Btn | Duration (s) | Status | Outcome / Error Detail |
 | :---: | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
-| 1 | **Udemy** | greenhouse | 93 | 38 | Yes | 152.5 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 2 | **Tanium** | greenhouse | 40 | 19 | Yes | 110.9 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 3 | **splice** | greenhouse | 50 | 23 | Yes | 127.6 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 4 | **3Cloud** | greenhouse | 26 | 11 | Yes | 67.7 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 5 | **metroveincenters** | greenhouse | 41 | 18 | Yes | 111.1 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 6 | **unanet** | greenhouse | 29 | 14 | Yes | 95.5 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 7 | **SpaceX** | greenhouse | 62 | 30 | Yes | 155.6 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 8 | **Apartment Life** | greenhouse | 88 | 34 | Yes | 108.7 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 9 | **At-Bay** | greenhouse | 35 | 16 | Yes | 112.1 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 10 | **Synack SRT** | greenhouse | 28 | 17 | Yes | 67.8 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 11 | **Scout Space** | greenhouse | 22 | 11 | Yes | 88.4 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 12 | **Interbrand** | greenhouse | 33 | 16 | Yes | 108.6 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 13 | **IntelliDyne Jobs for Veterans** | greenhouse | 6 | 4 | Yes | 29.1 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 14 | **Keeper Security** | greenhouse | 5 | 5 | Yes | 44.8 | ❌ `FAILED_UNFILLED_FIELDS` | Required questions unfilled (1 required unfilled / 5 total) |
-| 15 | **Keen Software House** | greenhouse | 24 | 14 | Yes | 71.9 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 16 | **Amwins Global Risks** | greenhouse | 22 | 13 | Yes | 74.8 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 17 | **Diligent Robotics** | greenhouse | 28 | 11 | Yes | 57.6 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 18 | **Toast** | greenhouse | 37 | 17 | Yes | 113.0 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 19 | **Dropbox** | greenhouse | 19 | 10 | Yes | 44.6 | ❌ `FAILED_UNFILLED_FIELDS` | Required questions unfilled (1 required unfilled / 19 total) |
-| 20 | **JFrog** | greenhouse | 26 | 11 | Yes | 72.3 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 21 | **Neo4j** | greenhouse | 36 | 19 | Yes | 121.3 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 22 | **Starburst** | greenhouse | 32 | 17 | Yes | 116.7 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 23 | **BetterHelp** | greenhouse | 59 | 20 | Yes | 88.2 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 24 | **Geotab** | greenhouse | 42 | 28 | Yes | 155.3 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 25 | **bswift** | greenhouse | 82 | 36 | Yes | 176.1 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 26 | **MobilityWare** | greenhouse | 39 | 15 | Yes | 71.1 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 27 | **Clickstop** | greenhouse | 51 | 26 | No | 149.6 | ❌ `FAILED_NO_SUBMIT_BTN` | Submit/Next button not found on hydrated form |
-| 28 | **Convene** | greenhouse | 34 | 15 | Yes | 88.4 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 29 | **GRVT TECHNOLOGIES** | ashby | 21 | 7 | Yes | 45.1 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 30 | **Thorit** | ashby | 20 | 6 | Yes | 49.0 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 31 | **Doppel** | ashby | 12 | 4 | Yes | 35.8 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 32 | **Hiverge Ltd** | ashby | 30 | 8 | Yes | 40.3 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 33 | **Chalk** | ashby | 27 | 9 | Yes | 48.5 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 34 | **Meshy LLC** | ashby | 9 | 3 | Yes | 33.0 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 35 | **Saronic Technologies** | ashby | 86 | 15 | Yes | 64.9 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 36 | **Euphoric Global** | ashby | 15 | 5 | Yes | 36.6 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 37 | **Sprinter Health** | ashby | 54 | 14 | Yes | 58.0 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 38 | **Sailpeak** | ashby | 19 | 6 | Yes | 47.0 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 39 | **Fundamental** | ashby | 31 | 7 | Yes | 60.2 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 40 | **Thought Machine** | ashby | 47 | 11 | Yes | 66.7 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 41 | **DOSS** | ashby | 36 | 9 | Yes | 75.4 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 42 | **Hiya** | ashby | 62 | 16 | Yes | 62.8 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 43 | **Hims & Hers** | ashby | 51 | 12 | Yes | 82.7 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 44 | **Immersive** | ashby | 40 | 12 | Yes | 83.2 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 45 | **Apify Technologies s.r.o.** | ashby | 28 | 9 | Yes | 73.5 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 46 | **Restream** | ashby | 45 | 14 | Yes | 54.3 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 47 | **The Browser Company** | ashby | 76 | 16 | Yes | 66.7 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 48 | **MeridianLink** | ashby | 156 | 30 | Yes | 111.4 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 49 | **Espa Labs** | ashby | 59 | 15 | Yes | 66.2 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 50 | **Sparrow** | ashby | 90 | 18 | Yes | 87.2 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 51 | **Mysten Labs** | ashby | 31 | 8 | Yes | 54.2 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 52 | **Colonist** | ashby | 54 | 13 | Yes | 65.6 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 53 | **Circular Economy Systems** | ashby | 92 | 24 | Yes | 74.9 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 54 | **Chromatic** | ashby | 80 | 11 | Yes | 78.6 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 55 | **Kyivstar** | lever | 31 | 11 | Yes | 61.8 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 56 | **Skillerszone** | lever | 29 | 8 | Yes | 68.8 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 57 | **PIP Labs** | lever | 26 | 6 | Yes | 58.1 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 58 | **Ampeco Ltd** | lever | 30 | 8 | Yes | 69.9 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 59 | **Qualysoft** | lever | 21 | 5 | Yes | 80.8 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 60 | **Doonails** | lever | 30 | 9 | Yes | 73.3 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 61 | **CI&T** | lever | 120 | 26 | Yes | 93.8 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 62 | **Panopto** | lever | 61 | 17 | Yes | 67.1 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 63 | **Lodgify** | lever | 105 | 15 | Yes | 85.8 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 64 | **ANA** | lever | 89 | 19 | Yes | 75.7 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 65 | **Amanotes** | lever | 20 | 2 | Yes | 31.7 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 66 | **Makpar** | lever | 74 | 15 | Yes | 67.6 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 67 | **Outsourced Staff** | lever | 74 | 23 | Yes | 79.9 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 68 | **Dijital Team** | lever | 17 | 4 | Yes | 41.3 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 69 | **Anchorage Digital** | lever | 55 | 9 | Yes | 61.3 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 70 | **Provectus** | lever | 113 | 22 | Yes | 75.6 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 71 | **Palantir** | lever | 84 | 12 | Yes | 60.3 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 72 | **LRDG Language Research Development Group** | lever | 160 | 25 | Yes | 89.9 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 73 | **Cura** | lever | 28 | 6 | Yes | 45.9 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 74 | **Careers In Travel \| Destination Planners** | lever | 30 | 7 | Yes | 56.9 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
-| 75 | **Interviewbit** | smartrecruiters | 0 | 0 | No | 120.0 | ❌ `FAILED_TIMEOUT` | Job execution timed out after 120s |
-| 76 | **Eurofins** | smartrecruiters | 0 | 0 | No | 120.0 | ❌ `FAILED_TIMEOUT` | Job execution timed out after 120s |
-| 77 | **BoschGroup** | smartrecruiters | 0 | 0 | Yes | 9.0 | ❌ `FAILED_0_FIELDS` | job_closed |
-| 78 | **Wabtec** | smartrecruiters | 0 | 0 | Yes | 11.5 | ❌ `FAILED_0_FIELDS` | job_closed |
-| 79 | **Ubisoft** | smartrecruiters | 0 | 0 | No | 120.0 | ❌ `FAILED_TIMEOUT` | Job execution timed out after 120s |
-| 80 | **T-Systems ICT India Pvt. Ltd.** | smartrecruiters | 0 | 0 | Yes | 9.4 | ❌ `FAILED_0_FIELDS` | job_closed |
-| 81 | **Sutherland** | smartrecruiters | 0 | 0 | Yes | 9.2 | ❌ `FAILED_0_FIELDS` | job_closed |
-| 82 | **SQUIRCLE IT CONSULTING SERVICES PVT. LTD** | smartrecruiters | 0 | 0 | No | 120.0 | ❌ `FAILED_TIMEOUT` | Job execution timed out after 120s |
-| 83 | **Smiths Group** | smartrecruiters | 0 | 0 | No | 120.1 | ❌ `FAILED_TIMEOUT` | Job execution timed out after 120s |
-| 84 | **Sia** | smartrecruiters | 0 | 0 | No | 120.0 | ❌ `FAILED_TIMEOUT` | Job execution timed out after 120s |
-| 85 | **REXEL** | smartrecruiters | 0 | 0 | Yes | 9.7 | ❌ `FAILED_0_FIELDS` | job_closed |
-| 86 | **Renesas Electronics** | smartrecruiters | 0 | 0 | No | 120.0 | ❌ `FAILED_TIMEOUT` | Job execution timed out after 120s |
-| 87 | **Mastercard** | workday | 0 | 0 | No | 67.3 | ❌ `FAILED_0_FIELDS` | No supported submit control found |
-| 88 | **Juniper Networks** | workday | 0 | 0 | Yes | 17.2 | ❌ `FAILED_0_FIELDS` | job_closed |
-| 89 | **HPE** | workday | 0 | 0 | Yes | 16.0 | ❌ `FAILED_0_FIELDS` | job_closed |
-| 90 | **Cisco** | workday | 0 | 0 | Yes | 27.1 | ❌ `FAILED_0_FIELDS` | Position closed / no longer accepting applications |
-| 91 | **Hewlett Packard Enterprise** | workday | 0 | 0 | Yes | 15.6 | ❌ `FAILED_0_FIELDS` | job_closed |
-| 92 | **Cencora** | workday | 0 | 0 | Yes | 72.8 | ❌ `FAILED_AUTH_WALL` | Login needs browser review |
-| 93 | **zoom** | workday | 0 | 0 | Yes | 16.5 | ❌ `FAILED_0_FIELDS` | job_closed |
-| 94 | **zebra** | workday | 0 | 0 | Yes | 19.5 | ❌ `FAILED_0_FIELDS` | job_closed |
-| 95 | **Valeo** | workday | 0 | 0 | No | 120.1 | ❌ `FAILED_TIMEOUT` | Job execution timed out after 120s |
-| 96 | **trimble** | workday | 0 | 0 | Yes | 16.5 | ❌ `FAILED_0_FIELDS` | job_closed |
-| 97 | **Trading Technologies** | workday | 0 | 0 | No | 120.4 | ❌ `FAILED_TIMEOUT` | Job execution timed out after 120s |
-| 98 | **tcsedsystem** | workday | 5 | 2 | Yes | 106.3 | ❌ `FAILED_UNFILLED_FIELDS` | Required questions unfilled (2 required unfilled / 5 total) |
-| 99 | **taskus** | workday | 0 | 0 | Yes | 21.5 | ❌ `FAILED_0_FIELDS` | job_closed |
-| 100 | **synechron** | workday | 0 | 0 | Yes | 9.5 | ❌ `FAILED_0_FIELDS` | Job posting is closed or no longer available (404/expired) |
+| 1 | **particle41llc** | greenhouse | 57 | 16 | Yes | 74.5 | ❌ `FAILED_UNFILLED_FIELDS` | Required questions unfilled (8 required unfilled / 57 total) |
+| 2 | **GitLab** | greenhouse | 0 | 0 | No | 120.0 | ❌ `FAILED_TIMEOUT` | Job execution timed out after 120s |
+| 3 | **Graviton Research Capital** | greenhouse | 25 | 9 | Yes | 47.9 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
+| 4 | **Sureify** | greenhouse | 26 | 10 | Yes | 58.4 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
+| 5 | **Artefact** | greenhouse | 39 | 13 | Yes | 65.2 | ❌ `FAILED_UNFILLED_FIELDS` | Required questions unfilled (4 required unfilled / 39 total) |
+| 6 | **capco** | greenhouse | 26 | 10 | Yes | 78.1 | ❌ `FAILED_UNFILLED_FIELDS` | Required questions unfilled (4 required unfilled / 26 total) |
+| 7 | **IMC Trading** | greenhouse | 0 | 0 | No | 120.0 | ❌ `FAILED_TIMEOUT` | Job execution timed out after 120s |
+| 8 | **platformscience** | greenhouse | 23 | 9 | Yes | 59.9 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
+| 9 | **supplyhouse** | greenhouse | 0 | 0 | No | 120.0 | ❌ `FAILED_TIMEOUT` | Job execution timed out after 120s |
+| 10 | **stockx** | greenhouse | 30 | 10 | Yes | 62.6 | ❌ `FAILED_UNFILLED_FIELDS` | Required questions unfilled (1 required unfilled / 30 total) |
+| 11 | **starrez** | greenhouse | 58 | 17 | Yes | 104.5 | ❌ `FAILED_UNFILLED_FIELDS` | Required questions unfilled (2 required unfilled / 58 total) |
+| 12 | **Canonical** | greenhouse | 0 | 0 | No | 120.0 | ❌ `FAILED_TIMEOUT` | Job execution timed out after 120s |
+| 13 | **baublebar** | greenhouse | 30 | 12 | Yes | 77.2 | ❌ `FAILED_UNFILLED_FIELDS` | Required questions unfilled (1 required unfilled / 30 total) |
+| 14 | **Sarvam AI** | ashby | 20 | 6 | Yes | 34.1 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
+| 15 | **Snowflake** | ashby | 61 | 13 | Yes | 52.6 | ✅ `READY_TO_SUBMIT` | Ready to submit (all core & required fields filled, submit button verified) |
+| 16 | **Interviewbit** | smartrecruiters | 0 | 0 | No | 120.0 | ❌ `FAILED_TIMEOUT` | Job execution timed out after 120s |
+| 17 | **SQUIRCLE IT CONSULTING SERVICES PVT. LTD** | smartrecruiters | 0 | 0 | No | 120.0 | ❌ `FAILED_TIMEOUT` | Job execution timed out after 120s |
+| 18 | **Mattel** | smartrecruiters | 0 | 0 | No | 120.0 | ❌ `FAILED_TIMEOUT` | Job execution timed out after 120s |
+| 19 | **Jobs for Humanity** | smartrecruiters | 0 | 0 | No | 120.0 | ❌ `FAILED_TIMEOUT` | Job execution timed out after 120s |
+| 20 | **Jitterbit** | smartrecruiters | 0 | 0 | Yes | 7.6 | ❌ `FAILED_0_FIELDS` | job_closed |
+| 21 | **AMOL TECHNOLOGIES** | smartrecruiters | 0 | 0 | No | 120.0 | ❌ `FAILED_TIMEOUT` | Job execution timed out after 120s |
+| 22 | **Eurofins** | smartrecruiters | 0 | 0 | No | 120.1 | ❌ `FAILED_TIMEOUT` | Job execution timed out after 120s |
+| 23 | **NielsenIQ** | smartrecruiters | 0 | 0 | No | 120.0 | ❌ `FAILED_TIMEOUT` | Job execution timed out after 120s |
+| 24 | **Avaloq** | smartrecruiters | 0 | 0 | No | 120.0 | ❌ `FAILED_TIMEOUT` | Job execution timed out after 120s |
+| 25 | **BoschGroup** | smartrecruiters | 0 | 0 | Yes | 46.5 | ❌ `FAILED_0_FIELDS` | Browser operation timed out; inspect the saved review |
+| 26 | **NECSWS** | smartrecruiters | 0 | 0 | No | 120.0 | ❌ `FAILED_TIMEOUT` | Job execution timed out after 120s |
+| 27 | **Renesas Electronics** | smartrecruiters | 0 | 0 | Yes | 28.3 | ❌ `FAILED_0_FIELDS` | Browser operation timed out; inspect the saved review |
+| 28 | **Juniper Networks** | workday | 0 | 0 | No | 120.0 | ❌ `FAILED_TIMEOUT` | Job execution timed out after 120s |
+| 29 | **HPE** | workday | 0 | 0 | Yes | 46.3 | ❌ `FAILED_0_FIELDS` | Position closed / no longer accepting applications |
+| 30 | **Cisco** | workday | 0 | 0 | Yes | 51.2 | ❌ `FAILED_0_FIELDS` | Position closed / no longer accepting applications |
+| 31 | **Mastercard** | workday | 0 | 0 | Yes | 112.4 | ❌ `FAILED_AUTH_WALL` | Login needs browser review |
+| 32 | **Hewlett Packard Enterprise** | workday | 0 | 0 | Yes | 28.3 | ❌ `FAILED_0_FIELDS` | job_closed |
+| 33 | **trimble** | workday | 0 | 0 | Yes | 29.7 | ❌ `FAILED_0_FIELDS` | job_closed |
+| 34 | **taskus** | workday | 0 | 0 | Yes | 27.9 | ❌ `FAILED_0_FIELDS` | job_closed |
+| 35 | **synechron** | workday | 0 | 0 | Yes | 36.7 | ❌ `FAILED_0_FIELDS` | job_closed |
+| 36 | **Salesforce** | workday | 0 | 0 | Yes | 49.8 | ❌ `FAILED_0_FIELDS` | Position closed / no longer accepting applications |
+| 37 | **Regal Rexnord** | workday | 0 | 0 | Yes | 29.4 | ❌ `FAILED_0_FIELDS` | job_closed |
+| 38 | **Quantiphi** | workday | 0 | 0 | Yes | 32.1 | ❌ `FAILED_0_FIELDS` | job_closed |
+| 39 | **Palo Alto Networks** | workday | 0 | 0 | Yes | 48.3 | ❌ `FAILED_0_FIELDS` | Position closed / no longer accepting applications |
+| 40 | **NXP** | workday | 0 | 0 | Yes | 35.2 | ❌ `FAILED_0_FIELDS` | service_temporarily_unavailable |
+| 41 | **NVIDIA** | workday | 0 | 0 | Yes | 35.5 | ❌ `FAILED_0_FIELDS` | job_closed |
+| 42 | **Zomato** | smartrecruiters | 0 | 0 | Yes | 23.5 | ❌ `FAILED_0_FIELDS` | Browser operation timed out; inspect the saved review |
+| 43 | **michelinhr** | workday | 0 | 0 | Yes | 32.8 | ❌ `FAILED_0_FIELDS` | job_closed |
+| 44 | **Weblee Technologies** | smartrecruiters | 0 | 0 | Yes | 27.0 | ❌ `FAILED_0_FIELDS` | Browser operation timed out; inspect the saved review |
+| 45 | **Medline** | workday | 0 | 0 | Yes | 28.4 | ❌ `FAILED_0_FIELDS` | job_closed |
+| 46 | **Sia** | smartrecruiters | 0 | 0 | Yes | 22.0 | ❌ `FAILED_0_FIELDS` | Browser operation timed out; inspect the saved review |
+| 47 | **lnw** | workday | 0 | 0 | Yes | 53.3 | ❌ `FAILED_0_FIELDS` | job_closed |
+| 48 | **Sensia** | smartrecruiters | 0 | 0 | No | 122.1 | ❌ `FAILED_TIMEOUT` | Job execution timed out after 120s |
+| 49 | **liveramp** | workday | 0 | 0 | Yes | 39.6 | ❌ `FAILED_0_FIELDS` | service_temporarily_unavailable |
+| 50 | **RA** | smartrecruiters | 0 | 0 | Yes | 36.8 | ❌ `FAILED_0_FIELDS` | Browser operation timed out; inspect the saved review |
+| 51 | **KLA** | workday | 0 | 0 | Yes | 77.5 | ❌ `FAILED_0_FIELDS` | Position closed / no longer accepting applications |
+| 52 | **Luceats** | smartrecruiters | 0 | 0 | Yes | 60.1 | ❌ `FAILED_0_FIELDS` | Browser operation timed out; inspect the saved review |
+| 53 | **kantar** | workday | 0 | 0 | Yes | 79.2 | ❌ `FAILED_0_FIELDS` | job_closed |
+| 54 | **Jobnath** | smartrecruiters | 0 | 0 | Yes | 43.2 | ❌ `FAILED_0_FIELDS` | Browser operation timed out; inspect the saved review |
+| 55 | **Johnson Controls** | workday | 0 | 0 | Yes | 70.6 | ❌ `FAILED_0_FIELDS` | Position closed / no longer accepting applications |
+| 56 | **InfraCloud** | smartrecruiters | 0 | 0 | Yes | 56.4 | ❌ `FAILED_0_FIELDS` | Browser operation timed out; inspect the saved review |
+| 57 | **Jj** | workday | 0 | 0 | No | 120.0 | ❌ `FAILED_TIMEOUT` | Job execution timed out after 120s |
+| 58 | **Bringle Excellence** | smartrecruiters | 0 | 0 | Yes | 42.8 | ❌ `FAILED_0_FIELDS` | Browser operation timed out; inspect the saved review |
+| 59 | **harriscomputer** | workday | 0 | 0 | Yes | 37.4 | ❌ `FAILED_0_FIELDS` | Position closed / no longer accepting applications |
+| 60 | **Blend360** | smartrecruiters | 0 | 0 | No | 120.0 | ❌ `FAILED_TIMEOUT` | Job execution timed out after 120s |
+| 61 | **harman** | workday | 0 | 0 | Yes | 31.5 | ❌ `FAILED_0_FIELDS` | job_closed |
+| 62 | **Syngenta Group** | smartrecruiters | 0 | 0 | Yes | 44.0 | ❌ `FAILED_0_FIELDS` | Browser operation timed out; inspect the saved review |
+| 63 | **greif** | workday | 0 | 0 | Yes | 51.9 | ❌ `FAILED_0_FIELDS` | Position closed / no longer accepting applications |
+| 64 | **MSX International** | smartrecruiters | 0 | 0 | Yes | 39.2 | ❌ `FAILED_0_FIELDS` | Browser operation timed out; inspect the saved review |
+| 65 | **globusmedical** | workday | 0 | 0 | Yes | 32.6 | ❌ `FAILED_0_FIELDS` | job_closed |
+| 66 | **Informa Group Plc.** | smartrecruiters | 0 | 0 | No | 121.0 | ❌ `FAILED_TIMEOUT` | Job execution timed out after 120s |
+| 67 | **gartner** | workday | 0 | 0 | Yes | 44.8 | ❌ `FAILED_0_FIELDS` | Position closed / no longer accepting applications |
+| 68 | **Sutherland** | smartrecruiters | 0 | 0 | Yes | 26.7 | ❌ `FAILED_0_FIELDS` | Browser operation timed out; inspect the saved review |
+| 69 | **Fiserv** | workday | 0 | 0 | Yes | 32.0 | ❌ `FAILED_0_FIELDS` | job_closed |
+| 70 | **Smiths Group** | smartrecruiters | 0 | 0 | Yes | 25.5 | ❌ `FAILED_0_FIELDS` | Browser operation timed out; inspect the saved review |
+| 71 | **ddcdine** | workday | 0 | 0 | Yes | 37.6 | ❌ `FAILED_0_FIELDS` | job_closed |
+| 72 | **Assent** | smartrecruiters | 0 | 0 | Yes | 24.9 | ❌ `FAILED_0_FIELDS` | Browser operation timed out; inspect the saved review |
+| 73 | **CrowdStrike** | workday | 0 | 0 | Yes | 29.3 | ❌ `FAILED_0_FIELDS` | job_closed |
+| 74 | **Talentanywhere1** | smartrecruiters | 0 | 0 | Yes | 22.9 | ❌ `FAILED_0_FIELDS` | Browser operation timed out; inspect the saved review |
+| 75 | **copart** | workday | 0 | 0 | No | 120.4 | ❌ `FAILED_TIMEOUT` | Job execution timed out after 120s |
+| 76 | **Ramboll2** | smartrecruiters | 0 | 0 | Yes | 22.3 | ❌ `FAILED_0_FIELDS` | Browser operation timed out; inspect the saved review |
+| 77 | **Citi** | workday | 0 | 0 | Yes | 28.7 | ❌ `FAILED_0_FIELDS` | job_closed |
+| 78 | **QAD, Inc.** | smartrecruiters | 0 | 0 | Yes | 17.9 | ❌ `FAILED_0_FIELDS` | Browser operation timed out; inspect the saved review |
+| 79 | **Centific** | workday | 0 | 0 | No | 120.0 | ❌ `FAILED_TIMEOUT` | Job execution timed out after 120s |
+| 80 | **Lesaffre** | smartrecruiters | 0 | 0 | No | 120.0 | ❌ `FAILED_TIMEOUT` | Job execution timed out after 120s |
+| 81 | **barclays** | workday | 0 | 0 | Yes | 27.4 | ❌ `FAILED_0_FIELDS` | job_closed |
+| 82 | **CustomizedEnergySolutions** | smartrecruiters | 0 | 0 | No | 120.0 | ❌ `FAILED_TIMEOUT` | Job execution timed out after 120s |
+| 83 | **aveva** | workday | 0 | 0 | Yes | 113.9 | ❌ `FAILED_AUTH_WALL` | Login needs browser review |
+| 84 | **CogitateTechnology** | smartrecruiters | 0 | 0 | Yes | 20.7 | ❌ `FAILED_0_FIELDS` | Browser operation timed out; inspect the saved review |
+| 85 | **Amgen** | workday | 0 | 0 | Yes | 117.7 | ❌ `FAILED_AUTH_WALL` | Login needs browser review |
+| 86 | **BetaCraftTechnologies** | smartrecruiters | 0 | 0 | No | 120.0 | ❌ `FAILED_TIMEOUT` | Job execution timed out after 120s |
+| 87 | **Airbus** | workday | 0 | 0 | No | 120.0 | ❌ `FAILED_TIMEOUT` | Job execution timed out after 120s |
+| 88 | **AmazaticSolutions** | smartrecruiters | 0 | 0 | No | 120.0 | ❌ `FAILED_TIMEOUT` | Job execution timed out after 120s |
+| 89 | **Adobe** | workday | 0 | 0 | Yes | 24.9 | ❌ `FAILED_0_FIELDS` | job_closed |
+| 90 | **METRO/MAKRO** | smartrecruiters | 0 | 0 | Yes | 17.5 | ❌ `FAILED_0_FIELDS` | Browser operation timed out; inspect the saved review |
+| 91 | **accendra** | workday | 0 | 0 | Yes | 106.0 | ❌ `FAILED_AUTH_WALL` | Login needs browser review |
+| 92 | **T-Systems ICT India Pvt. Ltd.** | smartrecruiters | 0 | 0 | Yes | 17.4 | ❌ `FAILED_0_FIELDS` | Browser operation timed out; inspect the saved review |
+| 93 | **Abbott** | workday | 0 | 0 | Yes | 98.5 | ❌ `FAILED_AUTH_WALL` | Login needs browser review |
+| 94 | **AFRY** | smartrecruiters | 0 | 0 | No | 120.0 | ❌ `FAILED_TIMEOUT` | Job execution timed out after 120s |
+| 95 | **thehartford** | workday | 0 | 0 | Yes | 25.5 | ❌ `FAILED_0_FIELDS` | job_closed |
+| 96 | **J.S. Held LLC** | smartrecruiters | 0 | 0 | No | 120.0 | ❌ `FAILED_TIMEOUT` | Job execution timed out after 120s |
+| 97 | **qualys** | workday | 0 | 0 | Yes | 24.3 | ❌ `FAILED_0_FIELDS` | job_closed |
+| 98 | **ASSYSTEM** | smartrecruiters | 0 | 0 | No | 120.0 | ❌ `FAILED_TIMEOUT` | Job execution timed out after 120s |
+| 99 | **Wustl** | workday | 0 | 0 | Yes | 22.8 | ❌ `FAILED_0_FIELDS` | job_closed |
+| 100 | **Ramboll** | smartrecruiters | 0 | 0 | No | 120.0 | ❌ `FAILED_TIMEOUT` | Job execution timed out after 120s |
 
 ---
-*Report generated autonomously by `scripts/dry-run-100-jobs-harness.ts` on 2026-11-10T19:20:54.350Z.*
+*Report generated autonomously by `scripts/dry-run-100-jobs-harness.ts` on 2026-11-13T10:15:55.603Z.*

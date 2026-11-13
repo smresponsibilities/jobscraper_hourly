@@ -3,7 +3,7 @@ import dns from 'node:dns';
 export interface DiscoveredAtsBoard {
   company: string;
   domain: string;
-  ats: 'greenhouse' | 'ashby' | 'lever' | 'smartrecruiters' | 'workday';
+  ats: 'greenhouse' | 'ashby' | 'lever' | 'smartrecruiters' | 'workday' | 'workable' | 'recruitee' | 'breezy';
   boardSlug: string;
   boardUrl: string;
   discoveredVia: 'slug_permutation' | 'career_html' | 'dns_cname';
@@ -61,11 +61,15 @@ export function extractAtsLinksFromHtml(html: string): Array<{
   const seen = new Set<string>();
   const add = (ats: DiscoveredAtsBoard['ats'], boardSlug: string, boardUrl: string) => {
     const key = `${ats}:${boardSlug.toLowerCase()}`;
-    if (seen.has(key) || /^(?:embed|js|api|v1|v0|oneclick-ui|company|assets|static)$/i.test(boardSlug)) return;
+    if (seen.has(key) || /^(?:embed|js|api|v1|v0|css|oneclick-ui|company|assets|static)(?::|$)/i.test(boardSlug) || /^(?:stripe|avoca|ssctech|paypal)(?:[._:-]|$)/i.test(boardSlug)) return;
     seen.add(key);
     found.push({ ats, boardSlug, boardUrl });
   };
 
+  const ghEmbeds = html.replace(/&amp;/gi, '&').matchAll(/https?:\/\/(?:boards|job-boards(?:\.eu)?)\.greenhouse\.io\/embed\/job_board(?:\/js)?\?[^\s"'<>]*?\bfor=([a-zA-Z0-9_-]{2,50})(?=[&#\s"'<>]|$)/gi);
+  for (const m of ghEmbeds) {
+    if (m[1]) add('greenhouse', m[1], `https://boards.greenhouse.io/${m[1]}`);
+  }
   const ghMatches = html.matchAll(
     /https?:\/\/(?:boards|job-boards(?:\.eu)?)\.greenhouse\.io\/(?:embed\/job_board\?for=)?([a-zA-Z0-9_-]{2,50})/g
   );
@@ -81,6 +85,15 @@ export function extractAtsLinksFromHtml(html: string): Array<{
   const leverMatches = html.matchAll(/https?:\/\/jobs\.lever\.co\/([a-zA-Z0-9_-]{2,50})/g);
   for (const m of leverMatches) {
     if (m[1]) add('lever', m[1], `https://jobs.lever.co/${m[1]}`);
+  }
+
+  for (const m of html.matchAll(/https?:\/\/apply\.workable\.com\/([a-zA-Z0-9_-]{2,50})(?=[/?#\s"'<>]|$)/gi)) {
+    if (m[1]) add('workable', m[1], `https://apply.workable.com/${m[1]}`);
+  }
+  for (const m of html.matchAll(/https?:\/\/([a-zA-Z0-9-]{2,63})\.(recruitee\.com|breezy\.hr)(?=[:/?#\s"'<>]|$)/gi)) {
+    if (!m[1] || !m[2]) continue;
+    const ats = m[2].toLowerCase() === 'recruitee.com' ? 'recruitee' : 'breezy';
+    add(ats, m[1], `https://${m[1].toLowerCase()}.${m[2].toLowerCase()}`);
   }
 
   const srMatches = html.matchAll(/https?:\/\/jobs\.smartrecruiters\.com\/([a-zA-Z0-9_-]{2,50})/g);

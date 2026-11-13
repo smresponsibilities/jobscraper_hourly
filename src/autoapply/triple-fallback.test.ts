@@ -323,11 +323,12 @@ test('Subsystem C: findAdaptiveLocator relocates via Tier 1, Tier 2 (Scrapling s
   }
 });
 
-test('Subsystem D: 3-tier Session & Auth Pool (Crawlee, local state + cooldowns, .env live minting)', async () => {
+test('Subsystem D: sessions reuse real state without fabricating authentication', async () => {
   const browser = await chromium.launch({ channel: 'chrome', headless: true });
   const context = await browser.newContext();
 
-  const tempSessionDir = path.resolve('out/test-temp/sessions');
+  fs.mkdirSync(path.resolve('out/test-temp'), { recursive: true });
+  const tempSessionDir = fs.mkdtempSync(path.resolve('out/test-temp/sessions-'));
   const tempHealthPath = path.resolve('out/test-temp/portal-review/test-health.json');
   fs.mkdirSync(tempSessionDir, { recursive: true });
   fs.mkdirSync(path.dirname(tempHealthPath), { recursive: true });
@@ -360,7 +361,7 @@ test('Subsystem D: 3-tier Session & Auth Pool (Crawlee, local state + cooldowns,
     // Reset health to allow request
     await markResilientSessionGood(testUrl, t1.crawleeSession, tempHealthPath);
 
-    // 3. Tier 3: Live .env credential session minting
+    // 3. Credentials alone must not fabricate an authenticated session.
     const t3 = await mintLiveSessionTier3(context, testUrl, {
       baseDir: tempSessionDir,
       credentials: {
@@ -372,14 +373,10 @@ test('Subsystem D: 3-tier Session & Auth Pool (Crawlee, local state + cooldowns,
     });
 
     assert.equal(t3.tier, 3);
-    assert.equal(t3.loaded, true);
-    assert.equal(t3.minted, true);
-    assert(fs.existsSync(t3.storageStatePath!), 'Tier 3 should write fresh storageState to disk');
-
-    // Verify Crawlee session pool now recognizes minted cookies even without context
-    const t1WithCookies = await getSessionTier1(undefined, testUrl);
-    assert(t1WithCookies !== null);
-    assert.equal(t1WithCookies.loaded, true, 'Crawlee session pool should report loaded: true when cookies exist');
+    assert.equal(t3.loaded, false);
+    assert.equal(t3.minted, false);
+    assert.equal(fs.existsSync(t3.storageStatePath!), false);
+    assert.equal((await context.cookies()).some(cookie => cookie.name === 'auth_session_minted'), false);
 
     // 4. Master Coordinator getResilientSession across all tiers
     const masterRes = await getResilientSession(context, testUrl, {
@@ -388,9 +385,10 @@ test('Subsystem D: 3-tier Session & Auth Pool (Crawlee, local state + cooldowns,
       forceTier: 3,
     });
     assert.equal(masterRes.tier, 3);
-    assert(masterRes.loaded);
+    assert.equal(masterRes.loaded, false);
   } finally {
     await context.close();
     await browser.close();
+    fs.rmSync(tempSessionDir, { recursive: true, force: true });
   }
 });

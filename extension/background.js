@@ -2,6 +2,8 @@
  * Jobscraper Companion - Background Service Worker (Manifest V3)
  */
 
+chrome.storage.local.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' });
+
 chrome.runtime.onInstalled.addListener(() => {
   console.log('Jobscraper Companion extension installed.');
 
@@ -125,42 +127,26 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  // Ticket GEN-462: Real-time Semantic Brain Synchronization with Dashboard
-  if (message.type === 'SYNC_BRAIN') {
-    fetch('http://localhost:4321/api/extension-brain')
-      .then((res) => res.json())
-      .then((data) => {
-        if (data && data.semanticMemory) {
-          chrome.storage.local.set({
-            semanticMemory: data.semanticMemory,
-            candidateSummary: data.candidateSummary,
-            resumePaths: data.resumePaths,
-            brainUpdatedAt: data.updatedAt,
-          }, () => {
-            sendResponse({ success: true, ruleCount: data.ruleCount });
-          });
-        } else {
-          sendResponse({ success: false, error: 'Invalid response from brain endpoint' });
-        }
-      })
-      .catch((err) => sendResponse({ success: false, error: err.message }));
+  if (message.type === 'SYNC_BRAIN' || message.type === 'LEARN_FIELD' || message.type === 'RESOLVE_FIELDS') {
+    if (!sender.url?.startsWith(chrome.runtime.getURL(''))) {
+      sendResponse({ success: false, error: 'Extension page required' });
+      return false;
+    }
+    chrome.storage.local.get(['dashboardToken'], async ({ dashboardToken }) => {
+      if (!dashboardToken) { sendResponse({ success: false, error: 'Dashboard token not configured' }); return; }
+      try {
+        const request = message.type === 'SYNC_BRAIN' ? { method: 'GET' } : {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(message.type === 'RESOLVE_FIELDS' ? { fields: message.fields, jobUrl: message.jobUrl } : { questionText: message.questionText, resolvedValue: message.resolvedValue, factKey: message.factKey }),
+        };
+        const response = await fetch('http://127.0.0.1:4321/api/extension-brain', { ...request, headers: { ...request.headers, Authorization: `Bearer ${dashboardToken}` } });
+        const data = await response.json();
+        if (!response.ok) { sendResponse({ success: false, error: data.error || 'Dashboard request failed' }); return; }
+        if (message.type === 'SYNC_BRAIN') await chrome.storage.local.set({ semanticMemory: data.semanticMemory, candidateSummary: data.candidateSummary, resumePaths: data.resumePaths, brainUpdatedAt: data.updatedAt });
+        sendResponse({ success: true, data });
+      } catch (error) { sendResponse({ success: false, error: error.message }); }
+    });
     return true;
   }
 
-  if (message.type === 'LEARN_FIELD') {
-    fetch('http://localhost:4321/api/extension-brain', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        questionText: message.questionText,
-        resolvedValue: message.resolvedValue,
-        linkedCategory: message.linkedCategory || 'extension_sync',
-        confidence: message.confidence || 0.85,
-      }),
-    })
-      .then((res) => res.json())
-      .then((data) => sendResponse({ success: true, data }))
-      .catch((err) => sendResponse({ success: false, error: err.message }));
-    return true;
-  }
 });

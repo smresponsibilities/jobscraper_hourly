@@ -1,4 +1,4 @@
-import { stopFlagPath } from '../src/autoapply/daemon-control.js';
+import { stopFlagPath, isStopRequested } from '../src/autoapply/daemon-control.js';
 // scripts/run-overnight-marathon.ts
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -539,7 +539,7 @@ export async function runOvernightMarathon(config: {
 
   process.on('SIGHUP', () => {
     const stopFlag = stopFlagPath(stateDir);
-    if (fs.existsSync(stopFlag)) {
+    if (isStopRequested(stateDir)) {
       console.log('[MARATHON] SIGHUP received and STOP_AUTOAPPLY.flag set. Exiting cleanly.');
       process.exit(0);
     } else {
@@ -552,7 +552,7 @@ export async function runOvernightMarathon(config: {
       cycleIndex++;
 
       const stopFlag = stopFlagPath(stateDir);
-      if (fs.existsSync(stopFlag)) {
+      if (isStopRequested(stateDir)) {
         console.log(`[MARATHON] STOP_AUTOAPPLY.flag detected at ${stopFlag}. Explicit operator stop requested. Exiting.`);
         break;
       }

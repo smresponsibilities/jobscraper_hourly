@@ -45,7 +45,7 @@ function windowsProcessStart(pid: number): number | undefined {
   if (process.platform !== 'win32') return undefined;
   try {
     const command = `(Get-Process -Id ${pid} -ErrorAction Stop).StartTime.ToUniversalTime().ToString('o')`;
-    const value = Date.parse(execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], { encoding: 'utf8', timeout: 5000, windowsHide: true }).trim());
+    const value = Date.parse(execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `$ProgressPreference = 'SilentlyContinue'; ${command}`], { encoding: 'utf8', timeout: 5000, windowsHide: true }).trim());
     return Number.isFinite(value) ? value : undefined;
   } catch { return undefined; }
 }

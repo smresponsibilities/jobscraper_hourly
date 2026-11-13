@@ -64,6 +64,13 @@ test('verification accepts only authenticated, allowlisted, correctly addressed 
   assert.equal(verificationFromMail({ ...message, receivedAt: 'not-a-date' }, request), undefined);
 });
 
+test('Greenhouse HTML verification code is grounded in the authenticated message', () => {
+  const html = { ...message, text: 'Your verification code is below.', html: '<strong>aB12Cd34</strong>' };
+  assert.equal(verificationFromMail(html, request)?.code, 'aB12Cd34');
+  assert.equal(verificationFromMail({ ...html, authenticated: false }, request), undefined);
+  assert.equal(verificationFromMail({ ...html, html: '<strong>SECURITY</strong>' }, request), undefined);
+});
+
 test('activation links require the application host and an explicit verification path', () => {
   const verification = { ...request, provider: 'workday', applicationUrl: 'https://fixture.wd1.myworkdayjobs.com/External/job/Engineer_R1' };
   const mail = { ...message, from: ['no-reply@myworkday.com'], subject: 'Activate your account', text: 'Activate your account: https://fixture.wd1.myworkdayjobs.com/External/verify?token=fixture' };
@@ -78,6 +85,14 @@ test('Workday OTP sender is accepted only with authentication and tenant-bound a
   assert(verificationFromMail(mail, verification)?.activationUrl);
   assert.equal(verificationFromMail({ ...mail, authenticated: false }, verification), undefined);
   assert.equal(verificationFromMail({ ...mail, from: ['no-reply@otp.workday.com.evil.test'] }, verification), undefined);
+});
+
+test('wrapped Workday activation remains bound to the application tenant', () => {
+  const verification = { ...request, provider: 'workday', applicationUrl: 'https://fixture.wd1.myworkdayjobs.com/External/job/Engineer_R1' };
+  const target = 'https://fixture.wd1.myworkdayjobs.com/External/activate/token';
+  const mail = { ...message, from: ['no-reply@myworkday.com'], subject: 'Activate your account', text: `Activate: https://redirect.example.test/?url=${encodeURIComponent(target)}` };
+  assert.equal(verificationFromMail(mail, verification)?.activationUrl, target);
+  assert.equal(verificationFromMail(mail, { ...verification, applicationUrl: 'https://other.wd1.myworkdayjobs.com/External/job/Engineer_R1' }), undefined);
 });
 
 test('generic Workday activation is correlated by exact tenant link without a company-name body', () => {

@@ -12,7 +12,7 @@ import {
   BorderStyle,
   AlignmentType,
 } from 'docx';
-import { chromium, type Browser } from 'patchright';
+import { chromium, type Browser, type Page } from 'patchright';
 import type { CandidateExtendedProfile } from '../autoapply/types.js';
 
 export type DynamicArchetype =
@@ -225,9 +225,10 @@ export interface ResumeProject {
   title: string;
   stack: string;
   bullets: string[];
+  url?: string;
 }
 
-export function getArchetypeProjects(archetype: ResumeArchetype | RoleArchetype, all = false): ResumeProject[] {
+export function getArchetypeProjects(archetype: ResumeArchetype | RoleArchetype, all = false, fullPortfolio = false): ResumeProject[] {
   const norm = String(archetype).toUpperCase();
 
   const PROJECT_CLICKHOUSE: ResumeProject = {
@@ -286,10 +287,27 @@ export function getArchetypeProjects(archetype: ResumeArchetype | RoleArchetype,
     ],
   };
 
-  if (all) return [PROJECT_CLICKHOUSE, PROJECT_QUIZDECK, PROJECT_CHAINCODE, PROJECT_SHOPIFY, PROJECT_FERTILIZER,
+  if (all && !fullPortfolio) return [PROJECT_CLICKHOUSE, PROJECT_QUIZDECK, PROJECT_CHAINCODE, PROJECT_SHOPIFY, PROJECT_FERTILIZER,
     { title: 'Productivity Caller', stack: 'Kotlin, Jetpack Compose, Android SDK, NLP Parser', bullets: ['Developed a native Android reminder application with automated call scheduling and a pattern-based natural language task parser.'] },
     { title: "SM'S DEX", stack: 'Astro, TypeScript, Python, GitHub Actions CI/CD', bullets: ['Built a static platform with automated GitHub Actions deployment and Python pull-request validation.'] },
     { ...PROJECT_SMS_DEX, title: 'Terminal Wordle & Clickless', stack: 'C99, WebAssembly, Rust' }];
+
+  if (all) return [
+    { title: 'Productivity Caller', stack: 'Kotlin, Jetpack Compose, Android SDK, NLP Parser', bullets: ['Developed an Android reminder application with scheduled calls and a pattern-based natural language parser.'], url: 'https://shivammahajan.com/projects/productivity-caller/' },
+    { title: "SM'S DEX", stack: 'Astro, TypeScript, Python, GitHub Actions CI/CD', bullets: ['Built a static platform with automated GitHub Actions deployment and Python pull-request validation.'], url: 'https://shivammahajan.com/projects/sm-dex/' },
+    { ...PROJECT_CHAINCODE, url: 'https://shivammahajan.com/projects/chaincode/' },
+    { ...PROJECT_QUIZDECK, url: 'https://github.com/smresponsibilities/QuizDeck' },
+    { ...PROJECT_SHOPIFY, url: 'https://github.com/smresponsibilities/Xeno2' },
+    { ...PROJECT_CLICKHOUSE, url: 'https://github.com/smresponsibilities/Ingestion-Tool' },
+    { ...PROJECT_FERTILIZER, url: 'https://github.com/smresponsibilities/fertilizertypeapi' },
+    { title: 'JobScraper Hourly', stack: 'TypeScript, Node.js, ATS Scraping', bullets: ['Built an automated crawler that sends hourly job alerts from company ATS boards.'], url: 'https://github.com/smresponsibilities/jobscraper_hourly' },
+    { title: 'Flight Sun Tracker', stack: 'TypeScript, Canvas, Aviation Math', bullets: ['Built an interactive tool for flight paths and sun exposure relative to passenger seating.'], url: 'https://shivammahajan.com/projects/flight-sun-tracker/' },
+    { title: 'Postie', stack: 'JavaScript, Fetch API, LocalStorage', bullets: ['Built a browser-based HTTP API client with request editing and local history.'], url: 'https://shivammahajan.com/projects/postie/' },
+    { title: 'Python Game Arcade', stack: 'Python, Terminal ASCII', bullets: ['Built a command-line arcade with five mini-games.'], url: 'https://github.com/smresponsibilities/Gamehub' },
+    { title: 'Clickless', stack: 'Rust, Low-Level OS Hooks', bullets: ['Built a keyboard-driven pointer navigation tool with an on-screen target grid.'], url: 'https://github.com/smresponsibilities/clickless' },
+    { title: 'Terminal Wordle', stack: 'C99, WebAssembly, Terminal ANSI', bullets: ['Built a terminal Wordle game with a C99 WebAssembly engine.'], url: 'https://shivammahajan.com/projects/wordle/' },
+    { title: '2002 Days of Code Challenge', stack: 'Python, Kotlin, Java, Algorithms', bullets: ['Maintained a multi-year coding and algorithm practice project.'], url: 'https://github.com/smresponsibilities/1001daysofcode' },
+  ];
 
   if (norm.includes('DATA')) {
     return [PROJECT_CLICKHOUSE, PROJECT_MORGAN_STANLEY, PROJECT_SHOPIFY];
@@ -307,6 +325,43 @@ export function getArchetypeProjects(archetype: ResumeArchetype | RoleArchetype,
     return [PROJECT_MORGAN_STANLEY, PROJECT_CLICKHOUSE, PROJECT_QUIZDECK];
   }
   return [PROJECT_MORGAN_STANLEY, PROJECT_QUIZDECK, PROJECT_CLICKHOUSE];
+}
+
+export function getPortfolioProjects(): ResumeProject[] {
+  return getArchetypeProjects('BACKEND', true, true);
+}
+
+export function generateComplementaryCoverLetterText(params: { companyName: string; jobTitle: string; jdText: string; resumeSelectedProjectIds?: string[] }): { text: string; wordCount: number; citedProjects: string[]; keywordDensityOk: boolean } {
+  const company = params.companyName.trim();
+  const role = params.jobTitle.trim();
+  if (!company || !role || company.length > 100 || role.length > 120 || /[\x00-\x1f\x7f]/.test(company + role)) throw new Error('Company and role are required');
+  const normalizeId = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const firstResumeId = normalizeId(params.resumeSelectedProjectIds?.[0] || '');
+  const projects = getPortfolioProjects().filter(project => {
+    const id = normalizeId(project.title);
+    return !firstResumeId || (id !== firstResumeId && !(firstResumeId.length >= 4 && id.startsWith(`${firstResumeId} `)));
+  });
+  const candidates = projects.map(project => ({ id: project.title, text: `${project.title} ${project.stack} ${project.bullets.join(' ')}`, project }));
+  const weights = tokenizeJdAndExtractWeights(params.jdText, role);
+  const selected = selectItemsViaSubmodularMmr(candidates, weights, 2).selected.map(candidate => candidate.project);
+  if (selected.length !== 2) throw new Error('Two portfolio projects are required');
+  const [first, second] = selected as [ResumeProject, ResumeProject];
+  const text = [
+    `Dear ${company} hiring team,`,
+    `I am applying for the ${role} position at ${company}. My background combines software development with data engineering. As a Technology Apprentice at Morgan Stanley, I worked with Java Spring Boot, Apache Kafka, PySpark, Spark, Hive and Azure Snowflake on customer identity and access management, processing more than 5,000,000 events. That experience introduced me to the practical demands of handling data and building software within a large organization.`,
+    `My independent work offers additional examples relevant to this application. ${first.title}: ${first.bullets[0]} ${second.title}: ${second.bullets[0]} These projects cover different parts of the development process, from understanding a problem and choosing an approach to implementing and reviewing a working result. You can explore the projects, their source code and further technical context at https://shivammahajan.com/projects/. I would be glad to discuss the design decisions and tradeoffs behind either example.`,
+    `For this role, I would bring the experience gained from both the apprenticeship and these independent projects. I value clear requirements, careful implementation and the opportunity to learn from feedback. I would welcome a conversation about the work your team needs and how my background could contribute. Thank you for considering my application. I am available to start immediately and can provide further details or examples upon request.`,
+    `Sincerely,\nShivam Mahajan`,
+  ].join('\n\n');
+  const keywords = ['java', 'python', 'pyspark', 'kafka', 'spark', 'snowflake', 'typescript', 'javascript', 'react', 'rust', 'c99', 'webassembly', 'node.js', 'next.js', 'sql', 'postgresql', 'clickhouse', 'kotlin', 'flask', 'xgboost'];
+  const keywordDensityOk = keywords.every(keyword => {
+    const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return (text.match(new RegExp(`(?<![a-z0-9])${escaped}(?![a-z0-9])`, 'gi')) || []).length <= 4;
+  });
+  const wordCount = text.trim().split(/\s+/).length;
+  if (wordCount < 180 || wordCount > 280) throw new Error('Cover letter word count is outside the required range');
+  if (!keywordDensityOk) throw new Error('Cover letter keyword density requires review');
+  return { text, wordCount, citedProjects: selected.map(project => project.title), keywordDensityOk };
 }
 
 function keywordOverlap(text: string, terms: string[]): number {
@@ -774,6 +829,27 @@ export function enforceGlobalTermFrequencyCeiling(htmlContent: string, maxLimit 
   return modifiedHtml;
 }
 
+function verifiedResumeContacts(candidate: CandidateExtendedProfile) {
+  const person = candidate.personal;
+  const fullName = (person?.fullName || [person?.firstName, person?.lastName].filter(Boolean).join(' ')).trim();
+  // This catalogue contains candidate-specific work and education facts.
+  if (!/^shivam\s+mahajan$/i.test(fullName)) throw new Error('Candidate-specific resume requires the matching profile');
+  const safeUrl = (value?: string) => {
+    try { const url = new URL(value || ''); return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password ? url.href : ''; } catch { return ''; }
+  };
+  const phone = person.phone || process.env.AUTOAPPLY_PHONE || '';
+  return {
+    fullName,
+    email: person.email || process.env.AUTOAPPLY_EMAIL || '',
+    phone: person.phoneCountryCode && phone && !phone.startsWith('+') ? `${person.phoneCountryCode} ${phone}` : phone,
+    location: [person.city, person.state, person.country].filter(Boolean).join(', '),
+    linkedin: safeUrl(person.linkedinUrl),
+    github: safeUrl(person.githubUrl),
+  };
+}
+
+const escapeResumeHtml = (value: string) => value.replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]!));
+
 export function generateResumeHtml(
   candidate: CandidateExtendedProfile,
   archetype: ResumeArchetype | RoleArchetype,
@@ -795,27 +871,15 @@ export function generateResumeHtml(
     skillCategories = getArchetypeCategorizedSkills(archetype, roleTitle, jdText);
   }
 
-  const p = (candidate as any).profile?.personal || (candidate as any).personal || (candidate as any).basics || {};
-  const fullName = [p.firstName, p.lastName].filter(Boolean).join(' ') || (candidate as any).name || 'Shivam Mahajan';
-  let email = process.env.AUTOAPPLY_EMAIL || p.email || (candidate as any).basics?.email || '';
-  if (!email) {
-    try {
-      const cj = JSON.parse(fs.readFileSync(path.resolve('state/autoapply/portal-review/candidate.json'), 'utf8'));
-      email = process.env.AUTOAPPLY_EMAIL || cj.personal?.email || cj.basics?.email || '';
-    } catch {
-      email = process.env.AUTOAPPLY_EMAIL || '';
-    }
-  }
-  let phone = process.env.AUTOAPPLY_PHONE || p.phone || '';
-  if (p.phoneCountryCode && !phone.startsWith('+')) {
-    phone = `${p.phoneCountryCode} ${phone}`;
-  }
-  const locationParts = [p.city, p.state, p.country].filter(Boolean);
-  const location = locationParts.length > 0 ? locationParts.join(', ') : 'Bengaluru, Karnataka, India';
-  const linkedinRaw = p.linkedinUrl || 'https://www.linkedin.com/in/mahajanshivam';
-  const linkedinClean = linkedinRaw.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '');
-  const githubRaw = p.githubUrl || 'https://github.com/smresponsibilities';
-  const githubClean = githubRaw.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '');
+  const contacts = verifiedResumeContacts(candidate);
+  const fullName = escapeResumeHtml(contacts.fullName);
+  const email = escapeResumeHtml(contacts.email);
+  const phone = escapeResumeHtml(contacts.phone);
+  const location = escapeResumeHtml(contacts.location);
+  const linkedinRaw = escapeResumeHtml(contacts.linkedin);
+  const linkedinClean = escapeResumeHtml(contacts.linkedin.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, ''));
+  const githubRaw = escapeResumeHtml(contacts.github);
+  const githubClean = escapeResumeHtml(contacts.github.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, ''));
 
   const skillLinesHtml = Object.entries(skillCategories)
     .map(
@@ -952,14 +1016,10 @@ export function generateResumeHtml(
   <div class="header">
     <h1 class="name">${fullName}</h1>
     <div class="contact-bar">
-      <span>${location}</span> |
-      <span>${phone}</span> |
-      <span><a href="mailto:${email}">${email}</a></span>
+      ${[location, phone, email ? `<a href="mailto:${email}">${email}</a>` : ''].filter(Boolean).map(item => `<span>${item}</span>`).join(' | ')}
     </div>
     <div class="contact-bar" style="margin-top: 2px;">
-      <span><a href="https://shivammahajan.com">shivammahajan.com</a></span> |
-      <span><a href="${linkedinRaw}">${linkedinClean}</a></span> |
-      <span><a href="${githubRaw}">${githubClean}</a></span>
+      ${['<a href="https://shivammahajan.com">shivammahajan.com</a>', linkedinRaw ? `<a href="${linkedinRaw}">${linkedinClean}</a>` : '', githubRaw ? `<a href="${githubRaw}">${githubClean}</a>` : ''].filter(Boolean).map(item => `<span>${item}</span>`).join(' | ')}
     </div>
   </div>
 
@@ -1027,27 +1087,9 @@ export async function buildDocxWithLibrary(
   const skillCategories = getArchetypeCategorizedSkills(archetype, roleTitle, jdText);
   const projects = roleTitle || jdText ? selectTop3ProjectsForJd(roleTitle, jdText) : getArchetypeProjects(archetype);
 
-  const p = (candidate as any).profile?.personal || (candidate as any).personal || (candidate as any).basics || {};
-  const fullName = [p.firstName, p.lastName].filter(Boolean).join(' ') || (candidate as any).name || 'Shivam Mahajan';
-  let email = process.env.AUTOAPPLY_EMAIL || p.email || (candidate as any).basics?.email || '';
-  if (!email) {
-    try {
-      const cj = JSON.parse(fs.readFileSync(path.resolve('state/autoapply/portal-review/candidate.json'), 'utf8'));
-      email = process.env.AUTOAPPLY_EMAIL || cj.personal?.email || cj.basics?.email || '';
-    } catch {
-      email = process.env.AUTOAPPLY_EMAIL || '';
-    }
-  }
-  let phone = process.env.AUTOAPPLY_PHONE || p.phone || '';
-  if (p.phoneCountryCode && !phone.startsWith('+')) {
-    phone = `${p.phoneCountryCode} ${phone}`;
-  }
-  const locationParts = [p.city, p.state, p.country].filter(Boolean);
-  const location = locationParts.length > 0 ? locationParts.join(', ') : 'Bengaluru, Karnataka, India';
-  const linkedinRaw = p.linkedinUrl || 'https://www.linkedin.com/in/mahajanshivam';
-  const linkedinClean = linkedinRaw.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '');
-  const githubRaw = p.githubUrl || 'https://github.com/smresponsibilities';
-  const githubClean = githubRaw.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '');
+  const { fullName, email, phone, location, linkedin, github } = verifiedResumeContacts(candidate);
+  const linkedinClean = linkedin.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '');
+  const githubClean = github.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '');
 
   const doc = new Document({
     sections: [
@@ -1084,7 +1126,7 @@ export async function buildDocxWithLibrary(
             spacing: { after: 20 },
             children: [
               new TextRun({
-                text: `${location}  |  ${phone}  |  ${email}`,
+                text: [location, phone, email].filter(Boolean).join('  |  '),
                 size: 18,
                 font: 'Calibri',
                 color: '475569',
@@ -1098,7 +1140,7 @@ export async function buildDocxWithLibrary(
             spacing: { after: 120 },
             children: [
               new TextRun({
-                text: `shivammahajan.com  |  ${linkedinClean}  |  ${githubClean}`,
+                text: ['shivammahajan.com', linkedinClean, githubClean].filter(Boolean).join('  |  '),
                 size: 18,
                 font: 'Calibri',
                 color: '475569',
@@ -1566,12 +1608,13 @@ export async function buildTailoredResumePair(
 }
 
 export function inspectPdfPageCount(pdfBuffer: Buffer): number {
+  if (!pdfBuffer.subarray(0, 5).equals(Buffer.from('%PDF-'))) return 0;
   const str = pdfBuffer.toString('latin1');
   const pageMatches = str.match(/\/Type\s*\/Page\b/g);
   if (pageMatches && pageMatches.length > 0) return pageMatches.length;
   const countMatch = str.match(/\/Count\s+(\d+)/);
   if (countMatch && countMatch[1]) return parseInt(countMatch[1], 10);
-  return 1;
+  return 0;
 }
 
 /**
@@ -1584,10 +1627,12 @@ export function verifyPdfVisualGeometry(pdfBuffer: Buffer): {
   validSinglePage: boolean;
   byteSize: number;
   hasOverflowWarning: boolean;
+  geometryVerified: boolean;
 } {
   const pageCount = inspectPdfPageCount(pdfBuffer);
   const byteSize = pdfBuffer.length;
-  let hasOverflowWarning = false;
+  // Raw stream inspection cannot prove the final geometry of a compressed PDF.
+  let hasOverflowWarning = true;
 
   // 1. Hard check: page count must be 1 and size > 5000 bytes
   if (pageCount !== 1 || byteSize < 5000) {
@@ -1596,6 +1641,7 @@ export function verifyPdfVisualGeometry(pdfBuffer: Buffer): {
       validSinglePage: false,
       byteSize,
       hasOverflowWarning: true,
+      geometryVerified: false,
     };
   }
 
@@ -1621,6 +1667,7 @@ export function verifyPdfVisualGeometry(pdfBuffer: Buffer): {
     validSinglePage: pageCount === 1,
     byteSize,
     hasOverflowWarning,
+    geometryVerified: false,
   };
 }
 
@@ -1644,6 +1691,32 @@ export function detectRoleArchetype(jobTitle: string, jd = ''): RoleArchetype {
   return 'GENERAL_SWE';
 }
 
+/** Check printed text bounds in the same page used to render the PDF. */
+export async function verifyPrintableResumeLayout(page: Page): Promise<{ valid: boolean; overflowCount: number }> {
+  return page.evaluate(() => {
+    const width = 698, height = 1035;
+    const body = document.body;
+    if (!body) return { valid: false, overflowCount: 1 };
+    const origin = body.getBoundingClientRect();
+    const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT);
+    let overflowCount = 0;
+    while (walker.nextNode()) {
+      const node = walker.currentNode;
+      if (!node.textContent?.trim()) continue;
+      const parent = node.parentElement;
+      if (!parent) continue;
+      const style = getComputedStyle(parent);
+      if (style.display === 'none' || style.visibility === 'hidden') continue;
+      const range = document.createRange(); range.selectNodeContents(node);
+      for (const rect of range.getClientRects()) {
+        if (rect.width > 0 && rect.height > 0 && (rect.left < origin.left - 1 || rect.right > origin.left + width + 1 || rect.top < origin.top - 1 || rect.bottom > origin.top + height + 1)) overflowCount++;
+      }
+      range.detach();
+    }
+    return { valid: overflowCount === 0, overflowCount };
+  });
+}
+
 export async function buildResumePdf(html: string, outputPath: string): Promise<Buffer> {
   const browser = await chromium.launch({
     channel: 'chrome',
@@ -1653,7 +1726,10 @@ export async function buildResumePdf(html: string, outputPath: string): Promise<
   try {
     const page = await browser.newPage();
     try {
+      await page.setViewportSize({ width: 698, height: 1035 });
+      await page.emulateMedia({ media: 'print' });
       await page.setContent(html, { waitUntil: 'domcontentloaded' });
+      await page.evaluate(async () => { await document.fonts.ready; });
 
       // Layout Budgeting Loop: Guarantee exactly 1 page (A4 max printable height = ~1045px at 96 DPI)
       await page.evaluate(() => {
@@ -1704,6 +1780,8 @@ export async function buildResumePdf(html: string, outputPath: string): Promise<
         }
       });
 
+      const layout = await verifyPrintableResumeLayout(page);
+      if (!layout.valid) throw new Error(`Resume text exceeds printable bounds (${layout.overflowCount} fragments)`);
       const pdfBuffer = await page.pdf({
         format: 'A4',
         printBackground: true,
@@ -1776,13 +1854,16 @@ export async function compileRuntimeTailoredResumeForJob(input: {
     const renderPage = page;
     const [pdf, docx] = await Promise.all([
       (async () => {
+        await renderPage.setViewportSize({ width: 698, height: 1035 });
+        await renderPage.emulateMedia({ media: 'print' });
         await renderPage.setContent(html, { waitUntil: 'load' });
+        await renderPage.evaluate(async () => { await document.fonts.ready; });
         for (const size of [10, 9.5, 9, 8.5]) {
           if (size !== 10) await renderPage.evaluate(size => document.documentElement.style.setProperty('--base-font-size', `${size}pt`), size);
+          const layout = await verifyPrintableResumeLayout(renderPage);
+          if (!layout.valid) continue;
           const bytes = await renderPage.pdf({ format: 'A4', printBackground: true });
-          const geo = verifyPdfVisualGeometry(bytes);
-          if (geo.validSinglePage && !geo.hasOverflowWarning) return bytes;
-          if (geo.validSinglePage && size === 8.5) return bytes;
+          if (inspectPdfPageCount(bytes) === 1 && bytes.length >= 5000) return bytes;
         }
         throw new Error('Runtime resume exceeds one page');
       })(),

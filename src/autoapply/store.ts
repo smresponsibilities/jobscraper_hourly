@@ -4,6 +4,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { AutoaplyJobItem } from './types.js';
 import { canonicalRequisition } from './identity.js';
+import { recoverStaleInProgressJobs } from './stale-recovery.js';
 
 /** SQLite owns durable state. Legacy JSON is imported once and retained unchanged. */
 export class ApplicationStore {
@@ -133,6 +134,7 @@ export class ApplicationStore {
   }
 
   private recover(): void {
+    try { recoverStaleInProgressJobs(this.filename); } catch { /* Ambiguous or unavailable state remains parked. */ }
     this.transaction(() => {
       const workers = this.db.prepare('SELECT owner,pid,expires FROM workers').all() as Array<{ owner: string; pid: number; expires: number }>;
       for (const worker of workers) {

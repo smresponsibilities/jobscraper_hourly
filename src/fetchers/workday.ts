@@ -2,6 +2,7 @@ import type { Company, RawJob } from '../types.js';
 import { getJson, toPlainText, UA } from './util.js';
 import { route } from './routing.js';
 import { scraplingFetch } from './scrapling.js';
+import { buildWorkdayCxsSearchRequest, parseWorkdayPostedOnToIso } from '../discovery/workday-cxs-harvester.js';
 
 interface WdPosting {
   title: string;
@@ -103,24 +104,7 @@ export async function discoverSites(company: Company): Promise<string[] | 'gone'
  * today, so nothing regresses; the other ~61% get real dates.
  */
 export function parsePostedOn(label: string | undefined): string | undefined {
-  if (!label) return undefined;
-  const t = label.toLowerCase();
-  if (t.includes('+')) return undefined; // "30+ Days Ago" — a floor, not a date.
-
-  let days: number;
-  if (t.includes('today')) days = 0;
-  else if (t.includes('yesterday')) days = 1;
-  else {
-    const m = /(\d+)\s*days?\s*ago/.exec(t);
-    if (!m) return undefined;
-    days = Number(m[1]);
-  }
-
-  // Guard the Date construction rather than trusting a field the ATS controls —
-  // same rule as `safeIso`/`epochToIso`, after an out-of-range value in
-  // zappyhire.ts threw RangeError and evicted every board on that platform.
-  if (!Number.isFinite(days) || days < 0 || days > 3650) return undefined;
-  return new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+  return label ? parseWorkdayPostedOnToIso(label)?.slice(0, 10) : undefined;
 }
 
 /**
@@ -143,7 +127,9 @@ export async function list(company: Company): Promise<RawJob[]> {
 }
 
 async function search(company: Company, searchText: string, maxPages: number): Promise<RawJob[]> {
-  const endpoint = `${base(company)}/wday/cxs/${company.token}/${company.site}/jobs`;
+  const request = buildWorkdayCxsSearchRequest(`${base(company)}/${company.site}`, searchText);
+  if (!request) return [];
+  const endpoint = request.endpointUrl;
   const jobs: RawJob[] = [];
 
   // Workday reports the real total only on the first request — every later page
@@ -155,7 +141,7 @@ async function search(company: Company, searchText: string, maxPages: number): P
     const data = await getJson<{ total?: number; jobPostings?: WdPosting[] }>(endpoint, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ limit: PAGE_SIZE, offset: page * PAGE_SIZE, searchText }),
+      body: JSON.stringify({ ...request.body, limit: PAGE_SIZE, offset: page * PAGE_SIZE, searchText }),
     });
 
     if (page === 0) total = data.total ?? 0;

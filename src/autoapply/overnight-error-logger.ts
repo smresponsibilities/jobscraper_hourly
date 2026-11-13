@@ -160,6 +160,34 @@ export async function capturePageDiagnostics(
         const input = el as HTMLInputElement | HTMLSelectElement;
         const style = window.getComputedStyle(el);
         if (style.display === 'none' || style.visibility === 'hidden') continue;
+        // react-select carries its HTML validation on an unnamed
+        // `…-requiredInput` shadow input. It is not a field, so reporting it
+        // produced label-less "required field" noise for Greenhouse dropdowns.
+        const isShadowSelectInput =
+          input.tagName === 'INPUT' &&
+          ((input as HTMLInputElement).type === 'hidden' ||
+            el.getAttribute('aria-hidden') === 'true' ||
+            /\brequiredInput\b/.test(el.className || ''));
+        if (isShadowSelectInput) {
+          const host = el.closest('.select-shell, [class*="select__control"], [class*="select-container" i]');
+          const hostLabel = host
+            ?.closest('fieldset, .field, [class*="question" i], [class*="form-field" i]')
+            ?.querySelector('label, legend')
+            ?.textContent?.replace(/\s+/g, ' ').trim() || '';
+          const key = `select::${hostLabel}`;
+          if (hostLabel && !seenFields.has(key)) {
+            seenFields.add(key);
+            unmappedFields.push({
+              questionText: hostLabel.slice(0, 200),
+              widgetKind: 'SINGLE_SELECT',
+              isRequired: true,
+              options: null,
+              sectionHeading: '',
+              domIdOrName: '',
+            });
+          }
+          continue;
+        }
 
         const container =
           el.closest('fieldset, .application-question, .custom-question, [data-field-path], [data-automation-id*="form-field"], .form-group, .field, [role="group"]') ||
@@ -324,7 +352,7 @@ export interface MorningImprovementReport {
   summary: {
     totalProcessed: number;
     applied: number;
-    verifiedReceipts: number;
+    receiptFlagsRecorded: number;
     paused: number;
     failed: number;
     skipped: number;
@@ -438,7 +466,7 @@ export function compileMorningImprovementReport(options?: {
 
   // Overall counts
   const totalAppliedFromHistory = runHistory.filter(r => r.status === 'applied' || r.status === 'submitted').length;
-  const totalVerifiedReceipts = runHistory.filter(r => r.receiptVerified || r.status === 'applied').length;
+  const receiptFlagsRecorded = runHistory.filter(r => r.receiptVerified).length;
   const totalFailedFromHistory = runHistory.filter(r => r.status === 'failed').length;
   const totalPausedFromHistory = runHistory.filter(r => r.status === 'paused_for_review').length;
   const totalSkippedFromHistory = runHistory.filter(r => r.status === 'skipped').length;
@@ -447,7 +475,6 @@ export function compileMorningImprovementReport(options?: {
   const pausedCount = Math.max(queueStatusTotals['paused_for_review'] || 0, totalPausedFromHistory);
   const failedCount = Math.max(queueStatusTotals['failed'] || 0, totalFailedFromHistory, errorRecords.length);
   const skippedCount = Math.max(queueStatusTotals['skipped'] || 0, totalSkippedFromHistory);
-  const verifiedReceipts = Math.max(appliedCount, totalVerifiedReceipts);
   const totalProcessed = appliedCount + pausedCount + failedCount + skippedCount;
 
   // Latency metrics by ATS
@@ -607,7 +634,7 @@ export function compileMorningImprovementReport(options?: {
     summary: {
       totalProcessed,
       applied: appliedCount,
-      verifiedReceipts,
+      receiptFlagsRecorded,
       paused: pausedCount,
       failed: failedCount,
       skipped: skippedCount,
@@ -630,7 +657,7 @@ export function compileMorningImprovementReport(options?: {
   md += `| :--- | :--- |\n`;
   md += `| **Total Processed** | **${totalProcessed}** |\n`;
   md += `| Applied (Submitted) | ${appliedCount} |\n`;
-  md += `| Verified Receipts | ${verifiedReceipts} |\n`;
+  md += `| Receipt flags recorded (not independently verified) | ${receiptFlagsRecorded} |\n`;
   md += `| Paused for Review | ${pausedCount} |\n`;
   md += `| Failed | ${failedCount} |\n`;
   md += `| Skipped (Preflight / Duplicates) | ${skippedCount} |\n\n`;

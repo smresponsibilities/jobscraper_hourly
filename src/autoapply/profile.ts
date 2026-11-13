@@ -15,7 +15,7 @@ export function validateProfile(value: unknown): asserts value is CandidateExten
   if (value.applicationPreferences !== undefined) {
     const prefs = value.applicationPreferences;
     if (!object(prefs)) throw new Error('applicationPreferences must be an object');
-    for (const key of ['workCountries', 'relocationCountries', 'spokenLanguages', 'employmentTypes', 'travelCountries', 'noExperienceWith']) {
+    for (const key of ['workCountries', 'relocationCountries', 'spokenLanguages', 'employmentTypes', 'travelCountries', 'noExperienceWith', 'skipOptionalQuestions']) {
       if (prefs[key] !== undefined && (!Array.isArray(prefs[key]) || (prefs[key] as unknown[]).some(item => typeof item !== 'string' || !item.trim()))) throw new Error(`applicationPreferences.${key} must contain nonempty text`);
     }
     for (const key of ['languageProficiencyLevelsProvided', 'paidRolesOnly', 'nightShifts', 'weekendWork', 'businessTravel', 'recruitmentDataProcessingConsent', 'backgroundCheckConsent', 'marketingConsent']) {
@@ -98,15 +98,13 @@ export function loadProfile(file: string): CandidateExtendedProfile {
   const value: unknown = JSON.parse(readFileSync(file, 'utf8'));
   const p = value as any;
   if (p && p.personal) {
-    p.personal.website = p.personal.website || 'https://shivammahajan.com';
-    p.personal.portfolioUrl = p.personal.portfolioUrl || 'https://shivammahajan.com/projects/';
-    if (process.env.AUTOAPPLY_EMAIL || process.env.IMAP_USER) {
+    if (!p.personal.email && (process.env.AUTOAPPLY_EMAIL || process.env.IMAP_USER)) {
       p.personal.email = (process.env.AUTOAPPLY_EMAIL || process.env.IMAP_USER)!.trim();
     }
-    if (process.env.AUTOAPPLY_PHONE || process.env.PHONE) {
+    if (!p.personal.phone && (process.env.AUTOAPPLY_PHONE || process.env.PHONE)) {
       p.personal.phone = process.env.AUTOAPPLY_PHONE || process.env.PHONE;
     }
-    if (process.env.AUTOAPPLY_PHONE_COUNTRY_CODE || process.env.PHONE_COUNTRY_CODE) {
+    if (!p.personal.phoneCountryCode && (process.env.AUTOAPPLY_PHONE_COUNTRY_CODE || process.env.PHONE_COUNTRY_CODE)) {
       p.personal.phoneCountryCode = process.env.AUTOAPPLY_PHONE_COUNTRY_CODE || process.env.PHONE_COUNTRY_CODE;
     }
   }

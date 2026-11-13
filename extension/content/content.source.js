@@ -354,7 +354,9 @@
     const groupLabel = (group?.getAttribute('aria-labelledby') || '').split(/\s+/).map(id => document.getElementById(id)?.textContent || '').join(' ').trim() || group?.querySelector('legend')?.textContent;
     const labels = Array.from(el?.labels || []).map(label => label.textContent.trim());
     const question = groupLabel || labels.join(' ') || el?.getAttribute('aria-label') || elDesc;
-    return JobscraperAnswers.resolveCandidateAnswer(intent, profile, { url: location.href, question, aliases: [...labels, el?.name || '', el?.id || '', elDesc] }).value;
+    const answer = JobscraperAnswers.resolveCandidateAnswer(intent, profile, { url: location.href, question, aliases: [...labels, el?.name || '', el?.id || '', elDesc] }).value;
+    if (el?.type === 'checkbox' && JobscraperAnswers.isAuthorizedConsentCheckbox(question, labels.join(' '))) return true;
+    return answer;
   }
   // -------------------------------------------------------------
   // 6. Unified Multi-Mode Runner (Stealth vs Copilot)

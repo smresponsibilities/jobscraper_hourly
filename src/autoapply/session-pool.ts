@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { canonicalRequisition } from './identity.js';
 import { SessionPool, type Session } from '@crawlee/core';
-import { resolveEnvPortalCredentials, type PortalCredentials } from './env-credentials.js';
+import type { PortalCredentials } from './env-credentials.js';
 
 export const INDIAN_LOCALE_OPTIONS = {
   locale: 'en-IN',
@@ -209,9 +209,9 @@ export function markHostOutcome(
     entry.lastRequestAt = now;
     const failures = (entry.consecutiveFailures || 0) + 1;
     entry.consecutiveFailures = failures;
-    // Progressive backoff: 15m * 2^(failures-1), capped at 60m (15m, 30m, 60m)
-    const backoffMs = Math.min(60 * 60 * 1000, 15 * 60 * 1000 * Math.pow(2, failures - 1));
-    entry.backoffUntil = now + backoffMs;
+    const cap = Math.min(600_000, 30_000 * 2 ** Math.min(failures, 32));
+    const backoffMs = Math.floor(cap / 2 + Math.random() * cap / 2);
+    entry.backoffUntil = Math.max(entry.backoffUntil || 0, now + backoffMs);
     entry.lastOutcome = 'rate_limited';
   } else if (outcome === 'challenge') {
     entry.lastRequestAt = now;
@@ -224,7 +224,7 @@ export function markHostOutcome(
   } else if (outcome === 'success') {
     entry.lastRequestAt = now;
     entry.lastOutcome = 'success';
-    entry.backoffUntil = undefined;
+    if (!entry.backoffUntil || entry.backoffUntil <= now) entry.backoffUntil = undefined;
     entry.consecutiveFailures = 0;
   } else if (outcome === 'error') {
     entry.lastRequestAt = now;
@@ -407,76 +407,15 @@ export async function getSessionTier2(
 }
 
 /**
- * Tier 3: Live .env credential Sign-In / Create-Account (GEN-09) minting fresh session cookie jar
+ * Tier 3 requires provider authentication; credentials alone do not create a session.
  */
 export async function mintLiveSessionTier3(
   context: BrowserContext | null | undefined,
   urlStr: string,
   options: ResilientSessionOptions = {}
 ): Promise<ResilientSessionResult> {
-  const credentials = options.credentials ?? resolveEnvPortalCredentials();
   const statePath = getHostStorageStatePath(urlStr, options.baseDir);
-
-  let hostname = 'unknown-host';
-  try {
-    hostname = new URL(urlStr.startsWith('http') ? urlStr : `https://${urlStr}`).hostname;
-  } catch {
-    hostname = urlStr.replace(/[^a-zA-Z0-9.-]/g, '_').toLowerCase();
-  }
-
-  const nowSec = Math.floor(Date.now() / 1000);
-  const dummyAuthCookie = {
-    name: 'auth_session_minted',
-    value: Buffer.from(`${credentials?.email || 'user'}:${Date.now()}`).toString('base64'),
-    domain: hostname.startsWith('.') ? hostname : `.${hostname}`,
-    path: '/',
-    expires: nowSec + 86400 * 7,
-    httpOnly: true,
-    secure: true,
-  };
-
-  if (context) {
-    await context.addCookies([dummyAuthCookie]).catch(() => {});
-    await saveHostSessionState(context, urlStr, options.baseDir);
-  } else {
-    try {
-      fs.mkdirSync(path.dirname(statePath), { recursive: true });
-      fs.writeFileSync(
-        statePath,
-        JSON.stringify(
-          {
-            cookies: [dummyAuthCookie],
-            origins: [],
-            mintedAt: new Date().toISOString(),
-          },
-          null,
-          2
-        ),
-        'utf8'
-      );
-    } catch {}
-  }
-
-  // Sync into Crawlee session pool as well
-  try {
-    const pool = await getSharedCrawleeSessionPool();
-    let session = (pool as any).sessions?.find(
-      (s: Session) => s.isUsable() && s.getCookies(urlStr).length > 0
-    );
-    if (!session) {
-      session = await pool.getSession();
-    }
-    session.setCookies([dummyAuthCookie], urlStr);
-    session.markGood();
-  } catch {}
-
-  return {
-    tier: 3,
-    loaded: true,
-    minted: true,
-    storageStatePath: statePath,
-    credentials,
-  };
+  return { tier: 3, loaded: false, minted: false, storageStatePath: statePath };
 }
 
 /**

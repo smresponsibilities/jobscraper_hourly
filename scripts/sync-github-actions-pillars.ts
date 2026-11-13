@@ -198,7 +198,9 @@ export async function syncGitHubActionsPillars(
   }
 
   try {
-    const syncStatusFile = path.resolve('state/autoapply/portal-review/last-discovery-sync.json');
+    // Separate from the drain's Phase A marker; sharing one file let the pillar
+    // sync reset the timestamp and make the next cycle skip Phase A.
+    const syncStatusFile = path.resolve('state/autoapply/portal-review/last-pillar-sync.json');
     fs.mkdirSync(path.dirname(syncStatusFile), { recursive: true });
     fs.writeFileSync(
       syncStatusFile,

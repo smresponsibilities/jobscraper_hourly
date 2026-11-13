@@ -13,6 +13,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   const scanBtn = document.getElementById('popup-scan-btn');
   const sidepanelBtn = document.getElementById('popup-sidepanel-btn');
 
+  document.getElementById('save-dashboard-token').addEventListener('click', async () => {
+    const field = document.getElementById('dashboard-token');
+    const status = document.getElementById('dashboard-token-status');
+    if (field.value.length < 32) { status.textContent = 'Token must contain at least 32 characters.'; return; }
+    await chrome.storage.local.set({ dashboardToken: field.value });
+    field.value = '';
+    status.textContent = 'Token saved.';
+  });
+
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
   function scanTab() {

@@ -6,196 +6,49 @@ import {
   Packer,
   Paragraph,
   TextRun,
-  AlignmentType,
 } from 'docx';
 import { chromium } from 'patchright';
+import { generateComplementaryCoverLetterText } from './deterministic-builder.js';
 
 export interface CoverLetterParams {
   company?: string;
   roleTitle?: string;
   outputPath?: string;
   docxPath?: string;
+  jdText?: string;
+  resumeSelectedProjectIds?: string[];
 }
 
 export const DEFAULT_COVER_LETTER_PDF = path.resolve('state/autoapply/resumes/Shivam_Mahajan_Cover_Letter.pdf');
 export const DEFAULT_COVER_LETTER_DOCX = path.resolve('state/autoapply/resumes/Shivam_Mahajan_Cover_Letter.docx');
 
+function coverLetterText(params: CoverLetterParams): string {
+  const result = generateComplementaryCoverLetterText({
+    companyName: params.company?.trim() || 'the Engineering Team',
+    jobTitle: params.roleTitle?.trim() || 'Software Engineer',
+    jdText: params.jdText || '',
+    resumeSelectedProjectIds: params.resumeSelectedProjectIds,
+  });
+  if (!result.keywordDensityOk) throw new Error('Cover letter keyword density requires review');
+  return result.text;
+}
+
+function contactLine(): string {
+  return ['Bengaluru, India', process.env.AUTOAPPLY_EMAIL || process.env.IMAP_USER || '', process.env.AUTOAPPLY_PHONE || process.env.PHONE || '', 'shivammahajan.com/projects'].filter(Boolean).join(' | ');
+}
+
 export function buildCoverLetterHtml(params: CoverLetterParams = {}): string {
-  const company = (params.company || 'the Engineering Team').trim();
-  const roleTitle = (params.roleTitle || 'Software Engineer').trim();
-  const rawPhone = process.env.AUTOAPPLY_PHONE || '';
-  const phone = rawPhone ? (rawPhone.startsWith('+') ? rawPhone : `+91 ${rawPhone}`) : '+91 9000000000';
-
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<style>
-  @page {
-    size: A4;
-    margin: 0.65in 0.75in 0.65in 0.75in;
-  }
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-    color: #1e293b;
-    line-height: 1.55;
-    font-size: 11pt;
-    margin: 0;
-    padding: 0;
-  }
-  .header {
-    border-bottom: 2px solid #0f172a;
-    padding-bottom: 12px;
-    margin-bottom: 22px;
-  }
-  .name {
-    font-size: 20pt;
-    font-weight: 700;
-    color: #0f172a;
-    letter-spacing: -0.5px;
-    margin-bottom: 4px;
-  }
-  .contact-bar {
-    font-size: 9.5pt;
-    color: #475569;
-  }
-  .contact-bar a {
-    color: #0284c7;
-    text-decoration: none;
-  }
-  .date {
-    font-size: 10pt;
-    color: #64748b;
-    margin-bottom: 18px;
-  }
-  .salutation {
-    font-weight: 600;
-    margin-bottom: 14px;
-    color: #0f172a;
-  }
-  .paragraph {
-    margin-bottom: 14px;
-    text-align: justify;
-  }
-  .signoff {
-    margin-top: 24px;
-  }
-  .signature-name {
-    font-weight: 700;
-    color: #0f172a;
-    margin-top: 4px;
-  }
-</style>
-</head>
-<body>
-  <div class="header">
-    <div class="name">Shivam Mahajan</div>
-    <div class="contact-bar">
-      Bengaluru, India &bull; ${phone} &bull; mahajanshivam012004@gmail.com &bull;
-      <a href="https://www.linkedin.com/in/mahajanshivam">linkedin.com/in/mahajanshivam</a> &bull;
-      <a href="https://github.com/smresponsibilities">github.com/smresponsibilities</a> &bull;
-      <a href="https://shivammahajan.com/projects/">shivammahajan.com/projects</a>
-    </div>
-  </div>
-
-  <div class="date">${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</div>
-
-  <div class="salutation">Dear Hiring Team at ${company},</div>
-
-  <div class="paragraph">
-    I am writing to express my strong enthusiasm for the <strong>${roleTitle}</strong> role. I am currently completing my Bachelor of Engineering in Computer Science at Chitkara University (9.35 CGPA, graduating 2026) while serving as a Technology Apprentice at Morgan Stanley in Bengaluru. With immediate availability (0 days notice) and full readiness for in-office work, I am eager to contribute to your engineering organization and solve challenging technical problems.
-  </div>
-
-  <div class="paragraph">
-    At Morgan Stanley, I engineered production Customer Identity &amp; Access Management (CIAM) data warehouse pipelines using Apache Kafka, PySpark, and Azure Snowflake with zero row-count tolerance, processing over 5,000,000+ daily events across distributed microservices. My responsibilities included architecting secure REST APIs with Java Spring Boot, enforcing mTLS and OAuth 2.0 authorization, and automating Jenkins CI/CD deployment workflows. Additionally, through independent engineering projects featured on <a href="https://shivammahajan.com/projects/">shivammahajan.com/projects/</a>, I have built high-throughput systems including a ClickHouse OLAP query acceleration platform and real-time WebSocket applications supporting 500+ concurrent users with sub-35ms latency.
-  </div>
-
-  <div class="paragraph">
-    I am passionate about building resilient, mission-critical distributed systems and performant full-stack software. I look forward to the opportunity to discuss how my hands-on technical skills, engineering rigor, and proactive ownership can drive impact for ${company}. Thank you for your time and consideration.
-  </div>
-
-  <div class="signoff">
-    <div>Sincerely,</div>
-    <div class="signature-name">Shivam Mahajan</div>
-  </div>
-</body>
-</html>`;
+  const escape = (text: string) => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const paragraphs = coverLetterText(params).split('\n\n').map(text => `<p>${escape(text).replace(/\n/g, '<br>')}</p>`).join('');
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><style>@page{size:A4;margin:16mm}body{font:11pt Arial;line-height:1.5;color:#1e293b}header{font-size:9pt;color:#475569}p{margin:0 0 1em}</style></head><body><header>${escape(contactLine())}</header>${paragraphs}</body></html>`;
 }
 
 export async function buildCoverLetterDocx(params: CoverLetterParams = {}): Promise<Buffer> {
-  const company = (params.company || 'the Engineering Team').trim();
-  const roleTitle = (params.roleTitle || 'Software Engineer').trim();
-  const rawPhone = process.env.AUTOAPPLY_PHONE || '';
-  const phone = rawPhone ? (rawPhone.startsWith('+') ? rawPhone : `+91 ${rawPhone}`) : '+91 9000000000';
-
-  const doc = new Document({
-    sections: [
-      {
-        properties: {
-          page: {
-            margin: { top: 720, bottom: 720, left: 1080, right: 1080 },
-          },
-        },
-        children: [
-          new Paragraph({
-            children: [
-              new TextRun({ text: 'Shivam Mahajan', bold: true, size: 32, color: '0f172a' }),
-            ],
-            spacing: { after: 80 },
-          }),
-          new Paragraph({
-            children: [
-              new TextRun({ text: `Bengaluru, India | ${phone} | mahajanshivam012004@gmail.com | linkedin.com/in/mahajanshivam | shivammahajan.com/projects`, size: 18, color: '475569' }),
-            ],
-            spacing: { after: 240 },
-          }),
-          new Paragraph({
-            children: [
-              new TextRun({ text: `Dear Hiring Team at ${company},`, bold: true, size: 22, color: '0f172a' }),
-            ],
-            spacing: { after: 160 },
-          }),
-          new Paragraph({
-            children: [
-              new TextRun({
-                text: `I am writing to express my strong enthusiasm for the ${roleTitle} role. I am currently completing my Bachelor of Engineering in Computer Science at Chitkara University (9.35 CGPA, graduating 2026) while serving as a Technology Apprentice at Morgan Stanley in Bengaluru. With immediate availability (0 days notice) and full readiness for in-office work, I am eager to contribute to your engineering organization and solve challenging technical problems.`,
-                size: 21,
-                color: '1e293b',
-              }),
-            ],
-            spacing: { after: 160 },
-          }),
-          new Paragraph({
-            children: [
-              new TextRun({
-                text: `At Morgan Stanley, I engineered production Customer Identity & Access Management (CIAM) data warehouse pipelines using Apache Kafka, PySpark, and Azure Snowflake with zero row-count tolerance, processing over 5,000,000 daily events across distributed microservices. My responsibilities included architecting secure REST APIs with Java Spring Boot, enforcing mTLS and OAuth 2.0 authorization, and automating Jenkins CI/CD deployment workflows. Additionally, through independent engineering projects featured on shivammahajan.com/projects/, I have built high-throughput systems including a ClickHouse OLAP query acceleration platform and real-time WebSocket applications supporting 500+ concurrent users with sub-35ms latency.`,
-                size: 21,
-                color: '1e293b',
-              }),
-            ],
-            spacing: { after: 160 },
-          }),
-          new Paragraph({
-            children: [
-              new TextRun({
-                text: `I am passionate about building resilient, mission-critical distributed systems and performant full-stack software. I look forward to the opportunity to discuss how my hands-on technical skills, engineering rigor, and proactive ownership can drive impact for ${company}. Thank you for your time and consideration.`,
-                size: 21,
-                color: '1e293b',
-              }),
-            ],
-            spacing: { after: 240 },
-          }),
-          new Paragraph({
-            children: [
-              new TextRun({ text: 'Sincerely,\n', size: 21, color: '1e293b' }),
-              new TextRun({ text: 'Shivam Mahajan', bold: true, size: 22, color: '0f172a' }),
-            ],
-          }),
-        ],
-      },
-    ],
-  });
-
+  const paragraphs = coverLetterText(params).split('\n\n');
+  const doc = new Document({ sections: [{ properties: { page: { margin: { top: 720, bottom: 720, left: 1080, right: 1080 } } }, children: [
+    new Paragraph({ children: [new TextRun({ text: contactLine(), size: 18, color: '475569' })], spacing: { after: 160 } }),
+    ...paragraphs.map(text => new Paragraph({ children: [new TextRun({ text, size: 21, color: '1e293b' })], spacing: { after: 140 } })),
+  ] }] });
   return await Packer.toBuffer(doc);
 }
 

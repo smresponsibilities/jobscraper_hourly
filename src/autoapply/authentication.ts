@@ -1,16 +1,17 @@
+import { createHmac } from 'node:crypto';
 import type { Page, Locator } from 'patchright';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { CredentialVault } from './vault.js';
 import { completeEmailVerification, type BrowserInteractions } from './verification.js';
 import { findVerification, type ApplicationMailbox, type VerificationRequest } from './mailbox.js';
-import { isRecruitmentPrivacyAcknowledgement } from './answers.js';
+import { isAuthorizedConsentCheckbox } from './answers.js';
 import { reserveStateAction } from './state-guard.js';
-import { resolveEnvPortalCredentials, ensureWorkdayCompliantPassword, WORKDAY_COMPLEXITY_FALLBACK_PASSWORD } from './env-credentials.js';
-export { ensureWorkdayCompliantPassword, WORKDAY_COMPLEXITY_FALLBACK_PASSWORD } from './env-credentials.js';
+import { resolveEnvPortalCredentials } from './env-credentials.js';
+export { ensureWorkdayCompliantPassword } from './env-credentials.js';
 import { findAdaptiveLocator } from './adaptive-relocator.js';
 import { saveHostSessionState } from './session-pool.js';
-import { makeGmailTenantAlias, completeInPageEmailVerificationIfPrompted } from './imap-verifier.js';
+import { completeInPageEmailVerificationIfPrompted } from './imap-verifier.js';
 import { getActiveFormFrame } from './widgets.js';
 
 export async function hasEmailAuthenticationGate(page: Page): Promise<boolean> {
@@ -22,27 +23,31 @@ export async function hasEmailAuthenticationGate(page: Page): Promise<boolean> {
 
 /** Normal account controls only; unknown consent and challenges remain review gates. */
 export async function authenticateApplication(page: Page, options: { vault?: CredentialVault; tenant: string; email: string; candidateNames?: string[]; mailbox?: ApplicationMailbox; verification: VerificationRequest; since: Date; interaction?: BrowserInteractions; recruitmentPrivacyConsent?: boolean; submittedCredentials?: Set<'signup' | 'signin'>; beforeCredentialSubmit?: (action: 'signup' | 'signin') => Promise<void>; onDiagnostic?: (code: string) => void }): Promise<'progress' | 'review'> {
-  // Ticket GEN-478.2 Step A: Always Auto-Provision .env Credentials Inside authenticateApplication
-  let envCreds = resolveEnvPortalCredentials(options.email);
-  if (envCreds?.password) {
-    envCreds.password = ensureWorkdayCompliantPassword(envCreds.password);
-  }
+  const envCreds = resolveEnvPortalCredentials(options.email);
   const hasEnvCreds = !!(envCreds && (envCreds.email.toLowerCase() === (options.email || '').toLowerCase() || !options.email));
-  const saved = options.vault?.get ? options.vault.get(options.tenant) : undefined;
-  let credential: { email: string; password: string } | undefined = hasEnvCreds
-    ? envCreds!
-    : (saved || (options.vault?.ensure ? options.vault.ensure(options.tenant, options.email, options.candidateNames)?.credential : undefined));
-
-  if (!credential || !credential.email || !credential.password) {
-    const fallbackEnv = resolveEnvPortalCredentials(options.email);
-    const email = fallbackEnv?.email || options.email || process.env.AUTOAPPLY_EMAIL || 'shivam2314.be22@chitkara.edu.in';
-    const rawPw = fallbackEnv?.password || process.env.AUTOAPPLY_WORKDAY_PASSWORD || process.env.AUTOAPPLY_PASSWORD || WORKDAY_COMPLEXITY_FALLBACK_PASSWORD;
-    const password = ensureWorkdayCompliantPassword(rawPw);
-    credential = { email, password };
+  let saved = options.vault?.get ? options.vault.get(options.tenant) : undefined;
+  if (!saved) {
+    // Accounts created before the vault existed are recorded by host in
+    // workday-accounts.json. Reusing that password keeps the sign-in on the
+    // account we already made, instead of deriving a new one the site rejects.
+    let hostHint = '';
+    try {
+      hostHint = new URL(options.verification?.applicationUrl || '').hostname;
+    } catch {}
+    const legacy = readLegacyWorkdayAccount(hostHint) || (/[.:]/.test(options.tenant) ? readLegacyWorkdayAccount(options.tenant) : undefined);
+    // The pre-vault flow created most of these accounts under a plus-addressed
+    // email (name+wd_mdlz@gmail.com). That still delivers to the candidate, and
+    // it is the only address that can sign in to that account.
+    if (legacy && isDeliverableAlias(legacy.email, options.email)) {
+      saved = legacy;
+      options.vault?.adopt(options.tenant, legacy);
+      options.onDiagnostic?.('legacy_account_adopted');
+    }
   }
+  const credential = saved || (hasEnvCreds ? envCreds! : (options.vault?.ensure ? options.vault.ensure(options.tenant, options.email, options.candidateNames)?.credential : undefined));
 
   // Dismiss cookie consent if present on Workday / portal screens
-  const cookieConsent = page.locator('button:has-text("Accept Cookies"), button:has-text("Accept"), [data-automation-id="legalNoticeAcceptButton"]').filter({ visible: true }).first();
+  const cookieConsent = page.locator('button:has-text("Accept Cookies")').filter({ visible: true }).first();
   if (await cookieConsent.isVisible().catch(() => false)) {
     await cookieConsent.click().catch(() => {});
     await page.waitForTimeout(500);
@@ -88,11 +93,13 @@ export async function authenticateApplication(page: Page, options: { vault?: Cre
     return 'progress';
   };
   const applyPrivacyConsent = async () => {
-    if (options.recruitmentPrivacyConsent !== true) return;
     for (const checkbox of await page.locator('input[type=checkbox]').filter({ visible: true }).all()) {
       if (await checkbox.isChecked()) continue;
       const label = await checkbox.evaluate(element => Array.from((element as HTMLInputElement).labels || []).map(label => label.textContent || '').join(' ') || element.getAttribute('aria-label') || '');
-      if (isRecruitmentPrivacyAcknowledgement(label)) await click(checkbox);
+      if (!isAuthorizedConsentCheckbox(label)) continue;
+      // A consent box that detaches mid-click must not abort the sign-in; the
+      // required-consent check below still reports an unresolved gate.
+      try { await click(checkbox); } catch {}
     }
   };
   const passwords = page.locator('input[type=password]:not([data-automation-id="beecatcher"])').filter({ visible: true });
@@ -161,9 +168,11 @@ export async function authenticateApplication(page: Page, options: { vault?: Cre
     }
     return 'review';
   }
-  if (!credential) throw new Error('Tenant credential could not be resolved');
-  if (credential.email && options.email && credential.email.toLowerCase() !== options.email.toLowerCase()) {
-    credential.email = options.email;
+  if (!credential?.email || !credential.password) return 'review';
+  if (credential.email && options.email && credential.email.toLowerCase() !== options.email.toLowerCase()
+    && !isDeliverableAlias(credential.email, options.email)) {
+    options.onDiagnostic?.('credential_email_mismatch');
+    return 'review';
   }
 
   let currentHost = '';
@@ -180,13 +189,6 @@ export async function authenticateApplication(page: Page, options: { vault?: Cre
       currentHost = new URL(options.verification.applicationUrl).hostname;
     } catch {}
   }
-  const isWorkday = currentHost.includes('myworkdayjobs.com') ||
-    page.url().includes('myworkdayjobs.com') ||
-    (options.tenant && options.tenant.includes('myworkdayjobs.com')) ||
-    options.verification?.provider === 'workday';
-  const isVerifiedHost = currentHost ? isWorkdayHostVerified(currentHost) : false;
-
-  const body = await page.locator('body').innerText();
   const errors = (await page.locator('[role=alert],.error,.error-message,[data-automation-id=errorMessage]').allTextContents()).join(' ');
   if (/account already exists|email.*already (?:registered|in use)/i.test(errors)) {
     if (!options.mailbox) return 'review';
@@ -198,8 +200,8 @@ export async function authenticateApplication(page: Page, options: { vault?: Cre
   }
 
   const executeSignupFlow = async (cred: { email: string; password: string }): Promise<'progress' | 'review'> => {
-    let emailToUse = cred.email;
-    const compliantPw = ensureWorkdayCompliantPassword(cred.password);
+    const emailToUse = cred.email;
+    const compliantPw = cred.password;
 
     const fillAndSubmitSignup = async (targetEmail: string): Promise<boolean> => {
       const emailInput = page.locator(
@@ -219,15 +221,6 @@ export async function authenticateApplication(page: Page, options: { vault?: Cre
         await type(p, compliantPw);
       }
 
-      // Ticket GEN-478.2 Step C: Check all visible checkboxes ([data-automation-id="createAccountCheckbox"], input[type="checkbox"])
-      const checkboxes = page.locator('[data-automation-id="createAccountCheckbox"], input[type="checkbox"]').filter({ visible: true });
-      for (const cb of await checkboxes.all()) {
-        try {
-          if (!await cb.isChecked()) {
-            await click(cb);
-          }
-        } catch {}
-      }
       await applyPrivacyConsent();
 
       if (await page.locator('input[type=checkbox]:required:not(:checked)').filter({ visible: true }).count()) {
@@ -244,13 +237,10 @@ export async function authenticateApplication(page: Page, options: { vault?: Cre
         return false;
       }
 
-      options.submittedCredentials?.add('signup');
-      await options.beforeCredentialSubmit?.('signup');
-      try {
-        await click(submit);
-      } catch {
-        await submit.click({ force: true }).catch(() => {});
-      }
+      if (!options.submittedCredentials || !options.beforeCredentialSubmit) return false;
+      options.submittedCredentials.add('signup');
+      await options.beforeCredentialSubmit('signup');
+      await click(submit);
       options.onDiagnostic?.('signup_submitted');
       await page.waitForTimeout(3000);
       return true;
@@ -258,23 +248,6 @@ export async function authenticateApplication(page: Page, options: { vault?: Cre
 
     const submitted = await fillAndSubmitSignup(emailToUse);
     if (!submitted) return 'review';
-
-    // Step C: If Workday shows "already exists" / "already registered", switch email to makeGmailTenantAlias and submit Create Account again
-    const alertTexts = (await page.locator('[role=alert],.error,.error-message,[data-automation-id=errorMessage]').allTextContents().catch(() => [])).join(' ');
-    const bodyText = await page.locator('body').innerText().catch(() => '');
-    const accountExists = /already exists|already registered|account with this email|email.*already (?:registered|in use)/i.test(alertTexts) ||
-      /already exists|already registered/i.test(bodyText);
-
-    if (accountExists) {
-      options.onDiagnostic?.('account_already_exists_collision');
-      let aliasEmail = makeGmailTenantAlias(cred.email, page.url() || currentHost);
-      if (aliasEmail === cred.email && cred.email.includes('@')) {
-        const [l, d] = cred.email.split('@');
-        aliasEmail = `${l}+wd${Date.now().toString().slice(-4)}@${d}`;
-      }
-      emailToUse = aliasEmail;
-      await fillAndSubmitSignup(emailToUse);
-    }
 
     // Call completeInPageEmailVerificationIfPrompted if Workday asks to verify email
     try {
@@ -284,15 +257,26 @@ export async function authenticateApplication(page: Page, options: { vault?: Cre
       });
     } catch {}
 
-    if (currentHost) {
-      markWorkdayHostVerified(currentHost);
-    }
     await saveHostSessionState(page.context(), page.url()).catch(() => {});
     return 'progress';
   };
 
-  const signup = (await passwords.count()) > 1 || /create (?:an? )?account|register/i.test(headings);
+  const looksLikeSignup = (await passwords.count()) > 1 || /create (?:an? )?account|register/i.test(headings);
+  const signup = looksLikeSignup && !saved;
   options.onDiagnostic?.(signup ? 'signup_form' : 'signin_form');
+
+  // We already hold this account, so a registration screen means the tenant
+  // wants us to sign in instead. Registering again only produces
+  // "account already exists" and a recovery round trip.
+  if (looksLikeSignup && saved && !await page.locator('html[data-autoapply-signin-switch]').count()) {
+    const signInSwitch = page.getByRole('link', { name: /^sign in$/i }).or(page.getByRole('button', { name: /^sign in$/i })).filter({ visible: true });
+    if (await signInSwitch.count() === 1) {
+      await page.locator('html').evaluate(element => element.setAttribute('data-autoapply-signin-switch', 'true'));
+      await click(signInSwitch);
+      options.onDiagnostic?.('switched_to_signin');
+      return 'progress';
+    }
+  }
 
   if (signup) {
     if (options.submittedCredentials?.has('signup')) {
@@ -313,25 +297,6 @@ export async function authenticateApplication(page: Page, options: { vault?: Cre
   }
 
   if (!signup) {
-    // Ticket GEN-478.2 Step B: Transition from Failed Sign In to Create Account Instead of Returning 'review'
-    const shouldGoToCreateAccount = Boolean(
-      options.submittedCredentials?.has('signin') || (isWorkday && !isVerifiedHost)
-    );
-
-    const rawCreateLink = page.locator(
-      '[data-automation-id="createAccountLink"], button:has-text("Create Account"), a:has-text("Create Account"), [data-automation-id="noAccountLink"]'
-    ).filter({ visible: true });
-
-    if (shouldGoToCreateAccount) {
-      const createLink = (await findAdaptiveLocator(page, rawCreateLink, 'auth_create_account_fallback')).first();
-      if (await createLink.isVisible().catch(() => false)) {
-        options.onDiagnostic?.('signin_fallback_create_account');
-        await createLink.click({ force: true }).catch(() => {});
-        await page.waitForTimeout(1500);
-        return await executeSignupFlow(credential);
-      }
-    }
-
     if (!options.submittedCredentials?.has('signin')) {
       const email = page.locator('[data-automation-id="formField-email"] input, [data-automation-id="email"] input, input[data-automation-id="email"]:not([data-automation-id="beecatcher"]), input[type="email"]:not([data-automation-id="beecatcher"]), input[autocomplete="username"]:not([data-automation-id="beecatcher"]), input[aria-label*="Email" i]:not([data-automation-id="beecatcher"]), input[id="input-4"]:not([type="password"])').filter({ visible: true }).first();
       const password = page.locator('input[data-automation-id="password"]:not([data-automation-id="beecatcher"]), input[type="password"]:not([data-automation-id="beecatcher"]), input[id="input-6"]').filter({ visible: true }).first();
@@ -347,47 +312,94 @@ export async function authenticateApplication(page: Page, options: { vault?: Cre
       await type(password, credential.password);
       await applyPrivacyConsent();
       if (await page.locator('input[type=checkbox]:required:not(:checked)').filter({ visible: true }).count()) { options.onDiagnostic?.('required_consent_unresolved'); return 'review'; }
-      options.submittedCredentials?.add('signin');
-      await options.beforeCredentialSubmit?.('signin');
-      await click(submitBtn);
+      if (!options.submittedCredentials || !options.beforeCredentialSubmit) return 'review';
+      options.submittedCredentials.add('signin');
+      await options.beforeCredentialSubmit('signin');
+
+      const passwordVisible = async () => (await page.locator('input[type="password"]:not([data-automation-id="beecatcher"])').filter({ visible: true }).count()) > 0;
+      let submitted = false;
+      try {
+        await submitBtn.scrollIntoViewIfNeeded({ timeout: 3000 }).catch(() => {});
+        await click(submitBtn);
+        submitted = true;
+      } catch {}
+
+      if (!submitted) {
+        // Workday frequently paints an overlay across the Sign In button, so
+        // pointer hit-testing fails even though the control is enabled. Press
+        // Enter in the password field, then dispatch the form submit in page
+        // code, which performs the same mutation without a pointer click.
+        options.onDiagnostic?.('signin_submit_via_keyboard');
+        await password.press('Enter').catch(() => {});
+        await page.waitForTimeout(1500);
+        if (await passwordVisible()) {
+          const dispatched = await page.evaluate(() => {
+            const button = document.querySelector<HTMLElement>('[data-automation-id="signInSubmitButton"]');
+            const form = button?.closest('form') as HTMLFormElement | null;
+            if (form) {
+              if (typeof form.requestSubmit === 'function') form.requestSubmit();
+              else form.submit();
+              return true;
+            }
+            button?.click();
+            return Boolean(button);
+          }).catch(() => false);
+          if (!dispatched) {
+            options.onDiagnostic?.('signin_submit_unclickable');
+            return 'review';
+          }
+          await page.waitForTimeout(2500);
+        }
+      }
+
       options.onDiagnostic?.('signin_submitted');
       await page.waitForTimeout(1000);
 
-      const stillSignIn = (await page.locator('input[type="password"]:not([data-automation-id="beecatcher"])').filter({ visible: true }).count()) > 0;
+      const stillSignIn = await passwordVisible();
       if (!stillSignIn) {
         if (currentHost) markWorkdayHostVerified(currentHost);
         await saveHostSessionState(page.context(), page.url()).catch(() => {});
         return 'progress';
       }
 
-      // Sign In failed and password still visible! Transition to Create Account
-      const createFallback = (await findAdaptiveLocator(page, rawCreateLink, 'auth_create_account_fallback')).first();
-      if (await createFallback.isVisible().catch(() => false)) {
-        options.onDiagnostic?.('signin_fallback_create_account');
-        await createFallback.click({ force: true }).catch(() => {});
-        await page.waitForTimeout(1500);
-        return await executeSignupFlow(credential);
-      }
-
-      return 'progress';
-    }
-
-    const createLink = (await findAdaptiveLocator(page, rawCreateLink, 'auth_create_account_fallback')).first();
-    if (await createLink.isVisible().catch(() => false)) {
-      options.onDiagnostic?.('signin_fallback_create_account');
-      await createLink.click({ force: true }).catch(() => {});
-      await page.waitForTimeout(1500);
-      return await executeSignupFlow(credential);
+      return 'review';
     }
 
     options.onDiagnostic?.('credential_submit_already_attempted');
-    return isWorkday ? 'progress' : 'review';
+    return 'review';
   }
 
   return 'review';
 }
 
 export const WORKDAY_ACCOUNTS_FILE = path.resolve('state/autoapply/portal-review/workday-accounts.json');
+
+/**
+ * `name+tag@domain` delivers to `name@domain`, so a per-employer account created
+ * under a plus address is still the candidate's own account.
+ */
+export function isDeliverableAlias(candidate: string, target: string): boolean {
+  if (!candidate || !target) return false;
+  const normalize = (value: string) => {
+    const [local = '', domain = ''] = value.trim().toLowerCase().split('@');
+    return `${local.split('+')[0]}@${domain}`;
+  };
+  return normalize(candidate) === normalize(target);
+}
+
+/** Reads a credential saved by the pre-vault account creation flow, keyed by host. */
+export function readLegacyWorkdayAccount(host: string): { email: string; password: string } | undefined {
+  if (!host) return undefined;
+  try {
+    if (!fs.existsSync(WORKDAY_ACCOUNTS_FILE)) return undefined;
+    const accounts = JSON.parse(fs.readFileSync(WORKDAY_ACCOUNTS_FILE, 'utf8')) as Record<string, { email?: unknown; password?: unknown }>;
+    const entry = accounts[host] || accounts[host.toLowerCase()];
+    if (entry && typeof entry.email === 'string' && typeof entry.password === 'string' && entry.password.length > 0) {
+      return { email: entry.email, password: entry.password };
+    }
+  } catch {}
+  return undefined;
+}
 export const VERIFIED_WORKDAY_HOSTS_FILE = path.resolve('state/autoapply/portal-review/verified-workday-hosts.json');
 
 export function isWorkdayHostVerified(host: string): boolean {
@@ -418,359 +430,20 @@ export function markWorkdayHostVerified(host: string): void {
   } catch {}
 }
 
-// ensureWorkdayCompliantPassword imported and re-exported from env-credentials.js above
+/** Legacy entry point cannot safely checkpoint credential submissions. */
+export async function authenticateWorkdayPortal(_page: Page, _email: string, _rawPassword: string): Promise<{ authenticated: boolean; actionTaken: string }> {
+  return { authenticated: false, actionTaken: 'review_required' };
+}
 
-export async function authenticateWorkdayPortal(
-  page: Page,
-  email: string,
-  rawPassword: string
-): Promise<{ authenticated: boolean; actionTaken: string }> {
-  const password = ensureWorkdayCompliantPassword(rawPassword);
 
-  // 1. Dismiss cookie banner if blocking pointer events
-  const cookieBtn = page
-    .locator('button[data-automation-id="legalNoticeAcceptButton"], button:has-text("Accept Cookies")')
-    .first();
-  if (await cookieBtn.isVisible().catch(() => false)) {
-    await cookieBtn.click({ timeout: 2000 }).catch(() => {});
-    await page.waitForTimeout(1500);
-  }
-
-  // 2. Click "Sign in with email" accordion button if present
-  const emailAccordion = page
-    .locator('[data-automation-id="SignInWithEmailButton"], button:has-text("Sign in with email")')
-    .first();
-  if (await emailAccordion.isVisible().catch(() => false)) {
-    await emailAccordion.click({ timeout: 3000 }).catch(() => {});
-    await page.waitForTimeout(1000);
-  }
-
-  // GEN-109: Open Sign In modal via utilityButtonSignIn if Workday rendered the unauthenticated shell
-  const hasAuthInputs = await page
-    .locator('[data-automation-id="formField-email"] input, [data-automation-id="email"], input[type="password"]')
-    .first()
-    .isVisible()
-    .catch(() => false);
-  if (!hasAuthInputs) {
-    const utilityBtn = page.locator('[data-automation-id="utilityButtonSignIn"]').first();
-    if (await utilityBtn.isVisible().catch(() => false)) {
-      await utilityBtn.click({ timeout: 5000 }).catch(() => {});
-      await page
-        .locator(
-          '[data-automation-id="formField-email"] input, [data-automation-id="email"], input[type="password"], [data-automation-id="createAccountLink"]'
-        )
-        .first()
-        .waitFor({ state: 'visible', timeout: 7000 })
-        .catch(() => {});
-    }
-  }
-
-  // Wait briefly for auth inputs to mount
-  await page
-    .locator('input[type="password"]:not([data-automation-id="beecatcher"]), input[type="email"], [data-automation-id="SignInWithEmailButton"]')
-    .first()
-    .waitFor({ state: 'visible', timeout: 4000 })
-    .catch(() => {});
-
-  const getVisiblePasswordInputs = () =>
-    page
-      .locator('input[type="password"]:not([data-automation-id="beecatcher"]):not([name*="honeypot"])')
-      .filter({ visible: true });
-
-  const pwCount = await getVisiblePasswordInputs().count().catch(() => 0);
-  if (pwCount === 0) {
-    return { authenticated: true, actionTaken: 'no_auth_form_present' };
-  }
-
-  const recordWorkdayAccount = (accountEmail: string, usedPw: string) => {
-    try {
-      let accounts: Record<string, any> = {};
-      if (fs.existsSync(WORKDAY_ACCOUNTS_FILE)) {
-        accounts = JSON.parse(fs.readFileSync(WORKDAY_ACCOUNTS_FILE, 'utf8'));
-      }
-      const host = new URL(page.url()).hostname;
-      accounts[host] = {
-        email: accountEmail,
-        password: usedPw,
-        updatedAt: new Date().toISOString(),
-      };
-      fs.mkdirSync(path.dirname(WORKDAY_ACCOUNTS_FILE), { recursive: true });
-      fs.writeFileSync(WORKDAY_ACCOUNTS_FILE, JSON.stringify(accounts, null, 2), 'utf8');
-    } catch {}
-  };
-
-  const WORKDAY_EMAIL_SELECTOR =
-    '[data-automation-id="formField-email"] input, [data-automation-id="email"] input, input[data-automation-id="email"], input[type="email"], input[aria-label*="Email" i], input[id="input-4"], input[id^="input-"]:not([type="password"])';
-
-  const fillAndSubmitCreateAccount = async (targetEmail: string, pwToUse: string) => {
-    const emailInput = page
-      .locator(WORKDAY_EMAIL_SELECTOR)
-      .filter({ visible: true })
-      .first();
-    if (await emailInput.isVisible().catch(() => false)) {
-      await emailInput.fill(targetEmail).catch(() => {});
-      await emailInput.evaluate((el: HTMLInputElement, val: string) => {
-        el.value = val;
-        el.dispatchEvent(new Event('input', { bubbles: true }));
-        el.dispatchEvent(new Event('change', { bubbles: true }));
-        el.dispatchEvent(new Event('blur', { bubbles: true }));
-      }, targetEmail).catch(() => {});
-    }
-
-    const pws = getVisiblePasswordInputs();
-    const count = await pws.count();
-    for (let i = 0; i < count; i++) {
-      await pws.nth(i).fill(pwToUse).catch(() => {});
-    }
-
-    // Ticket GEN-161: Workday Enterprise createAccountCheckbox & Auth Modal Consent Auto-Check
-    const checkWorkdayCreateAccountConsentIfPresent = async (): Promise<void> => {
-      await page
-        .evaluate(() => {
-          const boxes = Array.from(
-            document.querySelectorAll<HTMLInputElement>(
-              '[data-automation-id="createAccountCheckbox"], [data-automation-id*="checkbox" i] input[type="checkbox"], form input[type="checkbox"], [role="dialog"] input[type="checkbox"]'
-            )
-          );
-          for (const box of boxes) {
-            if (!box.checked) {
-              box.click();
-              if (!box.checked) {
-                box.checked = true;
-                box.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
-              }
-            }
-          }
-          const ariaBoxes = Array.from(
-            document.querySelectorAll<HTMLElement>(
-              '[data-automation-id="createAccountCheckbox"][role="checkbox"], [role="checkbox"][aria-checked="false"]'
-            )
-          );
-          for (const ab of ariaBoxes) {
-            if (ab.getAttribute('aria-checked') !== 'true') {
-              ab.click();
-            }
-          }
-        })
-        .catch(() => {});
-    };
-
-    await checkWorkdayCreateAccountConsentIfPresent();
-
-    // Click Workday click_filter overlay OR submit button + press Enter
-    const submitTarget = page
-      .locator(
-        '[data-automation-id="createAccountSubmitButton"], [data-automation-id="click_filter"][aria-label*="Create Account"], button:has-text("Create Account")'
-      )
-      .filter({ visible: true })
-      .first();
-
-    if (await submitTarget.isVisible().catch(() => false)) {
-      await submitTarget.click({ force: true, timeout: 5000 }).catch(() => {});
-    }
-    const filter = page.locator('[data-automation-id="click_filter"]').filter({ visible: true }).first();
-    if (await filter.isVisible().catch(() => false)) {
-      await filter.click({ force: true, timeout: 3000 }).catch(() => {});
-    }
-    if (count > 0) {
-      await pws.last().press('Enter').catch(() => {});
-    }
-    await page.waitForTimeout(3500);
-    recordWorkdayAccount(targetEmail, pwToUse);
-  };
-
-  const fillAndSubmitSignIn = async (targetEmail: string, pwToUse: string) => {
-    const emailInput = page
-      .locator(WORKDAY_EMAIL_SELECTOR)
-      .filter({ visible: true })
-      .first();
-    if (await emailInput.isVisible().catch(() => false)) {
-      await emailInput.fill(targetEmail).catch(() => {});
-      await emailInput.evaluate((el: HTMLInputElement, val: string) => {
-        el.value = val;
-        el.dispatchEvent(new Event('input', { bubbles: true }));
-        el.dispatchEvent(new Event('change', { bubbles: true }));
-        el.dispatchEvent(new Event('blur', { bubbles: true }));
-      }, targetEmail).catch(() => {});
-    }
-
-    const pws = getVisiblePasswordInputs();
-    if ((await pws.count()) > 0) {
-      await pws.first().fill(pwToUse).catch(() => {});
-    }
-
-    const signInTarget = page
-      .locator(
-        '[data-automation-id="signInSubmitButton"], [data-automation-id="click_filter"][aria-label*="Sign In"], button[type="submit"]:has-text("Sign In")'
-      )
-      .filter({ visible: true })
-      .first();
-
-    if (await signInTarget.isVisible().catch(() => false)) {
-      await signInTarget.click({ force: true, timeout: 5000 }).catch(() => {});
-    }
-    const filter = page.locator('[data-automation-id="click_filter"]').filter({ visible: true }).first();
-    if (await filter.isVisible().catch(() => false)) {
-      await filter.click({ force: true, timeout: 3000 }).catch(() => {});
-    }
-    if ((await pws.count()) > 0) {
-      await pws.first().press('Enter').catch(() => {});
-    }
-    await page.waitForTimeout(3500);
-    recordWorkdayAccount(targetEmail, pwToUse);
-  };
-
-  const currentHost = new URL(page.url()).hostname;
-  const isVerifiedHost = isWorkdayHostVerified(currentHost);
-
-  // Ticket GEN-93.2: Jobops-style Create Account First on unverified hosts
-  if (!isVerifiedHost && pwCount === 1) {
-    const createLink = page
-      .locator(
-        '[data-automation-id="createAccountLink"], button:has-text("Create Account"), a:has-text("Create Account"), [data-automation-id="noAccountLink"]'
-      )
-      .filter({ visible: true })
-      .first();
-    if (await createLink.isVisible().catch(() => false)) {
-      await createLink.click({ force: true, timeout: 5000 }).catch(() => {});
-      await page.waitForTimeout(1200);
-    }
-  }
-
-  const postVerifyWorkdaySignIn = async () => {
-    const signInLink = page.locator('[data-automation-id="signInLink"], a:has-text("Sign In")').filter({ visible: true }).first();
-    if (await signInLink.isVisible().catch(() => false)) {
-      await signInLink.click({ force: true, timeout: 5000 }).catch(() => {});
-      await page.waitForTimeout(1000);
-      await fillAndSubmitSignIn(email, password);
-    }
-  };
-
-  const updatedPwCount = await getVisiblePasswordInputs().count().catch(() => 0);
-
-  const authOpts = {
-    email,
-    password,
-    sinceMs: Date.now() - 60_000,
-    companyHint: currentHost,
-  };
-
-  // Case A: On Create Account form (>= 2 password fields or switched from Sign In)
-  if (updatedPwCount >= 2) {
-    await fillAndSubmitCreateAccount(email, password);
-    const verified = await completeInPageEmailVerificationIfPrompted(page, getActiveFormFrame(page), undefined, authOpts);
-    if (verified) await postVerifyWorkdaySignIn();
-    const errText = await page.locator('[role="alert"], [data-automation-id="errorMessage"], .error').allTextContents().catch(() => []);
-    const pwComplexityErr = errText.some(t => /password.*(?:match|complexity|requirements|criteria|must contain|characters|invalid)|does not meet/i.test(t));
-    if (pwComplexityErr) {
-      console.log('[AUTH] Workday password complexity error detected; retrying with 16-char fallback');
-      await fillAndSubmitCreateAccount(email, WORKDAY_COMPLEXITY_FALLBACK_PASSWORD);
-      await completeInPageEmailVerificationIfPrompted(page, getActiveFormFrame(page), undefined, {
-        ...authOpts,
-        password: WORKDAY_COMPLEXITY_FALLBACK_PASSWORD,
-      });
-    }
-    const accountExists = errText.some(t => /already exists|already registered/i.test(t));
-    if (accountExists) {
-      markWorkdayHostVerified(currentHost);
-      const signInLink = page.locator('[data-automation-id="signInLink"], a:has-text("Sign In")').filter({ visible: true }).first();
-      if (await signInLink.isVisible().catch(() => false)) {
-        await signInLink.click({ force: true, timeout: 5000 }).catch(() => {});
-        await page.waitForTimeout(1000);
-        if (rawPassword) await fillAndSubmitSignIn(email, rawPassword);
-        if ((await getVisiblePasswordInputs().count().catch(() => 0)) > 0 && rawPassword !== password) {
-          await fillAndSubmitSignIn(email, password);
-        }
-        await completeInPageEmailVerificationIfPrompted(page, getActiveFormFrame(page), undefined, authOpts);
-
-        // Ticket GEN-185: If Sign In failed on existing account, fall back to +alias Create Account immediately
-        if ((await getVisiblePasswordInputs().count().catch(() => 0)) > 0) {
-          let aliasEmail = makeGmailTenantAlias(email, page.url());
-          if (aliasEmail === email && email.includes('@')) {
-            const [l, d] = email.split('@');
-            aliasEmail = `${l}+wd${Date.now().toString().slice(-4)}@${d}`;
-          }
-          const createLink = page
-            .locator(
-              '[data-automation-id="createAccountLink"], button:has-text("Create Account"), a:has-text("Create Account"), [data-automation-id="noAccountLink"]'
-            )
-            .filter({ visible: true })
-            .first();
-          if (await createLink.isVisible().catch(() => false)) {
-            await createLink.click({ force: true, timeout: 5000 }).catch(() => {});
-            await page.waitForTimeout(1000);
-            await fillAndSubmitCreateAccount(aliasEmail, password);
-            await completeInPageEmailVerificationIfPrompted(page, getActiveFormFrame(page), undefined, {
-              ...authOpts,
-              email: aliasEmail,
-            });
-          }
-        }
-      }
-    } else if ((await getVisiblePasswordInputs().count().catch(() => 0)) === 0) {
-      markWorkdayHostVerified(currentHost);
-    }
-  } else {
-    // Case B: Sign In form
-    if (rawPassword) {
-      await fillAndSubmitSignIn(email, rawPassword);
-    }
-    if ((await getVisiblePasswordInputs().count().catch(() => 0)) > 0 && rawPassword !== password) {
-      await fillAndSubmitSignIn(email, password);
-    }
-    await completeInPageEmailVerificationIfPrompted(page, getActiveFormFrame(page), undefined, authOpts);
-
-    if ((await getVisiblePasswordInputs().count().catch(() => 0)) === 0) {
-      markWorkdayHostVerified(currentHost);
-    } else {
-      // If Sign In failed, click Create Account
-      const createLink = page
-        .locator(
-        '[data-automation-id="createAccountLink"], button:has-text("Create Account"), a:has-text("Create Account"), [data-automation-id="noAccountLink"]'
-      )
-        .filter({ visible: true })
-        .first();
-      if (await createLink.isVisible().catch(() => false)) {
-        await createLink.click({ force: true, timeout: 5000 }).catch(() => {});
-        await page.waitForTimeout(1000);
-        await fillAndSubmitCreateAccount(email, password);
-        const verified = await completeInPageEmailVerificationIfPrompted(page, getActiveFormFrame(page), undefined, authOpts);
-        if (verified) await postVerifyWorkdaySignIn();
-        if ((await getVisiblePasswordInputs().count().catch(() => 0)) === 0) {
-          markWorkdayHostVerified(currentHost);
-        }
-      }
-    }
-  }
-
-  // TICKET GEN-74 & GEN-185: Gmail +alias bypass if both Sign In and Create Account failed with base email
-  if ((await getVisiblePasswordInputs().count().catch(() => 0)) > 0) {
-    let aliasEmail = makeGmailTenantAlias(email, page.url());
-    if (aliasEmail === email && email.includes('@')) {
-      const [l, d] = email.split('@');
-      aliasEmail = `${l}+wd${Date.now().toString().slice(-4)}@${d}`;
-    }
-    const createLink = page
-      .locator(
-        '[data-automation-id="createAccountLink"], button:has-text("Create Account"), a:has-text("Create Account"), [data-automation-id="noAccountLink"]'
-      )
-      .filter({ visible: true })
-      .first();
-    if (await createLink.isVisible().catch(() => false)) {
-      await createLink.click({ force: true, timeout: 5000 }).catch(() => {});
-      await page.waitForTimeout(1000);
-    }
-    await fillAndSubmitCreateAccount(aliasEmail, password);
-    const verified = await completeInPageEmailVerificationIfPrompted(page, getActiveFormFrame(page));
-    if (verified) await postVerifyWorkdaySignIn();
-  }
-
-  const finalPwCount = await getVisiblePasswordInputs().count().catch(() => 0);
-  if (finalPwCount === 0) {
-    await saveHostSessionState(page.context(), page.url()).catch(() => {});
-  }
-  return {
-    authenticated: finalPwCount === 0,
-    actionTaken: finalPwCount === 0 ? 'workday_auth_succeeded' : 'workday_auth_still_visible',
-  };
+export function generateRfc6238TotpCode(base32Seed: string, nowMs = Date.now(), stepSeconds = 30, digits = 6): string {
+  if (!Number.isFinite(nowMs) || nowMs < 0 || !Number.isInteger(stepSeconds) || stepSeconds < 1 || !Number.isInteger(digits) || digits < 6 || digits > 8) throw new Error('Invalid TOTP parameters');
+  const seed = base32Seed.toUpperCase().replace(/\s/g, '');
+  if (!/^[A-Z2-7]+={0,6}$/.test(seed)) throw new Error('Invalid Base32 seed');
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'; let bits = 0, buffer = 0; const bytes: number[] = [];
+  for (const char of seed.replace(/=+$/, '')) { buffer = (buffer << 5) | alphabet.indexOf(char); bits += 5; if (bits >= 8) { bits -= 8; bytes.push((buffer >>> bits) & 255); buffer &= (1 << bits) - 1; } }
+  if (!bytes.length || buffer !== 0) throw new Error('Invalid Base32 seed');
+  const counter = Buffer.alloc(8); counter.writeBigUInt64BE(BigInt(Math.floor(nowMs / 1000 / stepSeconds)));
+  const digest = createHmac('sha1', Buffer.from(bytes)).update(counter).digest(); const offset = digest[19]! & 15;
+  return String((digest.readUInt32BE(offset) & 0x7fffffff) % (10 ** digits)).padStart(digits, '0');
 }

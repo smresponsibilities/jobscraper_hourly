@@ -2,7 +2,8 @@ import { randomBytes, createHmac, createCipheriv, createDecipheriv, createHash, 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, linkSync, unlinkSync, renameSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
-import { resolveEnvPortalCredentials, ensureWorkdayCompliantPassword } from './env-credentials.js';
+import { resolveEnvPortalCredentials } from './env-credentials.js';
+import { deriveWorkdayCompliantPassword } from './workday-tenant-registry.js';
 
 function publishExclusive(file: string, data: string | Buffer): boolean {
   const temporary = file + '.' + randomBytes(12).toString('hex') + '.tmp';
@@ -15,7 +16,7 @@ function publishExclusive(file: string, data: string | Buffer): boolean {
 function protectWindows(value: Buffer, decrypt = false): Buffer {
   const operation = decrypt ? 'Unprotect' : 'Protect';
   const script = `Add-Type -AssemblyName System.Security; $data=[Convert]::FromBase64String([Console]::In.ReadToEnd()); [Convert]::ToBase64String([Security.Cryptography.ProtectedData]::${operation}($data,$null,[Security.Cryptography.DataProtectionScope]::CurrentUser))`;
-  return Buffer.from(execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { input: value.toString('base64'), windowsHide: true, encoding: 'utf8', timeout: 15000 }).trim(), 'base64');
+  return Buffer.from(execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `$ProgressPreference = 'SilentlyContinue'; ${script}`], { input: value.toString('base64'), windowsHide: true, encoding: 'utf8', timeout: 15000 }).trim(), 'base64');
 }
 
 /** Tenant-bound authenticated encryption. Windows stores master key with user DPAPI. */
@@ -59,25 +60,7 @@ export class CredentialVault {
   signEvidence(value: string): string { return createHmac('sha256', this.key).update('evidence-manifest-v1\0').update(value).digest('hex'); }
   verifyEvidence(value: string, signature: string): boolean { return /^[a-f0-9]{64}$/.test(signature) && timingSafeEqual(Buffer.from(this.signEvidence(value), 'hex'), Buffer.from(signature, 'hex')); }
   get(tenant: string): VaultCredential | undefined {
-    if (!existsSync(this.file(tenant))) {
-      // Ticket GEN-100: Auto-provision credentials for ANY Workday (*.myworkdayjobs.com) or SmartRecruiters (*.smartrecruiters.com) tenant
-      if (
-        tenant.includes('myworkdayjobs.com') ||
-        tenant.includes('smartrecruiters.com') ||
-        tenant.startsWith('workday:') ||
-        tenant.startsWith('smartrecruiters:')
-      ) {
-        const envCreds = resolveEnvPortalCredentials();
-        if (envCreds) {
-          const email = envCreds.email;
-          const password = ensureWorkdayCompliantPassword(envCreds.password);
-          const credential = { email, password };
-          try { this.put(tenant, credential); } catch {}
-          return credential;
-        }
-      }
-      return;
-    }
+    if (!existsSync(this.file(tenant))) return;
     const value = JSON.parse(this.decrypt(tenant, readFileSync(this.file(tenant), 'utf8')));
     if (typeof value.email !== 'string' || typeof value.password !== 'string') throw new Error('Invalid vault entry');
     if (value.recovery && (!Number.isFinite(Date.parse(value.recovery.requestedAt)) || !Number.isInteger(value.recovery.attempts) || !Number.isInteger(value.recovery.revision) || typeof value.recovery.confirmed !== 'boolean')) throw new Error('Invalid recovery state');
@@ -110,19 +93,40 @@ export class CredentialVault {
     value.recovery.confirmed = true;
     this.put(`recovery:${tenant}`, value, true);
   }
+  /**
+   * Stores a credential recovered from an earlier store (the legacy
+   * workday-accounts.json) so it is used instead of a freshly derived password,
+   * which the employer site would reject for an account that already exists.
+   * Never overwrites an entry the vault already owns.
+   */
+  adopt(tenant: string, credential: { email: string; password: string }): { email: string; password: string } {
+    try {
+      const existing = this.get(tenant);
+      if (existing) return existing;
+      this.put(tenant, { email: credential.email, password: credential.password });
+      return this.get(tenant) || credential;
+    } catch {
+      return credential;
+    }
+  }
   ensure(tenant: string, email: string, candidateNames: string[] = []): { credential: { email: string; password: string }; created: boolean } {
     const existing = this.get(tenant);
     if (existing) { if (existing.email.toLowerCase() !== email.toLowerCase()) throw new Error('Vault candidate mismatch'); return { credential: existing, created: false }; }
     let password: string;
     const envCreds = resolveEnvPortalCredentials(email);
     if (envCreds?.password && (envCreds.email.toLowerCase() === email.toLowerCase() || !email)) {
-      password = ensureWorkdayCompliantPassword(envCreds.password);
+      password = envCreds.password;
     } else {
       let counter = 0;
       const excluded = [...email.split('@')[0]!.split(/[._-]/).filter(part => part.length >= 3), ...candidateNames.flatMap(name => name.trim().split(/\s+/)).filter(Boolean)].map(part => part.toLowerCase());
       do {
-        const seed = createHmac('sha256', this.key).update(JSON.stringify(['tenant-password-v2', tenant, email.toLowerCase(), counter++])).digest();
-        password = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'[seed[0]! % 26]! + 'abcdefghijklmnopqrstuvwxyz'[seed[1]! % 26]! + String(seed[2]! % 10) + '!@#$%'[seed[3]! % 5]! + seed.subarray(4, 13).toString('base64url');
+        const identity = JSON.stringify(['tenant-password-v2', tenant, email.toLowerCase(), counter++]);
+        if (/myworkdayjobs\.com|^workday:/i.test(tenant)) {
+          password = deriveWorkdayCompliantPassword(this.key.toString('base64'), identity);
+        } else {
+          const seed = createHmac('sha256', this.key).update(identity).digest();
+          password = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'[seed[0]! % 26]! + 'abcdefghijklmnopqrstuvwxyz'[seed[1]! % 26]! + String(seed[2]! % 10) + '!@#$%'[seed[3]! % 5]! + seed.subarray(4, 13).toString('base64url');
+        }
       } while (/(.)\1/.test(password) || excluded.some(part => password.toLowerCase().includes(part)));
     }
     const credential = { email, password };

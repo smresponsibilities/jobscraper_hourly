@@ -41,7 +41,7 @@ import { startDashboardServer } from './dashboard-server.js';
 import { filterUnattemptedJobs, recordAttemptedJob } from '../src/autoapply/attempted-registry.js';
 import { scrubBrowserProfileCaches } from '../src/autoapply/ram-and-pacing.js';
 import { syncGitHubActionsPillars } from './sync-github-actions-pillars.js';
-import { ContinuousRamAndHealthWatchdog, check30MinZeroFillDroughtAndAutoHeal, ActiveJobRegistry } from '../src/autoapply/health-and-ram-watchdog.js';
+import { ContinuousRamAndHealthWatchdog, check30MinZeroFillDroughtAndAutoHeal, ActiveJobRegistry, reapOrphanedAutomationBrowsers } from '../src/autoapply/health-and-ram-watchdog.js';
 import { syncInboxLifecycleEvents } from '../src/autoapply/inbox-lifecycle-tracker.js';
 import { selectDiversifiedMultiLaneChunk } from './run-overnight-marathon.js';
 import { harvestFastAtsJobs } from './harvest-fast-ats-jobs.js';
@@ -83,6 +83,38 @@ export function partitionJobsIntoProviderLanes<T extends { url?: string; jobUrl?
     else lanes.other!.push(job);
   }
   return lanes;
+}
+
+/**
+ * Reads the runner's last on-disk fill progress. A hard timeout aborts the
+ * drain's await, not the runner, so the synthetic timeout report would
+ * otherwise claim zero filled fields after a fully filled form.
+ */
+export function readPartialRunnerReport(sessionDir: string, expected?: { jobId: string; url: string; startedAt: number }): {
+  fieldsFound?: number;
+  fieldsFilled?: number;
+  unmappedFields?: number;
+  stepsTraversed?: number;
+  actions?: BotRunReport['actions'];
+  logs?: string[];
+} | undefined {
+  try {
+    const partialPath = path.join(sessionDir, 'partial-report.json');
+    if (!fs.existsSync(partialPath)) return undefined;
+    const parsed = JSON.parse(fs.readFileSync(partialPath, 'utf8'));
+    if (!parsed || typeof parsed !== 'object') return undefined;
+    if (expected && (parsed.jobId !== expected.jobId || parsed.applicationUrl !== expected.url || !Number.isFinite(Date.parse(parsed.updatedAt)) || Date.parse(parsed.updatedAt) < expected.startedAt)) return undefined;
+    return {
+      fieldsFound: Number(parsed.fieldsFound) || 0,
+      fieldsFilled: Number(parsed.fieldsFilled) || 0,
+      unmappedFields: Number(parsed.unmappedFields) || 0,
+      stepsTraversed: Number(parsed.stepsTraversed) || 0,
+      actions: Array.isArray(parsed.actions) ? parsed.actions : [],
+      logs: Array.isArray(parsed.logs) ? parsed.logs.filter((line: unknown) => typeof line === 'string') : [],
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 // Ticket GEN-284: Hard timeout default capped at 95_000ms
@@ -143,7 +175,14 @@ export function acquireLock(lockPath: string): boolean {
     if (fs.existsSync(lockPath)) {
       const content = fs.readFileSync(lockPath, 'utf8');
       const info: WorkerLockInfo = JSON.parse(content);
-      if (info.pid === process.pid) return true;
+      if (info.pid === process.pid) {
+        // Windows recycles PIDs, so a lock left behind by an earlier worker can
+        // carry our own pid and its old start time. Keep the lock, refresh it.
+        try {
+          fs.writeFileSync(lockPath, JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }), 'utf8');
+        } catch {}
+        return true;
+      }
       if (info.pid && info.pid !== process.pid) {
         if (isPidRunningNode(info.pid)) {
           console.log(`[DRAIN] Another worker PID ${info.pid} is actively running node.exe. Exiting cleanly.`);
@@ -244,7 +283,9 @@ async function main(): Promise<void> {
       : 50;
   const skipSync = flags.has('--skip-sync');
   const forceSync = flags.has('--force-sync');
-  const discoveryCachePath = path.join(stateDir, 'last-discovery-sync.json');
+  // Phase A keeps its own timestamp: the pillar sync used to rewrite the shared
+  // file, which made the next cycle skip a Phase A that had actually run.
+  const discoveryCachePath = path.join(stateDir, 'last-phase-a-sync.json');
 
   if (!Number.isInteger(maxJobs) || maxJobs < 1 || !Number.isFinite(timeBudgetMinutes) || timeBudgetMinutes <= 0) {
     throw new Error('Job count and time budget must be positive numbers');
@@ -255,6 +296,9 @@ async function main(): Promise<void> {
   process.once('exit', () => releaseLock(lockPath));
   const ramWatchdog = new ContinuousRamAndHealthWatchdog(45_000);
   ramWatchdog.start();
+  // Browsers left behind by killed runner processes are pure RAM loss and the
+  // reason the drain keeps getting clamped to one lane.
+  reapOrphanedAutomationBrowsers();
   const dashboard = startDashboardServer(4321);
   (dashboard as any)?.unref?.();
   let stopRequested = false;
@@ -541,6 +585,12 @@ async function main(): Promise<void> {
     const isContinuousSubmit = shouldSubmit;
     let batchNumber = 0;
     let pendingDiscovery: Promise<void> | null = null;
+    // Per-cycle counters, reset at the top of every cycle.
+    let processedCount = 0;
+    let startedJobs = 0;
+    let appliedCount = 0;
+    let runningLanes = 0;
+    const loggedDeferredHosts = new Set<string>();
 
     while (!stopping() && batchNumber < maxCycles) {
       if (batchNumber > 0) {
@@ -580,6 +630,11 @@ async function main(): Promise<void> {
           break;
         }
 
+        // SmartRecruiters mounts no form until an employer account exists, so
+        // every run stalls at the login wall. Parked until an account-creation
+        // flow is built.
+        let smartRecruitersParkNoticeLogged = false;
+
         // Ticket GEN-528: Start browser lanes immediately in 0.5s when >= 30 fast-ATS jobs already queued
         const fastAtsQueuedCount = countFastAtsQueued();
         if (fastAtsQueuedCount >= 30) {
@@ -612,8 +667,13 @@ async function main(): Promise<void> {
 
         const allJobs = queue.list();
         const eligible: AutoaplyJobItem[] = [];
+        let parkedSmartRecruiters = 0;
         for (const job of allJobs) {
           if (job.status !== 'queued') continue;
+          if (/smartrecruiters\.com|smartr\.me/i.test(job.jobUrl)) {
+            parkedSmartRecruiters++;
+            continue;
+          }
           // Ticket GEN-91: Fast-fail non-direct ATS jobs (filter in-memory without blocking disk writes)
           if (!isSupportedDirectAtsJobUrl(job.jobUrl)) continue;
           if (isStrictlyIsolatedTenant(job.company, job.jobUrl)) continue;
@@ -643,6 +703,11 @@ async function main(): Promise<void> {
         }
 
         // Ticket GEN-474: Filter out previously attempted jobs while treating SQLite status = 'queued' as authoritative
+        if (parkedSmartRecruiters > 0 && !smartRecruitersParkNoticeLogged) {
+          smartRecruitersParkNoticeLogged = true;
+          console.log(`[DRAIN] Parked ${parkedSmartRecruiters} SmartRecruiters job(s): the portal requires account creation before the form mounts.`);
+        }
+
         const freshQueued = filterUnattemptedJobs(eligible);
         if (freshQueued.length === 0) {
           if ((!isContinuousSubmit && maxCycles === Infinity) || batchNumber >= maxCycles) break;
@@ -694,9 +759,11 @@ async function main(): Promise<void> {
       }
 
       // Ticket GEN-513, GEN-520, GEN-524 & GEN-532: Multi-lane DRR chunk selection capping Workday <= 2 and SR <= 2
+      // Fetch 4x the target: per-tenant caps plus preflight skips were draining
+      // a 2x candidate pool down below the batch budget.
       const chunkCandidates = selectDiversifiedMultiLaneChunk(
         sortedEligible,
-        targetChunkSize * 2,
+        targetChunkSize * 4,
         (url) => isHostReadyForRequest(url, 45000, hostHealthPath)
       );
       const verifiedChunkJobs: AutoaplyJobItem[] = [];
@@ -753,6 +820,7 @@ async function main(): Promise<void> {
       laneKey = 'default'
     ): Promise<void> => {
       if (stopping() || startedJobs >= maxJobs || Date.now() - startTime >= maxDurationMs) return;
+      const intakeStartMs = Date.now();
 
       // GEN-470: 30-Day Duplicate Role Dedup Guard (0ms check, using cycle-snapshot)
       if (isAlreadyAppliedSameCompanyRoleWithin30Days(job.company, job.title, cycleAppliedList)) {
@@ -830,6 +898,11 @@ async function main(): Promise<void> {
       }
 
       const timeoutConfig = getProviderTimeoutConfig(job.jobUrl);
+      // The provider budget is wall time for the whole attempt. Preflight, resume
+      // compilation and the browser fork happened before this point and used to
+      // be free, so 180s of runner work became 200-280s of wall time and the
+      // drain's own deadline checks fired late.
+      const intakeElapsedMs = Date.now() - intakeStartMs;
 
       // Generate tailored resume for the job archetype (GEN-42)
       let jobProfile = profile;
@@ -860,8 +933,8 @@ async function main(): Promise<void> {
         submit: shouldSubmit,
         resume: true,
         retryReviewed: false,
-        safeCrashRecovery: true,
         preserveReviewedValues: false,
+        safeCrashRecovery: true,
         onPhase: (phase, step) => queue.recordEvent(job.id, phase, step),
         keepOpen: false,
         sessionDir,
@@ -882,11 +955,16 @@ async function main(): Promise<void> {
       const jobStartedAt = new Date().toISOString();
       const jobStartMs = Date.now();
       let report: BotRunReport | undefined;
-      // Ticket GEN-102: Wait until network online BEFORE starting hard timeout clock
-      await waitUntilNetworkOnline();
+      // Ticket GEN-102: Wait until network online BEFORE starting hard timeout clock.
+      // The default wait is ten minutes, so a single DNS blip held a job (and its
+      // lane) for most of a batch. Bounded now, and the wait counts against the
+      // attempt's wall-time budget below.
+      const networkReady = await waitUntilNetworkOnline(5000, 45_000);
+      if (!networkReady) console.warn(`[DRAIN] Network still unresolved after 45s for ${job.company}; continuing with the job budget.`);
 
       try {
-        report = await runWithHardTimeout(childRunner.run(options), timeoutConfig.maxTotalMs, `Job ${job.company}`);
+        const remainingBudgetMs = Math.max(60_000, timeoutConfig.maxTotalMs - intakeElapsedMs);
+        report = await runWithHardTimeout(childRunner.run(options), remainingBudgetMs, `Job ${job.company}`);
       } catch (err: any) {
         const isNetDrop = isOfflineDinoOrNetworkError(err?.message || '') ||
           /\b(Wi-Fi \/ DNS drop|ERR_INTERNET_DISCONNECTED|ERR_NAME_NOT_RESOLVED|ERR_NETWORK_CHANGED|ERR_CONNECTION_TIMED_OUT|network.*offline)\b/i.test(err?.message || '');
@@ -909,6 +987,22 @@ async function main(): Promise<void> {
           actions: [],
           logs: [],
         };
+        const partial = readPartialRunnerReport(sessionDir, { jobId: job.id, url: job.jobUrl, startedAt: jobStartMs });
+        if (partial) {
+          report.fieldsFound = partial.fieldsFound ?? 0;
+          report.fieldsFilled = partial.fieldsFilled ?? 0;
+          report.unmappedFields = partial.unmappedFields ?? 0;
+          report.stepsTraversed = partial.stepsTraversed ?? 0;
+          report.actions = partial.actions ?? [];
+          report.logs = [...(partial.logs ?? []), `partial-report: ${partial.fieldsFilled ?? 0} field(s) filled before the hard timeout`];
+          // Say how far the run actually got. "Runner interrupted" alone told an
+          // operator nothing about whether the browser never navigated or the
+          // form was half filled.
+          report.reason = `${report.reason} (${report.fieldsFound} field(s) found, ${report.fieldsFilled} filled before the ${Math.round((report.durationMs || 0) / 1000)}s limit)`;
+          // A hard timeout used to leave no trace of where the runner was stuck.
+          const trace = (partial.logs ?? []).slice(-4).map((line: string) => line.slice(0, 140));
+          if (trace.length > 0) console.warn(`[DRAIN] Timeout trace for ${job.company}: ${trace.join(' | ')}`);
+        }
         if (isNetDrop) console.log(`[DRAIN] Network failure during ${job.company}; parked for receipt review.`);
       } finally {
         await childRunner.close().catch(() => {});
@@ -926,6 +1020,9 @@ async function main(): Promise<void> {
       processedCount++;
       const isRateLimited = report.logs.some(l => /rate[- ]limit|\b(?:429|503)\b/i.test(l)) || /rate[- ]limit|too many requests|\b(?:429|503)\b/i.test(report.reason || '');
       const isChallenge = report.logs.some(l => /challenge|captcha|cloudflare/i.test(l)) || /challenge|captcha/i.test(report.reason || '') || report.reason === 'captcha_deferred';
+      // Status routing compares against the full string: the 'queued' normalization
+      // above narrows the union, which made the later retry branch look unreachable.
+      const statusForRouting: string = report.status;
 
       try {
         if (isRateLimited) recordTenantHttpOutcome(rateLimitKey, /\b503\b/.test(`${report.reason || ''} ${report.logs.join(' ')}`) ? 503 : 429);
@@ -942,9 +1039,9 @@ async function main(): Promise<void> {
         markHostOutcome(job.jobUrl, 'success', hostHealthPath);
       } else if (report.status === 'failed') {
         markHostOutcome(job.jobUrl, 'error', hostHealthPath);
-      } else {
-        markHostOutcome(job.jobUrl, 'success', hostHealthPath);
       }
+      // A paused or skipped run says nothing about host health; recording
+      // 'success' here made stuck hosts look healthy and hid the failures.
 
       if (report.status === 'queued') {
         report.status = 'paused_for_review';
@@ -972,7 +1069,7 @@ async function main(): Promise<void> {
         queue.pauseForReview(job.id, report.reason);
       } else if (report.status === 'skipped') {
         queue.skip(job.id, report.reason);
-      } else if (report.status === 'queued' || report.reason === 'service_temporarily_unavailable' || report.reason === 'wifi_drop_requeued') {
+      } else if (statusForRouting === 'queued' || report.reason === 'service_temporarily_unavailable' || report.reason === 'wifi_drop_requeued') {
         if (report.reason === 'service_temporarily_unavailable') {
           markHostOutcome(job.jobUrl, 'rate_limited', hostHealthPath);
         }
@@ -1012,7 +1109,7 @@ async function main(): Promise<void> {
       }
 
       // Ticket GEN-474: Record attempted job to persistent registry
-      if (report.status !== 'queued' && report.reason !== 'service_temporarily_unavailable' && report.reason !== 'wifi_drop_requeued') {
+      if (statusForRouting !== 'queued' && report.reason !== 'service_temporarily_unavailable' && report.reason !== 'wifi_drop_requeued') {
         recordAttemptedJob({
           jobId: job.id,
           url: job.jobUrl,
@@ -1056,11 +1153,23 @@ async function main(): Promise<void> {
     const runLane = async (laneKey: keyof typeof lanes): Promise<void> => {
       const jobs = lanes[laneKey] || [];
       if (jobs.length === 0) return;
-      while (!stopping() && runningLanes >= ramWatchdog.getRecommendedLanes() && Date.now() - startTime < maxDurationMs) {
-        await waitForDaemonWake(stateDir, 1000, stopping);
+      // Reserve the slot synchronously. Checking the count, awaiting, then
+      // incrementing let two lanes both see the same free slot and launch one
+      // browser more than the RAM budget allows.
+      const acquireLaneSlot = (): boolean => {
+        if (runningLanes >= ramWatchdog.getRecommendedLanes()) return false;
+        runningLanes++;
+        return true;
+      };
+      let laneSlot = false;
+      while (!laneSlot && !stopping() && Date.now() - startTime < maxDurationMs) {
+        laneSlot = acquireLaneSlot();
+        if (!laneSlot) await waitForDaemonWake(stateDir, 100, stopping);
       }
-      if (stopping() || startedJobs >= maxJobs || Date.now() - startTime >= maxDurationMs) return;
-      runningLanes++;
+      if (!laneSlot || stopping() || startedJobs >= maxJobs || Date.now() - startTime >= maxDurationMs) {
+        if (laneSlot) runningLanes--;
+        return;
+      }
       ActiveJobRegistry.add(`drain-lane:${laneKey}`);
       const laneProfileDir = path.resolve('state/autoapply', `browser-profile-lane-${laneKey}`);
       const laneRunner = new AutoApplyRunner();
@@ -1084,6 +1193,13 @@ async function main(): Promise<void> {
 
         for (const job of jobs) {
           if (stopping() || startedJobs >= targetChunkSize || Date.now() >= cycleDeadline) break;
+          // A rebuild should not wait for the whole cycle. Stop starting jobs as
+          // soon as the artifacts change; the cycle boundary then exits cleanly
+          // so the supervisor reloads the new code.
+          if (hotReload.hasBuildChangedOnDisk().changed) {
+            console.log(`[DRAIN] Build changed mid-cycle; no new jobs will start in this cycle.`);
+            break;
+          }
           try {
             if (!laneRunner.isConnected()) {
               await laneRunner.close().catch(() => {});
@@ -1121,13 +1237,14 @@ async function main(): Promise<void> {
         console.error(`[INFINITE-DAEMON] ⚠️ Cycle #${batchNumber} error (recovering in 8s): ${cycleErr?.message || cycleErr}`);
         await new Promise(r => setTimeout(r, 8000)); // actual recovery pause promised in the log
       }
-      }
 
       if (stopping() || batchNumber >= maxCycles) {
         break;
       }
 
-      if (processedCount === 0) await waitForDaemonWake(stateDir, idleWaitMs, stopping);
+      // Preflight-skipped jobs never increment processedCount, so gate the idle
+      // sleep on whether a browser actually launched.
+      if (startedJobs === 0) await waitForDaemonWake(stateDir, idleWaitMs, stopping);
       if (stopping() || batchNumber >= maxCycles) break;
 
       // Step 421 (GEN-421): Inter-chunk cleanup between batches
@@ -1136,6 +1253,14 @@ async function main(): Promise<void> {
       const freed = scrubBrowserProfileCaches(stateDir);
       if (freed > 0) {
         console.log(`[DRAIN] [RAM DIET] Scrubbed ${freed} cache directories across browser profiles.`);
+      }
+      reapOrphanedAutomationBrowsers();
+      // Refresh the park scoreboard every cycle; writing it only on exit left the
+      // dashboard showing counts from the previous worker's shutdown.
+      try {
+        generateParkIssuesScoreboard(path.join(stateDir, 'queue.sqlite'));
+      } catch (e) {
+        console.warn('[DRAIN] Park scoreboard refresh failed:', e instanceof Error ? e.message : e);
       }
 
       // Ticket GEN-528: Run background discovery between 20-job batches with 45s hard cap

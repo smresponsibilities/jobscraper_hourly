@@ -2,6 +2,8 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { execSync } from 'node:child_process';
+import { runSqliteMaintenanceAndBackup } from '../src/autoapply/sqlite-maintenance.js';
+import { verifyStoredEvidenceMerkleLedger } from '../src/autoapply/evidence-auditor.js';
 
 async function verifyNorthStar() {
   console.log('================================================================');
@@ -14,7 +16,7 @@ async function verifyNorthStar() {
   // INVARIANT 1: Autonomous 24/7 Sticky Execution
   // -------------------------------------------------------------------------
   console.log('[INVARIANT 1/5] Checking Autonomous 24/7 Sticky Execution...');
-  if (fs.existsSync('STOP_AUTOAPPLY.flag')) {
+  if (fs.existsSync('STOP_AUTOAPPLY.flag') || fs.existsSync(path.resolve('state/autoapply/portal-review/STOP_AUTOAPPLY.flag'))) {
     console.error('✖ FAILURE INVARIANT 1: STOP_AUTOAPPLY.flag exists on disk!');
     process.exit(1);
   }
@@ -30,6 +32,8 @@ async function verifyNorthStar() {
     console.error('✖ FAILURE INVARIANT 1: Invalid PID in supervisor.lock');
     process.exit(1);
   }
+  try { process.kill(supPid, 0); }
+  catch { console.error('✖ FAILURE INVARIANT 1: Supervisor process cannot be verified'); process.exit(1); }
 
   // Check queue.sqlite readability
   const dbPath = path.resolve('state/autoapply/portal-review/queue.sqlite');
@@ -39,12 +43,24 @@ async function verifyNorthStar() {
   }
 
   const db = new DatabaseSync(dbPath, { readOnly: true });
-  const appliedCount = (db.prepare('SELECT count(id) as c FROM applications WHERE status = ?').get('applied') as any)?.c || 0;
-  if (appliedCount < 250) {
-    console.error(`✖ FAILURE INVARIANT 1: Expected >= 250 applied records, found ${appliedCount}`);
+  const appliedRows = db.prepare('SELECT payload FROM applications WHERE status = ?').all('applied') as Array<{ payload: string }>;
+  db.close();
+  const appliedCount = appliedRows.filter(row => {
+    try {
+      const receipt = JSON.parse(row.payload).receipt;
+      return receipt?.existing !== true && typeof receipt?.text === 'string' && !!receipt.text.trim() && typeof receipt.url === 'string' && Number.isFinite(Date.parse(receipt.verifiedAt || ''));
+    } catch { return false; }
+  }).length;
+  if (appliedCount < 255) {
+    console.error(`✖ FAILURE INVARIANT 1: Expected >= 255 applied records with observed receipts, found ${appliedCount}`);
     process.exit(1);
   }
-  console.log(`✔ Invariant 1 PASS: Supervisor PID ${supPid} registered, ${appliedCount} applied records in queue.sqlite.\n`);
+  const maintenance = runSqliteMaintenanceAndBackup(dbPath);
+  if (!maintenance.integrityOk || !maintenance.backupCreated || !verifyStoredEvidenceMerkleLedger()) {
+    console.error('✖ FAILURE INVARIANT 1: Queue integrity, backup or stored evidence chain failed');
+    process.exit(1);
+  }
+  console.log(`✔ Invariant 1 PASS: Supervisor process and queue checked; ${appliedCount} applied records have recorded receipt details; chain validity does not prove authenticity.\n`);
 
   // -------------------------------------------------------------------------
   // INVARIANT 2: >= 95% Grounded Question Provenance
@@ -52,13 +68,21 @@ async function verifyNorthStar() {
   console.log('[INVARIANT 2/5] Checking Question Provenance & Historical Ledger Replay...');
   try {
     const replayOutput = execSync('npx tsx scripts/replay-historical-questions.ts', { encoding: 'utf8' });
-    if (!replayOutput.includes('[TEST-GEN-533 PASS]')) {
+    if (!replayOutput.includes('[TEST-GEN-550 PASS]')) {
       console.error('✖ FAILURE INVARIANT 2: Replay did not pass cleanly:\n', replayOutput);
       process.exit(2);
     }
-    console.log('✔ Invariant 2 PASS: Historical question resolution >= 98.0% with 100% grounded factKeys.\n');
+    console.log('✔ Invariant 2 PASS: Current questions are grounded or explicitly skipped when optional; any reviewed values match. Attribution alone does not independently prove correctness.\n');
   } catch (err: any) {
     console.error('✖ FAILURE INVARIANT 2:', err?.message || err);
+    process.exit(2);
+  }
+
+  try {
+    const canaryOutput = execSync('npx tsx scripts/verify-canary-100.ts', { encoding: 'utf8' });
+    if (!canaryOutput.includes('[CANARY-100] 100 / 100 SOTA SCENARIOS PASSED (100.0%)')) throw new Error('Canary gate did not pass all scenarios');
+  } catch {
+    console.error('✖ FAILURE: 100-scenario canary gate did not pass');
     process.exit(2);
   }
 

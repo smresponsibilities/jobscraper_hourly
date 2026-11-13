@@ -1,6 +1,8 @@
-import type { Page } from 'patchright';
+import type { Page, Frame } from 'patchright';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { extractWorkdayTenantKey, recordWorkdayTenantQuirk } from './workday-tenant-registry.js';
 
 export interface ServerResponseRecord {
   url: string;
@@ -13,45 +15,68 @@ export interface HealedServerValidationResult {
   healedFields: string[];
 }
 
+export async function auditEmptyRequiredFieldsInDom(pageOrFrame: Page | Frame, throwOnError = false): Promise<Array<{
+  selector: string; tagName: string; inputType: string; label: string;
+}>> {
+  return pageOrFrame.evaluate(() => {
+    const result: Array<{ selector: string; tagName: string; inputType: string; label: string }> = [];
+    let visited = 0;
+    const walk = (root: Document | ShadowRoot, depth: number) => {
+      for (const el of Array.from(root.querySelectorAll('*'))) {
+        if (++visited > 10000) return;
+        const shadow = (el as HTMLElement).shadowRoot;
+        if (shadow && depth < 5) walk(shadow, depth + 1);
+        if (!(el instanceof HTMLInputElement || el instanceof HTMLSelectElement || el instanceof HTMLTextAreaElement)) continue;
+        if (!(el.required || el.getAttribute('aria-required') === 'true') || el.disabled || !el.getClientRects().length) continue;
+        // react-select's unnamed `…-requiredInput` only carries HTML validation;
+        // the visible control is the combobox, which this audit does not own.
+        if (el instanceof HTMLInputElement && /\brequiredInput\b/.test(el.className || '') && !el.name && !el.id) continue;
+        if (el instanceof HTMLInputElement && (el.type === 'hidden' || el.maxLength === 1 || el.autocomplete === 'one-time-code' || /^security-input-/i.test(el.id))) continue;
+        if (el instanceof HTMLInputElement && el.type === 'radio' && el.name) {
+          const group = root.querySelectorAll(`input[type="radio"][name="${CSS.escape(el.name)}"]`);
+          if (Array.from(group).some(radio => (radio as HTMLInputElement).checked)) continue;
+        } else if (el instanceof HTMLInputElement && (el.type === 'checkbox' || el.type === 'radio')) {
+          if (el.checked) continue;
+        } else if (el instanceof HTMLInputElement && el.type === 'file') {
+          if (el.files?.length) continue;
+        } else if (el.value.trim()) continue;
+        const select = el.closest('.select__control, [class*="select__control"], [class*="select-container"], [class*="selectContainer"]');
+        if (select?.querySelector('.select__single-value, .select__multi-value, [class*="singleValue"], [class*="multiValue"]')) continue;
+        const parts: string[] = [];
+        let current: Element | null = el;
+        while (current) {
+          const parent: Element | null = current.parentElement;
+          const index = parent ? Array.from(parent.children).indexOf(current) + 1 : 1;
+          parts.unshift(`${current.tagName.toLowerCase()}:nth-child(${index})`);
+          current = parent;
+        }
+        const label = Array.from(el.labels || []).map(item => item.textContent?.trim() || '').filter(Boolean).join(' ') ||
+          (el.getAttribute('aria-labelledby') || '').split(/\s+/).filter(Boolean).map(id => root.querySelector(`#${CSS.escape(id)}`)?.textContent?.trim() || '').filter(Boolean).join(' ') ||
+          el.getAttribute('aria-label') || el.getAttribute('name') || '';
+        result.push({ selector: el.id ? `#${CSS.escape(el.id)}` : parts.join(' > '), tagName: el.tagName.toLowerCase(), inputType: el instanceof HTMLInputElement ? el.type : '', label });
+      }
+    };
+    walk(document, 0);
+    return result;
+  }).catch(error => {
+    if (throwOnError) throw error;
+    return [];
+  });
+}
+
 /**
  * Coerce values based on server-side rejection message.
  */
 export function coerceFieldValueByErrorMessage(currentVal: string, errorMsg: string): string {
-  const msg = (errorMsg || '').toLowerCase();
-
-  // 1. Numeric-only expected ("must be a number", "integer", "numeric")
-  if (/\b(?:must be a number|integer|numeric|digits only|invalid number|valid number)\b/i.test(msg)) {
-    const digitsOnly = currentVal.replace(/lpa|inr|usd|eur|rs\.?|,|\+/gi, '').replace(/\s+/g, '').replace(/\D/g, '');
-    if (digitsOnly) {
-      // If original was "12 LPA", digitsOnly is "12" -> expand to standard annual INR "1200000" if small
-      if (Number(digitsOnly) <= 50 && /lpa|lakh/i.test(currentVal)) {
-        return String(Number(digitsOnly) * 100000);
-      }
-      return digitsOnly;
-    }
-    return '1200000';
+  const value = currentVal.trim();
+  if (/must be a number|integer|numeric|digits only|invalid number|valid number/i.test(errorMsg)) {
+    if (/^\d{1,3}(?:,\d{3})+$/.test(value)) return value.replace(/,/g, '');
+    if (/^\d+$/.test(value)) return value;
   }
-
-  // 2. URL format required ("valid url", "must be a url", "enter a url")
-  if (/\b(?:valid url|must be a url|enter a valid url|url is invalid)\b/i.test(msg)) {
-    if (!currentVal || !currentVal.trim() || currentVal.toLowerCase() === 'n/a' || currentVal === 'none') {
-      return 'https://shivammahajan.com/projects/';
-    }
-    if (!/^https?:\/\//i.test(currentVal)) {
-      return `https://${currentVal.trim()}`;
-    }
-    return currentVal;
+  if (/valid url|must be a url|enter a valid url|url is invalid/i.test(errorMsg) && /^[a-z0-9-]+(?:\.[a-z0-9-]+)+(?:[/:?#][^\s]*)?$/i.test(value)) {
+    return `https://${value}`;
   }
-
-  // 3. Date format required
-  if (/\b(?:date format|valid date|yyyy-mm-dd|mm\/dd\/yyyy)\b/i.test(msg)) {
-    if (/yyyy-mm-dd/i.test(msg)) return '2026-08-01';
-    if (/mm\/dd\/yyyy/i.test(msg)) return '08/01/2026';
-    return '08/2026';
-  }
-
-  // 4. Default string fallback: strip illegal symbols
-  return currentVal.replace(/[^\w\s@.,\-\/:+]/g, '').trim();
+  return currentVal;
 }
 
 /**
@@ -138,31 +163,41 @@ export async function parseAndHealServerValidationErrors(
       }
     }
 
-    // D. Workday inline banner errors (handled via DOM queries directly)
-    if (/workday/i.test(provider) || /myworkday/i.test(resp.url)) {
-      const wdHealed = await page.evaluate(() => {
+
+  }
+
+  if (extractWorkdayTenantKey(page.url()) && rawResponses.some(response => /workday/i.test(provider) || /myworkdayjobs\.com/i.test(response.url))) {
+    const marker = `notice-${randomUUID()}`;
+    const attempted = await page.evaluate(token => {
+      let index = 0;
+      for (const banner of document.querySelectorAll('[data-automation-id="errorMessage"]')) {
+        if (!/must be a number|numeric|digits only|valid number/i.test(banner.textContent || '')) continue;
+        const wrapper = banner.closest('[data-automation-id^="formField-"], fieldset, .field');
+        const input = wrapper?.querySelector('input:not([type="hidden"]),textarea') as HTMLInputElement | HTMLTextAreaElement | null;
+        if (!input || !/notice/i.test(`${wrapper?.textContent || ''} ${input.name} ${input.id}`) || !/^(?:immediate(?:ly)?\s*\(\s*0\s*days?\s*\)|0\s*days?)$/i.test(input.value.trim())) continue;
+        const setter = Object.getOwnPropertyDescriptor(input instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype, 'value')?.set;
+        if (setter) setter.call(input, '0'); else input.value = '0';
+        input.setAttribute('data-autoapply-notice-heal', `${token}-${index++}`);
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      return index;
+    }, marker).catch(() => 0);
+    if (attempted) {
+      await page.waitForTimeout(250);
+      const verified = await page.evaluate(token => {
         let count = 0;
-        const errBanners = Array.from(document.querySelectorAll('[data-automation-id="errorMessage"]'));
-        for (const b of errBanners) {
-          const text = (b.textContent || '').toLowerCase();
-          const wrapper = b.closest('[data-automation-id^="formField-"], fieldset, .field');
-          if (!wrapper) continue;
-          const input = wrapper.querySelector('input:not([type="hidden"]), textarea') as HTMLInputElement | HTMLTextAreaElement | null;
-          if (input) {
-            // Guard against OTP
-            if (input.maxLength === 1 || input.id.includes('security') || input.name.includes('security')) continue;
-            if (/must be a number|numeric/i.test(text)) {
-              input.value = input.value.replace(/\D/g, '') || '1200000';
-              input.dispatchEvent(new Event('input', { bubbles: true }));
-              input.dispatchEvent(new Event('change', { bubbles: true }));
-              count++;
-            }
-          }
+        for (const input of document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('[data-autoapply-notice-heal]')) {
+          if (!input.getAttribute('data-autoapply-notice-heal')?.startsWith(`${token}-`)) continue;
+          input.removeAttribute('data-autoapply-notice-heal');
+          const wrapper = input.closest('[data-automation-id^="formField-"], fieldset, .field');
+          if (input.value === '0' && input.getAttribute('aria-invalid') !== 'true' && !wrapper?.querySelector('[data-automation-id="errorMessage"]')) count++;
         }
         return count;
-      }).catch(() => 0);
-      if (wdHealed > 0) {
-        healedFields.push('workday_inline_banner');
+      }, marker).catch(() => 0);
+      if (verified) {
+        healedFields.push('workday_numeric_notice');
+        try { recordWorkdayTenantQuirk(page.url(), { requiresNumericNoticeDays: true }); } catch { /* A busy registry does not justify an unverified retry. */ }
       }
     }
   }
@@ -209,28 +244,13 @@ async function applyHealToDomElement(page: Page, fieldIdOrUuid: string, errorMsg
       }
 
       function coerce(val, err) {
-        var m = (err || '').toLowerCase();
-        if (/must be a number|integer|numeric|digits only|invalid number|valid number/i.test(m)) {
-          var d = val.replace(/lpa|inr|usd|eur|rs\\.?|,|\\+/gi, '').replace(/\\s+/g, '').replace(/\\D/g, '');
-          if (d) {
-            if (Number(d) <= 50 && /lpa|lakh/i.test(val)) return String(Number(d) * 100000);
-            return d;
-          }
-          return '1200000';
+        var value = val.trim();
+        if (/must be a number|integer|numeric|digits only|invalid number|valid number/i.test(err)) {
+          if (/^\\d{1,3}(?:,\\d{3})+$/.test(value)) return value.replace(/,/g, '');
+          if (/^\\d+$/.test(value)) return value;
         }
-        if (/valid url|must be a url|enter a valid url|url is invalid/i.test(m)) {
-          if (!val || !val.trim() || val.toLowerCase() === 'n/a' || val === 'none') {
-            return 'https://shivammahajan.com/projects/';
-          }
-          if (!/^https?:\\/\\//i.test(val)) return 'https://' + val.trim();
-          return val;
-        }
-        if (/date format|valid date|yyyy-mm-dd|mm\\/dd\\/yyyy/i.test(m)) {
-          if (/yyyy-mm-dd/i.test(m)) return '2026-08-01';
-          if (/mm\\/dd\\/yyyy/i.test(m)) return '08/01/2026';
-          return '08/2026';
-        }
-        return val.replace(/[^\\w\\s@.,\\-\\/:+]/g, '').trim();
+        if (/valid url|must be a url|enter a valid url|url is invalid/i.test(err) && /^[a-z0-9-]+(?:\\.[a-z0-9-]+)+(?:[/:?#][^\\s]*)?$/i.test(value)) return 'https://' + value;
+        return val;
       }
 
       // Try selectors
@@ -257,6 +277,7 @@ async function applyHealToDomElement(page: Page, fieldIdOrUuid: string, errorMsg
 
       var current = control.value || '';
       var coerced = coerce(current, msg);
+      if (coerced === current) return false;
 
       var prototype = control instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
       var setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;

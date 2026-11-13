@@ -26,6 +26,23 @@ export interface MerkleAuditReport {
 export const DEFAULT_DB_PATH = path.resolve('state/autoapply/portal-review/queue.sqlite');
 export const DEFAULT_MERKLE_LEDGER_PATH = path.resolve('state/autoapply/evidence/merkle-ledger.json');
 
+/** Verify the stored chain without rewriting it or asserting receipt authenticity. */
+export function verifyStoredEvidenceMerkleLedger(ledgerPath = DEFAULT_MERKLE_LEDGER_PATH): boolean {
+  try {
+    const entries: unknown = JSON.parse(fs.readFileSync(ledgerPath, 'utf8'));
+    if (!Array.isArray(entries) || entries.length === 0) return false;
+    let previous = 'GENESIS_BLOCK_00000000000000000000000000000000000000000000000000000000';
+    for (let i = 0; i < entries.length; i++) {
+      const entry = entries[i] as Partial<MerkleLedgerEntry>;
+      if (!entry || entry.index !== i + 1 || entry.prevHash !== previous || !entry.jobId || !entry.provider || !entry.url || !entry.appliedAt || typeof entry.entryHash !== 'string') return false;
+      const hash = crypto.createHash('sha256').update(`${previous}||${entry.jobId}||${entry.provider}||${entry.url}||${entry.appliedAt}`).digest('hex');
+      if (entry.entryHash !== hash) return false;
+      previous = hash;
+    }
+    return true;
+  } catch { return false; }
+}
+
 export function inferProviderFromUrl(url = '', defaultProvider = 'unknown'): string {
   const u = (url || '').toLowerCase();
   if (u.includes('greenhouse.io') || u.includes('gh_jid=')) return 'greenhouse';
@@ -52,11 +69,9 @@ export function buildAndVerifyEvidenceMerkleLedger(
   }
 
   const db = new DatabaseSync(dbPath, { readOnly: true });
-  const rows = db.prepare('SELECT id, normalized_url, payload FROM applications WHERE status = ? ORDER BY id ASC').all('applied') as Array<{
-    id: string;
-    normalized_url: string;
-    payload: string;
-  }>;
+  let rows: Array<{ id: string; normalized_url: string; payload: string }>;
+  try { rows = db.prepare('SELECT id, normalized_url, payload FROM applications WHERE status = ? ORDER BY id ASC').all('applied') as typeof rows; }
+  finally { db.close(); }
 
   const entries: MerkleLedgerEntry[] = [];
   let prevHash = 'GENESIS_BLOCK_00000000000000000000000000000000000000000000000000000000';
@@ -66,19 +81,20 @@ export function buildAndVerifyEvidenceMerkleLedger(
     let payloadObj: any = {};
     try {
       payloadObj = JSON.parse(row.payload);
-    } catch {}
+    } catch { throw new Error(`Invalid payload for ${row.id}`); }
 
     const jobId = row.id;
     const company = payloadObj.company || 'Unknown Company';
     const url = payloadObj.jobUrl || row.normalized_url || '';
     const provider = inferProviderFromUrl(url, payloadObj.jobBoard || 'direct_ats');
-    const appliedAt = payloadObj.appliedAt || payloadObj.receipt?.verifiedAt || '2026-10-30T00:00:00.000Z';
+    const appliedAt = payloadObj.appliedAt || payloadObj.receipt?.verifiedAt;
+    if (typeof appliedAt !== 'string' || !Number.isFinite(Date.parse(appliedAt))) throw new Error(`Missing application timestamp for ${jobId}`);
     const evidenceDir = payloadObj.evidenceDir || payloadObj.receipt?.evidenceDir || '';
     const hasEvidenceDir = Boolean(evidenceDir && fs.existsSync(evidenceDir));
 
     const verificationSource = hasEvidenceDir
-      ? 'disk_evidence_manifest_verified'
-      : 'legacy_applied_verified_by_db_timestamp';
+      ? 'evidence_directory_present_unverified'
+      : 'queue_timestamp_unverified';
 
     const rawBlock = `${prevHash}||${jobId}||${provider}||${url}||${appliedAt}`;
     const entryHash = crypto.createHash('sha256').update(rawBlock).digest('hex');
@@ -100,7 +116,7 @@ export function buildAndVerifyEvidenceMerkleLedger(
   }
 
   // Verify chain integrity
-  let validChain = true;
+  let validChain = entries.length > 0;
   let runningHash = 'GENESIS_BLOCK_00000000000000000000000000000000000000000000000000000000';
   for (const e of entries) {
     if (e.prevHash !== runningHash) {
@@ -118,8 +134,17 @@ export function buildAndVerifyEvidenceMerkleLedger(
     runningHash = e.entryHash;
   }
 
+  if (fs.existsSync(ledgerPath)) {
+    const prior: unknown = JSON.parse(fs.readFileSync(ledgerPath, 'utf8'));
+    if (!Array.isArray(prior) || prior.length > entries.length || prior.some((entry, index) => JSON.stringify(entry) !== JSON.stringify(entries[index]))) throw new Error('Existing evidence ledger cannot be rewritten');
+    if (prior.length === entries.length) return { totalAudited: entries.length, validChain, ledgerPath, latestRootHash: prevHash, entries };
+  }
   fs.mkdirSync(path.dirname(ledgerPath), { recursive: true });
-  fs.writeFileSync(ledgerPath, JSON.stringify(entries, null, 2), 'utf8');
+  const temporary = `${ledgerPath}.${crypto.randomUUID()}.tmp`;
+  try {
+    fs.writeFileSync(temporary, JSON.stringify(entries, null, 2), { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+    fs.renameSync(temporary, ledgerPath);
+  } finally { try { fs.unlinkSync(temporary); } catch {} }
 
   return {
     totalAudited: entries.length,

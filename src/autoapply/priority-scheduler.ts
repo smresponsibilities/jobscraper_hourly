@@ -4,6 +4,8 @@ import * as path from 'node:path';
 export { isSupportedDirectAtsJobUrl } from './preflight.js';
 import { isSupportedDirectAtsJobUrl } from './preflight.js';
 import { evaluateCandidateJobFit } from './candidate-fit-filter.js';
+import { computeJobSurvivalPriorityScore } from './survival-priority-scorer.js';
+import { identifyApplicationAts } from './wizard.js';
 
 export interface QueuedJobCandidate {
   id: string;
@@ -130,16 +132,8 @@ export function extractJobTimestampMs(candidate: QueuedJobCandidate): { timestam
 export function computeJobPriorityScore(job: QueuedJobCandidate, nowMs = Date.now()): number {
   let score = 0;
 
-  // Extract accurate timestamp across all possible payload fields
-  const { timestampMs, source } = extractJobTimestampMs(job);
-  const ageHours = timestampMs > 0 && timestampMs <= nowMs ? (nowMs - timestampMs) / 3_600_000 : 999;
-  const employerTimestamp = ['postedAt', 'publishedAt', 'updated_at', 'updatedAt', 'employer_createdAt', 'first_published', 'releasedDate', 'published_on', 'published_at', 'published_date', 'created_at'].includes(source);
-  const isHourlyExpired = timestampMs > 0 && ageHours > 24;
-
-  // Legacy freshness flags are not evidence of an employer timestamp.
-  if (!isHourlyExpired && timestampMs > 0 && timestampMs <= nowMs && employerTimestamp && isFillableAtsUrl(job.url)) {
-    score += 10000;
-  }
+  const provider = (() => { try { return identifyApplicationAts(job.url); } catch { return 'unknown'; } })();
+  score += computeJobSurvivalPriorityScore({ provider, publishedAt: job.payload?.publishedAt ?? job.payload?.postedAt ?? job.payload?.published_at ?? job.payload?.published_on, location: job.location || job.payload?.location }, nowMs).totalScore;
 
   // Candidate Precision Fit Bonus (GEN-175: Bengaluru +5000, India +3500, Junior tech +3000)
   const loc = job.location || job.payload?.location || '';
@@ -152,11 +146,6 @@ export function computeJobPriorityScore(job: QueuedJobCandidate, nowMs = Date.no
   if (fit.priorityBonus > 0) {
     score += fit.priorityBonus;
   }
-
-  // Employer timestamps alone establish recency.
-  if (employerTimestamp && timestampMs <= nowMs && ageHours <= 24) score += Math.round(15000 - ageHours / 24 * 7000);
-  else if (employerTimestamp && ageHours <= 72) score += Math.round(2500 - ((ageHours - 24) / 48) * 1500);
-  else score += 0;
 
   // Also tie-break by SQLite rowId / timestamp so newer DB inserts always beat older ones
   const rId = job.rowId ?? job.payload?.rowId ?? 0;
@@ -183,6 +172,15 @@ export function computeJobPriorityScore(job: QueuedJobCandidate, nowMs = Date.no
   const compDomain = job.payload?.domain || job.payload?.companyDomain || job.url;
   if (isIndiaGccOrConfirmedOffice(job.company, compDomain)) {
     score += 1500;
+  }
+
+  // Priority Boost for GitHub Actions Hunt Catalog jobs (hunt.yml / github_hunt)
+  const isHunt = job.id?.startsWith('hunt_') ||
+    job.payload?.hourlySource === 'github_hunt' ||
+    job.payload?.source === 'github_hunt' ||
+    Boolean(job.isHourlyFresh);
+  if (isHunt) {
+    score += 50000;
   }
 
   return score;
@@ -242,10 +240,12 @@ export function isIndiaGccOrConfirmedOffice(company: string, domainOrUrl?: strin
 export function normalizeCompanyRoleSignature(company: string, roleTitle: string): string {
   const c = (company || '')
     .toLowerCase()
-    .replace(/\b(india|pvt|ltd|llc|inc|corp|corporation)\b/g, '')
+    .replace(/\b(india|pvt|ltd|llc|inc|corp|corporation|technologies|labs)\b/g, '')
     .replace(/[^a-z0-9]/g, '');
   const r = (roleTitle || '')
     .toLowerCase()
+    .replace(/\(\s*(?:req(?:uisition)?|job)\s*(?:id|#|no\.?|number)?\s*[:#-]?\s*[a-z0-9-]+\s*\)/g, '')
+    .replace(/\s*\[[\w-]+\]/g, '')
     .replace(/\b(india|bengaluru|bangalore|remote|hybrid|hyderabad|pune)\b/g, '')
     .replace(/[^a-z0-9]/g, '');
   return `${c}::${r}`;
@@ -261,7 +261,7 @@ export function isAlreadyAppliedSameCompanyRoleWithin30Days(
     return false;
   }
   const targetSig = normalizeCompanyRoleSignature(company, roleTitle);
-  if (targetSig === '::') return false;
+  if (targetSig.startsWith('::') || targetSig.endsWith('::')) return false;
   const thirtyDaysMs = 30 * 86_400_000;
 
   for (const row of appliedRows) {

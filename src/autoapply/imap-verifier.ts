@@ -2,7 +2,8 @@ import { ImapFlow } from 'imapflow';
 import type { Frame, Page } from 'patchright';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { loadDotEnvIntoProcess, ensureWorkdayCompliantPassword } from './env-credentials.js';
+import { loadDotEnvIntoProcess } from './env-credentials.js';
+import { withSingleFlightImapLock } from './imap-multiplexer.js';
 
 export interface ImapVerificationResult {
   found: boolean;
@@ -52,27 +53,8 @@ export function hasConsumedVerificationToken(token: string): boolean {
 }
 
 // Ticket GEN-225: Cross-lane IMAP Mutex ensuring serial IMAP mailbox access
-let imapMutexChain: Promise<any> = Promise.resolve();
-
 export async function withImapMutex<T>(fn: () => Promise<T>): Promise<T> {
-  let release: () => void;
-  const nextLock = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  const prevLock = imapMutexChain;
-  imapMutexChain = (async () => {
-    try {
-      await prevLock;
-    } catch {}
-    await nextLock;
-  })();
-
-  try {
-    await prevLock;
-    return await fn();
-  } finally {
-    release!();
-  }
+  return withSingleFlightImapLock('verification', fn);
 }
 
 /**
@@ -295,9 +277,10 @@ export async function pollImapForVerificationCodeOrLink(params: {
         } finally {
           lock.release();
         }
-        await client.logout().catch(() => {});
       } catch {
-        try { client.close(); } catch {}
+        // Connection cleanup is shared by success, failure, and early return.
+      } finally {
+        await client.logout().catch(() => { try { client.close(); } catch {} });
       }
       return null;
     });
@@ -370,62 +353,6 @@ export async function completeInPageEmailVerificationIfPrompted(
     await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {});
     await page.waitForTimeout(2000);
 
-    // Ticket GEN-486.1: Workday Post-Link Auto-Sign-In
-    const isSignInScreen = await page
-      .locator('[data-automation-id="signInContent"], input[type="password"]')
-      .filter({ visible: true })
-      .count()
-      .catch(() => 0) > 0;
-
-    if (isSignInScreen) {
-      const emailToUse = options?.email || process.env.AUTOAPPLY_EMAIL || 'shivam2314.be22@chitkara.edu.in';
-      const passwordToUse = ensureWorkdayCompliantPassword(options?.password || process.env.AUTOAPPLY_PASSWORD || '');
-
-      const emailInput = page
-        .locator('#input-4, [data-automation-id="formField-email"] input, [data-automation-id="email"] input, input[data-automation-id="email"], input[type="email"], input[aria-label*="Email" i], input[name="username"]')
-        .filter({ visible: true })
-        .first();
-      if (await emailInput.isVisible().catch(() => false)) {
-        await emailInput.click({ timeout: 2000 }).catch(() => {});
-        await emailInput.fill(emailToUse).catch(() => {});
-        if (typeof emailInput.evaluate === 'function') {
-          await emailInput.evaluate((el: HTMLInputElement, val: string) => {
-            el.value = val;
-            el.dispatchEvent(new Event('input', { bubbles: true }));
-            el.dispatchEvent(new Event('change', { bubbles: true }));
-            el.dispatchEvent(new Event('blur', { bubbles: true }));
-          }, emailToUse).catch(() => {});
-        }
-      }
-
-      const pwInput = page
-        .locator('input[type="password"], [data-automation-id="password"], [data-automation-id="formField-password"] input')
-        .filter({ visible: true })
-        .first();
-      if (await pwInput.isVisible().catch(() => false)) {
-        await pwInput.click({ timeout: 2000 }).catch(() => {});
-        await pwInput.fill(passwordToUse).catch(() => {});
-        if (typeof pwInput.evaluate === 'function') {
-          await pwInput.evaluate((el: HTMLInputElement, val: string) => {
-            el.value = val;
-            el.dispatchEvent(new Event('input', { bubbles: true }));
-            el.dispatchEvent(new Event('change', { bubbles: true }));
-            el.dispatchEvent(new Event('blur', { bubbles: true }));
-          }, passwordToUse).catch(() => {});
-        }
-      }
-
-      const submitBtn = page
-        .locator('[data-automation-id="signInSubmitButton"], [data-automation-id="click_filter"], button[type="submit"]:has-text("Sign In")')
-        .filter({ visible: true })
-        .first();
-      if (await submitBtn.isVisible().catch(() => false)) {
-        await submitBtn.click({ force: true, timeout: 3000 }).catch(() => {});
-        await page.waitForTimeout(2500);
-      }
-    } else {
-      await page.waitForTimeout(500);
-    }
     return true;
   }
 
@@ -490,39 +417,14 @@ export async function completeInPageEmailVerificationIfPrompted(
       }
     }
 
-    // Ticket GEN-473.3: Wait 800ms, then click submit button again and wait up to 10,000ms for confirmation receipt!
-    await page.waitForTimeout(800);
-    const submitBtn = frame
-      .locator(
-        'button[type="submit"], button:has-text("Submit application"), button:has-text("Verify"), button:has-text("Submit"), [data-automation-id="click_filter"], button[data-automation-id*="verify" i]'
-      )
-      .filter({ visible: true })
-      .first();
-    if (await submitBtn.isVisible().catch(() => false)) {
-      await submitBtn.click({ force: true, timeout: 3000 }).catch(() => {});
-    } else {
-      const pageSubmitBtn = page
-        .locator(
-          'button[type="submit"], button:has-text("Submit application"), button:has-text("Verify"), button:has-text("Submit"), [data-automation-id="click_filter"], button[data-automation-id*="verify" i]'
-        )
-        .filter({ visible: true })
-        .first();
-      if (await pageSubmitBtn.isVisible().catch(() => false)) {
-        await pageSubmitBtn.click({ force: true, timeout: 3000 }).catch(() => {});
-      }
-    }
+    // A verification control is distinct from resubmitting an application.
+    const verify = frame.getByRole('button', { name: /^(?:verify|verify code|confirm code|verify email)$/i }).filter({ visible: true });
+    if (await verify.count() !== 1) return false;
+    const html = frame.locator('html');
+    if (await html.getAttribute('data-autoapply-otp-verify-attempted')) return false;
+    await html.evaluate(el => el.setAttribute('data-autoapply-otp-verify-attempted', 'true'));
+    await verify.click({ timeout: 3000 });
 
-    const startWait = Date.now();
-    while (Date.now() - startWait < 10000) {
-      let pageTextNow = await frame.evaluate(() => (document.body?.innerText || '').toLowerCase()).catch(() => '');
-      if (!pageTextNow && page && !page.isClosed()) {
-        pageTextNow = await page.evaluate(() => (document.body?.innerText || '').toLowerCase()).catch(() => '');
-      }
-      if (/thank you|application submitted|application received|your application has been submitted|congratulations|received your application/i.test(pageTextNow)) {
-        break;
-      }
-      await page.waitForTimeout(500);
-    }
     return true;
   }
 

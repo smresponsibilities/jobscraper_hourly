@@ -3,7 +3,11 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { ImapFlow } from 'imapflow';
+import { simpleParser } from 'mailparser';
 import { loadDotEnvIntoProcess } from './env-credentials.js';
+import { withSingleFlightImapLock } from './imap-multiplexer.js';
+import { extractOaAndInterviewSignalsFromEmail, type InboxSignalCategory } from '../outreach/oa-interview-extractor.js';
+import { saveInterviewSchedulingDrafts } from '../outreach/interview-drafts.js';
 
 export type LifecycleStage =
   | 'INTERVIEW_OR_OA_INVITE'
@@ -22,6 +26,10 @@ export interface InboxLifecycleEvent {
   bouncedRecipient?: string;
   company?: string;
   snippet: string;
+  signalCategory?: InboxSignalCategory;
+  actionUrls?: string[];
+  platform?: string | null;
+  deadlineHint?: string | null;
 }
 
 export const DEFAULT_LIFECYCLE_PATH = path.resolve('state/autoapply/portal-review/inbox-lifecycle-events.json');
@@ -31,6 +39,7 @@ export function classifyEmailLifecycleStage(params: {
   fromAddress: string;
   subject: string;
   bodyText: string;
+  bodyHtml?: string;
   inReplyTo?: string;
 }): { stage: LifecycleStage; bouncedRecipient?: string } | null {
   const from = (params.fromAddress || '').toLowerCase();
@@ -47,6 +56,9 @@ export function classifyEmailLifecycleStage(params: {
       return { stage: 'HARD_BOUNCE_550', bouncedRecipient: recipientMatch?.[1]?.toLowerCase() };
     }
   }
+
+  const signal = extractOaAndInterviewSignalsFromEmail({ subject: params.subject, from: params.fromAddress, bodyText: params.bodyText, bodyHtml: params.bodyHtml });
+  if (signal.category === 'OA_ASSESSMENT' || signal.category === 'INTERVIEW_INVITE') return { stage: 'INTERVIEW_OR_OA_INVITE' };
 
   // 2. Direct Reply to Cold Outreach ("Re: Applied for..." or In-Reply-To header)
   if (
@@ -191,11 +203,15 @@ export function loadInboxLifecycleEvents(filePath = DEFAULT_LIFECYCLE_PATH, auto
 export function saveInboxLifecycleEvents(events: InboxLifecycleEvent[], filePath = DEFAULT_LIFECYCLE_PATH): void {
   try {
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    fs.writeFileSync(filePath, JSON.stringify(events.slice(0, 500), null, 2), 'utf8');
+    fs.writeFileSync(filePath, JSON.stringify(events.slice(0, 500), null, 2), { encoding: 'utf8', mode: 0o600 });
   } catch {}
 }
 
 export async function syncInboxLifecycleEvents(maxMessages = 50, filePath = DEFAULT_LIFECYCLE_PATH): Promise<InboxLifecycleEvent[]> {
+  return withSingleFlightImapLock('inbox-lifecycle', () => syncInboxLifecycleEventsUnlocked(maxMessages, filePath));
+}
+
+async function syncInboxLifecycleEventsUnlocked(maxMessages: number, filePath: string): Promise<InboxLifecycleEvent[]> {
   loadDotEnvIntoProcess();
   const host = process.env.IMAP_HOST || 'imap.gmail.com';
   const user = process.env.IMAP_USER || process.env.AUTOAPPLY_EMAIL || '';
@@ -237,16 +253,21 @@ export async function syncInboxLifecycleEvents(maxMessages = 50, filePath = DEFA
           const rawMime = msg.source ? msg.source.toString('utf8') : '';
           const headerSplit = rawMime.indexOf('\r\n\r\n') > -1 ? rawMime.indexOf('\r\n\r\n') + 4 : rawMime.indexOf('\n\n') > -1 ? rawMime.indexOf('\n\n') + 2 : 0;
           const bodyOnly = rawMime.slice(headerSplit) || rawMime;
-          const rawText = bodyOnly
+          const fallbackText = bodyOnly
             .replace(/=\r?\n/g, '')
             .replace(/<style[\s\S]*?<\/style>/gi, ' ')
             .replace(/<[^>]+>/g, ' ')
             .replace(/\s+/g, ' ');
+          const parsed = await simpleParser(rawMime).catch(() => null);
+          const rawText = parsed?.text || fallbackText;
+          const html = typeof parsed?.html === 'string' ? parsed.html : undefined;
+          const signal = extractOaAndInterviewSignalsFromEmail({ subject, from: fromAddr, bodyText: rawText, bodyHtml: html });
 
           const classified = classifyEmailLifecycleStage({
             fromAddress: fromAddr,
             subject,
             bodyText: rawText,
+            bodyHtml: html,
             inReplyTo,
           });
 
@@ -260,6 +281,10 @@ export async function syncInboxLifecycleEvents(maxMessages = 50, filePath = DEFA
               stage: classified.stage,
               bouncedRecipient: classified.bouncedRecipient,
               snippet: rawText.slice(0, 240).trim(),
+              signalCategory: signal.category,
+              actionUrls: signal.actionUrls,
+              platform: signal.platform,
+              deadlineHint: signal.deadlineHint,
             });
             seenIds.add(msgId);
           }
@@ -277,5 +302,6 @@ export async function syncInboxLifecycleEvents(maxMessages = 50, filePath = DEFA
 
   const enriched = crossMatchLifecycleEventsWithQueue(existing.slice(0, 500));
   saveInboxLifecycleEvents(enriched, filePath);
+  saveInterviewSchedulingDrafts(enriched);
   return enriched;
 }

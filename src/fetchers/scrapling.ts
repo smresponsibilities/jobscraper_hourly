@@ -202,3 +202,12 @@ export async function scraplingJson<T>(
     throw new ScraplingError(`Failed to parse Scrapling output as JSON: ${res.body.slice(0, 200)}`, 'validation');
   }
 }
+
+
+export const SCRAPLING_ELIGIBLE_ADAPTERS = new Set(['darwinbox', 'keka', 'freshteam', 'zohorecruit', 'turbohire', 'greythr', 'peoplestrong', 'icims', 'taleo', 'phenom']);
+export function shouldUseScraplingPrimary(adapter: string, recentFailureOrBlockCount = 0): { useScrapling: boolean; mode: 'static' | 'browser' | 'native_fallback'; reason: string } {
+  if (process.env.LEGACY_ONLY === '1') return { useScrapling: false, mode: 'native_fallback', reason: 'LEGACY_ONLY_ENV' };
+  const name = adapter.toLowerCase();
+  if (name === 'darwinbox' || (SCRAPLING_ELIGIBLE_ADAPTERS.has(name) && recentFailureOrBlockCount >= 1)) return { useScrapling: true, mode: recentFailureOrBlockCount >= 2 ? 'browser' : 'static', reason: 'SCRAPLING_COHORT_ACTIVE' };
+  return { useScrapling: false, mode: 'native_fallback', reason: 'NATIVE_ADAPTER' };
+}

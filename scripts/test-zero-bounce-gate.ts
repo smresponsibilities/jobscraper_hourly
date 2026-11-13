@@ -1,5 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
+import dns from 'node:dns';
 import assert from 'node:assert';
 import {
   sendVerifiedOutreachEmail,
@@ -113,7 +115,23 @@ async function runTests() {
   console.log('[TEST-GEN-534 PASS] All RFC 5321 zero-bounce gate tests passed.');
 }
 
+const originalDirectory = process.cwd();
+const fixtureDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'zero-bounce-test-'));
+const originalResolveMx = dns.promises.resolveMx;
+process.chdir(fixtureDirectory);
+dns.promises.resolveMx = async () => [{ exchange: 'mail.fixture.test', priority: 10 }];
+
 runTests().catch(err => {
   console.error('[TEST-GEN-534 FAIL]', err);
-  process.exit(1);
+  process.exitCode = 1;
+}).finally(() => {
+  dns.promises.resolveMx = originalResolveMx;
+  process.chdir(originalDirectory);
+  for (const file of ['test-quarantined-guesses.json', 'domain-mx-cache.json']) {
+    const target = path.join(fixtureDirectory, 'state', 'outreach', file);
+    if (fs.existsSync(target)) fs.unlinkSync(target);
+  }
+  for (const dir of [path.join(fixtureDirectory, 'state', 'outreach'), path.join(fixtureDirectory, 'state'), fixtureDirectory]) {
+    if (fs.existsSync(dir)) fs.rmdirSync(dir);
+  }
 });

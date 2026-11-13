@@ -81,6 +81,12 @@ test('confirmed preferences answer only the matching language, geography and pai
     annualSalaryRangeINR: { minimum: 1200000, maximum: 1500000 }, noExperienceWith: ['FIX protocol', 'accounting/ERP software', 'payments products', 'Selenium'],
   } } as any;
   const answer = (question: string, extra: object = {}) => resolveCandidateAnswer('unknown', candidate, { ...context, question, ...extra }).value;
+  assert.equal(answer('Which accounting/ERP systems have you used for working with financial data?', { options: ['SAP', 'None of the above'] }), 'None of the above');
+  assert.equal(answer('Which accounting/ERP systems have you used for working with financial data?', { fieldType: 'checkbox' }), undefined);
+  assert.equal(answer('What years of experience in Java with Selenium do you have?', { fieldType: 'number' }), 0);
+  assert.equal(answer('Do you have experience with the FIX protocol?'), false);
+  assert.equal(answer('Comment évalueriez-vous votre maîtrise du français?', { options: ['Aucune connaissance – Je ne parle pas le français.', 'Natif – Le français est ma langue maternelle.'] }), 'Aucune connaissance – Je ne parle pas le français.');
+  assert.equal(answer('Comment évalueriez-vous votre maîtrise de l’anglais?', { options: ['Aucune connaissance – Je ne parle pas anglais.', 'Natif – L’anglais est ma langue maternelle.'] }), 'Natif – L’anglais est ma langue maternelle.');
   assert.equal(answer('What is your English proficiency?', { options: ['Native / Bilingual', 'Beginner'] }), 'Native / Bilingual');
   assert.equal(answer('Can you speak French?'), false);
   assert.equal(answer('What is your citizenship?'), 'Indian');
@@ -100,6 +106,21 @@ test('confirmed preferences answer only the matching language, geography and pai
   assert.equal(answer('Do you consent to waive legal rights?'), undefined);
   assert.equal(translateCanonicalAnswerToOption('5', 'Years of experience', ['0–1 years', '1–2 years']), null);
   assert.equal(translateCanonicalAnswerToOption('No', 'Do you need sponsorship?', ['Yes', 'No']), 'No');
+});
+
+test('Snowflake professional option requires experience and an explicit matching choice', () => {
+  const candidate = { ...profile, skillYears: { Snowflake: 1 }, experience: [{ company: 'Fixture', description: 'Used Snowflake professionally' }] } as any;
+  const question = 'Which of the following best describes your experience with Snowflake?';
+  const answer = resolveCandidateAnswer('unknown', candidate, { ...context, question, options: ['No experience using Snowflake', 'Professional-level experience', 'Advanced user with extensive professional experience'] });
+  assert.equal(answer.value, 'Professional-level experience');
+  assert.deepEqual(answer.sourceFactKeys, ['skillYears.Snowflake', 'experience.0']);
+  assert.equal(resolveCandidateAnswer('unknown', { ...candidate, experience: [] }, { ...context, question, options: ['Professional-level experience'] }).value, undefined);
+});
+
+test('owner-requested blank fields do not receive website fallback values', () => {
+  const candidate = { ...profile, personal: { ...profile.personal, website: 'https://example.test' }, applicationPreferences: { skipOptionalQuestions: ['Facebook', 'X (fka Twitter)'] } } as any;
+  assert.equal(resolveCandidateAnswer('website', candidate, { ...context, question: 'Facebook' }).value, undefined);
+  assert.equal(resolveCandidateAnswer('website', candidate, { ...context, question: 'X (fka Twitter)' }).value, undefined);
 });
 
 test('confirmed declarations do not answer inverted or unrelated questions', () => {

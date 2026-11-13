@@ -93,3 +93,9 @@ They do not certify universal ATS coverage or real employer acceptance.
 Unsupported controls, validation failures, login, CAPTCHA, and missing receipts
 pause for review. Repeated history support uses recognizable fieldsets and Add
 buttons. Resume tailoring reports phrase overlap, not an ATS score.
+
+The dashboard listens on loopback. To connect the extension, set a private
+`AUTOAPPLY_DASHBOARD_TOKEN` of at least 32 characters in the dashboard process,
+then save the same token under **Dashboard connection** in the extension popup.
+Requests to the extension endpoint are disabled until a token is configured.
+Keep this token private; restarting the dashboard is required after changing it.

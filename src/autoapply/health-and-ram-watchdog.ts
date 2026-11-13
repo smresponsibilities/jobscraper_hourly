@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { readJobRunHistory } from './run-history.js';
+import { assessSystemMemoryPressure, isSafeToReapChromeCommandLine } from './memory-guard.js';
 
 export interface SystemRamAndHealthSnapshot {
   timestamp: string;
@@ -26,11 +27,7 @@ export const ActiveJobRegistry = new Set<string>();
  * Personal Chrome (--profile-directory="Default" or "Profile N") must NEVER be killed.
  */
 export function isAutomationChromeCommandLine(cmdLine: string): boolean {
-  if (!cmdLine) return false;
-  return (
-    /browser-profile-lane|state[\\/]autoapply|--enable-automation|playwright_chromiumdev_profile/i.test(cmdLine) &&
-    !/--profile-directory(?:=|\s+)["']?(?:Default|Profile\s+\d+)(?:["']|\s|$)/i.test(cmdLine)
-  );
+  return isSafeToReapChromeCommandLine(cmdLine);
 }
 
 export function registerActiveBrowserPid(pid: number): void {
@@ -104,7 +101,10 @@ export function reapZombieChromeProcesses(maxAgeSeconds = 180, forceKillAll = fa
   if (process.platform !== 'win32' || hasJobsInFlight()) return empty;
   try {
     const script = `$now = Get-Date; @(Get-CimInstance Win32_Process -Filter "Name = 'chrome.exe'" | ForEach-Object { [pscustomobject]@{ pid=[int]$_.ProcessId; parentPid=[int]$_.ParentProcessId; commandLine=[string]$_.CommandLine; ageSeconds=($now - $_.CreationDate).TotalSeconds; workingSetMb=[double]$_.WorkingSetSize / 1MB } }) | ConvertTo-Json -Compress`;
-    const raw = execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], { encoding: 'utf8', timeout: 8000, windowsHide: true });
+    // Suppress PowerShell's progress stream: with stderr redirected to the daemon
+    // log it is serialised as CLIXML blobs that bury the real log lines.
+    const wrapped = `$ProgressPreference = 'SilentlyContinue'; ${script}`;
+    const raw = execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(wrapped, 'utf16le').toString('base64')], { encoding: 'utf8', timeout: 8000, windowsHide: true });
     const data = raw.trim() ? JSON.parse(raw) : [];
     const processes: ChromeProcessSnapshot[] = Array.isArray(data) ? data : [data];
     const reaped = new Set<number>();
@@ -118,6 +118,41 @@ export function reapZombieChromeProcesses(maxAgeSeconds = 180, forceKillAll = fa
     const remaining = processes.filter(proc => !reaped.has(proc.pid));
     return { remainingChromeCount: remaining.length, chromeWorkingSetMb: remaining.reduce((sum, proc) => sum + proc.workingSetMb, 0), reapedCount: reaped.size };
   } catch { return empty; }
+}
+
+/**
+ * Kills automation Chrome trees whose owning runner is gone. A hard-killed
+ * runner leaves its whole browser tree running: the watchdogs only reap their
+ * own descendants, so these orphans accumulate and are what keeps free RAM low
+ * enough to hold the drain at a single lane.
+ */
+export function reapOrphanedAutomationBrowsers(repoRoot = process.cwd()): number {
+  if (process.platform !== 'win32' || hasJobsInFlight()) return 0;
+  try {
+    const script = `$now = Get-Date; @(Get-CimInstance Win32_Process -Filter "Name = 'chrome.exe'" | ForEach-Object { $parent = $null; try { $parent = Get-Process -Id $_.ParentProcessId -ErrorAction Stop } catch {}; [pscustomobject]@{ pid=[int]$_.ProcessId; parentPid=[int]$_.ParentProcessId; parentName=[string]($parent.ProcessName); commandLine=[string]$_.CommandLine; ageSeconds=($now - $_.CreationDate).TotalSeconds } }) | ConvertTo-Json -Compress`;
+    const wrapped = `$ProgressPreference = 'SilentlyContinue'; ${script}`;
+    const raw = execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(wrapped, 'utf16le').toString('base64')], { encoding: 'utf8', timeout: 8000, windowsHide: true });
+    const data = raw.trim() ? JSON.parse(raw) : [];
+    const processes = (Array.isArray(data) ? data : [data]) as Array<{ pid: number; parentName?: string; commandLine?: string; ageSeconds?: number }>;
+    const normalize = (value: string) => value.replace(/\\/g, '/').toLowerCase();
+    const root = normalize(repoRoot);
+    let reaped = 0;
+    for (const proc of processes) {
+      const commandLine = normalize(proc.commandLine || '');
+      if (!commandLine.includes('--user-data-dir=')) continue;
+      const ownedProfile = commandLine.includes(`${root}/out/test-temp/`) || commandLine.includes(`${root}/state/autoapply/`);
+      if (!ownedProfile) continue;
+      // A live runner keeps its own browser; anything else is a leftover tree.
+      if ((proc.parentName || '').toLowerCase() === 'node') continue;
+      if ((proc.ageSeconds ?? 0) < 120) continue;
+      try {
+        execFileSync('taskkill', ['/F', '/T', '/PID', String(proc.pid)], { stdio: 'ignore', timeout: 6000, windowsHide: true });
+        reaped++;
+      } catch {}
+    }
+    if (reaped > 0) console.warn(`[WATCHDOG] Reaped ${reaped} orphaned automation browser process(es) left by killed runners`);
+    return reaped;
+  } catch { return 0; }
 }
 
 /**
@@ -157,6 +192,8 @@ export function scrubBrowserCachesAndTempDirs(): number {
   return cleaned;
 }
 
+let lastLoggedRamHealth: SystemRamAndHealthSnapshot['healthStatus'] | null = null;
+
 export function computeRecommendedLanes(
   freeRamGb: number,
   usedRamPct: number,
@@ -176,7 +213,11 @@ export function computeRecommendedLanes(
         (global as any).gc();
       }
     } catch {}
-    console.warn('[WATCHDOG] CRITICAL_RAM_RECOVERY: Free RAM below 500MB, clamped to 1 lane');
+    // The sampler runs every 45s; logging every sample buried the real events
+    // under 100+ identical lines. Log entry into the state, not each sample.
+    if (lastLoggedRamHealth !== 'CRITICAL_RAM_RECOVERY') {
+      console.warn('[WATCHDOG] CRITICAL_RAM_RECOVERY: Free RAM below 500MB, clamped to 1 lane');
+    }
   } else if (freeRamGb < 1.0 || usedRamPct >= 90 || remainingChromeCount > 38) {
     recommendedLaneCount = 2;
     healthStatus = 'THROTTLE_DOWN_LOW_RAM';
@@ -187,6 +228,7 @@ export function computeRecommendedLanes(
     recommendedLaneCount = 4;
     healthStatus = 'NORMAL';
   }
+  lastLoggedRamHealth = healthStatus;
 
   return { recommendedLaneCount, healthStatus };
 }
@@ -214,11 +256,14 @@ export function evaluateSystemHealthAndAdaptiveLanes(runReaper = true): SystemRa
     usedRamPct = Number((((totalBytes - freeBytes) / totalBytes) * 100).toFixed(1));
   }
 
-  const { recommendedLaneCount, healthStatus } = computeRecommendedLanes(
+  const adaptive = computeRecommendedLanes(
     freeRamGb,
     usedRamPct,
     reaperStats.remainingChromeCount
   );
+  const pressure = assessSystemMemoryPressure({ freeMemBytes: freeBytes });
+  const recommendedLaneCount = Math.min(adaptive.recommendedLaneCount, pressure.recommendedLaneCount);
+  const healthStatus = pressure.pressureLevel === 'CRITICAL' ? 'CRITICAL_RAM_RECOVERY' : pressure.pressureLevel === 'ELEVATED' ? 'THROTTLE_DOWN_LOW_RAM' : adaptive.healthStatus;
 
   const snapshot: SystemRamAndHealthSnapshot = {
     timestamp: new Date().toISOString(),

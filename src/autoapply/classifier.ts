@@ -10,6 +10,18 @@ import type {
   FieldClassificationResult,
 } from './types.js';
 
+export function classifyFileUploadSlot(labelAndAttrs: string): 'resume' | 'cover_letter' | 'transcript' | 'portfolio' | 'other_optional' {
+  const text = String(labelAndAttrs || '').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[_-]+/g, ' ').toLowerCase();
+  const categories = [
+    ['cover_letter', /\b(?:cover|motivation)\s*letter\b/],
+    ['transcript', /\b(?:transcript|grade\s*sheet|mark\s*sheet|academic\s*record)\b/],
+    ['portfolio', /\b(?:portfolio|work\s*sample|writing\s*sample|additional\s*document)\b/],
+    ['resume', /\b(?:resume|résumé|cv|curriculum\s*vitae)\b/],
+  ] as const;
+  const matches = categories.filter(([, pattern]) => pattern.test(text));
+  return matches.length === 1 ? matches[0]![0] : 'other_optional';
+}
+
 interface FieldRuleDef {
   category: ExtendedFieldCategory;
   strongPatterns: RegExp[];
@@ -143,11 +155,13 @@ export const CLASSIFICATION_RULES: FieldRuleDef[] = [
       /\bwhere\s+are\s+you\s+based\b/i,
       /\byour[_\-\s]?location\b/i,
       /\bpresent[_\-\s]?location\b/i,
+      // Ashby's location system field is titled exactly "Location".
+      /^location\s*\*?$/i,
     ],
     mediumPatterns: [
       /suburb/i,
     ],
-    negativePatterns: [/relocat/i, /previously|employed|worked/i],
+    negativePatterns: [/relocat/i, /previously|employed|worked/i, /\b(?:job|role|office|preferred|work)\s+location\b/i],
   },
   {
     category: 'state',

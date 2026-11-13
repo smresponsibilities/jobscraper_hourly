@@ -4,6 +4,7 @@ param([switch]$CheckOnly)
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $stateDir = Join-Path $repoRoot 'state/autoapply/portal-review'
 $flagPath = Join-Path $stateDir 'STOP_AUTOAPPLY.flag'
+$rootFlagPath = Join-Path $repoRoot 'STOP_AUTOAPPLY.flag'
 $workerScript = Join-Path $repoRoot 'scripts/drain-backfill-and-hourly.ts'
 $profilePath = Join-Path $stateDir 'candidate.json'
 $supervisorLock = Join-Path $stateDir 'supervisor.lock'
@@ -21,6 +22,10 @@ function Log-Supervisor($msg) {
     try {
         Add-Content -Path $logPath -Value $line -ErrorAction SilentlyContinue
     } catch {}
+}
+
+function Test-StopRequested {
+    return (Test-Path -LiteralPath $flagPath) -or (Test-Path -LiteralPath $rootFlagPath)
 }
 
 function Get-AutoApplyWorker {
@@ -55,7 +60,7 @@ function Get-RunningSupervisorPid {
 if ($CheckOnly) {
     $activeSup = Get-RunningSupervisorPid
     [pscustomobject]@{
-        StopRequested = Test-Path -LiteralPath $flagPath
+        StopRequested = Test-StopRequested
         SupervisorPid = $activeSup
         Worker = Get-AutoApplyWorker
     }
@@ -74,7 +79,7 @@ try {
     Log-Supervisor "IMMORTAL SUPERVISOR STARTED (PID: $PID)"
     $restartDelaySeconds = 5
 
-    while (-not (Test-Path -LiteralPath $flagPath)) {
+    while (-not (Test-StopRequested)) {
         if (Get-AutoApplyWorker) {
             Start-Sleep -Seconds 5
             continue
@@ -85,20 +90,26 @@ try {
             $arguments = "/c node --import tsx `"$workerScript`" --profile `"$profilePath`" --state `"$stateDir`" --submit >> `"$daemonLog`" 2>&1"
             $worker = Start-Process -FilePath 'cmd.exe' -ArgumentList $arguments -WorkingDirectory $repoRoot -WindowStyle Hidden -PassThru
             Log-Supervisor "Spawned worker PID $($worker.Id)"
-            while (-not $worker.HasExited -and -not (Test-Path -LiteralPath $flagPath)) {
+            while (-not $worker.HasExited -and -not (Test-StopRequested)) {
                 Start-Sleep -Seconds 1
                 $worker.Refresh()
             }
-            if (Test-Path -LiteralPath $flagPath) { break }
+            if (Test-StopRequested) { break }
             Log-Supervisor "Worker PID $($worker.Id) exited with code $($worker.ExitCode)"
-            if (((Get-Date) - $startedAt).TotalSeconds -ge 60) { $restartDelaySeconds = 5 }
+            if (((Get-Date) - $startedAt).TotalSeconds -ge 60) {
+                # A worker that ran for a while was healthy: restart it promptly.
+                # Backing off here used to double the delay after every good run.
+                $restartDelaySeconds = 5
+            } else {
+                $restartDelaySeconds = [Math]::Min(60, $restartDelaySeconds * 2)
+            }
         } catch {
             Log-Supervisor "Launch failed: $($_.Exception.Message)"
+            $restartDelaySeconds = [Math]::Min(60, $restartDelaySeconds * 2)
         }
-        for ($waited = 0; $waited -lt $restartDelaySeconds -and -not (Test-Path -LiteralPath $flagPath); $waited++) {
+        for ($waited = 0; $waited -lt $restartDelaySeconds -and -not (Test-StopRequested); $waited++) {
             Start-Sleep -Seconds 1
         }
-        $restartDelaySeconds = [Math]::Min(60, $restartDelaySeconds * 2)
     }
 } finally {
     if ((Test-Path -LiteralPath $supervisorLock)) {

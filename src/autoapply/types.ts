@@ -96,7 +96,7 @@ export interface CandidateExtendedProfile {
     employmentTypes?: string[]; paidRolesOnly?: boolean;
     nightShifts?: boolean; weekendWork?: boolean; businessTravel?: boolean; travelCountries?: string[];
     recruitmentDataProcessingConsent?: boolean; backgroundCheckConsent?: boolean;
-    demographicDisclosure?: 'prefer_not_to_disclose'; marketingConsent?: boolean; noExperienceWith?: string[];
+    demographicDisclosure?: 'prefer_not_to_disclose'; marketingConsent?: boolean; noExperienceWith?: string[]; skipOptionalQuestions?: string[];
   };
   recruitmentPrivacyConsent?: boolean;
   adult?: boolean;
@@ -228,6 +228,7 @@ export interface BotRunReport {
   reconcileAfter?: string;
   preflightAfter?: string;
   submissionAttempted?: boolean;
+  recoveryGuardVersion?: 1;
   credentialAttempts?: Array<'signup' | 'signin'>;
   humanInterventionRequired?: boolean;
   submission?: { phase: 'prepared' | 'clicked' | 'dispatched' | 'confirmed'; clickedAt?: string; requests: Array<{ url: string; method: string; dispatchedAt: string; payloadHash: string; status?: number; responseHash?: string; headersHash?: string }> };

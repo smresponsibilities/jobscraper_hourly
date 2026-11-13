@@ -1,5 +1,335 @@
 # Handoff
 
+## External review of this round's assumptions, 13 November 2026
+
+Checked the conclusions of the last three rounds against published sources rather
+than trusting them.
+
+- Greenhouse's Remix uploader behaves as this code assumes: the hidden file input
+  accepts the upload and then disappears while the filename is rendered in its
+  place. An external ATS reference documents it as normal behaviour ("the input
+  then vanishes and the filename shows"), which is why verification waits for the
+  filename instead of reading bytes back. Two independent agent write-ups also
+  confirm the rule already followed here: target the hidden `input[type=file]`,
+  never the visible "Attach" button, which opens a native picker headless cannot
+  drive.
+- Two findings from that review are not yet acted on. Greenhouse negotiates
+  uploads through S3 presigned URLs
+  (`GET /uncacheable_attributes/presigned_fields?fields[]=resume`) and the
+  application JSON ends up keyed by field name with `{name, url}`, which is a
+  stronger attachment proof than the filename text currently used. The same
+  reference recommends uploading the CV last and submitting immediately because
+  later re-renders can drop an earlier attachment; this runner uploads when it
+  reaches the field and then keeps filling, and its pre-submit check verifies a
+  recorded hash rather than re-reading the field. Both are worth a follow-up
+  probe before changing the flow.
+- Workday's sign-in form is regular DOM, so the Enter-plus-`requestSubmit()`
+  fallback used here is the standard workaround for an overlay swallowing the
+  button click. No third-party source contradicts the approach; what is still
+  unknown is only whether the stored passwords are current.
+
+## Solver contract, sign-in fallbacks and orphaned browsers, 13 November 2026
+
+Closing the four items left open by the previous round, each verified against the
+live system rather than reasoned about.
+
+- The free solver is asynchronous, and the client assumed it was not. Theyka's
+  sidecar answers `GET /turnstile` with `{task_id}` and publishes
+  `{elapsed_time, value}` at `GET /result?id=`, where `value` is the token or
+  `CAPTCHA_FAIL`. `solveViaLocalSolver` now posts, polls up to 45s, reads
+  `value` as well as `token`/`solution.token`, and stops early on `CAPTCHA_FAIL`.
+  Verified end to end against a real Turnstile widget: 21-character token in
+  about 4s. `scripts/start-captcha-solver.ps1` installs the sidecar on first use
+  (venv plus its own Chromium), starts it on a loopback port, waits for it to
+  answer, and prints the `CAPTCHA_SOLVER_URL` line to put in `.env`.
+- Workday sign-in. Most of the 135 accounts in `workday-accounts.json` were
+  created under a plus address (`name+wd_mdlz@gmail.com`); that is the same
+  mailbox and the exact address the account was registered with, so the runner
+  now accepts a deliverable alias instead of only the bare profile address, and
+  the guard that silently returned `review` on an email mismatch logs
+  `credential_email_mismatch`. A registration screen on a tenant we already have
+  an account with switches to Sign In once (guarded by
+  `data-autoapply-signin-switch`), the Sign In button click falls back to Enter
+  in the password field followed by `form.requestSubmit()` in page code, and an
+  unclickable control reports `signin_submit_unclickable` instead of throwing.
+  Live on `mdlz.wd3`: adopted, switched to sign-in, credentials filled, submit
+  dispatched, `signin_submitted` recorded. The run still ends in a review gate
+  afterwards, and the stored password's acceptance is unconfirmed.
+- RAM. The clamp was caused by leaked browsers, not by the watchdog: chrome
+  trees whose node parent had been killed stay alive because both reapers only
+  kill their own descendants. 11 chrome processes were live with 6 of them
+  orphaned. `reapOrphanedAutomationBrowsers` now kills automation chrome whose
+  `--user-data-dir` is under this repo (`out/test-temp` or `state/autoapply`) and
+  whose parent is not a live node process; it runs at drain start and at every
+  cycle boundary. First run reaped 6 and took chrome from 11 to 8.
+
+The daemon restarted itself twice during this round (08:05 and 09:10) through the
+mid-cycle build check, so the runner fixes are live; each new rebuild is picked
+up at the next job boundary.
+
+Not fixed: Workday's post-submit gate (which page it lands on, and whether the
+stored password is still valid, needs a headed run or a real password reset); the
+captcha sidecar competes for the same scarce RAM while running; and `--submit`
+stays hardcoded in the supervisor.
+
+## Free CAPTCHA solver and existing-account sign-in, 13 November 2026
+
+Two gaps closed from the operator's question: a paid-only solver, and sign-in on
+Workday accounts the project already created.
+
+- `CAPTCHA_SOLVER_URL` now drives a free self-hosted solver. `captcha.ts` calls
+  the sidecar before `CAPSOLVER_API_KEY` is considered: `GET <base>/turnstile`
+  and then `GET <base>/solve`, both with `url`, `sitekey`, and `action`/`cdata`
+  when the widget exposes them, and accepts a token from `token`,
+  `solution.token`, `solution.gRecaptchaResponse`, `data.token` or
+  `gRecaptchaResponse`. That shape covers
+  [Theyka/Turnstile-Solver](https://github.com/Theyka/Turnstile-Solver)
+  (Python, patchright, multi-threaded) and
+  [odell0111/turnstile_solver](https://github.com/odell0111/turnstile_solver)
+  (Python, average two seconds); both are free and run locally. The paid key
+  stays as the fallback, and with neither configured the existing
+  `captcha_deferred` rotation still applies.
+- Workday accounts created before the vault existed live in
+  `state/autoapply/portal-review/workday-accounts.json`, keyed by host (135
+  entries). `authenticateApplication` only ever asked the vault, which is keyed
+  by tenant, so those tenants got a freshly derived password and the site
+  answered "account already exists" - the recovery/forgot-password path at best,
+  a login wall at worst. `readLegacyWorkdayAccount(host)` now supplies the saved
+  email and password, `CredentialVault.adopt` persists it under the tenant
+  without ever overwriting an existing entry, and the run logs
+  `workday_reconcile:auth_legacy_account_adopted`.
+
+Running the free solver locally (PowerShell):
+
+```powershell
+cd $env:TEMP
+git clone https://github.com/Theyka/Turnstile-Solver
+cd Turnstile-Solver
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+python -m patchright install chromium
+python api_solver.py --headless true --useragent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36" --port 5000
+```
+
+Then set `CAPTCHA_SOLVER_URL=http://127.0.0.1:5000` in `.env`. It drives its own
+Chromium, so on this machine's ~1.2GB free RAM it competes with the drain lane;
+start it only when captcha deferrals are actually blocking submissions.
+
+Verified with a local stub server and the real account file: solver token
+round-trip via `/turnstile`, null return when the widget has no site key, legacy
+lookup for `roche.wd3.myworkdayjobs.com` resolving a real credential, unknown and
+empty hosts returning undefined, and `vault.adopt` persisting without
+overwriting. `tsc` exit 0 and `npm test` all checks pass afterwards.
+
+## Timeout accounting and live confirmation, 13 November 2026
+
+The worker restarted itself at 08:05 without a hand restart, which confirmed two
+earlier fixes on the live daemon: `worker.lock` then read
+`{"pid":4724,"startedAt":"2026-11-13T08:05:19.590Z"}` (the stale-timestamp fix),
+and the restart came from the new mid-cycle build-change check. The Greenhouse
+upload fix is producing submissions in production: `JazzX AI` applied in 83.2s
+and `Ontrac Solutions` applied in 38.9s, both logging "Upload verified by visible
+filename acknowledgement".
+
+Four further defects fixed in this round:
+
+- `waitUntilNetworkOnline()` defaults to a 600s wait and was called before the
+  hard-timeout clock started. One DNS blip held a lane for most of a batch: the
+  live log shows `GitLab` at 389.9s and `Fuelerate` at 294.2s against a 180s
+  budget. The wait is now capped at 45s, it counts against the attempt's budget,
+  and `runWithHardTimeout` receives the remaining time (floor 60s) instead of a
+  fresh full budget after preflight, resume compilation and browser fork.
+- A hard timeout reported only "Runner interrupted; verify the employer receipt".
+  The merged partial report now extends the reason with how far the run got
+  (`N field(s) found, M filled before the Xs limit`) and the daemon logs a
+  `[DRAIN] Timeout trace` line with the last runner log lines, so a stuck board
+  can be diagnosed from the log alone.
+- The invalid-control log printed raw attributes:
+  `INPUT#question_38903313002[name="null"][type="text"]: true`. It now omits
+  absent attributes, prints the enclosing label when there is one, and says
+  "marked invalid by the page" instead of echoing `aria-invalid`.
+- The 11-job timeout cluster in batch 11 did not reproduce. A fresh headless run
+  of the same `GitLab` posting reached `paused_for_review` with 51 fields found
+  and 16 filled in 98.9s, and two neighbouring jobs applied normally. That batch
+  was environmental (about 1.2GB free RAM with 13 Chrome processes plus a network
+  stall), not a code path.
+
+## Infinite runner and supervisor audit, 13 November 2026
+
+Audited the live daemon (worker PID 19396 under supervisor PID 20488) and its
+logs instead of guessing. Seven real defects, all fixed and compiled; the running
+process still executed the 03:54 build and picked the fixes up at its next batch
+boundary at 08:05.
+
+- `worker.lock` was stale: it claimed `startedAt: 2026-11-12T22:24` for a
+  process that started at 03:54. Windows recycled the PID, so `acquireLock`
+  matched `info.pid === process.pid`, returned true, and kept the previous
+  generation's timestamp. A lock that matches our own pid is now rewritten with
+  the current start time.
+- The supervisor doubled its restart delay after every healthy run: a good exit
+  reset the delay to 5s and then unconditionally doubled it to 10, 20, 40, 60.
+  A run that lasted at least a minute now keeps the 5s delay.
+- Build changes were only noticed at a cycle boundary, and the check was gated
+  on `batchNumber > 0`, so a 20-25 minute cycle kept running stale code. The
+  detection now also runs between jobs inside a cycle; no new job starts once
+  the artifacts change.
+- The park scoreboard was written only in the shutdown path, so the dashboard
+  served counts from the previous worker's exit (15h old: applied 266, failed
+  156, paused 81, queued 3148). It is now regenerated every cycle.
+- `markHostOutcome(..., 'success')` ran for every status that was not
+  rate-limited, challenged, submitted or failed. Hosts that straight-up failed
+  validation were recorded as healthy, which hid them from host-health
+  throttling. Paused and skipped runs no longer touch host health.
+- `CRITICAL_RAM_RECOVERY` logged once per 45s sample: 119 identical lines in
+  about six hours. It now logs on entry into the state only.
+- PowerShell wrote its progress stream into `out/hourly-daemon.log` as CLIXML
+  blobs, since the daemon's stderr is redirected there. All three PowerShell
+  calls now set `$ProgressPreference = 'SilentlyContinue'`. Verified the DPAPI
+  vault still round-trips a credential after the change.
+
+Still open, measured over the last 2000 log lines: 87 timeouts against 55
+validation parks, 38 captcha deferrals, 17 login walls, 14 interrupted runs and
+8 step-limit stops. `STEP_TIMEOUT` remains 121 of the parked jobs (51.1%). The
+machine reports about 1.2GB free RAM with 13 Chrome processes, so the watchdog
+clamps to a single lane, which is the main throughput ceiling. The daemon still
+runs `--submit`, and the log still shows the Greenhouse resume blocker it no
+longer has to hit (`Cloudsek failed: Resume upload cannot be verified before
+submission` at 22:19 on the old build).
+
+Not fixed, worth a decision: `process.on('uncaughtException')` and
+`'unhandledRejection'` keep the loop alive after any stray error, so a corrupted
+Playwright state loops instead of restarting; the per-job hard timeout starts
+inside `run()`, so wall time still reaches 279s against a 180s budget because
+preflight, resume compilation and browser fork happen outside it; and `--submit` is
+hardcoded in the supervisor, so a dry-run restart needs a manual launch.
+
+## Live fill round: resume upload, shadow dropdowns, bare Location, 13 November 2026
+
+Continued the provider audit with three live fill runs (no submit). All three
+now reach "Ready for submission review" with a verified resume. Still no live
+submission, no outreach and no daemon restart.
+
+- Greenhouse resume upload was blocking every Remix submission. The uploader
+  accepts the file, removes the `<input type="file">` from the DOM, and renders
+  the filename asynchronously. Reading bytes back from the detached handle
+  always failed, the action was marked `skipped`, and
+  `ensureResumeUploadedBeforeSubmit` then threw because no `documentHash`
+  existed. Verification now re-queries any file input that still holds our
+  exact filename, and otherwise waits up to 8s for that filename to appear in
+  the page. A filename acknowledgement is recorded as employer-side proof the
+  artifact is attached; unreadable bytes are logged, not claimed.
+- react-select renders an unnamed `…-requiredInput` input to carry HTML
+  validation. Three scans treated it as a real field, so Greenhouse diagnostics
+  reported a label-less required field and the runner could log anonymous
+  "invalid visible control" entries. The overnight diagnostic, the runner's
+  invalid-control scan, and `auditEmptyRequiredFieldsInDom` now skip it; the
+  diagnostic reports the enclosing select's label instead.
+- Cover letter inputs never receive resume bytes. When no cover letter artifact
+  is compiled the slot stays empty and says so.
+- `classifier.ts` treats a bare "Location" as the candidate's city (Ashby's
+  location system field). Job/role/office/preferred/work-location wording stays
+  excluded. Ashby's required Location field now fills.
+- `fillEmptyRequiredSelects` now reads the control back after dispatching
+  `input`/`change` and only counts a choice the page kept, so a rejected value
+  stays unresolved instead of being reported as filled. The pattern comes from
+  `browser-use`'s agent guidance: set the value in page code, then confirm it
+  stuck.
+
+Measured live, headless, no submit: Greenhouse starrez 57 fields found, 13
+filled, resume verified by filename acknowledgement; Ashby ciroos 37 found, 9
+filled, resume verified by bytes; Lever jobgether 14 found, 2 filled (Lever
+prefills the rest from its own resume parse), resume verified by bytes, zero
+failed required fields. Remaining unresolved answers are genuinely unknown: two
+Greenhouse former-employee questions, Ashby's current CTC and two essay
+prompts. Those stay for human review instead of being invented.
+
+Local reference repositories under `D:\Jobscraper-refs` (JobSpy, Scrapling,
+browser-use, fingerprint-suite, email-verifier) contain scraping, fetching,
+stealth and delivery code, not ATS form filling; no code was copied from them.
+Web research confirmed Greenhouse's phone field is an intl-tel-input widget with
+a separate country select, which the runner already fills.
+
+Files touched in these two rounds: `src/autoapply/runner.ts` (upload
+verification, cover-letter guard, invalid-control shadow skip),
+`src/autoapply/widgets.ts`, `src/autoapply/classifier.ts`,
+`src/autoapply/captcha.ts`, `src/autoapply/overnight-error-logger.ts`,
+`src/autoapply/validation-healer.ts`, `src/autoapply/health-and-ram-watchdog.ts`,
+`src/autoapply/status.ts`, `src/autoapply/vault.ts`,
+`scripts/drain-backfill-and-hourly.ts`, `scripts/immortal-supervisor.ps1`,
+`scripts/sync-github-actions-pillars.ts`, `scripts/dashboard-server.ts`,
+`src/autoapply/worker.ts`, `tsconfig.json`, `tsconfig.build.json`,
+`scripts/test-reference-parity-suite.ts`, `scripts/verify-canary-100.ts`.
+
+Verified: `npx tsc -p tsconfig.build.json` exit 0 (dist rebuilt), `npm test` all
+checks pass, supervisor script parses with zero errors, credential vault
+round-trips through the wrapped PowerShell, and the three live fill runs above.
+Temporary probes and session directories (`scratch/dryrun`, `scratch/probe-*.ts`,
+`scratch/sum.ts`, `state/autoapply/filltest`, `state/autoapply/dryrun-audit`)
+were removed; `git status -- state/` is clean.
+
+## Runner conversion fixes and drain hardening, 12 November 2026
+
+Implemented the provider audit (3% apply rate over the last 200 runs). All
+changes are local source plus a rebuild of `out/dist`; no live application was
+submitted, no outreach was sent and no daemon was restarted by hand.
+
+- Greenhouse: `dismissCookieConsentAndHydrateForm` now waits up to 15s for the
+  Remix application form container, two real inputs, or the Apply control
+  before the sweep begins. A 15s miss is logged and the sweep continues.
+- Required `<select>` controls left on their placeholder are now given the
+  first non-placeholder option by `fillEmptyRequiredSelects` in `widgets.ts`.
+  Consent, privacy, marketing, opt-in, SMS and communication selects are never
+  auto-answered, because required consent stays a human decision. The same
+  helper runs before the HTTP 400/422 retry submit.
+- The 400/422 healer matched fields with `CSS.escape` inside quoted attribute
+  selectors, which produced invalid selectors for bracketed Greenhouse names
+  such as `job_application[answers_attributes][0][text_value]`. It now escapes
+  attribute values, also tries `job_application[...]` and `job_application_...`
+  forms, and normalizes Greenhouse's object-shaped `errors` map as well as the
+  array shape.
+- CAPTCHA: `captcha.ts` detects Turnstile widgets and solves them with
+  CapSolver's `AntiTurnstileTaskProxyLess` (hCaptcha keeps
+  `HCaptchaTaskProxyless`). The returned token is written to
+  `cf-turnstile-response`, `h-captcha-response` and `g-recaptcha-response` and
+  the widget's `data-callback` is invoked. This needs `CAPSOLVER_API_KEY` in
+  `.env`; without the key the existing `captcha_deferred` rotation is unchanged.
+- SmartRecruiters is parked in the drain's in-memory eligibility filter (no DB
+  status change, so it is reversible) because the portal requires account
+  creation before the form mounts.
+- Ashby: branded `/portal/` boards are detected from the Ashby DOM or
+  `window.__appData` rather than the hostname, the cookie dialog matcher accepts
+  more banner and button labels, and the runner waits up to 12s for
+  `window.__appData.posting` before distilling.
+- N1: the runner writes `sessionDir/partial-report.json` from `checkpoint()`, and
+  `readPartialRunnerReport()` merges those counts into the synthetic report when
+  `runWithHardTimeout` fires, so a timeout no longer reports zero filled fields.
+- N2: lane slots are reserved synchronously before any await, so two lanes can
+  no longer both observe a free slot and exceed the RAM lane budget.
+- N3: chunk candidates are fetched at `targetChunkSize * 4` instead of `* 2`.
+- N4: Phase A writes `last-phase-a-sync.json`; the GitHub pillar sync writes
+  `last-pillar-sync.json`; the dashboard reports the newest of the three markers.
+- N5: the idle sleep is gated on `startedJobs === 0` instead of `processedCount`.
+
+Two pre-existing breakages were found while verifying. `scripts/drain-backfill-and-hourly.ts`
+had an unbalanced brace after the cycle `catch` and no declarations for
+`processedCount`, `startedJobs`, `appliedCount`, `runningLanes` or
+`loggedDeferredHosts`, so the file did not parse and the build could not
+produce it. Both are fixed. `tsconfig.json` now includes `DOM.Iterable`, and two
+stale verification scripts that imported widget helpers removed by an earlier
+refactor were cleaned up instead of re-exporting guessing logic that was
+deliberately retired.
+
+Verification: `npx tsc -p tsconfig.build.json` passes (exit 0, `out/dist`
+rebuilt) and `npm test` reports all checks passing. A throwaway Chrome fixture
+confirmed the required-select fallback fills two required dropdowns while
+leaving a consent select and an optional select untouched, that a Turnstile
+widget uses `AntiTurnstileTaskProxyLess` and receives the injected token plus
+callback, and that a partial report is read back and a missing one is tolerated.
+Not verified: any live Greenhouse, Ashby or Lever form, any real CapSolver solve,
+and end-to-end drain ordering. The lane-slot, chunk-size and sync-marker changes
+are typechecked but were not exercised against a running daemon.
+
 ## Resume, answer safety and daemon audit, 12 November 2026
 
 This section supersedes earlier GEN-492 through GEN-494 completion claims below.

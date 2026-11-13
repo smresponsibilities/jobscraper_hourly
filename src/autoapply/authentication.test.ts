@@ -19,7 +19,7 @@ test('unchanged account creation form receives only one credential submission pe
   const page = await browser.newPage();
   const submittedCredentials = new Set<'signup' | 'signin'>();
   const since = new Date();
-  const options = { vault: new CredentialVault(directory, randomBytes(32)), tenant: 'workday:fixture', email: 'fixture@example.test', since, submittedCredentials, verification: { provider: 'workday', recipient: 'fixture@example.test', since, applicationUrl: 'https://fixture.myworkdayjobs.com' } };
+  const options = { vault: new CredentialVault(directory, randomBytes(32)), tenant: 'workday:fixture', email: 'fixture@example.test', since, submittedCredentials, beforeCredentialSubmit: async () => {}, verification: { provider: 'workday', recipient: 'fixture@example.test', since, applicationUrl: 'https://fixture.myworkdayjobs.com' } };
   try {
     await page.setContent('<h1>Create Account</h1><input type=email><input type=password><input type=password><button onclick="this.dataset.clicks=String(Number(this.dataset.clicks||0)+1)">Create Account</button>');
     assert.equal(await authenticateApplication(page, options), 'progress');
@@ -106,18 +106,17 @@ test('authentication waits for a delayed tenant sign-in form instead of parking 
   } finally { await browser.close(); }
 });
 
-test('explicit recruitment privacy authorization checks only the matching account acknowledgement', async () => {
+test('owner-authorized account consent checks agreement and marketing acknowledgements', async () => {
   const directory = mkdtempSync(path.join(os.tmpdir(), 'privacy-auth-'));
   const browser = await chromium.launch({ channel: 'chrome', headless: true });
   const page = await browser.newPage();
-  const options = { vault: new CredentialVault(directory, randomBytes(32)), tenant: 'workday:privacy-fixture', email: 'fixture@example.test', since: new Date(), verification: { provider: 'workday', recipient: 'fixture@example.test', since: new Date(), applicationUrl: 'https://fixture.myworkdayjobs.com' } };
+  const options = { vault: new CredentialVault(directory, randomBytes(32)), tenant: 'workday:privacy-fixture', email: 'fixture@example.test', since: new Date(), submittedCredentials: new Set<'signup' | 'signin'>(), beforeCredentialSubmit: async () => {}, verification: { provider: 'workday', recipient: 'fixture@example.test', since: new Date(), applicationUrl: 'https://fixture.myworkdayjobs.com' } };
   try {
-    await page.setContent('<h1>Create Account</h1><input type=email><input type=password><input type=password><label><input id=privacy type=checkbox required>Yes, I have read and understood the Privacy Information Notice.</label><label><input id=marketing type=checkbox>Receive marketing under the Privacy Policy</label><button onclick="this.dataset.clicked=1">Create Account</button>');
-    assert.equal(await authenticateApplication(page, options), 'review');
-    assert.equal(await page.locator('#privacy').isChecked(), false);
-    assert.equal(await authenticateApplication(page, { ...options, recruitmentPrivacyConsent: true }), 'progress');
+    await page.setContent('<h1>Create Account</h1><input type=email><input type=password><input type=password><label><input id=privacy type=checkbox required>I agree to the Privacy Information Notice.</label><label><input id=marketing type=checkbox>I consent to receive marketing.</label><label><input id=decline type=checkbox>I do not agree.</label><button onclick="this.dataset.clicked=1">Create Account</button>');
+    assert.equal(await authenticateApplication(page, options), 'progress');
     assert.equal(await page.locator('#privacy').isChecked(), true);
-    assert.equal(await page.locator('#marketing').isChecked(), false);
+    assert.equal(await page.locator('#marketing').isChecked(), true);
+    assert.equal(await page.locator('#decline').isChecked(), false);
     assert.equal(await page.getByRole('button').getAttribute('data-clicked'), '1');
   } finally { await browser.close(); }
 });
@@ -220,3 +219,21 @@ test('authenticated tenant activation link opens in same context then returns to
 
 
 
+
+test('signup preserves supplied vault password and leaves factual checkboxes unchecked', async () => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), 'auth-consent-'));
+  const browser = await chromium.launch({ channel: 'chrome', headless: true });
+  const page = await browser.newPage();
+  const vault = new CredentialVault(directory, randomBytes(32));
+  const credential = vault.ensure('workday:consent-fixture', 'fixture@example.test').credential;
+  const since = new Date();
+  const options = { vault, tenant: 'workday:consent-fixture', email: 'fixture@example.test', since, submittedCredentials: new Set<'signup' | 'signin'>(), beforeCredentialSubmit: async () => {}, verification: { provider: 'workday', recipient: 'fixture@example.test', since, applicationUrl: 'https://fixture.myworkdayjobs.com' } };
+  try {
+    await page.setContent('<h1>Create Account</h1><input type=email><input type=password><input type=password><label><input type=checkbox required>I am a citizen of another country</label><button onclick="this.dataset.clicked=1">Create Account</button>');
+    assert.equal(await authenticateApplication(page, options), 'review');
+    assert.equal(await page.locator('input[type=password]').first().inputValue(), credential.password);
+    assert.equal(await page.locator('input[type=checkbox]').isChecked(), false);
+    assert.equal(await page.getByRole('button').getAttribute('data-clicked'), null);
+    assert(!readFileSync(path.join(directory, readdirSync(directory).find(name => name.endsWith('.vault'))!), 'utf8').includes(credential.password));
+  } finally { await browser.close(); }
+});

@@ -97,7 +97,7 @@ export function resolveEnvPortalCredentials(fallbackProfileEmail?: string): Port
   let sourceKeyPassword = '';
   for (const k of passwordPriority) {
     if (env[k] && env[k]!.trim().length >= 6) {
-      password = env[k]!.trim();
+      password = env[k]!;
       sourceKeyPassword = k;
       break;
     }
@@ -107,7 +107,7 @@ export function resolveEnvPortalCredentials(fallbackProfileEmail?: string): Port
   if (!password) {
     for (const [k, v] of Object.entries(env)) {
       if (/(?:password|passwd|pwd)/i.test(k) && !/smtp|db_|redis|postgres/i.test(k) && v && v.trim().length >= 6) {
-        password = v.trim();
+        password = v;
         sourceKeyPassword = k;
         break;
       }
@@ -118,19 +118,7 @@ export function resolveEnvPortalCredentials(fallbackProfileEmail?: string): Port
   return { email, password, sourceKeyEmail, sourceKeyPassword };
 }
 
-export const WORKDAY_COMPLEXITY_FALLBACK_PASSWORD = 'Wk9#mP4$vL7@nQ2!';
-
+/** Existing portal passwords must be used exactly as supplied. */
 export function ensureWorkdayCompliantPassword(rawPassword: string): string {
-  if (!rawPassword) return WORKDAY_COMPLEXITY_FALLBACK_PASSWORD;
-  const isStrong =
-    rawPassword.length >= 12 &&
-    /[A-Z]/.test(rawPassword) &&
-    /[a-z]/.test(rawPassword) &&
-    /[0-9]/.test(rawPassword) &&
-    /[!@#$%^&*]/.test(rawPassword) &&
-    !/shivam|mahajan/i.test(rawPassword);
-
-  if (isStrong) return rawPassword;
-  const cleaned = rawPassword.replace(/shivam|mahajan/gi, 'Wk').slice(0, 8);
-  return `${cleaned}Wk#2026!9`;
+  return rawPassword;
 }

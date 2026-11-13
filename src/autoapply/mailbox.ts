@@ -1,5 +1,6 @@
 import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
+import { extractGreenhouse8CharOtpFromEmail, extractWorkdayActivationLinkFromEmail, withSingleFlightImapLock } from './imap-multiplexer.js';
 
 export interface ApplicationMail {
   id: string;
@@ -41,17 +42,24 @@ export class ImapMailbox implements ApplicationMailbox {
   private ready = false;
   private pending: Promise<unknown> = Promise.resolve();
   private authenticationFailed = false;
+  private reconnect = false;
 
-  constructor(config: { host: string; user: string; password: string; port?: number }) {
+  constructor(private config: { host: string; user: string; password: string; port?: number }) {
     if (!config.host || !config.user || !config.password) throw new Error('IMAP_HOST, IMAP_USER and IMAP_PASSWORD are required');
-    this.client = new ImapFlow({ host: config.host, port: config.port || 993, secure: true, auth: { user: config.user, pass: config.password }, logger: false, connectionTimeout: 15000, greetingTimeout: 15000 });
-    this.client.on('error', () => {
-      this.ready = false;
+    this.client = this.createClient();
+  }
+
+  private createClient(): ImapFlow {
+    const config = this.config;
+    const client = new ImapFlow({ host: config.host, port: config.port || 993, secure: true, auth: { user: config.user, pass: config.password }, logger: false, connectionTimeout: 15000, greetingTimeout: 15000 });
+    client.on('error', () => {
+      if (this.client === client) this.ready = false;
     });
+    return client;
   }
 
   messagesSince(since: Date, senders: string[]): Promise<ApplicationMail[]> {
-    const operation = this.pending.then(() => this.read(since, senders));
+    const operation = this.pending.then(() => withSingleFlightImapLock('mailbox', () => this.read(since, senders)));
     this.pending = operation.catch(() => {});
     return operation;
   }
@@ -59,6 +67,7 @@ export class ImapMailbox implements ApplicationMailbox {
   private async read(since: Date, senders: string[]): Promise<ApplicationMail[]> {
     if (!senders.length || !Number.isFinite(since.getTime())) throw new Error('Mail search requires a valid start time and sender allowlist');
     if (this.authenticationFailed) throw new MailboxAuthenticationError();
+    if (this.reconnect) this.client = this.createClient();
     try {
       if (!this.ready) {
         await this.client.connect();
@@ -95,13 +104,16 @@ export class ImapMailbox implements ApplicationMailbox {
       }
       // Server diagnostics may contain addresses, tokens or credentials.
       throw new Error('Read-only mailbox request failed');
+    } finally {
+      if (this.ready) await this.client.logout().catch(() => { try { this.client.close(); } catch {} });
+      else { try { this.client.close(); } catch {} }
+      this.ready = false;
+      this.reconnect = true;
     }
   }
 
   async close(): Promise<void> {
     await this.pending;
-    await this.client.logout().catch(() => {});
-    this.ready = false;
   }
 }
 
@@ -150,9 +162,19 @@ export function verificationFromMail(mail: ApplicationMail, request: Verificatio
     const company = request.company.toLowerCase().replace(/[^a-z0-9]/g, '');
     companyMatches = company.length >= 3 && text.toLowerCase().replace(/[^a-z0-9]/g, '').includes(company);
   }
-  const code = /\b(?:code(?:\s+is)?|otp)\s*[:=\-]?\s*([A-Z0-9]{6,8})\b/i.exec(text)?.[1];
+  const directCode = /\b(?:code(?:\s+is)?|otp)\s*[:=\-]?\s*([A-Z0-9]{6,8})\b/i.exec(text)?.[1];
+  const greenhouseCode = request.provider === 'greenhouse' ? extractGreenhouse8CharOtpFromEmail(`${text}\n${mail.html || ''}`, new Set()) : null;
+  const code = directCode?.length === 8 && request.provider === 'greenhouse'
+    ? extractGreenhouse8CharOtpFromEmail(`code: ${directCode}`, new Set()) || greenhouseCode || undefined
+    : directCode || greenhouseCode || undefined;
   if (companyMatches && code && (/\d/.test(code) || code === code.toUpperCase())) return { messageId: mail.id, code };
   const origin = new URL(request.applicationUrl);
+  if (request.provider === 'workday' && request.purpose !== 'password_reset') {
+    const activation = extractWorkdayActivationLinkFromEmail(`${mail.text}\n${mail.html || ''}`);
+    if (activation && new URL(activation).hostname === origin.hostname && (companyMatches || /\.myworkdayjobs\.com$/i.test(origin.hostname))) {
+      return { messageId: mail.id, activationUrl: activation };
+    }
+  }
   for (const match of `${mail.text}\n${mail.html || ''}`.matchAll(/https:\/\/[^\s<>"']+/g)) {
     try {
       const url = new URL(match[0].replace(/&amp;/g, '&'));

@@ -1,79 +1,81 @@
 import type { CandidateExtendedProfile } from './types.js';
+import { getArchetypeProjects, getPortfolioProjects, type ResumeProject } from '../resume/deterministic-builder.js';
 
-/**
- * Deterministic Grounded Narrative Composer with 5 certified branches:
- * Branch 0: Unfamiliar tool/language adjacent-stack disclosure (Solves GitLab Go/Ruby)
- * Branch 1: CI/CD, Release tools, DevOps
- * Branch 2: Distributed systems, backend APIs, project example (Solves Diagrid)
- * Branch 3: Data pipelines, ETL, databases, SQL
- * Branch 4: Motivation, why company, cover letter, additional info
- */
+function projectFact(project: ResumeProject): { title: string; url: string; stack: string; metricSummary: string; factKey: string } {
+  const metric = /morgan stanley/i.test(project.title) ? 'Processed more than 5,000,000 CIAM events.'
+    : /quizdeck/i.test(project.title) ? 'Stress-tested with 500 concurrent players and 31 ms latency.'
+    : /chaincode/i.test(project.title) ? 'Includes 15+ REST APIs and 95%+ accuracy; placed third among 200+ teams at HackIndia.'
+    : /shopify/i.test(project.title) ? 'Includes customer lifetime value and cohort analytics.'
+    : /sm.s dex/i.test(project.title) ? 'Includes more than 1,300 static pages.'
+    : /wordle/i.test(project.title) ? 'Includes a 2.4 KB C99 WebAssembly engine.'
+    : /productivity caller/i.test(project.title) ? 'Includes an Android natural-language task parser.' : '';
+  return { title: project.title, url: project.url || 'https://shivammahajan.com/projects/', stack: project.stack, metricSummary: metric,
+    factKey: `projectCatalog.${project.title.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')}` };
+}
+
+export function lookupPortfolioProjectFact(factKey: string): ReturnType<typeof projectFact> | undefined {
+  return [...getPortfolioProjects(), ...getArchetypeProjects('BACKEND')].map(projectFact).find(project => project.factKey === factKey);
+}
+
+/** Select from the existing candidate project catalogue; no invented deep links. */
+export function selectBestPortfolioProjectForQuestion(questionAndJdText: string): { title: string; url: string; stack: string; metricSummary: string; factKey: string } {
+  const projects = getPortfolioProjects();
+  const morgan = getArchetypeProjects('BACKEND').find(project => /morgan stanley/i.test(project.title))!;
+  const text = String(questionAndJdText || '').toLowerCase();
+  const score = (title: string): number => {
+    const rules: Array<[RegExp, RegExp, number]> = [
+      [/clickhouse/i, /\b(?:clickhouse|olap|etl|data pipeline|data engineering|warehouse)\b/g, 4],
+      [/quizdeck/i, /\b(?:quizdeck|websockets?|realtime|real.time|concurrency|concurrent|multiplayer)\b/g, 5],
+      [/chaincode/i, /\b(?:chaincode|llm|gemini|solidity|web3|generative ai|machine learning|\bml\b)\b/g, 4],
+      [/shopify/i, /\b(?:shopify|next\.js|nextjs|fullstack|full.stack|cohort|ltv|postgresql|analytics)\b/g, 4],
+      [/fertilizer/i, /\b(?:fertilizer|xgboost|scikit.learn|flask|soil|formulation)\b/g, 5],
+      [/productivity caller/i, /\b(?:android|kotlin|jetpack|mobile|productivity caller)\b/g, 5],
+      [/sm's dex/i, /\b(?:astro|sm.s dex|static pages|static site)\b/g, 4],
+      [/clickless/i, /\b(?:clickless|rust|pointer navigation|cursor|os hooks)\b/g, 5],
+      [/wordle/i, /\b(?:wordle|c99|webassembly|wasm)\b/g, 5],
+      [/jobscraper/i, /\b(?:jobscraper|job scraper|ats scraping|job alerts|crawler|automation|scraping|distributed queues?)\b/g, 5],
+      [/flight sun/i, /\b(?:flight sun|aviation|flight paths|sun exposure|aircraft|shade)\b/g, 5],
+      [/postie/i, /\b(?:postie|api testing|http client|postman)\b/g, 5],
+      [/game arcade/i, /\b(?:game arcade|gamehub|hangman|dice roll)\b/g, 5],
+      [/days of code/i, /\b(?:days of code|coding challenge|leetcode|algorithm practice)\b/g, 5],
+    ];
+    return rules.filter(([project]) => project.test(title)).reduce((total, [, terms, weight]) => total + (text.match(terms)?.length || 0) * weight, 0) + (text.includes(title.toLowerCase()) ? 20 : 0);
+  };
+  const ranked = projects.map(project => ({ project, score: score(project.title) })).sort((a, b) => b.score - a.score);
+  const selected = ranked[0]?.score ? ranked[0].project : morgan;
+  return projectFact(selected);
+}
+
+/** Return a project answer only for this catalogue's owner and an explicit project prompt. */
+export function composePortfolioProjectNarrative(question: string, profile: CandidateExtendedProfile): { text: string; factKey: string } | null {
+  const name = (profile.personal.fullName || [profile.personal.firstName, profile.personal.lastName].filter(Boolean).join(' ')).trim();
+  if (!/^shivam\s+mahajan$/i.test(name)) return null;
+  if (!/\b(?:project(?:s)?|code sample|github link|technical challenge)\b/i.test(question)) return null;
+  if (/\b(?:conflict|failure|outage|mistake|disagreement|weakness|unethical|disciplinary)\b/i.test(question)) return null;
+  const project = selectBestPortfolioProjectForQuestion(question);
+  return { text: [project.title + '.', project.metricSummary, `Stack: ${project.stack}.`, `Project: ${project.url}`].filter(Boolean).join(' '), factKey: project.factKey };
+}
+
+/** Compose only from the candidate's provided project catalogue or experience excerpts. */
 export function composeGroundedNarrative(
   question: string,
   profile: CandidateExtendedProfile,
-  companyName?: string,
-  roleTitle?: string
+  _companyName?: string,
+  _roleTitle?: string
 ): string | null {
   const q = question.trim();
-  let narrative: string | null = null;
-
-  // Reject closed binary questions, legal consents, certifications, compliance checks, and unsupported incidents
-  const isComplianceOrConsent = /\b(?:consent|agree|certify|attest|convict|felon|discharge|resign|driver'?s?\s*license|clearance|18 years|background check|drug test|non[- ]compete|accept\s+the\s+terms|terms\s+(?:and|&)\s+conditions|arbitrat|waive|dispute|receive\s+(?:sms|messages|notifications|text)|sms\s+consent|message\s+consent)\b/i.test(q);
-  const isBinaryClosed = /^(?:are|do|have|will|can|were|did|is|would|who|what|when|where|how\s+many|how\s+much)\s+(?:you|is|are|was|were|did|do|your)?\b/i.test(q) &&
-    !/\b(?:tell\s+us|describe|explain|elaborate|share|walk\s+us\s+through|why\b|what\s+experience)\b/i.test(q);
-  const isUnsupportedIncident = /\b(?:production\s+failure|outage|unsupported\s+incident)\b/i.test(q);
-
-  if (isComplianceOrConsent || isBinaryClosed || isUnsupportedIncident) {
-    return null;
-  }
-
-  // Branch 0: Unfamiliar Tool/Language Adjacent-Stack Disclosure (GitLab Go/Ruby/Rails prompt)
-  if (/\bruby on rails\b/i.test(q) || (/\bruby\b/i.test(q) && /\b(rails|application|maintain|maintaining|production)\b/i.test(q))) {
-    narrative = "While I have not worked extensively with Ruby on Rails in production yet, during my Technology Apprenticeship at Morgan Stanley (Aug 2025 \u2013 Aug 2026) I engineered scalable enterprise backend services using Java Spring Boot REST APIs, Python/PySpark data pipelines, and Apache Kafka workflows, applying core distributed system, testing, and CI/CD patterns directly transferable to production web applications.";
-  } else if (/\b(go|golang|ruby|rust)\b/i.test(q) && /\b(release|tool|built|project|improve|experience)\b/i.test(q)) {
-    narrative = "While I have not personally built a standalone release tool in Go or Ruby yet, during my Technology Apprenticeship at Morgan Stanley (Aug 2025 \u2013 Aug 2026) I automated build, test, and release workflows for Java Spring Boot APIs and Python/PySpark data pipelines using Jenkins CI/CD, Maven, and Git, and used Splunk and Grafana to verify post-release reliability and reduce manual deployment effort.";
-  }
-  // Branch 1: CI/CD, Release, Build, DevOps
-  else if (/\b(release tool|ci\/?cd|continuous integration|deployment|build tool|pipeline|jenkins|devops)\b/i.test(q)) {
-    narrative = "During my Technology Apprenticeship at Morgan Stanley (Aug 2025 \u2013 Aug 2026), I automated build, test, and release workflows for Java Spring Boot APIs and Python/PySpark data pipelines using Jenkins CI/CD, Maven, and Git, and integrated Splunk and Grafana monitoring to maintain high deployment reliability.";
-  }
-  // Branch 2: Distributed Systems, Backend APIs, Technical Challenge, Project Example (Solves Diagrid)
-  else if (/\b(distributed system|microservice|backend|api|event-driven|scalab|architecture|system you built|technical challenge|example of a project|proud of|bug|debug|problem you solved|accomplishment|achievement)\b/i.test(q)) {
-    narrative = "At Morgan Stanley as a Technology Apprentice, I engineered scalable backend services using Java Spring Boot REST APIs and Apache Kafka for event-driven message ingestion. I processed streaming datasets with Apache Spark and PySpark into Azure Snowflake, and enforced secure access through CIAM OAuth 2.0, mTLS, and granular RBAC.";
-  }
-  // Branch 3: Data Engineering, ETL, SQL, Databases
-  else if (/\b(data pipeline|etl|data warehouse|database|sql|streaming|batch processing)\b/i.test(q)) {
-    narrative = "During my Technology Apprenticeship at Morgan Stanley, I designed and maintained Python and PySpark ETL data pipelines processing high-throughput streaming events from Kafka and batch tables in Hive and Azure Snowflake, with relational modeling in MySQL, SQLite, and document storage in MongoDB.";
-  }
-  // Branch 4: Motivation, "Why <Company>?", Cover Note, Fit, Additional Info (Ticket GEN-218)
-  else if (/\b(why\b|interest|excit|hire|fit\b|cover letter|anything else|additional information|tell us about yourself|motivation|join\b|stand out|value|contribute)\b/i.test(q)) {
-    const extractedComp = q.match(/\b(?:why\s+(?:do\s+you\s+want\s+to\s+work\s+at|are\s+you\s+interested\s+in\s+joining|work\s+at)|what\s+excites\s+you\s+about)\s+([A-Za-z0-9\s._-]+?)(?:\?|$|\b)/i)?.[1]?.trim();
-    const targetComp = companyName || extractedComp;
-    const compClause = targetComp ? `I am deeply excited to contribute to ${targetComp}` : 'I am eager to contribute';
-    const roleClause = roleTitle ? ` as a ${roleTitle}` : '';
-    narrative = `${compClause}${roleClause}. I am a 2026 Computer Science and Engineering graduate from Chitkara University (9.35 CGPA) with 1 year of production experience as a Technology Apprentice at Morgan Stanley in Bengaluru, where I built Java Spring Boot REST APIs, Python/PySpark ETL pipelines, and Apache Kafka workflows. I am based in Bengaluru and available to start immediately.`;
-  } else if (/\b(?:describe|explain|tell|example|experience|built|worked|tools|projects)\b/i.test(q)) {
-    // Certified profile excerpt fallback
-    const terms = q.toLowerCase().match(/jenkins|maven|git\b|ci\/?cd|release|deployment|build|spark|kafka|pyspark|snowflake|java\b|spring|rest|api\b|python|splunk|grafana|oauth|mtls|rbac|distributed|backend|data|etl/g) || [];
-    const aliases: Record<string, string[]> = { release: ['jenkins', 'maven', 'git'], build: ['jenkins', 'maven'], deployment: ['jenkins', 'ci/cd'], distributed: ['kafka', 'spark'], backend: ['spring', 'rest'], data: ['spark', 'snowflake', 'etl'] };
-    const keywords = [...new Set(terms.flatMap(term => aliases[term] || [term]))];
-    if (keywords.length) {
-      const excerpts = profile.experience.flatMap(entry => (entry.description || '').split(/\n+|(?<=[.!?])\s+/).map(text => text.trim()).filter(text => text.length >= 20 && keywords.some(keyword => text.toLowerCase().includes(keyword))));
-      const skills = Object.entries(profile.skillYears || {}).filter(([skill, years]) => years > 0 && keywords.some(keyword => skill.toLowerCase().includes(keyword))).map(([skill]) => skill);
-      if (skills.length) excerpts.push(`My skills include ${skills.join(', ')}.`);
-      if (excerpts.length) narrative = [...new Set(excerpts)].join('\n');
-    }
-  }
-  // Branch 5: Universal Grounded Fallback for Any Remaining Open-Ended Engineering / Project / Behavioral Prompt
-  if (!narrative && q.length >= 15) {
-    narrative = 'During my Technology Apprenticeship at Morgan Stanley in Bengaluru (Aug 2025 \u2013 Aug 2026), I engineered and maintained Java Spring Boot REST APIs, ' +
-      'Apache Kafka event streams, and Python/PySpark ETL pipelines on Azure Snowflake secured with OAuth 2.0 and mTLS, backed by a 9.35 CGPA in Computer Science at Chitkara University.';
-  }
-
-  if (narrative && verifyTruthfulNarrative(narrative, profile)) {
-    return narrative;
-  }
-  return null;
+  if (!q || /\b(?:consent|agree|certify|attest|convict|felon|discharge|resign|license|clearance|background check|drug test|non[- ]compete|arbitrat|waive|sms|conflict|failure|outage|mistake|disagreement|weakness|not on your resume)\b/i.test(q)) return null;
+  if (/^(?:are|do|have|will|can|were|did|is|would|who|when|where|how\s+many|how\s+much)\s+/i.test(q)) return null;
+  if (/\b(?:release tool|release tooling)\b/i.test(q) && /\b(?:go|golang|ruby)\b/i.test(q)) return null;
+  const project = composePortfolioProjectNarrative(q, profile);
+  if (project) return project.text;
+  const terms = q.toLowerCase().match(/jenkins|maven|git\b|ci\/?cd|continuous integration|release|deployment|build|spark|kafka|pyspark|snowflake|java\b|spring|rest|api\b|python|splunk|grafana|oauth|mtls|rbac|distributed|backend|data|etl/g) || [];
+  const aliases: Record<string, string[]> = { 'ci/cd': ['continuous integration', 'jenkins'], release: ['jenkins', 'maven', 'git'], build: ['jenkins', 'maven', 'build'], deployment: ['jenkins', 'deployment'], distributed: ['kafka', 'spark'], backend: ['spring', 'rest', 'backend'], data: ['spark', 'snowflake', 'etl', 'data'] };
+  const keywords = [...new Set(terms.flatMap(term => aliases[term] || [term]))];
+  if (!keywords.length) return null;
+  const excerpts = (profile.experience || []).flatMap(entry => (entry.description || '').split(/\n+|(?<=[.!?])\s+/).map(text => text.trim()).filter(text => text.length >= 20 && keywords.some(keyword => text.toLowerCase().includes(keyword))));
+  const result = [...new Set(excerpts)].join('\n');
+  return result && verifyTruthfulNarrative(result, profile) ? result : null;
 }
 
 export function verifyTruthfulNarrative(text: string, profile?: CandidateExtendedProfile): boolean {

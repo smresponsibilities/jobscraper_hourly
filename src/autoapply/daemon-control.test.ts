@@ -7,7 +7,7 @@ import { pathToFileURL } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import { recoverPowerOffAndNetOffJobs } from './power-net-recovery.js';
 import path from 'node:path';
-import { stopFlagPath, waitForDaemonWake, hasObservedApplicationReceipt } from './daemon-control.js';
+import { stopFlagPath, isStopRequested, waitForDaemonWake, hasObservedApplicationReceipt } from './daemon-control.js';
 import { check30MinZeroFillDroughtAndAutoHeal, selectOwnedChromeForReaping, ActiveBrowserRegistry, ActiveJobRegistry, hasJobsInFlight, isAutomationChromeCommandLine } from './health-and-ram-watchdog.js';
 import { appendJobRunHistory, readJobRunHistory, sanitizeRunHistoryFile, type JobRunHistoryEntry } from './run-history.js';
 import type { BotRunReport } from './types.js';
@@ -26,11 +26,30 @@ test('operator stop uses queue directory and wakes an idle daemon without a rest
   assert.ok(Date.now() - start < 2000, 'idle wait must notice stop before its normal polling deadline');
 });
 
+test('root stop flag also stops idle workers', async () => {
+  const previous = process.cwd();
+  const root = freshDir();
+  const stateDir = path.join(root, 'state');
+  try {
+    fs.mkdirSync(stateDir);
+    process.chdir(root);
+    assert.equal(isStopRequested(stateDir), false);
+    fs.writeFileSync(path.join(root, 'STOP_AUTOAPPLY.flag'), '');
+    assert.equal(isStopRequested(stateDir), true);
+    const start = Date.now();
+    await waitForDaemonWake(stateDir, 10_000);
+    assert.ok(Date.now() - start < 2000);
+  } finally { process.chdir(previous); fs.rmSync(root, { recursive: true, force: true }); }
+});
+
 test('reason text and submit status alone cannot manufacture a receipt', () => {
   const report = { status: 'submitted', reason: 'No application submitted, thank you for applying example text' } as BotRunReport;
   assert.equal(hasObservedApplicationReceipt(report), false);
   report.receipt = { text: 'Application received', url: 'https://jobs.example/confirmation', verifiedAt: new Date().toISOString() };
   assert.equal(hasObservedApplicationReceipt(report), true);
+  report.receipt.existing = true;
+  assert.equal(hasObservedApplicationReceipt(report), false);
+  report.receipt.existing = false;
   report.receipt.verifiedAt = 'invalid';
   assert.equal(hasObservedApplicationReceipt(report), false);
 });

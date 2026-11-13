@@ -1046,6 +1046,57 @@ export async function fillLeverLocationInput(frame: Frame): Promise<boolean> {
 }
 
 /**
+ * Catch-all for required native <select> controls a form left on its
+ * placeholder. Employer-authored dropdowns ("Which team?", "Referral
+ * source?") have no canonical answer in the profile, and leaving them blank
+ * makes the ATS reject the submit. Choosing the first real option is better
+ * than an empty required field. Consent/legal selects are never auto-selected.
+ */
+export async function fillEmptyRequiredSelects(frame: Frame): Promise<number> {
+  // No nested function values here: esbuild's keepNames helper wraps named
+  // functions in __name(), which does not exist inside the page context.
+  return await frame.evaluate(() => {
+    let filled = 0;
+    const roots: Array<Document | ShadowRoot> = [document];
+    for (let index = 0; index < roots.length && index < 200; index++) {
+      const root = roots[index]!;
+      for (const el of Array.from(root.querySelectorAll('select'))) {
+        if (!(el instanceof HTMLSelectElement)) continue;
+        if (el.disabled || el.multiple) continue;
+        if (!(el.required || el.getAttribute('aria-required') === 'true')) continue;
+        if (!el.getClientRects().length || window.getComputedStyle(el).visibility === 'hidden') continue;
+        const selected = el.selectedOptions[0];
+        const selectedText = (selected?.textContent || '').trim();
+        const placeholder = !selected?.value || /^(?:-+\s*)?(?:select|choose|please\s+select|select\s+an?\s+option|pick\s+one|--)/i.test(selectedText);
+        if (!placeholder) continue;
+        // Never guess at consent, privacy or marketing opt-ins.
+        const cluster = el.closest('fieldset, .field, [class*="form-field" i], [class*="question" i], [data-field-path], [data-automation-id^="formField-"]') || el.parentElement;
+        const context = `${cluster?.textContent || ''} ${el.name} ${el.id}`;
+        if (/consent|privacy|terms|gdpr|agree|marketing|opt[-\s]?in|communication|sms/i.test(context)) continue;
+        const option = Array.from(el.options).find(o =>
+          !o.disabled && o.value && !/^(?:-+\s*)?(?:select|choose|please\s+select|select\s+an?\s+option|pick\s+one|--)/i.test(o.textContent.trim())
+        );
+        if (!option) continue;
+        const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set;
+        if (setter) setter.call(el, option.value);
+        else el.value = option.value;
+        el.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+        // Only count choices the page actually kept; a rejected value stays
+        // unresolved rather than being reported as filled.
+        if (el.value !== option.value) continue;
+        filled++;
+      }
+      for (const node of Array.from(root.querySelectorAll('*'))) {
+        const shadow = (node as HTMLElement).shadowRoot;
+        if (shadow && !roots.includes(shadow)) roots.push(shadow);
+      }
+    }
+    return filled;
+  }).catch(() => 0);
+}
+
+/**
  * Ticket GEN-484: Smart dual-format phone filler
  * (+91 E.164 vs maxlength="10" truncation guard)
  */
@@ -1186,4 +1237,80 @@ export function getActiveFormFrame(page: Page): Frame {
     }
   }
   return page.mainFrame();
+}
+
+export function solveCheckboxGroupDeterministically(question: string, options: string[], verifiedSkills: string[] = []): number[] {
+  if (!/\b(?:skill|language|tech|framework|tool|stack|proficien)/i.test(question)) return [];
+  const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9+#.]+/g, ' ').trim();
+  const skills = new Set(verifiedSkills.map(normalize));
+  return options.flatMap((option, index) => skills.has(normalize(option)) ? [index] : []);
+}
+
+export function pickBestComboboxOptionIndex(targetValue: string, visibleOptions: string[], fieldCategory: 'school' | 'degree' | 'employer' | 'location' | 'generic' = 'generic'): { bestIndex: number; matchType: 'exact' | 'substring' | 'token_overlap' | 'synonym' | 'other_fallback' } {
+  const normalize = (s: string) => s.toLowerCase().normalize('NFKC').replace(/[^\p{L}\p{N}]+/gu, ' ').trim().replace(/\s+/g, ' ');
+  const target = normalize(targetValue), choices = visibleOptions.map(normalize);
+  const unique = (indices: number[]) => indices.length === 1 ? indices[0]! : -1;
+  if (!target) return { bestIndex: -1, matchType: 'other_fallback' };
+  let matches = choices.flatMap((value, index) => value === target ? [index] : []);
+  if (matches.length) return { bestIndex: unique(matches), matchType: 'exact' };
+  if (fieldCategory === 'location' && /^(?:bengaluru|bangalore)$/.test(target)) {
+    matches = choices.flatMap((value, index) => /^(?:bengaluru|bangalore)$/.test(value) ? [index] : []);
+    if (matches.length) return { bestIndex: unique(matches), matchType: 'synonym' };
+  }
+  matches = choices.flatMap((value, index) => value.length >= 4 && (value.includes(target) || target.includes(value)) ? [index] : []);
+  if (matches.length) return { bestIndex: unique(matches), matchType: 'substring' };
+  if (fieldCategory === 'school' || fieldCategory === 'employer') {
+    matches = choices.flatMap((value, index) => /^(?:other\b|not listed\b|another university\b|foreign university\b|international\b)/.test(value) ? [index] : []);
+    if (matches.length) return { bestIndex: unique(matches), matchType: 'other_fallback' };
+  }
+  return { bestIndex: -1, matchType: 'other_fallback' };
+}
+
+export async function collectInputsAcrossShadowRoots(pageOrFrame: Page | Frame): Promise<Array<{ tag: string; type: string; id: string; name: string; label: string; shadowDepth: number }>> {
+  return pageOrFrame.evaluate(() => {
+    const results: Array<{ tag: string; type: string; id: string; name: string; label: string; shadowDepth: number }> = [];
+    let visited = 0;
+    function walk(root: Document | ShadowRoot, depth: number): void {
+      for (const element of root.querySelectorAll('*')) {
+        if (++visited > 10000) return;
+        if (element.matches('input,select,textarea,[role="combobox"],button[aria-haspopup="listbox"]')) {
+          const input = element as HTMLInputElement;
+          const labels = Array.from(input.labels || []).map(label => label.textContent?.trim() || '').filter(Boolean).join(' ');
+          const referenced = (element.getAttribute('aria-labelledby') || '').split(/\s+/).filter(Boolean).map(id => root.getElementById(id)?.textContent?.trim() || '').filter(Boolean).join(' ');
+          results.push({ tag: element.tagName.toLowerCase(), type: element.getAttribute('type') || '', id: element.id, name: element.getAttribute('name') || '', label: labels || referenced || element.getAttribute('aria-label') || '', shadowDepth: depth });
+        }
+        if (element.shadowRoot && depth < 5) walk(element.shadowRoot, depth + 1);
+      }
+    }
+    walk(document, 0);
+    return results;
+  });
+}
+
+export async function uploadFileWithCdpFallback(page: Page, input: Locator, filePath: string): Promise<{ uploaded: boolean; method: 'playwright_set_input_files' | 'cdp_dom_set_file_input_files' | 'already_unmounted_verified'; error?: string }> {
+  if (await input.count() !== 1) return { uploaded: false, method: 'already_unmounted_verified', error: 'File input missing or ambiguous; upload not verified' };
+  try { await input.setInputFiles(filePath, { timeout: 3500 }); return { uploaded: true, method: 'playwright_set_input_files' }; }
+  catch (original) {
+    const marker = `autoapply-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    let cdp: Awaited<ReturnType<ReturnType<Page['context']>['newCDPSession']>> | undefined;
+    try {
+      const { resolve } = await import('node:path');
+      await input.evaluate((el, value) => el.setAttribute('data-autoapply-upload-marker', value), marker);
+      cdp = await page.context().newCDPSession(page);
+      const root = await cdp.send('DOM.getDocument', { depth: -1, pierce: true });
+      type CdpNode = { backendNodeId: number; attributes?: string[]; children?: CdpNode[]; shadowRoots?: CdpNode[]; contentDocument?: CdpNode };
+      const find = (node: CdpNode): CdpNode | undefined => {
+        const attrs = node.attributes || [];
+        for (let i = 0; i + 1 < attrs.length; i += 2) if (attrs[i] === 'data-autoapply-upload-marker' && attrs[i + 1] === marker) return node;
+        for (const child of [...(node.children || []), ...(node.shadowRoots || []), ...(node.contentDocument ? [node.contentDocument] : [])]) { const found = find(child); if (found) return found; }
+        return undefined;
+      };
+      const node = find(root.root);
+      if (!node) throw new Error('File input unavailable to CDP');
+      await cdp.send('DOM.setFileInputFiles', { files: [resolve(filePath)], backendNodeId: node.backendNodeId });
+      await input.evaluate(el => { el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); });
+      return { uploaded: true, method: 'cdp_dom_set_file_input_files' };
+    } catch { return { uploaded: false, method: 'cdp_dom_set_file_input_files', error: original instanceof Error ? original.message : 'Upload failed' }; }
+    finally { await input.evaluate(el => el.removeAttribute('data-autoapply-upload-marker')).catch(() => {}); await cdp?.detach().catch(() => {}); }
+  }
 }
