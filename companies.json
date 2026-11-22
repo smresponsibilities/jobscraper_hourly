@@ -125337,5 +125337,2318 @@
     "source": "discovered",
     "token": "careers-assemblyindia.icims.com",
     "lastIndiaAt": "2026-11-22T04:01:47.937Z"
+  },
+  {
+    "name": "BADILI",
+    "ats": "keka",
+    "token": "badiliold",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Dapper",
+    "ats": "ashby",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "dapper"
+  },
+  {
+    "name": "CancerNavigator",
+    "ats": "greenhouse",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "cancernavigator"
+  },
+  {
+    "name": "Alight",
+    "ats": "workday",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "alight",
+    "host": "wd504",
+    "site": "careers"
+  },
+  {
+    "name": "Kinetic Systems",
+    "ats": "ashby",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "kineticsystems"
+  },
+  {
+    "name": "Otto International",
+    "ats": "workday",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "ottoint",
+    "host": "wd116",
+    "site": "careers"
+  },
+  {
+    "name": "Express Flooring",
+    "ats": "greenhouse",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "expressflooring"
+  },
+  {
+    "name": "Reprise Financial",
+    "ats": "ashby",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "reprise%20financial"
+  },
+  {
+    "name": "Singapore AI Safety Hub",
+    "ats": "ashby",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "sash"
+  },
+  {
+    "name": "Scape",
+    "ats": "ashby",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "scape"
+  },
+  {
+    "name": "Sift Stack, Inc.",
+    "ats": "ashby",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "siftstack"
+  },
+  {
+    "name": "Taste Labs",
+    "ats": "ashby",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "taste-labs"
+  },
+  {
+    "name": "Valid",
+    "ats": "ashby",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "valid"
+  },
+  {
+    "name": "Vinci",
+    "ats": "ashby",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "vinci"
+  },
+  {
+    "name": "doola",
+    "ats": "lever",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "doola"
+  },
+  {
+    "name": "WJB",
+    "ats": "ashby",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "wjb"
+  },
+  {
+    "name": "Lovelytics",
+    "ats": "greenhouse",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "lovelytics"
+  },
+  {
+    "name": "Media Arts Lab",
+    "ats": "greenhouse",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "mediaartslab"
+  },
+  {
+    "name": "Bagel Brands",
+    "ats": "workday",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "bagelbrands",
+    "host": "wd504",
+    "site": "bagelbrands"
+  },
+  {
+    "name": "OneDigital",
+    "ats": "workday",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "onedigital",
+    "host": "wd504",
+    "site": "onedigital"
+  },
+  {
+    "name": "SFOX",
+    "ats": "greenhouse",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "sfox"
+  },
+  {
+    "name": "360 DC Group",
+    "ats": "keka",
+    "token": "360degreecloud",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Advocate Health",
+    "ats": "workday",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "aah",
+    "host": "wd115",
+    "site": "external"
+  },
+  {
+    "name": "21K School",
+    "ats": "keka",
+    "token": "21kschool",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "8 Views",
+    "ats": "keka",
+    "token": "8views",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "9series Computers Pvt. Ltd.",
+    "ats": "keka",
+    "token": "9spl",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Vumedi Inc.",
+    "ats": "greenhouse",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "vumedi"
+  },
+  {
+    "name": "Tiefenbacher Laboratories Pvt. Ltd.",
+    "ats": "keka",
+    "token": "aet",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "AHAM Housing Finance",
+    "ats": "keka",
+    "token": "ahamhousing",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "AKAIKE TECHNOLOGIES",
+    "ats": "keka",
+    "token": "akaike",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Dezy",
+    "ats": "keka",
+    "token": "abitainnovation",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Admaren Tech Private Limited",
+    "ats": "keka",
+    "token": "admaren",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Carazo Enterprise SL",
+    "ats": "workable",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "carazo-enterprise-sl"
+  },
+  {
+    "name": "Anand Systems India",
+    "ats": "keka",
+    "token": "anand",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Amantya Technologies",
+    "ats": "keka",
+    "token": "amantya",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "ARHA MEDIA & BROADCASTING PRIVATE LIMITED",
+    "ats": "keka",
+    "token": "arhamedia",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Algoworks Technologies Private Limited",
+    "ats": "keka",
+    "token": "algoworks",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Aska Group",
+    "ats": "keka",
+    "token": "askagroup",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "AURUM PROPTECH LIMITED",
+    "ats": "keka",
+    "token": "aurum1",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "BASILIC FLY STUDIO LIMITED",
+    "ats": "keka",
+    "token": "basilicflystudio",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Verdantas - India",
+    "ats": "keka",
+    "token": "asec",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "AVK VALVES INDIA PRIVATE LIMITED",
+    "ats": "keka",
+    "token": "avkindia",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Climate Catalyst",
+    "ats": "workable",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "climate-catalyst-1"
+  },
+  {
+    "name": "BEYOND ROOT",
+    "ats": "keka",
+    "token": "beyondroot",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "BLL Batesville Logistics, LLC",
+    "ats": "workday",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "batesville",
+    "host": "wd504",
+    "site": "Batesville"
+  },
+  {
+    "name": "Benison Technologies Pvt. Ltd.",
+    "ats": "keka",
+    "token": "benison",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Bacancy Services Private Limited",
+    "ats": "keka",
+    "token": "bacancy",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Vertex Service Partners",
+    "ats": "greenhouse",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "vertexservicepartners"
+  },
+  {
+    "name": "Comcast",
+    "ats": "workday",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "comcast",
+    "host": "wd115",
+    "site": "comcast_careers"
+  },
+  {
+    "name": "Bold & Beyond",
+    "ats": "keka",
+    "token": "boldandbeyond",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "BRANDINTELLE SERVICES",
+    "ats": "keka",
+    "token": "brandintelle",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Bosswallah Technologies Private Limited",
+    "ats": "keka",
+    "token": "bosswallah",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "BlitzenX Solutions",
+    "ats": "keka",
+    "token": "blitzenx",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Otis",
+    "ats": "workday",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "otis",
+    "host": "wd504",
+    "site": "REC_Ext_Gateway"
+  },
+  {
+    "name": "CANOPUS-GBS",
+    "ats": "keka",
+    "token": "canopusgbs",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "BYLD GROUP",
+    "ats": "keka",
+    "token": "byld",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Normet",
+    "ats": "workday",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "normet",
+    "host": "wd502",
+    "site": "NormetCareers"
+  },
+  {
+    "name": "BrandStory Digital",
+    "ats": "keka",
+    "token": "brandstory",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Lilly",
+    "ats": "workday",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "lilly",
+    "host": "wd115",
+    "site": "cmp"
+  },
+  {
+    "name": "D-ploy",
+    "ats": "workable",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "d-ploy"
+  },
+  {
+    "name": "CLARANET INDIA",
+    "ats": "keka",
+    "token": "claranet",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "CCPL",
+    "ats": "keka",
+    "token": "colorshine",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Communication Crafts",
+    "ats": "keka",
+    "token": "communicationcrafts",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "DESHPANDE FOUNDATION",
+    "ats": "keka",
+    "token": "deshpandefoundation",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Group Bayport",
+    "ats": "keka",
+    "token": "caterpillar",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "DESIGNNBUY WEBTOPRINT PRIVATE LIMITED",
+    "ats": "keka",
+    "token": "designnbuy",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Comprinno Technologies Pvt.Ltd",
+    "ats": "keka",
+    "token": "comprinno",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Digient Technologies",
+    "ats": "keka",
+    "token": "digient",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Difinity Digital LLP",
+    "ats": "keka",
+    "token": "difinitydigital",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Tagalys",
+    "ats": "keka",
+    "token": "eastvillage",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Minor International",
+    "ats": "workday",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "minor",
+    "host": "wd102",
+    "site": "Careers"
+  },
+  {
+    "name": "Ethinos Digital Marketing Pvt Ltd",
+    "ats": "keka",
+    "token": "ethinos",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "E TO E TRANSPORTATION INFRASTRUCTURE LIMITED",
+    "ats": "keka",
+    "token": "etoe",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "EUROTEK ENVIRONMENTAL PRIVATE LIMITED",
+    "ats": "keka",
+    "token": "eurotek",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Finanshels",
+    "ats": "keka",
+    "token": "dropxcelllp",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "EC-Council",
+    "ats": "keka",
+    "token": "eccouncil",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "AMETEK",
+    "ats": "successfactors",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "jobs.ametek.com"
+  },
+  {
+    "name": "Eppendorf Polymere GmbH",
+    "ats": "workday",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "eppendorf",
+    "host": "wd502",
+    "site": "Eppendorf"
+  },
+  {
+    "name": "FARMWISEAI PRIVATE LIMITED",
+    "ats": "keka",
+    "token": "faihrms",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "IROV",
+    "ats": "keka",
+    "token": "eyerov",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Founderlink Technologies Pvt.Ltd",
+    "ats": "keka",
+    "token": "founderlink",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "FoundingMinds Software Private Limited",
+    "ats": "keka",
+    "token": "foundingminds",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "FINACPLUS GLOBAL SERVICES PRIVATE LIMITED",
+    "ats": "keka",
+    "token": "finacplus",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "FDM DIGITAL SOLUTIONS",
+    "ats": "keka",
+    "token": "fairdealmarket",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Numera",
+    "ats": "keka",
+    "token": "gcfo",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "HAMLY BUSINESS SOLUTIONS INDIA PRIVATE LIMITED",
+    "ats": "keka",
+    "token": "hamlybusinesssolution",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Integrity Healthcare Solutions Private Limited",
+    "ats": "keka",
+    "token": "iglobalservices",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "CREDILITY",
+    "ats": "keka",
+    "token": "ixltech",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Kalki Fashion",
+    "ats": "keka",
+    "token": "kalkifashion",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Insure Pro 2.0",
+    "ats": "keka",
+    "token": "insurepro",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Homesfy Realty Limited",
+    "ats": "keka",
+    "token": "homesfy",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "KARMACPA SERVICES LLP",
+    "ats": "keka",
+    "token": "karmacpa",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Kinetic Green",
+    "ats": "keka",
+    "token": "kineticgreen",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Kinsfolk",
+    "ats": "keka",
+    "token": "kinsfolk",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Ken Research Private Limited",
+    "ats": "keka",
+    "token": "kenresearch",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Brandix",
+    "ats": "successfactors",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "careers.brandix.com"
+  },
+  {
+    "name": "bioMérieux",
+    "ats": "successfactors",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "site-3ws21a.biomerieux.com"
+  },
+  {
+    "name": "Kuberox Technologies Pvt Ltd",
+    "ats": "keka",
+    "token": "kuberox",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Celeros Flow Technology",
+    "ats": "successfactors",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "careers.celerosft.com"
+  },
+  {
+    "name": "LETITBEX AI TECH SOLUTIONS",
+    "ats": "keka",
+    "token": "letitbexai",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Kwick Living",
+    "ats": "keka",
+    "token": "kwickliving",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "LOGICHIVE SOLUTIONS",
+    "ats": "keka",
+    "token": "logichive",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Element Solutions",
+    "ats": "successfactors",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "careers.elementsolutionsinc.com"
+  },
+  {
+    "name": "Brand Momentum",
+    "ats": "breezy",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "brandmomentum"
+  },
+  {
+    "name": "Etex",
+    "ats": "successfactors",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "careers.etexgroup.com"
+  },
+  {
+    "name": "Fortuna Entertainment Group",
+    "ats": "successfactors",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "jobs.feg.eu"
+  },
+  {
+    "name": "Lime Learn Eduserv Pvt. Ltd",
+    "ats": "keka",
+    "token": "limelearneduserv",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Fives",
+    "ats": "successfactors",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "career.fivesgroup.com"
+  },
+  {
+    "name": "Magenta EV Solutions Pvt. Ltd.",
+    "ats": "keka",
+    "token": "magentamobility",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Huhtamaki",
+    "ats": "workday",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "huhtamaki",
+    "host": "wd103",
+    "site": "DirectsExternal"
+  },
+  {
+    "name": "LR Energy",
+    "ats": "keka",
+    "token": "lrenergy",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "MAIA",
+    "ats": "keka",
+    "token": "maiaestates",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Malpani Group!",
+    "ats": "keka",
+    "token": "malpani",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "MANGO FINANCIAL ADVISORS",
+    "ats": "keka",
+    "token": "mangoadvisors",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Metaplore Solutions",
+    "ats": "keka",
+    "token": "metaplore",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Masscom",
+    "ats": "keka",
+    "token": "masscomcorp",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "MindRuby Technologies LLP",
+    "ats": "keka",
+    "token": "mindruby",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Metayb Private Limited",
+    "ats": "keka",
+    "token": "metayb",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "IBA",
+    "ats": "successfactors",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "careers.iba-worldwide.com"
+  },
+  {
+    "name": "HR Path",
+    "ats": "successfactors",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "jobs.hr-path.com"
+  },
+  {
+    "name": "MN World Enterprise Private Limited",
+    "ats": "keka",
+    "token": "mnworld",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Careers Nasscom Foundation",
+    "ats": "keka",
+    "token": "nasscomfoundation",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "MS Clinical Research Pvt Ltd",
+    "ats": "keka",
+    "token": "msclinical",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Nija Tech",
+    "ats": "keka",
+    "token": "nijatech",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Navia",
+    "ats": "keka",
+    "token": "naviamarkets",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Nemetschek India",
+    "ats": "keka",
+    "token": "nemetschek",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "NYU SOFT SOLUTIONS LLP",
+    "ats": "keka",
+    "token": "nyusoft",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "OMNIREACH SOFTWARE PRIVATE LIMITED",
+    "ats": "keka",
+    "token": "omnireach",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Okulo Aerospace",
+    "ats": "keka",
+    "token": "okulo",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "OSWAAL BOOKS",
+    "ats": "keka",
+    "token": "oswaalbooks",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Fragomen",
+    "ats": "workday",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "fragomen",
+    "host": "wd115",
+    "site": "FragomenCareers"
+  },
+  {
+    "name": "PCPL",
+    "ats": "keka",
+    "token": "paritycube",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "PIMA CONTROLS",
+    "ats": "keka",
+    "token": "pima",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "P G BHAGWAT LLP",
+    "ats": "keka",
+    "token": "pgbhagwatca",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Paramount Computer Systems",
+    "ats": "keka",
+    "token": "paramountassure",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "PRIDE GROUP",
+    "ats": "keka",
+    "token": "pridegroup",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Praper Media",
+    "ats": "keka",
+    "token": "prapermedia",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Praxian Global Private Limited",
+    "ats": "keka",
+    "token": "praxian",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Prismforce Private Limited",
+    "ats": "keka",
+    "token": "prismforce",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "QLC India",
+    "ats": "keka",
+    "token": "qlcindia",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Purple Corp",
+    "ats": "keka",
+    "token": "purplecorp",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Puretech Digital",
+    "ats": "keka",
+    "token": "puretech",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Protectol Health",
+    "ats": "keka",
+    "token": "protectol",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "RED ELK",
+    "ats": "keka",
+    "token": "redelk",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Revspot",
+    "ats": "keka",
+    "token": "revspottechnologiesprivatelimited",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "RackBank Datacenters",
+    "ats": "keka",
+    "token": "rackbank",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "RCBPL",
+    "ats": "keka",
+    "token": "resolute",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Reward360 Global Services Private Limited",
+    "ats": "keka",
+    "token": "reward360",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "सादा / SAADAA",
+    "ats": "keka",
+    "token": "saadaa",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Rosetta Hospitality",
+    "ats": "keka",
+    "token": "rosetta",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Sage IT",
+    "ats": "keka",
+    "token": "sageit",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Out comes Operating",
+    "ats": "keka",
+    "token": "salesdemo",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "SEAD ADVERTISING PVT LTD",
+    "ats": "keka",
+    "token": "seadadvertising",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "NEC Corporation",
+    "ats": "successfactors",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "careers.nec.com"
+  },
+  {
+    "name": "Conversive (Formerly SMS Magic)",
+    "ats": "keka",
+    "token": "screenmagic",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Samtel Avionics",
+    "ats": "keka",
+    "token": "samtel",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Shri lakshmi Steel Suppliers",
+    "ats": "keka",
+    "token": "slss",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Silicon Signals",
+    "ats": "keka",
+    "token": "siliconsignals",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Sol's ARC",
+    "ats": "keka",
+    "token": "solsarc",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "SHAKTI PUMPS (INDIA) LIMITED",
+    "ats": "keka",
+    "token": "shaktipumps",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Stone Shippers Limited",
+    "ats": "keka",
+    "token": "stoneshippers",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Successive Technologies Pvt. Ltd.",
+    "ats": "keka",
+    "token": "successivesoftware",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "SUCHI SEMICON PVT LTD.",
+    "ats": "keka",
+    "token": "suchisemicon",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Speed Engineering Solutions",
+    "ats": "keka",
+    "token": "speed",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Superops Technologies Private Limited",
+    "ats": "keka",
+    "token": "superops",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Vyapar TaxOne",
+    "ats": "keka",
+    "token": "suvit",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "NTT DATA Business Solutions",
+    "ats": "successfactors",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "careers.nttdata-solutions.com"
+  },
+  {
+    "name": "Sureify Labs",
+    "ats": "keka",
+    "token": "sureify",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Super Tribe",
+    "ats": "keka",
+    "token": "supertribe",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "RINA",
+    "ats": "successfactors",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "careers.rina.org"
+  },
+  {
+    "name": "TDF Diamonds & Gold",
+    "ats": "keka",
+    "token": "tdf",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Target Publications",
+    "ats": "keka",
+    "token": "targetpublications",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Reckitt",
+    "ats": "successfactors",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "careers.reckitt.com"
+  },
+  {
+    "name": "THRIWE CONSULTING PRIVATE LIMITED",
+    "ats": "keka",
+    "token": "thriwe",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Sun Pharma",
+    "ats": "successfactors",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "careers.sunpharma.com"
+  },
+  {
+    "name": "Tejraj Group",
+    "ats": "keka",
+    "token": "tejrajgroup",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "TREELIFE VENTURES SERVICES PRIVATE LIMITED",
+    "ats": "keka",
+    "token": "treelifeventures",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Broadway",
+    "ats": "keka",
+    "token": "think9",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Intellihealth Solutions Pvt. Ltd",
+    "ats": "keka",
+    "token": "truemeds",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "UNICOMMERCE ESOLUTIONS LIMITED",
+    "ats": "keka",
+    "token": "unicommerce",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "TRINITY TOUCH PVT LTD",
+    "ats": "keka",
+    "token": "trinitytouch",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Ugaoo Agritech Pvt Ltd",
+    "ats": "keka",
+    "token": "ugaoo",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Uravu Labs",
+    "ats": "keka",
+    "token": "uravulabs",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "UNIFIED GLOBALTECH",
+    "ats": "keka",
+    "token": "unified",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Vizen Life Sciences",
+    "ats": "keka",
+    "token": "vizenlifesciences",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "VivaConnect",
+    "ats": "keka",
+    "token": "viva",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "VIDYA WIRES LIMITED",
+    "ats": "keka",
+    "token": "vidyawires",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Vashi Integrated",
+    "ats": "keka",
+    "token": "vashi",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Wishtree Technologies",
+    "ats": "keka",
+    "token": "wishtreetech",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "WebEngage",
+    "ats": "keka",
+    "token": "webklipper",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "YASH GROUP OF INDUSTRIES",
+    "ats": "keka",
+    "token": "yashindustries",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "GAMURS Group",
+    "ats": "breezy",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "gamurs"
+  },
+  {
+    "name": "Emcure Group of Companies",
+    "ats": "darwinbox",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "emcure"
+  },
+  {
+    "name": "Uno Minda Group",
+    "ats": "darwinbox",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "inspire-unominda"
+  },
+  {
+    "name": "Job at SAVIC Technologies",
+    "ats": "successfactors",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "careers.savictech.com"
+  },
+  {
+    "name": "Andersons, Inc",
+    "ats": "workday",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "andersonsinc",
+    "host": "wd1",
+    "site": "theandersonscareers"
+  },
+  {
+    "name": "Tractor Supply Company",
+    "ats": "successfactors",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "www.tractorsupply.careers"
+  },
+  {
+    "name": "Zurich Insurance",
+    "ats": "successfactors",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "www.careers.zurich.com"
+  },
+  {
+    "name": "Maleda Tech",
+    "ats": "breezy",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "maleda-tech"
+  },
+  {
+    "name": "Plante Moran (Opportunity)",
+    "ats": "workday",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "plantemoran",
+    "host": "wd1",
+    "site": "opportunity"
+  },
+  {
+    "name": "Thgrp",
+    "ats": "workday",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "thgrp",
+    "host": "wd12",
+    "site": "MonumentChemical"
+  },
+  {
+    "name": "Jonas (JonasSoftwareUK)",
+    "ats": "workday",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "talentmanagementsolution",
+    "host": "wd3",
+    "site": "JonasSoftwareUK"
+  },
+  {
+    "name": "VALD",
+    "ats": "breezy",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "vald"
+  },
+  {
+    "name": "World Renew",
+    "ats": "breezy",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "world-renew"
+  },
+  {
+    "name": "Ukgrantt (CareersGrantThornton)",
+    "ats": "workday",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "ukgrantt",
+    "host": "wd3",
+    "site": "CareersGrantThornton"
+  },
+  {
+    "name": "Adiova",
+    "ats": "breezy",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "adiova"
+  },
+  {
+    "name": "Foodtel",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "foodtel"
+  },
+  {
+    "name": "Byndr",
+    "ats": "breezy",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "byndr"
+  },
+  {
+    "name": "Unhcr (FormerStaff)",
+    "ats": "workday",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "unhcr",
+    "host": "wd3",
+    "site": "FormerStaff"
+  },
+  {
+    "name": "ChangeFolio",
+    "ats": "breezy",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "changefolio"
+  },
+  {
+    "name": "Coherence OS",
+    "ats": "breezy",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "coherence-os-inc"
+  },
+  {
+    "name": "MANN+HUMMEL",
+    "ats": "successfactors",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "careers.mann-hummel.com"
+  },
+  {
+    "name": "ESP Group",
+    "ats": "breezy",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "esp-group"
+  },
+  {
+    "name": "Falkonry",
+    "ats": "breezy",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "falkonry"
+  },
+  {
+    "name": "EULER",
+    "ats": "breezy",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "euler"
+  },
+  {
+    "name": "GFI Team Ikigai",
+    "ats": "breezy",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "gfi-team-ikigai"
+  },
+  {
+    "name": "GSD Staffing",
+    "ats": "breezy",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "gsd-staffing"
+  },
+  {
+    "name": "Costar",
+    "ats": "workday",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "costar",
+    "host": "wd1",
+    "site": "costarcareers"
+  },
+  {
+    "name": "Infogravity",
+    "ats": "breezy",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "infogravity"
+  },
+  {
+    "name": "Intellistocks",
+    "ats": "breezy",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "intellistocks"
+  },
+  {
+    "name": "Lever Foundation",
+    "ats": "breezy",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "lever-foundation"
+  },
+  {
+    "name": "Lux Decor Collection",
+    "ats": "breezy",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "luxdecorcollection"
+  },
+  {
+    "name": "Marlabs",
+    "ats": "breezy",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "marlabs"
+  },
+  {
+    "name": "Netpoleon",
+    "ats": "breezy",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "netpoleon-nssg"
+  },
+  {
+    "name": "Peerboard",
+    "ats": "breezy",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "peerboard"
+  },
+  {
+    "name": "Reliant Mission",
+    "ats": "breezy",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "pathways"
+  },
+  {
+    "name": "Reach Digital",
+    "ats": "breezy",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "reach-digital"
+  },
+  {
+    "name": "RenewCO₂",
+    "ats": "breezy",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "renewco2"
+  },
+  {
+    "name": "PCL",
+    "ats": "successfactors",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "careers.pcl.com"
+  },
+  {
+    "name": "Univers",
+    "ats": "breezy",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "univers"
+  },
+  {
+    "name": "VIMworld",
+    "ats": "breezy",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "vimworld"
+  },
+  {
+    "name": "Gestamp - Jobs",
+    "ats": "successfactors",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "jobs.gestamp.com"
+  },
+  {
+    "name": "Phenom",
+    "ats": "phenom",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "careers.phenom.com"
+  },
+  {
+    "name": "The Nature Conservancy",
+    "ats": "phenom",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "careers.tnc.org"
+  },
+  {
+    "name": "Infiniti Retail Ltd",
+    "ats": "oracle",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "fa-eryk-saasfaprod1",
+    "host": "fa.ocs",
+    "siteNumber": "CX_1001"
+  },
+  {
+    "name": "Bechtel",
+    "ats": "phenom",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "jobs.bechtel.com"
+  },
+  {
+    "name": "Trinzic",
+    "ats": "phenom",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "careers.trinzic.com"
+  },
+  {
+    "name": "Autodesk",
+    "ats": "eightfold",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "autodesk.eightfold.ai",
+    "site": "autodesk.com"
+  },
+  {
+    "name": "Agenus Inc.",
+    "ats": "taleo",
+    "token": "AGENINC",
+    "industry": "tech",
+    "source": "discovered"
+  },
+  {
+    "name": "Analogic",
+    "ats": "ukg",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "ANA1003ALOG",
+    "site": "a4de26ba-aa2d-4502-9d0f-577ea07dc7ca"
+  },
+  {
+    "name": "Huber + Suhner AG",
+    "ats": "smartrecruiters",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "HuberSuhnerAG"
+  },
+  {
+    "name": "Knauf Group",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "knaufgroup"
+  },
+  {
+    "name": "Liquidity Services",
+    "ats": "oracle",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "ebwi",
+    "host": "fa.us2",
+    "siteNumber": "careers"
+  },
+  {
+    "name": "Lakmé Inspired Haircare",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "lakme"
+  },
+  {
+    "name": "CCL",
+    "ats": "ukg",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "CEN1006CREAT",
+    "site": "9ac7d5c8-232c-47ea-94cf-ab55ecf7fe02"
+  },
+  {
+    "name": "Riotinto",
+    "ats": "workday",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "riotinto",
+    "host": "wd3",
+    "site": "RioTinto_Careers"
+  },
+  {
+    "name": "CIBT",
+    "ats": "ukg",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "CIB1001CBTHO",
+    "site": "651e26e3-d67c-4622-8ee3-62b19eab9aa9"
+  },
+  {
+    "name": "Crane Authentication",
+    "ats": "ukg",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "OPS1000OPSEC",
+    "site": "13a46332-5623-4cb6-8cc9-14dd28e1d2b6"
+  },
+  {
+    "name": "Peloton",
+    "ats": "oracle",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "edjd",
+    "host": "fa.us2",
+    "siteNumber": "CX"
+  },
+  {
+    "name": "Exostar",
+    "ats": "ukg",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "EXO1000EXO",
+    "site": "a74089e3-a720-eb42-08c6-31c7d206b3ea"
+  },
+  {
+    "name": "Royal Vopak",
+    "ats": "workday",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "vopak",
+    "host": "wd3",
+    "site": "careersatvopak"
+  },
+  {
+    "name": "SAS",
+    "ats": "icims",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "ideas-sas.icims.com"
+  },
+  {
+    "name": "SAS",
+    "ats": "icims",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "ideasglobal-sas.icims.com"
+  },
+  {
+    "name": "InvestCloud",
+    "ats": "ukg",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "TEG1001TEGR",
+    "site": "ad4204e8-c7f7-47f1-8177-c9f64730dccc"
+  },
+  {
+    "name": "Michelman",
+    "ats": "ukg",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "MIC1013MCHL",
+    "site": "e6fda906-f821-4bc6-965f-c5dc30024c57"
+  },
+  {
+    "name": "Outseer",
+    "ats": "ukg",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "RSA1000RSAS",
+    "site": "1a65d5d3-5d84-41a1-bd8a-0199b4a5a712"
+  },
+  {
+    "name": "TechnoServe",
+    "ats": "ukg",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "TEC1006TESER",
+    "site": "5f6e9fd5-36a6-4694-92a8-e28d3d2675c2"
+  },
+  {
+    "name": "Trimont",
+    "ats": "ukg",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "TRI1039TRES",
+    "site": "551314d5-926b-4475-808f-39d0e0248aed"
+  },
+  {
+    "name": "USP",
+    "ats": "ukg",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "UNI1066",
+    "site": "7edcf3b7-2288-c99a-0ece-44b0a1e5cfe9"
+  },
+  {
+    "name": "Pubity Group Ltd",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "pubitygroupltd"
+  },
+  {
+    "name": "QC",
+    "ats": "oracle",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "fa-eooa-saasfaprod1",
+    "host": "fa.ocs",
+    "siteNumber": "CX_1"
+  },
+  {
+    "name": "Electrolux Professional",
+    "ats": "oracle",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "fa-ewoz-saasfaprod1",
+    "host": "fa.ocs",
+    "siteNumber": "CX_1"
+  },
+  {
+    "name": "LogixHealth",
+    "ats": "oracle",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "fa-exql-saasfaprod1",
+    "host": "fa.ocs",
+    "siteNumber": "CX_1"
+  },
+  {
+    "name": "JS Global SharkNinja APAC",
+    "ats": "oracle",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "iaamtj",
+    "host": "fa.ocs",
+    "siteNumber": "CX_1"
+  },
+  {
+    "name": "MPC",
+    "ats": "oracle",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "iacaiz",
+    "host": "fa.ocs",
+    "siteNumber": "CX_1"
+  },
+  {
+    "name": "IGT",
+    "ats": "oracle",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "igtsolutions-iadriz",
+    "host": "fa.ocs",
+    "siteNumber": "CX_1"
+  },
+  {
+    "name": "Uber",
+    "ats": "oracle",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "iaziqy",
+    "host": "fa.ocs",
+    "siteNumber": "CX_1"
+  },
+  {
+    "name": "Suessa",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "suessa"
+  },
+  {
+    "name": "The MISSION Group",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "themissiongroup"
+  },
+  {
+    "name": "PepsiCo",
+    "ats": "icims",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "uscareers-pepsico.icims.com"
+  },
+  {
+    "name": "WeBuyVintage",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "webuyvintage"
+  },
+  {
+    "name": "Terabase Energy",
+    "ats": "workable",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "terabase-energy"
+  },
+  {
+    "name": "Adavo AB",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "adavoab"
+  },
+  {
+    "name": "A&O IT Group",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "aoitgroup-1719309706"
+  },
+  {
+    "name": "Brut India",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "brutindia"
+  },
+  {
+    "name": "Citation Group",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "citationgroup"
+  },
+  {
+    "name": "Clicks Talent",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "clickstalentbv-1749060007"
+  },
+  {
+    "name": "COINSCRAP FINANCE SL",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "coinscrap-1740146024"
+  },
+  {
+    "name": "Columbus",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "columbusglobal-1662045811"
+  },
+  {
+    "name": "Elify Energy Group",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "elifyenergygroup"
+  },
+  {
+    "name": "Updraft",
+    "ats": "workable",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "updraft"
+  },
+  {
+    "name": "Evac Group",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "evacgroup"
+  },
+  {
+    "name": "Full Potential Solutions",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "fullpotentialsolutionslive-1746534510"
+  },
+  {
+    "name": "Gentoo Media",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "gentoomedia"
+  },
+  {
+    "name": "Hästens",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "hastensab"
+  },
+  {
+    "name": "House Group",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "hod-1737565813"
+  },
+  {
+    "name": "HSL Compliance Limited",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "hslcompliancelimited"
+  },
+  {
+    "name": "Hvilan utbildning AB",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "hvilanutbildningab"
+  },
+  {
+    "name": "WeatherBug",
+    "ats": "workable",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "weatherbug"
+  },
+  {
+    "name": "Kare School",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "kareschool"
+  },
+  {
+    "name": "Keyrus Group",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "keyrusgroup"
+  },
+  {
+    "name": "InPost Italy",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "lockerinpostitaliasrl"
+  },
+  {
+    "name": "M+C Saatchi Group",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "mcsaatchiltd"
+  },
+  {
+    "name": "Rmi",
+    "ats": "workday",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "rockymountain",
+    "host": "wd1",
+    "site": "rmi"
+  },
+  {
+    "name": "Nomia",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "nomia-1748337075"
+  },
+  {
+    "name": "NOVENCO® Building & Industry A/S",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "novenco"
+  },
+  {
+    "name": "Onatera",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "onatera-1746634857"
+  },
+  {
+    "name": "Onecom",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "onecom-1726827950"
+  },
+  {
+    "name": "Opt Digital",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "optdigital"
+  },
+  {
+    "name": "Pentland Brands",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "pentlandbrandsuk"
+  },
+  {
+    "name": "The Customization Group",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "picanova"
+  },
+  {
+    "name": "Q-Tech",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "qtech"
+  },
+  {
+    "name": "Remote People",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "remotepeople"
+  },
+  {
+    "name": "RZ HR Studio",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "rzhrstudio"
+  },
+  {
+    "name": "Sage",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "sagepublishing"
+  },
+  {
+    "name": "SITEC Quality Group",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "sitecqualitygroup-1740063076"
+  },
+  {
+    "name": "SixSense Pte Ltd",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "sixsense"
+  },
+  {
+    "name": "Sophiesociety",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "sophiesociety-1744788360"
+  },
+  {
+    "name": "Sperton Global AS",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "sperton"
+  },
+  {
+    "name": "Volga Partners",
+    "ats": "workable",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "volga-partners"
+  },
+  {
+    "name": "Teamcubate ApS",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "teamcubate"
+  },
+  {
+    "name": "Topsales SRL",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "topsalessrl"
+  },
+  {
+    "name": "Unikraft",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "unikraftgmbh-1750170067"
+  },
+  {
+    "name": "Urban Ridge Supplies",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "urbanridgessupplies-1748849434"
+  },
+  {
+    "name": "VINCI Energies Oil & Gas",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "veog-1741097303"
+  },
+  {
+    "name": "Clear Sky touch",
+    "ats": "teamtailor",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "wetworldenergysolutions"
+  },
+  {
+    "name": "Rolling Arrays - Consulting",
+    "ats": "workable",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "rolling-arrays-consulting"
+  },
+  {
+    "name": "Wipfli",
+    "ats": "icims",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "careers-wipfliindia.icims.com"
+  },
+  {
+    "name": "consilio-consilio",
+    "ats": "icims",
+    "industry": "tech",
+    "source": "discovered",
+    "token": "careers-consilio-consilio.icims.com"
   }
 ]
